@@ -1,0 +1,82 @@
+# Publishes the existing Flutter Web prototype to GitHub Pages.
+#
+# Deployment only — this workflow does not touch the app's UI, architecture or
+# functionality. It builds the current source with `flutter build web` and
+# serves the output; there is no backend, database, auth or API involved, and
+# no secrets are used (it relies solely on the automatic GITHUB_TOKEN).
+#
+# The site is a GitHub Pages *project* site, served under /<repository>/, so the
+# build sets --base-href to that path and a 404.html copy provides the SPA
+# fallback that makes direct navigation to deep routes work.
+name: Deploy Flutter Web to GitHub Pages
+
+on:
+  push:
+    branches: [claude/quranic-education-app-prototype-gkzle8]
+  workflow_dispatch:
+
+# Least-privilege permissions required by the Pages deployment actions.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; never cancel an in-progress production deploy.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.5
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # --no-web-resources-cdn keeps CanvasKit + fonts local (no external CDN),
+      # so Arabic shaping works on any network. --base-href matches the project
+      # Pages path exactly, derived from the repo name so casing is always right.
+      - name: Build web (release)
+        run: flutter build web --release --no-web-resources-cdn --base-href "/${{ github.event.repository.name }}/"
+
+      # SPA deep-link fallback: GitHub Pages serves 404.html for unknown paths,
+      # and this copy boots the same app so /<repo>/programs/... resolves.
+      # .nojekyll prevents any Jekyll post-processing of the build output.
+      - name: Add SPA fallback and disable Jekyll
+        run: |
+          cp build/web/index.html build/web/404.html
+          touch build/web/.nojekyll
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: app/build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -188,3 +188,28 @@ final catalogRepositoryProvider = Provider<CatalogRepository>(
   التلاوة، الإتقان) حتى لا يُخترع منهج.
 
 لإخفاء الشارات عند عرض نظيف: `AppConfig.showMockRibbons = false` في `lib/app/app_config.dart`.
+
+---
+
+## 🌐 النشر على GitHub Pages (معاينة فقط)
+
+يوجد Workflow جاهز في `.github/workflows/deploy-pages.yml` ينشر **البناء الحالي** كما هو
+على GitHub Pages — لا تعديل على الواجهات أو المعمارية أو الوظائف، ولا Backend ولا أسرار.
+
+**كيف يعمل:**
+- يُبنى المشروع في الـrunner بـ`flutter build web --release --no-web-resources-cdn`.
+- `--base-href "/<اسم المستودع>/"` لأن موقع المشروع على Pages يُقدَّم تحت مسار فرعي.
+- تُنسخ `index.html` إلى `404.html` (SPA fallback) ليعمل الفتح المباشر لأي مسار عميق.
+- النشر عبر `actions/deploy-pages` باستخدام `GITHUB_TOKEN` التلقائي فقط.
+
+**التفعيل (مرة واحدة، من صاحب المستودع):**
+1. المستودع **خاص (private)** — وGitHub Pages للمستودعات الخاصة يتطلب خطة مدفوعة
+   (Pro/Team). على الخطة المجانية، اجعل المستودع **عاماً (public)**:
+   Settings → General → Danger Zone → Change visibility → Public.
+2. Settings → Pages → **Build and deployment → Source = GitHub Actions**
+   (يحاول الـWorkflow ضبطها تلقائياً عبر `actions/configure-pages`).
+3. إذا فشل النشر برسالة حماية البيئة (Branch not allowed):
+   Settings → Environments → `github-pages` → Deployment branches →
+   أضف الفرع `claude/quranic-education-app-prototype-gkzle8` (أو اختر All branches).
+
+**الرابط بعد النجاح:** `https://lioncoin2.github.io/Educational-Institution/`
