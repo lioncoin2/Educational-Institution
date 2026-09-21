@@ -177,6 +177,30 @@ void main() {
     expect(location(), '/programs/dep-literacy');
   });
 
+  // Every field card must resolve to a REAL program id — a typo in the map
+  // would silently route to the not-found screen while other tests stayed green.
+  testWidgets('كل بطاقة مجال تفتح برنامجاً موجوداً', (tester) async {
+    const expected = <String, String>{
+      'القرآن حفظاً وإتقاناً': '/programs/prog-hifz-city',
+      'العلوم الشرعية': '/programs/prog-maqari',
+      'التجويد والقراءات': '/programs/dep-tajweed-2',
+      'علوم اللغة والنحو': '/programs/prog-nahw',
+      'قسم المتون العلمية': '/programs/prog-mutun',
+      'قسم التعليم الدولي': '/programs/sec-languages',
+    };
+    await openPrograms(tester);
+    for (final entry in expected.entries) {
+      container.read(routerProvider).go('/programs');
+      await tester.pumpAndSettle();
+      await scrollTo(tester, find.text(entry.key));
+      await tester.tap(find.text(entry.key));
+      await tester.pumpAndSettle();
+      expect(location(), entry.value, reason: entry.key);
+      // The destination is a real program, not the not-found screen.
+      expect(find.textContaining('لم نجد'), findsNothing, reason: entry.key);
+    }
+  });
+
   // ── Green scoped, no leak into the shared nav ────────────────────────────
   testWidgets('الأخضر محصور في البرامج ولا يتسرّب للهيكل المشترك',
       (tester) async {

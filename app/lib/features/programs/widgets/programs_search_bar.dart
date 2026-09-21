@@ -23,31 +23,40 @@ class ProgramsSearchBar extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: TextField(
-            onChanged: onChanged,
-            textInputAction: TextInputAction.search,
-            style: context.text.bodyMedium,
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: 'ابحث عن برنامج ..',
-              prefixIcon: const Icon(Icons.search_rounded),
-              filled: true,
-              fillColor: context.colors.surfaceContainerLowest,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: Insets.md,
-                vertical: Insets.md,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: Radii.brMd,
-                borderSide: BorderSide(color: context.colors.outlineVariant),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: Radii.brMd,
-                borderSide: BorderSide(color: context.colors.outlineVariant),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: Radii.brMd,
-                borderSide: BorderSide(color: context.colors.primary, width: 1.5),
+          // A persistent accessible name that survives the field being filled
+          // (the hint alone disappears once text is entered).
+          child: Semantics(
+            label: 'البحث عن برنامج',
+            textField: true,
+            child: TextField(
+              onChanged: onChanged,
+              textInputAction: TextInputAction.search,
+              style: context.text.bodyMedium,
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: 'ابحث عن برنامج ..',
+                prefixIcon: const Icon(Icons.search_rounded),
+                filled: true,
+                fillColor: context.colors.surfaceContainerLowest,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: Insets.md,
+                  vertical: Insets.md,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: Radii.brMd,
+                  borderSide: BorderSide(color: context.colors.outlineVariant),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: Radii.brMd,
+                  borderSide: BorderSide(color: context.colors.outlineVariant),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: Radii.brMd,
+                  borderSide: BorderSide(
+                    color: context.colors.primary,
+                    width: 1.5,
+                  ),
+                ),
               ),
             ),
           ),
@@ -86,8 +95,9 @@ class _FilterButton extends StatelessWidget {
               const SizedBox(width: Insets.xs),
               Text(
                 'تصفية',
-                style: context.text.labelLarge
-                    ?.copyWith(color: context.colors.primary),
+                style: context.text.labelLarge?.copyWith(
+                  color: context.colors.primary,
+                ),
               ),
             ],
           ),
