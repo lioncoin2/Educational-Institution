@@ -5,184 +5,209 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/foundations/async_view.dart';
+import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/foundations/section_header.dart';
 import '../../core/widgets/layout/app_screen.dart';
-import '../../core/widgets/layout/responsive_body.dart';
-import '../../core/widgets/patterns/announcement_card.dart';
-import '../../core/widgets/patterns/path_stepper.dart';
-import '../../core/widgets/patterns/program_card.dart';
+import '../../data/models/program.dart';
 import '../../providers/app_providers.dart';
-import 'widgets/home_greeting.dart';
-import 'widgets/next_halaqa_card.dart';
-import 'widgets/progress_summary_card.dart';
+import 'widgets/home_category_grid.dart';
+import 'widgets/home_featured_card.dart';
+import 'widgets/home_header.dart';
+import 'widgets/home_hero.dart';
+import 'widgets/home_palette.dart';
+import 'widgets/home_stats_card.dart';
 
-/// Answers two questions in the first screenful: where am I, and what is next.
+/// The home landing screen: institution identity, a personal greeting hero,
+/// key figures, the department grid, and a featured section.
+///
+/// Home wears the institution's emblem green rather than the app's plum, via a
+/// [HomePalette] Theme wrapper applied here — below the shared navigation
+/// shell, so no other tab is affected and the bottom-nav pill stays plum. Every
+/// figure shown is real profile data except the greeting cluster, which is the
+/// placeholder learner and is marked with a mock chip.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
+  /// The featured section: قسم التهجي, or null if the data is unavailable.
+  static Program? _spelling(List<Program>? sections) {
+    if (sections == null) return null;
+    for (final s in sections) {
+      if (s.id == 'sec-spelling') return s;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final institution = ref.watch(institutionProvider);
     final student = ref.watch(studentProvider);
     final currentHalaqa = ref.watch(currentHalaqaProvider);
-    final path = ref.watch(pathProvider);
-    final progress = ref.watch(progressProvider);
+    final departments = ref.watch(departmentsProvider);
+    final companions = ref.watch(companionProgramsProvider);
     final sections = ref.watch(specialSectionsProvider);
-    final announcements = ref.watch(announcementsProvider);
     final unread = ref.watch(unreadNotificationCountProvider);
 
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: RefreshIndicator(
-          onRefresh: () async {
-            ref.invalidate(currentHalaqaProvider);
-            ref.invalidate(pathProvider);
-            ref.invalidate(progressProvider);
-            ref.invalidate(announcementsProvider);
-          },
-          child: CustomScrollView(
-            slivers: [
-              SliverToBoxAdapter(
-                child: AsyncView(
-                  value: student,
-                  loading: const SizedBox(height: 180),
-                  builder: (context, data) => HomeGreeting(
-                    student: data,
-                    unreadCount: unread,
-                    onNotifications: () => context.push(Routes.notifications),
+    // The four stat figures resolve only when every source is ready, so a
+    // partial "0" is never shown.
+    List<HomeStat>? stats;
+    final inst = institution.value;
+    final deps = departments.value;
+    final comps = companions.value;
+    if (inst != null && deps != null && comps != null) {
+      final totalHalaqat =
+          deps.fold<int>(0, (sum, d) => sum + (d.halaqatCount ?? 0));
+      stats = [
+        HomeStat(
+          icon: Icons.layers_outlined,
+          value: '${deps.length}',
+          caption: 'أقسام تعليمية',
+          tone: HomeTileTone.mint,
+          sourcePage: 6,
+        ),
+        HomeStat(
+          icon: Icons.groups_2_outlined,
+          value: '$totalHalaqat',
+          caption: 'حلقة في المسار',
+          tone: HomeTileTone.sky,
+          sourcePage: 6,
+        ),
+        HomeStat(
+          icon: Icons.category_outlined,
+          value: '${inst.fields.length}',
+          caption: 'مجالات تعليمية',
+          tone: HomeTileTone.lavender,
+          sourcePage: 5,
+        ),
+        HomeStat(
+          icon: Icons.auto_stories_outlined,
+          value: '${comps.length}',
+          caption: 'برامج مرافقة',
+          tone: HomeTileTone.peach,
+          sourcePage: 10,
+        ),
+      ];
+    }
+
+    return Theme(
+      data: HomePalette.themeOf(context),
+      child: Builder(
+        builder: (context) => Scaffold(
+          body: SafeArea(
+            bottom: false,
+            child: RefreshIndicator(
+              onRefresh: () async {
+                ref.invalidate(currentHalaqaProvider);
+                ref.invalidate(departmentsProvider);
+                ref.invalidate(specialSectionsProvider);
+              },
+              child: CustomScrollView(
+                slivers: [
+                  // ── Header ──────────────────────────────────────────────
+                  SliverGutter(
+                    top: Insets.sm,
+                    child: HomeHeader(
+                      title: inst?.shortName,
+                      subtitle: inst?.mission,
+                      unreadCount: unread,
+                      onNotifications: () =>
+                          context.push(Routes.notifications),
+                      onProfile: () => context.go(Routes.profile),
+                    ),
                   ),
-                ),
-              ),
 
-              // ── الحلقة القادمة ──────────────────────────────────────────
-              SliverGutter(
-                top: Insets.xxl,
-                child: AsyncView(
-                  value: currentHalaqa,
-                  loading: const SkeletonBox(height: 168),
-                  builder: (context, halaqa) => halaqa == null
-                      ? const SizedBox.shrink()
-                      : NextHalaqaCard(
-                          halaqa: halaqa,
-                          onOpen: () => context.go(
-                            Routes.episode(halaqa.programId, halaqa.id),
-                          ),
-                        ),
-                ),
-              ),
+                  // ── Hero ────────────────────────────────────────────────
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: Insets.lg),
+                      child: AsyncView(
+                        value: student,
+                        loading: const SkeletonBox(height: 240),
+                        builder: (context, data) {
+                          final halaqa = currentHalaqa.value;
+                          return HomeHero(
+                            greetingName: data.name,
+                            supportingLine:
+                                '${data.targetGroupName} · ${data.currentProgramName}',
+                            ctaLabel: halaqa == null
+                                ? 'تصفّحي الأقسام'
+                                : 'تابعي حلقتك القادمة',
+                            onCta: halaqa == null
+                                ? () => context.go(Routes.programs)
+                                : () => context.go(
+                                      Routes.episode(
+                                          halaqa.programId, halaqa.id),
+                                    ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
 
-              // ── المسار المتدرّج ─────────────────────────────────────────
-              SliverGutter(
-                top: Insets.xxxl,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SectionHeader(
-                      title: 'مسارك المتدرّج',
+                  // ── Stats ───────────────────────────────────────────────
+                  SliverGutter(
+                    top: Insets.xxl,
+                    child: stats == null
+                        ? const SkeletonBox(height: 180)
+                        : HomeStatsCard(stats: stats),
+                  ),
+
+                  // ── Categories ──────────────────────────────────────────
+                  SliverGutter(
+                    top: Insets.xxxl,
+                    child: SectionHeader(
+                      title: 'أقسامنا التعليمية',
                       subtitle: 'الأقسام الخمسة كما وردت في الملف التعريفي',
-                      actionLabel: 'التفاصيل',
-                      onAction: () => context.go(Routes.path),
+                      actionLabel: 'عرض جميع الأقسام',
+                      onAction: () => context.go(Routes.programs),
+                      trailing: const SourceChip(page: 6),
                     ),
-                    const SizedBox(height: Insets.lg),
-                    AsyncView(
-                      value: path,
-                      loading: const SkeletonBox(height: 44),
-                      builder: (context, steps) => PathStepper(
-                        steps: steps,
-                        compact: true,
-                        onStepTap: (step) =>
-                            context.go(Routes.levels(step.programId)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // ── التقدّم ─────────────────────────────────────────────────
-              SliverGutter(
-                top: Insets.xxxl,
-                child: AsyncView(
-                  value: progress,
-                  loading: const SkeletonBox(height: 150),
-                  builder: (context, data) => ProgressSummaryCard(
-                    progress: data,
-                    onTap: () => context.push(Routes.progress),
                   ),
-                ),
-              ),
-
-              // ── أقسام خاصة ─────────────────────────────────────────────
-              SliverGutter(
-                top: Insets.xxxl,
-                child: SectionHeader(
-                  title: 'أقسام خاصة',
-                  subtitle: 'التهجي · البراعم · اللغات',
-                  actionLabel: 'كل البرامج',
-                  onAction: () => context.go(Routes.programs),
-                ),
-              ),
-              AsyncView(
-                value: sections,
-                loading: const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.all(Insets.lg),
-                    child: SkeletonBox(height: 120),
-                  ),
-                ),
-                builder: (context, list) => SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: Insets.lg),
-                    child: ResponsiveBody(
-                      child: Column(
-                        children: [
-                          for (final program in list)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: Insets.md),
-                              child: ProgramCard(
-                                program: program,
-                                onTap: () =>
-                                    context.go(Routes.program(program.id)),
-                              ),
-                            ),
-                        ],
+                  SliverGutter(
+                    top: Insets.lg,
+                    child: AsyncView(
+                      value: departments,
+                      loading: const SkeletonBox(height: 240),
+                      builder: (context, list) => HomeCategoryGrid(
+                        departments: list,
+                        onOpen: (program) =>
+                            context.go(Routes.program(program.id)),
                       ),
                     ),
                   ),
-                ),
-              ),
 
-              // ── من قسم الإعلام ─────────────────────────────────────────
-              SliverGutter(
-                top: Insets.xl,
-                child: SectionHeader(
-                  title: 'من قسم الإعلام',
-                  subtitle: 'أحدث الإعلانات والتغطيات',
-                  actionLabel: 'الكل',
-                  onAction: () => context.push(Routes.announcements),
-                ),
-              ),
-              SliverGutter(
-                top: Insets.lg,
-                child: AsyncView(
-                  value: announcements,
-                  loading: const SkeletonBox(height: 140),
-                  builder: (context, list) => Column(
-                    children: [
-                      for (final item in list.take(2))
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: Insets.md),
-                          child: AnnouncementCard(
-                            announcement: item,
-                            compact: true,
-                          ),
-                        ),
-                    ],
+                  // ── Featured ────────────────────────────────────────────
+                  SliverGutter(
+                    top: Insets.xxxl,
+                    child: SectionHeader(
+                      title: 'برامج مميزة',
+                      subtitle: 'أبرز ما تقدّمه المؤسسة',
+                      actionLabel: 'عرض جميع البرامج',
+                      onAction: () => context.go(Routes.programs),
+                    ),
                   ),
-                ),
-              ),
+                  SliverGutter(
+                    top: Insets.lg,
+                    child: AsyncView(
+                      value: sections,
+                      loading: const SkeletonBox(height: 220),
+                      builder: (context, list) {
+                        final featured = _spelling(list);
+                        if (featured == null) return const SizedBox.shrink();
+                        return HomeFeaturedCard(
+                          program: featured,
+                          onOpen: () =>
+                              context.go(Routes.program(featured.id)),
+                        );
+                      },
+                    ),
+                  ),
 
-              const SliverToBoxAdapter(child: SizedBox(height: Insets.giant)),
-            ],
+                  const SliverToBoxAdapter(
+                    child: SizedBox(height: Insets.giant),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
