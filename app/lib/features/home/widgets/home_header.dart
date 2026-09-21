@@ -2,15 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../../../core/extensions/context_ext.dart';
 import '../../../core/theme/app_tokens.dart';
-import '../../../core/widgets/foundations/mock_ribbon.dart';
 
-/// The centered institution identity, with a notification bell and a profile
+/// The centered institution identity with a notification bell and a profile
 /// button in the corners — the reference's header composition.
 ///
-/// The title and subtitle are the institution's own (profile pages 1 and 3);
-/// there is no mock element here. The corner buttons render unconditionally so
-/// navigation is available immediately after boot; the centred identity fades
-/// in once [title] is available.
+/// The title and subtitle are the institution's own (`shortName` and
+/// `mission`); there is no mock or invented content here. The corner buttons
+/// render unconditionally so navigation is available immediately after boot;
+/// the centred identity fades in once [title] is available.
 class HomeHeader extends StatelessWidget {
   const HomeHeader({
     super.key,
@@ -34,50 +33,44 @@ class HomeHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         // Reference order (RTL): profile at the start (right), bell at the end
         // (left).
-        IconButton(
-          onPressed: onProfile,
-          icon: const Icon(Icons.person_outline_rounded),
+        _CircleButton(
+          icon: Icons.person_outline_rounded,
           tooltip: 'حسابي',
-          style: IconButton.styleFrom(
-            backgroundColor: context.colors.surfaceContainerHigh,
-            minimumSize: const Size(48, 48),
-          ),
+          onTap: onProfile,
         ),
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: Insets.xs),
+            padding: const EdgeInsets.symmetric(horizontal: Insets.sm),
             child: title == null
                 ? const SizedBox(height: 48)
                 : Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         title!,
                         textAlign: TextAlign.center,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: context.text.titleLarge,
+                        style: context.text.titleMedium?.copyWith(
+                          color: context.colors.primary,
+                          fontWeight: FontWeight.w800,
+                          height: 1.2,
+                        ),
                       ),
                       if (subtitle != null) ...[
-                        const SizedBox(height: Insets.xs),
-                        Wrap(
-                          alignment: WrapAlignment.center,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          spacing: Insets.sm,
-                          runSpacing: Insets.xs,
-                          children: [
-                            Text(
-                              subtitle!,
-                              textAlign: TextAlign.center,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: context.text.bodyMedium,
-                            ),
-                            const SourceChip(page: 3),
-                          ],
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle!,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.text.bodySmall?.copyWith(
+                            color: context.colors.onSurfaceVariant,
+                          ),
                         ),
                       ],
                     ],
@@ -90,8 +83,41 @@ class HomeHeader extends StatelessWidget {
   }
 }
 
-/// The bell with an unread badge. Lifted from the old home_greeting into this
-/// Home-scoped widget rather than shared, and re-tinted for a light header.
+/// A white circular icon button with the soft card shadow — the reference's
+/// header affordance.
+class _CircleButton extends StatelessWidget {
+  const _CircleButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onTap,
+      icon: Icon(icon),
+      tooltip: tooltip,
+      style: IconButton.styleFrom(
+        backgroundColor: context.colors.surfaceContainerLowest,
+        foregroundColor: context.colors.primary,
+        minimumSize: const Size(48, 48),
+        shape: const CircleBorder(),
+        elevation: context.isDark ? 0 : 2,
+        shadowColor: const Color(0x22000000),
+      ),
+    );
+  }
+}
+
+/// The bell with a small unread dot. One actionable semantics node: the label
+/// carries the count, and excludeSemantics drops the decorative dot and the
+/// button's tooltip node so nothing is announced twice. Pointer taps still
+/// reach the InkWell; the onTap here serves assistive tech.
 class _NotificationButton extends StatelessWidget {
   const _NotificationButton({required this.count, required this.onTap});
 
@@ -100,10 +126,6 @@ class _NotificationButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // One actionable node: the label carries the count, and excludeSemantics
-    // drops the IconButton's tooltip node and the decorative badge Text so the
-    // count is never announced twice. Pointer taps still reach the IconButton's
-    // InkWell (hit-testing is unaffected); the onTap here serves assistive tech.
     return Semantics(
       container: true,
       button: true,
@@ -118,29 +140,27 @@ class _NotificationButton extends StatelessWidget {
             icon: const Icon(Icons.notifications_none_rounded),
             tooltip: 'الإشعارات',
             style: IconButton.styleFrom(
-              backgroundColor: context.colors.surfaceContainerHigh,
+              backgroundColor: context.colors.surfaceContainerLowest,
+              foregroundColor: context.colors.primary,
               minimumSize: const Size(48, 48),
+              shape: const CircleBorder(),
+              elevation: context.isDark ? 0 : 2,
+              shadowColor: const Color(0x22000000),
             ),
           ),
           if (count > 0)
             PositionedDirectional(
-              end: 4,
-              top: 4,
+              end: 8,
+              top: 8,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                constraints: const BoxConstraints(minWidth: 18),
+                width: 11,
+                height: 11,
                 decoration: BoxDecoration(
                   color: context.colors.error,
-                  borderRadius: Radii.pill,
-                  border: Border.all(color: context.colors.surface, width: 1.5),
-                ),
-                child: Text(
-                  '$count',
-                  textAlign: TextAlign.center,
-                  style: context.text.labelSmall?.copyWith(
-                    color: context.colors.onError,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 10,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: context.colors.surfaceContainerLowest,
+                    width: 1.5,
                   ),
                 ),
               ),

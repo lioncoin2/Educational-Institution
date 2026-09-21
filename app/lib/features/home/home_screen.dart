@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/foundations/async_view.dart';
-import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/foundations/section_header.dart';
 import '../../core/widgets/layout/app_screen.dart';
 import '../../data/models/program.dart';
@@ -17,14 +16,14 @@ import 'widgets/home_hero.dart';
 import 'widgets/home_palette.dart';
 import 'widgets/home_stats_card.dart';
 
-/// The home landing screen: institution identity, a personal greeting hero,
-/// key figures, the department grid, and a featured section.
+/// The home landing screen: institution identity, a golden-hour hero, key
+/// figures, the department grid and a featured section — laid out to the
+/// reference composition.
 ///
 /// Home wears the institution's emblem green rather than the app's plum, via a
 /// [HomePalette] Theme wrapper applied here — below the shared navigation
 /// shell, so no other tab is affected and the bottom-nav pill stays plum. Every
-/// figure shown is real profile data except the greeting cluster, which is the
-/// placeholder learner and is marked with a mock chip.
+/// figure and string shown is real institution data.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -40,19 +39,18 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final institution = ref.watch(institutionProvider);
-    final student = ref.watch(studentProvider);
-    final currentHalaqa = ref.watch(currentHalaqaProvider);
     final departments = ref.watch(departmentsProvider);
     final companions = ref.watch(companionProgramsProvider);
     final sections = ref.watch(specialSectionsProvider);
     final unread = ref.watch(unreadNotificationCountProvider);
 
-    // The four stat figures resolve only when every source is ready, so a
-    // partial "0" is never shown.
-    List<HomeStat>? stats;
     final inst = institution.value;
     final deps = departments.value;
     final comps = companions.value;
+
+    // The four figures resolve only when every source is ready, so a partial
+    // "0" is never shown.
+    List<HomeStat>? stats;
     if (inst != null && deps != null && comps != null) {
       final totalHalaqat =
           deps.fold<int>(0, (sum, d) => sum + (d.halaqatCount ?? 0));
@@ -62,28 +60,24 @@ class HomeScreen extends ConsumerWidget {
           value: '${deps.length}',
           caption: 'أقسام تعليمية',
           tone: HomeTileTone.mint,
-          sourcePage: 6,
         ),
         HomeStat(
           icon: Icons.groups_2_outlined,
           value: '$totalHalaqat',
-          caption: 'حلقة في المسار',
+          caption: 'حلقة تعليمية',
           tone: HomeTileTone.sky,
-          sourcePage: 6,
         ),
         HomeStat(
           icon: Icons.category_outlined,
           value: '${inst.fields.length}',
           caption: 'مجالات تعليمية',
           tone: HomeTileTone.lavender,
-          sourcePage: 5,
         ),
         HomeStat(
           icon: Icons.auto_stories_outlined,
           value: '${comps.length}',
           caption: 'برامج مرافقة',
           tone: HomeTileTone.peach,
-          sourcePage: 10,
         ),
       ];
     }
@@ -96,9 +90,9 @@ class HomeScreen extends ConsumerWidget {
             bottom: false,
             child: RefreshIndicator(
               onRefresh: () async {
-                ref.invalidate(currentHalaqaProvider);
                 ref.invalidate(departmentsProvider);
                 ref.invalidate(specialSectionsProvider);
+                ref.invalidate(companionProgramsProvider);
               },
               child: CustomScrollView(
                 slivers: [
@@ -115,51 +109,38 @@ class HomeScreen extends ConsumerWidget {
                     ),
                   ),
 
-                  // ── Hero ────────────────────────────────────────────────
+                  // ── Hero (full-bleed) ───────────────────────────────────
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.only(top: Insets.lg),
-                      child: AsyncView(
-                        value: student,
-                        loading: const SkeletonBox(height: 240),
-                        builder: (context, data) {
-                          final halaqa = currentHalaqa.value;
-                          return HomeHero(
-                            greetingName: data.name,
-                            supportingLine:
-                                '${data.targetGroupName} · ${data.currentProgramName}',
-                            ctaLabel: halaqa == null
-                                ? 'تصفّحي الأقسام'
-                                : 'تابعي حلقتك القادمة',
-                            onCta: halaqa == null
-                                ? () => context.go(Routes.programs)
-                                : () => context.go(
-                                      Routes.episode(
-                                          halaqa.programId, halaqa.id),
-                                    ),
-                          );
-                        },
+                      padding: const EdgeInsets.only(top: Insets.md),
+                      child: HomeHero(
+                        headline: 'مرحباً بك',
+                        subhead: 'في رحلتك مع القرآن الكريم',
+                        slogan: inst?.mission ?? '',
+                        ctaLabel: 'ابدأ رحلتك الآن',
+                        onCta: () => context.go(Routes.programs),
                       ),
                     ),
                   ),
 
                   // ── Stats ───────────────────────────────────────────────
                   SliverGutter(
-                    top: Insets.xxl,
+                    top: Insets.lg,
                     child: stats == null
-                        ? const SkeletonBox(height: 180)
+                        ? const SkeletonBox(height: 132)
                         : HomeStatsCard(stats: stats),
                   ),
 
                   // ── Categories ──────────────────────────────────────────
                   SliverGutter(
-                    top: Insets.xxxl,
+                    top: Insets.xxl,
                     child: SectionHeader(
                       title: 'أقسامنا التعليمية',
                       subtitle: 'الأقسام الخمسة كما وردت في الملف التعريفي',
-                      actionLabel: 'عرض جميع الأقسام',
-                      onAction: () => context.go(Routes.programs),
-                      trailing: const SourceChip(page: 6),
+                      trailing: _SeeAll(
+                        label: 'عرض جميع الأقسام',
+                        onTap: () => context.go(Routes.programs),
+                      ),
                     ),
                   ),
                   SliverGutter(
@@ -177,19 +158,21 @@ class HomeScreen extends ConsumerWidget {
 
                   // ── Featured ────────────────────────────────────────────
                   SliverGutter(
-                    top: Insets.xxxl,
+                    top: Insets.xxl,
                     child: SectionHeader(
                       title: 'برامج مميزة',
                       subtitle: 'أبرز ما تقدّمه المؤسسة',
-                      actionLabel: 'عرض جميع البرامج',
-                      onAction: () => context.go(Routes.programs),
+                      trailing: _SeeAll(
+                        label: 'عرض جميع البرامج',
+                        onTap: () => context.go(Routes.programs),
+                      ),
                     ),
                   ),
                   SliverGutter(
                     top: Insets.lg,
                     child: AsyncView(
                       value: sections,
-                      loading: const SkeletonBox(height: 220),
+                      loading: const SkeletonBox(height: 200),
                       builder: (context, list) {
                         final featured = _spelling(list);
                         if (featured == null) return const SizedBox.shrink();
@@ -210,6 +193,32 @@ class HomeScreen extends ConsumerWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The "عرض جميع…" action: label then a forward arrow that auto-mirrors to
+/// point left (the RTL forward cue), matching the reference's section headers.
+class _SeeAll extends StatelessWidget {
+  const _SeeAll({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onTap,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Flexible so the label ellipsises rather than overflowing the header
+          // action at the largest text scales on a small phone.
+          Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
+          const SizedBox(width: Insets.xs),
+          const Icon(Icons.arrow_forward_rounded, size: 18),
+        ],
       ),
     );
   }

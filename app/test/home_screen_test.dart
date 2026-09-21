@@ -18,7 +18,7 @@ import 'package:quran_institution_app/features/home/widgets/home_stats_card.dart
 import 'package:quran_institution_app/providers/app_providers.dart';
 
 /// Tests for the reference-faithful Home redesign. Beyond "it renders", these
-/// lock down that Home shows only real figures, keeps the provenance markers,
+/// lock down that Home shows only real figures and real institution identity,
 /// never leaks the reference image's invented content, and confines the green.
 
 const homeSourceFiles = [
@@ -26,6 +26,7 @@ const homeSourceFiles = [
   'lib/features/home/widgets/home_palette.dart',
   'lib/features/home/widgets/home_header.dart',
   'lib/features/home/widgets/home_hero.dart',
+  'lib/features/home/widgets/home_hero_backdrop.dart',
   'lib/features/home/widgets/home_stats_card.dart',
   'lib/features/home/widgets/home_category_grid.dart',
   'lib/features/home/widgets/home_featured_card.dart',
@@ -198,47 +199,51 @@ void main() {
     }
   });
 
-  // ── Provenance markers survive ────────────────────────────────────────────
-  testWidgets('يحتفظ بعلامات المصدر والبيانات التجريبية', (tester) async {
+  // ── Real institution identity ─────────────────────────────────────────────
+  // The reference-faithful Home shows only real data, so it carries no mock or
+  // source chips (the reference has none); the forbidden-content sweep above is
+  // the guard against invented content. Here we assert the real strings render.
+  testWidgets('يعرض هوية المؤسسة الحقيقية في الترويسة والهيرو', (tester) async {
     await openHome(tester);
 
+    // Header: real short name + mission.
     expect(
       find.descendant(
-          of: find.byType(HomeHeader), matching: find.byType(SourceChip)),
+        of: find.byType(HomeHeader),
+        matching: find.text(ProfileData.institution.shortName),
+      ),
       findsOneWidget,
     );
-    // Exactly one MockChip on Home: the hero greeting.
+    // Hero: the institutional welcome and the real mission as its slogan.
     expect(
       find.descendant(
-          of: find.byType(HomeHero), matching: find.byType(MockChip)),
+        of: find.byType(HomeHero),
+        matching: find.text('مرحباً بك'),
+      ),
       findsOneWidget,
     );
-
-    await scrollTo(tester, find.byType(HomeStatsCard));
     expect(
       find.descendant(
-          of: find.byType(HomeStatsCard), matching: find.byType(SourceChip)),
+        of: find.byType(HomeHero),
+        matching: find.text(ProfileData.institution.mission),
+      ),
       findsWidgets,
     );
-    await scrollTo(tester, find.byType(HomeFeaturedCard));
-    expect(
-      find.descendant(
-          of: find.byType(HomeFeaturedCard), matching: find.byType(SourceChip)),
-      findsOneWidget,
-    );
+    // No provenance chips remain on the all-real Home.
+    expect(find.byType(SourceChip), findsNothing);
+    expect(find.byType(MockChip), findsNothing);
   });
 
   // ── Navigation ────────────────────────────────────────────────────────────
-  testWidgets('زر الهيرو يفتح الحلقة الحالية', (tester) async {
+  testWidgets('زر الهيرو يبدأ الرحلة من البرامج', (tester) async {
     await openHome(tester);
     await tester.tap(
       find.descendant(
           of: find.byType(HomeHero),
-          matching: find.text('تابعي حلقتك القادمة')),
+          matching: find.text('ابدأ رحلتك الآن')),
     );
     await tester.pumpAndSettle();
-    expect(location(), startsWith('/programs/'));
-    expect(location(), contains('/levels/'));
+    expect(location(), '/programs');
   });
 
   testWidgets('بطاقة القسم تفتح تفاصيله', (tester) async {

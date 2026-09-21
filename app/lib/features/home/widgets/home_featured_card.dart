@@ -3,20 +3,22 @@ import 'package:flutter/material.dart';
 import '../../../core/extensions/context_ext.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/foundations/app_card.dart';
-import '../../../core/widgets/foundations/mock_ribbon.dart';
 import '../../../core/widgets/foundations/stat_badge.dart';
-import '../../../core/widgets/patterns/program_icons.dart';
 import '../../../data/models/program.dart';
 
-/// The reference's featured-program card: a visual panel on the right, content
-/// on the left, a badge, title, subtitle, a meta row, and a navigation cue.
+/// The reference's featured-program card: content on the right (RTL start) — a
+/// badge, title, description and a meta row — with a visual panel on the left.
 ///
-/// The featured item is قسم التهجي — the profile itself calls it
+/// The featured item is قسم التهجي; the profile itself calls it
 /// "أقوى قسم في المؤسسة" (page 7), which honestly fills the reference's
-/// "most popular" star slot. Every string and figure is real; there is no
-/// invented popularity metric.
+/// "most popular" badge. Every string and figure is real; there is no invented
+/// popularity metric, and the meta figures come straight from the program.
 class HomeFeaturedCard extends StatelessWidget {
-  const HomeFeaturedCard({super.key, required this.program, required this.onOpen});
+  const HomeFeaturedCard({
+    super.key,
+    required this.program,
+    required this.onOpen,
+  });
 
   final Program program;
   final VoidCallback onOpen;
@@ -31,53 +33,53 @@ class HomeFeaturedCard extends StatelessWidget {
       onTap: onOpen,
       borderRadius: Radii.brXl,
       padding: EdgeInsets.zero,
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Visual panel — first child, so it sits on the right under RTL,
-            // matching the reference. Placeholder for a future program image.
-            _VisualPanel(iconName: program.iconName),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(Insets.lg),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (badge.isNotEmpty) ...[
-                      Wrap(
-                        spacing: Insets.sm,
-                        runSpacing: Insets.sm,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          StatBadge(
+      child: ClipRRect(
+        borderRadius: Radii.brXl,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Content first → sits on the right (start) under RTL.
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(Insets.lg),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (badge.isNotEmpty) ...[
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: StatBadge(
                             label: badge,
                             icon: Icons.star_rounded,
-                            tone: StatBadgeTone.soft,
+                            tone: StatBadgeTone.primary,
                           ),
-                          const SourceChip(page: 7),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: Insets.md),
+                      ],
+                      Text(program.name, style: context.text.titleLarge),
+                      if (program.description != null) ...[
+                        const SizedBox(height: Insets.xs),
+                        Text(
+                          program.description!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.text.bodySmall
+                              ?.copyWith(color: context.colors.onSurfaceVariant),
+                        ),
+                      ],
                       const SizedBox(height: Insets.md),
+                      _MetaRow(program: program),
                     ],
-                    Text(program.name, style: context.text.titleLarge),
-                    if (program.description != null) ...[
-                      const SizedBox(height: Insets.xs),
-                      Text(
-                        program.description!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.text.bodySmall,
-                      ),
-                    ],
-                    const SizedBox(height: Insets.md),
-                    _MetaRow(program: program),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ],
+              // Visual panel last → sits on the left (end) under RTL, matching
+              // the reference's image-on-the-left composition.
+              const _VisualPanel(),
+            ],
+          ),
         ),
       ),
     );
@@ -85,48 +87,49 @@ class HomeFeaturedCard extends StatelessWidget {
 }
 
 class _VisualPanel extends StatelessWidget {
-  const _VisualPanel({required this.iconName});
-
-  final String iconName;
+  const _VisualPanel();
 
   @override
   Widget build(BuildContext context) {
     final onBrand = context.colors.onPrimary;
-    // A plain solid-green panel (not a ContourBand): CustomPaint does not
-    // support the intrinsic-size pass this card's IntrinsicHeight needs.
-    // Branded placeholder for a future program image.
+    // A warm green panel with a Quran motif — a branded placeholder for a
+    // future program photo (swap for Image.asset without touching the layout).
     return Container(
-      width: 108,
+      width: 116,
       decoration: BoxDecoration(
-        color: context.colors.primary,
-        borderRadius: const BorderRadiusDirectional.horizontal(start: Radii.lg)
-            .resolve(TextDirection.rtl),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            context.colors.primary,
+            Color.alphaBlend(Colors.black.withValues(alpha: 0.18),
+                context.colors.primary),
+          ],
+        ),
       ),
-      padding: const EdgeInsets.all(Insets.md),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Stack(
+        alignment: Alignment.center,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: onBrand.withValues(alpha: 0.18),
-              borderRadius: Radii.brMd,
-            ),
-            child: Icon(programIcon(iconName), color: onBrand, size: 24),
-          ),
-          const SizedBox(height: Insets.md),
+          Icon(Icons.menu_book_rounded,
+              size: 46, color: onBrand.withValues(alpha: 0.9)),
           // Decorative navigation cue — the whole card is the tap target.
-          ExcludeSemantics(
-            child: Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: onBrand.withValues(alpha: 0.18),
-                shape: BoxShape.circle,
+          Align(
+            alignment: AlignmentDirectional.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: Insets.md),
+              child: ExcludeSemantics(
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: onBrand.withValues(alpha: 0.22),
+                    shape: BoxShape.circle,
+                  ),
+                  // Auto-mirrors under RTL to point left (the forward cue).
+                  child: Icon(Icons.arrow_forward_rounded,
+                      color: onBrand, size: 20),
+                ),
               ),
-              // Auto-mirrors under RTL to point left (the forward cue).
-              child: Icon(Icons.chevron_right_rounded, color: onBrand, size: 22),
             ),
           ),
         ],
@@ -150,10 +153,8 @@ class _MetaRow extends StatelessWidget {
       (Icons.workspace_premium_outlined, 'قسم خاص'),
     ];
 
-    // A plain Wrap (no LayoutBuilder): RenderWrap supports the intrinsic-size
-    // pass that this card's IntrinsicHeight needs, and it already hands each
-    // child a maxWidth equal to the available width, so the Flexible text
-    // ellipsizes instead of overflowing.
+    // A plain Wrap (RenderWrap supports the intrinsic pass this card's
+    // IntrinsicHeight needs, and bounds each child to the available width).
     return Wrap(
       spacing: Insets.lg,
       runSpacing: Insets.sm,
@@ -169,7 +170,8 @@ class _MetaRow extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: context.text.labelMedium,
+                  style: context.text.labelMedium
+                      ?.copyWith(color: context.colors.onSurfaceVariant),
                 ),
               ),
             ],

@@ -27,7 +27,8 @@ void main() {
     // so no timers are left pending when the test ends.
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
-    expect(find.textContaining(MockData.student.name), findsWidgets);
+    // Home boots into the institutional hero welcome.
+    expect(find.textContaining('مرحباً بك'), findsWidgets);
   });
 
   test('the five departments and their halaqat match the profile', () {

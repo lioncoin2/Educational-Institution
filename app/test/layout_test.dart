@@ -28,7 +28,7 @@ const _viewports = [
 /// value is a string that must be on screen: a route that renders an empty
 /// body throws no exception, so "no overflow" alone is not enough of a check.
 const _routes = <String, (String, String)>{
-  '/home': ('الرئيسية', 'أهلاً'),
+  '/home': ('الرئيسية', 'مرحباً'),
   '/programs': ('البرامج', 'الأقسام التعليمية'),
   '/programs/dep-tajweed-2': ('تفاصيل قسم', 'عرض المسار والمستويات'),
   '/programs/sec-spelling': ('تفاصيل قسم التهجي', 'استيعاب 40 مجموعة'),
