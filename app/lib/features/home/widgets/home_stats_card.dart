@@ -67,8 +67,8 @@ class _Tile extends StatelessWidget {
       excludeSemantics: true,
       child: Container(
         padding: const EdgeInsets.symmetric(
-          horizontal: Insets.sm,
-          vertical: Insets.md,
+          horizontal: Insets.xs,
+          vertical: Insets.sm,
         ),
         decoration: BoxDecoration(
           color: c.background,
@@ -80,12 +80,12 @@ class _Tile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              width: 36,
-              height: 36,
+              width: 34,
+              height: 34,
               decoration: BoxDecoration(color: c.iconChip, shape: BoxShape.circle),
               child: Icon(stat.icon, size: 18, color: c.foreground),
             ),
-            const SizedBox(height: Insets.sm),
+            const SizedBox(height: Insets.xs),
             // FittedBox so a wide figure never overflows the quarter-width tile.
             FittedBox(
               fit: BoxFit.scaleDown,

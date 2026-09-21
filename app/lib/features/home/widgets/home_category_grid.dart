@@ -107,19 +107,19 @@ class _CategoryCard extends StatelessWidget {
       color: c.background,
       padding: const EdgeInsets.symmetric(
         horizontal: Insets.sm,
-        vertical: Insets.md,
+        vertical: Insets.sm,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(color: c.iconChip, shape: BoxShape.circle),
-            child: Icon(programIcon(program.iconName), size: 22, color: c.foreground),
+            child: Icon(programIcon(program.iconName), size: 20, color: c.foreground),
           ),
-          const SizedBox(height: Insets.sm),
+          const SizedBox(height: Insets.xs),
           Text(
             program.name,
             textAlign: TextAlign.center,

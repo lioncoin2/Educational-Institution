@@ -93,6 +93,12 @@ class HomeScreen extends ConsumerWidget {
                 ref.invalidate(departmentsProvider);
                 ref.invalidate(specialSectionsProvider);
                 ref.invalidate(companionProgramsProvider);
+                // Keep the spinner until the reload actually completes.
+                await Future.wait([
+                  ref.read(departmentsProvider.future),
+                  ref.read(specialSectionsProvider.future),
+                  ref.read(companionProgramsProvider.future),
+                ]);
               },
               child: CustomScrollView(
                 slivers: [
@@ -112,7 +118,7 @@ class HomeScreen extends ConsumerWidget {
                   // ── Hero (full-bleed) ───────────────────────────────────
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.only(top: Insets.md),
+                      padding: const EdgeInsets.only(top: Insets.sm),
                       child: HomeHero(
                         headline: 'مرحباً بك',
                         subhead: 'في رحلتك مع القرآن الكريم',
@@ -125,7 +131,7 @@ class HomeScreen extends ConsumerWidget {
 
                   // ── Stats ───────────────────────────────────────────────
                   SliverGutter(
-                    top: Insets.lg,
+                    top: Insets.md,
                     child: stats == null
                         ? const SkeletonBox(height: 132)
                         : HomeStatsCard(stats: stats),
@@ -133,7 +139,7 @@ class HomeScreen extends ConsumerWidget {
 
                   // ── Categories ──────────────────────────────────────────
                   SliverGutter(
-                    top: Insets.xxl,
+                    top: Insets.xl,
                     child: SectionHeader(
                       title: 'أقسامنا التعليمية',
                       subtitle: 'الأقسام الخمسة كما وردت في الملف التعريفي',
@@ -158,7 +164,7 @@ class HomeScreen extends ConsumerWidget {
 
                   // ── Featured ────────────────────────────────────────────
                   SliverGutter(
-                    top: Insets.xxl,
+                    top: Insets.xl,
                     child: SectionHeader(
                       title: 'برامج مميزة',
                       subtitle: 'أبرز ما تقدّمه المؤسسة',
