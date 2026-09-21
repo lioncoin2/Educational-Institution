@@ -29,7 +29,7 @@ const _viewports = [
 /// body throws no exception, so "no overflow" alone is not enough of a check.
 const _routes = <String, (String, String)>{
   '/home': ('الرئيسية', 'مرحباً'),
-  '/programs': ('البرامج', 'الأقسام التعليمية'),
+  '/programs': ('البرامج', 'البرامج التعليمية'),
   '/programs/dep-tajweed-2': ('تفاصيل قسم', 'عرض المسار والمستويات'),
   '/programs/sec-spelling': ('تفاصيل قسم التهجي', 'استيعاب 40 مجموعة'),
   '/programs/sec-languages': ('تفاصيل قسم اللغات', 'اللغات'),

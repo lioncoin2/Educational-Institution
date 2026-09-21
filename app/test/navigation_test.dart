@@ -90,7 +90,9 @@ void main() {
     await tapText(tester, 'البرامج');
     expect(location(), '/programs');
 
-    await tapText(tester, 'قسم تجويد متوسط');
+    // The Programs grid shows study fields; each opens a representative program.
+    // "التجويد والقراءات" opens the intermediate tajweed department.
+    await tapText(tester, 'التجويد والقراءات');
     expect(location(), '/programs/dep-tajweed-2');
 
     await tapText(tester, 'عرض المسار والمستويات');

@@ -5,209 +5,146 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
-import '../../core/widgets/foundations/app_card.dart';
 import '../../core/widgets/foundations/async_view.dart';
-import '../../core/widgets/foundations/mock_ribbon.dart';
-import '../../core/widgets/foundations/section_header.dart';
-import '../../core/widgets/foundations/stat_badge.dart';
 import '../../core/widgets/layout/app_screen.dart';
-import '../../core/widgets/patterns/program_card.dart';
-import '../../data/sources/profile_data.dart';
 import '../../providers/app_providers.dart';
+import '../home/widgets/home_palette.dart';
+import 'widgets/programs_bottom_cta.dart';
+import 'widgets/programs_grid.dart';
+import 'widgets/programs_header.dart';
+import 'widgets/programs_hero.dart';
+import 'widgets/programs_search_bar.dart';
 
-/// Everything the institution offers, in one scannable screen.
-/// All content here is from the profile PDF — hence no mock chips.
-class ProgramsScreen extends ConsumerWidget {
+/// The Programs screen, laid out to the reference composition: a centered
+/// header, a short mosque hero, a search + filter row, a two-column grid of the
+/// institution's six real study-fields, and a closing CTA.
+///
+/// Like Home, Programs wears the institution's emblem green via a [HomePalette]
+/// Theme placed below the shared navigation shell, so the bottom-nav pill stays
+/// plum and no other tab is touched. Every string and card is real institution
+/// data; the card photos are replaceable prototype assets.
+class ProgramsScreen extends ConsumerStatefulWidget {
   const ProgramsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final departments = ref.watch(departmentsProvider);
-    final sections = ref.watch(specialSectionsProvider);
-    final companions = ref.watch(companionProgramsProvider);
+  ConsumerState<ProgramsScreen> createState() => _ProgramsScreenState();
+}
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('البرامج والأقسام'),
-        automaticallyImplyLeading: false,
-      ),
-      body: SafeArea(
-        top: false,
-        child: CustomScrollView(
-          slivers: [
-            SliverGutter(
-              child: Text(
-                ProfileData.departmentsIntro,
-                style: context.text.bodyMedium,
-              ),
-            ),
+class _ProgramsScreenState extends ConsumerState<ProgramsScreen> {
+  String _query = '';
 
-            // ── الأقسام التعليمية الخمسة ────────────────────────────────
-            SliverGutter(
-              top: Insets.xxl,
-              child: const SectionHeader(
-                title: 'الأقسام التعليمية',
-                subtitle: 'خمسة أقسام متدرّجة · 45 حلقة',
-                trailing: SourceChip(page: 6),
-              ),
-            ),
-            SliverGutter(
-              top: Insets.lg,
-              child: AsyncView(
-                value: departments,
-                loading: const SkeletonBox(height: 300),
-                builder: (context, list) => Column(
-                  children: [
-                    for (final program in list)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: Insets.md),
-                        child: ProgramCard(
-                          program: program,
-                          showOrder: true,
-                          onTap: () => context.go(Routes.program(program.id)),
-                        ),
-                      ),
-                  ],
+  /// Each real study field opens a representative real program in that field, so
+  /// the field grid stays a working entry point into the catalogue (fields have
+  /// no detail page of their own). Keyed by the real study-field id.
+  static const _fieldTarget = <String, String>{
+    'f1': 'prog-hifz-city', // القرآن حفظاً وإتقاناً → مدينة الحفاظ
+    'f2': 'prog-maqari', // العلوم الشرعية → المقارئ
+    'f3': 'dep-tajweed-2', // التجويد والقراءات → قسم تجويد متوسط
+    'f4': 'prog-nahw', // علوم اللغة والنحو → علوم النحو
+    'f5': 'prog-mutun', // قسم المتون العلمية → المتون
+    'f6': 'sec-languages', // قسم التعليم الدولي → قسم اللغات
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final institution = ref.watch(institutionProvider);
+    final unread = ref.watch(unreadNotificationCountProvider);
+
+    final fields = institution.value?.fields;
+    final query = _query.trim();
+    final visible = fields == null
+        ? null
+        : (query.isEmpty
+            ? fields
+            : fields.where((f) => f.name.contains(query)).toList());
+
+    return Theme(
+      data: HomePalette.themeOf(context),
+      child: Builder(
+        builder: (context) => Scaffold(
+          body: SafeArea(
+            bottom: false,
+            child: CustomScrollView(
+              slivers: [
+                SliverGutter(
+                  top: Insets.sm,
+                  child: ProgramsHeader(
+                    title: 'البرامج التعليمية',
+                    subtitle: institution.value?.mission ?? '',
+                    unreadCount: unread,
+                    onNotifications: () => context.push(Routes.notifications),
+                    onProfile: () => context.go(Routes.profile),
+                  ),
                 ),
-              ),
-            ),
 
-            // ── أقسام خاصة ─────────────────────────────────────────────
-            SliverGutter(
-              top: Insets.xl,
-              child: const SectionHeader(
-                title: 'أقسام خاصة',
-                subtitle: 'التهجي · البراعم · اللغات',
-              ),
-            ),
-            SliverGutter(
-              top: Insets.lg,
-              child: AsyncView(
-                value: sections,
-                loading: const SkeletonBox(height: 220),
-                builder: (context, list) => Column(
-                  children: [
-                    for (final program in list)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: Insets.md),
-                        child: ProgramCard(
-                          program: program,
-                          onTap: () => context.go(Routes.program(program.id)),
-                        ),
-                      ),
-                  ],
+                // ── Hero banner ─────────────────────────────────────────
+                SliverGutter(
+                  top: Insets.md,
+                  // Both lines are real institution content (profile "about").
+                  child: const ProgramsHero(
+                    headline: 'تعليمٌ أصيلٌ ومنهجٌ متدرّج',
+                    support: 'مؤسسة عالمية عن بُعد، مجانية بالكامل',
+                  ),
                 ),
-              ),
-            ),
 
-            // ── البرامج المرافقة ───────────────────────────────────────
-            SliverGutter(
-              top: Insets.xl,
-              child: const SectionHeader(
-                title: 'البرامج المرافقة',
-                trailing: SourceChip(page: 10),
-              ),
-            ),
-            SliverGutter(
-              top: Insets.lg,
-              child: AsyncView(
-                value: companions,
-                loading: const SkeletonBox(height: 240),
-                builder: (context, list) => Column(
-                  children: [
-                    for (final program in list)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: Insets.md),
-                        child: ProgramCard(
-                          program: program,
-                          onTap: () => context.go(Routes.program(program.id)),
-                        ),
-                      ),
-                  ],
+                // ── Search + filter ─────────────────────────────────────
+                SliverGutter(
+                  top: Insets.lg,
+                  child: ProgramsSearchBar(
+                    onChanged: (value) => setState(() => _query = value),
+                    onFilter: () => context.toast('خيارات التصفية قريباً'),
+                  ),
                 ),
-              ),
-            ),
 
-            // ── مجالات التعليم والتخصص ─────────────────────────────────
-            SliverGutter(
-              top: Insets.xl,
-              child: const SectionHeader(
-                title: 'مجالات التعليم والتخصص',
-                trailing: SourceChip(page: 5),
-              ),
-            ),
-            SliverGutter(
-              top: Insets.lg,
-              child: Wrap(
-                spacing: Insets.md,
-                runSpacing: Insets.md,
-                children: [
-                  for (final field in ProfileData.studyFields)
-                    AppPill(label: field.name),
-                ],
-              ),
-            ),
+                // ── Grid of six real study-fields ───────────────────────
+                SliverGutter(
+                  top: Insets.lg,
+                  child: visible == null
+                      ? const SkeletonBox(height: 300)
+                      : visible.isEmpty
+                          ? const _EmptyResult()
+                          : ProgramsGrid(
+                              fields: visible,
+                              onOpen: (field) => context.go(Routes.program(
+                                  _fieldTarget[field.id] ?? 'dep-literacy')),
+                            ),
+                ),
 
-            // ── فجوة موثَّقة في الملف المصدر ───────────────────────────
-            SliverGutter(top: Insets.xl, child: const _SourceGapCard()),
+                // ── Closing CTA ─────────────────────────────────────────
+                SliverGutter(
+                  top: Insets.xxl,
+                  child: ProgramsBottomCta(
+                    title: 'ابدأ رحلتك التعليمية الآن',
+                    subtitle: 'تعليم أصيل ومنهج متدرّج وتأهيل متخصص',
+                    buttonLabel: 'استكشف البرامج',
+                    onExplore: () =>
+                        context.go(Routes.program('dep-literacy')),
+                  ),
+                ),
 
-            const SliverToBoxAdapter(child: SizedBox(height: Insets.giant)),
-          ],
+                const SliverToBoxAdapter(child: SizedBox(height: Insets.giant)),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-/// Two items appear in the profile's table of contents (page 2) but have no
-/// detail page. The prototype says so rather than inventing their content.
-class _SourceGapCard extends StatelessWidget {
-  const _SourceGapCard();
+class _EmptyResult extends StatelessWidget {
+  const _EmptyResult();
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      color: context.colors.surfaceContainerLow,
-      borderColor: context.colors.outlineVariant,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: Insets.xxl),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.info_outline_rounded,
-                  size: 18, color: context.colors.onSurfaceVariant),
-              const SizedBox(width: Insets.sm),
-              Expanded(
-                child: Text('بانتظار محتوى من المؤسسة',
-                    style: context.text.titleSmall),
-              ),
-            ],
-          ),
-          const SizedBox(height: Insets.md),
-          Text(
-            'هذان القسمان مذكوران في فهرس الملف التعريفي (ص2) لكن بلا صفحة '
-            'تفصيلية، فلم يُوضع لهما محتوى:',
-            style: context.text.bodySmall,
-          ),
-          const SizedBox(height: Insets.md),
-          Wrap(
-            spacing: Insets.sm,
-            runSpacing: Insets.sm,
-            children: [
-              for (final gap in ProfileData.documentedGaps)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: Insets.md,
-                    vertical: Insets.sm,
-                  ),
-                  decoration: BoxDecoration(
-                    borderRadius: Radii.pill,
-                    border: Border.all(color: context.colors.outlineVariant),
-                  ),
-                  child: Text(gap, style: context.text.labelMedium),
-                ),
-            ],
-          ),
+          Icon(Icons.search_off_rounded,
+              size: 32, color: context.colors.onSurfaceVariant),
+          const SizedBox(height: Insets.sm),
+          Text('لا توجد نتائج مطابقة', style: context.text.bodyMedium),
         ],
       ),
     );
