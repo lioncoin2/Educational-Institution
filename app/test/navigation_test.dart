@@ -35,7 +35,22 @@ void main() {
   }
 
   /// Scrolls the target into view before tapping, the way a person would.
+  ///
+  /// Slivers below the fold are not built until they scroll into range, so
+  /// ensureVisible alone cannot reach them — it needs an existing element.
+  /// Anything not yet in the tree is scrolled to first.
   Future<void> tapAt(WidgetTester tester, Finder finder) async {
+    if (finder.evaluate().isEmpty) {
+      final scrollable = find.byType(Scrollable);
+      if (scrollable.evaluate().isNotEmpty) {
+        await tester.scrollUntilVisible(
+          finder,
+          300,
+          scrollable: scrollable.first,
+        );
+        await tester.pumpAndSettle();
+      }
+    }
     final target = finder.first;
     await tester.ensureVisible(target);
     await tester.pumpAndSettle();
@@ -45,6 +60,17 @@ void main() {
 
   Future<void> tapText(WidgetTester tester, String text) =>
       tapAt(tester, find.text(text));
+
+  /// Taps a bottom-navigation destination specifically. Screen content can
+  /// repeat a tab's label — /path renders the word "مساري" as its heading as
+  /// well — so nav taps are scoped to the NavigationBar.
+  Future<void> tapNav(WidgetTester tester, String label) => tapAt(
+        tester,
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text(label),
+        ),
+      );
 
   testWidgets('splash hands over to home on its own', (tester) async {
     await boot(tester);
@@ -103,7 +129,7 @@ void main() {
       ('حسابي', '/profile'),
       ('الرئيسية', '/home'),
     ]) {
-      await tapText(tester, label);
+      await tapNav(tester, label);
       expect(location(), path, reason: 'التبويب «$label» لم يفتح $path');
     }
   });
@@ -114,7 +140,7 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
 
-    await tapText(tester, 'مساري');
+    await tapNav(tester, 'مساري');
     expect(location(), '/path');
 
     await tapText(tester, 'قسم تجويد مبتدئ');
@@ -126,7 +152,7 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
 
-    await tapText(tester, 'الشهادات');
+    await tapNav(tester, 'الشهادات');
     expect(location(), '/certificates');
 
     await tapText(tester, 'إتمام قسم تجويد مبتدئ');
@@ -139,7 +165,7 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
 
-    await tapText(tester, 'حسابي');
+    await tapNav(tester, 'حسابي');
 
     await tapText(tester, 'تقدّمي');
     expect(location(), '/progress');
