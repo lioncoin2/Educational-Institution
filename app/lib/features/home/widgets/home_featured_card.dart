@@ -89,29 +89,34 @@ class HomeFeaturedCard extends StatelessWidget {
 class _VisualPanel extends StatelessWidget {
   const _VisualPanel();
 
+  // A replaceable prototype photo; the crop is biased toward the mushaf, which
+  // sits left of centre in the source image.
+  static const _asset = 'assets/images/featured_quran.jpg';
+
   @override
   Widget build(BuildContext context) {
-    final onBrand = context.colors.onPrimary;
-    // A warm green panel with a Quran motif — a branded placeholder for a
-    // future program photo (swap for Image.asset without touching the layout).
-    return Container(
+    return SizedBox(
       width: 116,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            context.colors.primary,
-            Color.alphaBlend(Colors.black.withValues(alpha: 0.18),
-                context.colors.primary),
-          ],
-        ),
-      ),
       child: Stack(
-        alignment: Alignment.center,
+        fit: StackFit.expand,
         children: [
-          Icon(Icons.menu_book_rounded,
-              size: 46, color: onBrand.withValues(alpha: 0.9)),
+          Image.asset(
+            _asset,
+            fit: BoxFit.cover,
+            alignment: const Alignment(-0.2, 0),
+            errorBuilder: (context, error, stack) =>
+                ColoredBox(color: context.colors.primary),
+          ),
+          // A soft bottom scrim so the cue reads over the photo.
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.center,
+                end: Alignment.bottomCenter,
+                colors: [Colors.transparent, Color(0x59000000)],
+              ),
+            ),
+          ),
           // Decorative navigation cue — the whole card is the tap target.
           Align(
             alignment: AlignmentDirectional.bottomCenter,
@@ -122,12 +127,13 @@ class _VisualPanel extends StatelessWidget {
                   width: 34,
                   height: 34,
                   decoration: BoxDecoration(
-                    color: onBrand.withValues(alpha: 0.22),
+                    color: context.colors.primary,
                     shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
                   ),
                   // Auto-mirrors under RTL to point left (the forward cue).
-                  child: Icon(Icons.arrow_forward_rounded,
-                      color: onBrand, size: 20),
+                  child: const Icon(Icons.arrow_forward_rounded,
+                      color: Colors.white, size: 18),
                 ),
               ),
             ),

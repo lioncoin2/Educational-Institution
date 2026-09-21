@@ -2,24 +2,43 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-/// A self-contained, painted golden-hour mosque scene for the Home hero
-/// background — reproducing the reference's photographic mosque *composition*
-/// (warm sky, central dome, flanking minarets, palms) without shipping or
-/// downloading any image asset, and without any external dependency.
+/// The Home hero background: a golden-hour mosque photograph
+/// (`assets/images/hero_mosque.jpg`, a replaceable prototype asset), reproducing
+/// the reference's hero composition.
 ///
-/// It is deliberately isolated so real photography can replace it in one line:
-/// swap this widget for `Image.asset('assets/images/hero_mosque.jpg',
-/// fit: BoxFit.cover)` (and register the asset in pubspec.yaml). Nothing else
-/// in [HomeHero]'s layout depends on how the background is produced.
+/// It is deliberately isolated behind this one widget: to swap the photo, drop a
+/// new file at [_asset]; nothing else in [HomeHero]'s layout changes. If the
+/// asset is ever missing, it degrades to a self-contained painted mosque scene
+/// so the hero never renders blank.
 class HomeHeroBackdrop extends StatelessWidget {
   const HomeHeroBackdrop({super.key});
+
+  static const _asset = 'assets/images/hero_mosque.jpg';
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      _asset,
+      fit: BoxFit.cover,
+      // Bias the crop toward the mosque (left of the source) so it stays
+      // prominent on portrait phones, leaving the bright sky on the text side.
+      alignment: const Alignment(-0.25, 0),
+      // The image is decorative — the hero's text carries the meaning.
+      errorBuilder: (context, error, stack) => const _PaintedFallback(),
+    );
+  }
+}
+
+/// A painted golden-hour mosque (warm sky, central dome, flanking minarets,
+/// palms), used only when the photo asset cannot be loaded.
+class _PaintedFallback extends StatelessWidget {
+  const _PaintedFallback();
 
   @override
   Widget build(BuildContext context) {
     return const SizedBox.expand(
       child: CustomPaint(
         painter: _MosquePainter(),
-        // Decorative only — the hero's text carries the accessible meaning.
         isComplex: true,
         willChange: false,
       ),
