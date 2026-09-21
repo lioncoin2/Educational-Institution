@@ -100,9 +100,16 @@ class _NotificationButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // One actionable node: the label carries the count, and excludeSemantics
+    // drops the IconButton's tooltip node and the decorative badge Text so the
+    // count is never announced twice. Pointer taps still reach the IconButton's
+    // InkWell (hit-testing is unaffected); the onTap here serves assistive tech.
     return Semantics(
-      label: count > 0 ? 'الإشعارات، $count غير مقروءة' : 'الإشعارات',
+      container: true,
       button: true,
+      excludeSemantics: true,
+      onTap: onTap,
+      label: count > 0 ? 'الإشعارات، $count غير مقروءة' : 'الإشعارات',
       child: Stack(
         clipBehavior: Clip.none,
         children: [

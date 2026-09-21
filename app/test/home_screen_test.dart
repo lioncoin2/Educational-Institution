@@ -31,11 +31,15 @@ const homeSourceFiles = [
   'lib/features/home/widgets/home_featured_card.dart',
 ];
 
-/// Content that belongs to the reference image, not this institution.
+/// Content that belongs to the reference image, not this institution. These are
+/// matched as substrings, so every entry must be text this institution never
+/// legitimately uses. The reference categories «اللغة العربية» and
+/// «العلوم الشرعية» are deliberately omitted: both are real profile content
+/// (a target group and a study field), so blocking them would false-fail on
+/// genuine data. The three category names kept here appear nowhere in lib/data.
 const forbiddenContent = [
   '12,500', '12500', '1,200', '1200', 'حلقة نشطة', 'خريج',
-  'علوم القرآن', 'العقيدة والفقه', 'اللغة العربية',
-  'العلوم الشرعية', 'المهارات الحياتية',
+  'علوم القرآن', 'العقيدة والفقه', 'المهارات الحياتية',
 ];
 
 class _FixedTextScale extends TextScaleNotifier {
@@ -285,14 +289,14 @@ void main() {
   for (final scale in const [1.0, 1.3]) {
     testWidgets('أهداف اللمس لا تقل عن 48dp — مقياس خط $scale', (tester) async {
       await openHome(tester, size: const Size(360, 690), textScale: scale);
-      final measured = <String, double>{};
+      final measured = <String, Size>{};
       void measure() {
         for (final type in const [FilledButton, TextButton, IconButton]) {
           final b = find.byType(type);
           for (var i = 0; i < b.evaluate().length; i++) {
             final size = tester.getSize(b.at(i));
             measured['$type#${size.width.toInt()}x${size.height.toInt()}'] =
-                size.height;
+                size;
           }
         }
       }
@@ -304,8 +308,17 @@ void main() {
         measure();
       }
       expect(measured, isNotEmpty);
-      measured.forEach((k, h) => expect(h, greaterThanOrEqualTo(48.0),
-          reason: '$k أصغر من 48dp'));
+      // Height is the guarantee for every target; for icon buttons the visual
+      // box IS the tap target, so width must clear 48 too (text/filled buttons
+      // stretch to their label and rely on a padded tap target instead).
+      measured.forEach((k, size) {
+        expect(size.height, greaterThanOrEqualTo(48.0),
+            reason: '$k ارتفاعه أصغر من 48dp');
+        if (k.startsWith('IconButton')) {
+          expect(size.width, greaterThanOrEqualTo(48.0),
+              reason: '$k عرضه أصغر من 48dp');
+        }
+      });
     });
   }
 

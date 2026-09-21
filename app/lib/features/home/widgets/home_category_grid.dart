@@ -126,9 +126,10 @@ class _CategoryCard extends StatelessWidget {
               '${program.halaqatCount} حلقات',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: context.text.labelSmall?.copyWith(
-                color: c.foreground.withValues(alpha: 0.85),
-              ),
+              // Full-opacity foreground: a reduced alpha drops mint/peach below
+              // the 4.5:1 AA floor. Hierarchy comes from the smaller type, and
+              // this exact colour is covered by the palette contrast test.
+              style: context.text.labelSmall?.copyWith(color: c.foreground),
             ),
           ],
         ],
