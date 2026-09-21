@@ -77,11 +77,21 @@ class PathContinueCard extends StatelessWidget {
               ),
               const SizedBox(width: Insets.xl),
               Expanded(
-                child: AppProgressBar(
-                  value: halaqa.ratio,
-                  label: 'دروس الحلقة',
-                  trailingLabel:
-                      '${halaqa.completedLessons} من ${halaqa.lessons.length}',
+                // Same treatment as the ring above. AppCard's InkWell merges
+                // this whole subtree into one semantics node, so an unwrapped
+                // ProgressIndicator would stamp role=progressBar (and its
+                // value) onto the entire card — with the CTA button nested
+                // inside it, which is invalid ARIA.
+                child: Semantics(
+                  label: 'دروس الحلقة: ${halaqa.completedLessons} '
+                      'من ${halaqa.lessons.length}',
+                  excludeSemantics: true,
+                  child: AppProgressBar(
+                    value: halaqa.ratio,
+                    label: 'دروس الحلقة',
+                    trailingLabel:
+                        '${halaqa.completedLessons} من ${halaqa.lessons.length}',
+                  ),
                 ),
               ),
             ],

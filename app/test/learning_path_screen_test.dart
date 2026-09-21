@@ -1,10 +1,12 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quran_institution_app/app/app.dart';
 import 'package:quran_institution_app/core/theme/app_colors.dart';
+import 'package:quran_institution_app/core/theme/app_theme.dart';
 import 'package:quran_institution_app/core/widgets/foundations/mock_ribbon.dart';
 import 'package:quran_institution_app/core/widgets/patterns/path_stepper.dart';
 import 'package:quran_institution_app/data/sources/profile_data.dart';
@@ -27,6 +29,16 @@ class _FixedTextScale extends TextScaleNotifier {
   @override
   double build() => value;
 }
+
+/// Every source file the redesign owns.
+const screenSourceFiles = [
+  'lib/features/learning_path/learning_path_screen.dart',
+  'lib/features/learning_path/widgets/path_palette.dart',
+  'lib/features/learning_path/widgets/path_hero_band.dart',
+  'lib/features/learning_path/widgets/path_stat_tile.dart',
+  'lib/features/learning_path/widgets/path_overview_card.dart',
+  'lib/features/learning_path/widgets/path_continue_card.dart',
+];
 
 void main() {
   late ProviderContainer container;
@@ -157,30 +169,59 @@ void main() {
     );
   });
 
-  testWidgets('لا يحتوي أي محتوى مخترَع من الصورة المرجعية', (tester) async {
-    await openPath(tester);
-    await scrollToBottom(tester);
+  /// Content that belongs to the reference image, not to this institution.
+  const forbiddenContent = [
+    '12,500',
+    '12500',
+    '1,200',
+    '1200',
+    'حلقة نشطة',
+    'خريج',
+    'علوم القرآن',
+    'العقيدة والفقه',
+    'اللغة العربية',
+    'العلوم الشرعية',
+    'المهارات الحياتية',
+  ];
 
-    // Figures and categories that belong to the reference image, not to this
-    // institution. None of them may ever appear on this screen.
-    for (final forbidden in const [
-      '12,500',
-      '12500',
-      '1,200',
-      '1200',
-      'حلقة نشطة',
-      'خريج',
-      'علوم القرآن',
-      'العقيدة والفقه',
-      'اللغة العربية',
-      'العلوم الشرعية',
-      'المهارات الحياتية',
-    ]) {
-      expect(
-        find.textContaining(forbidden),
-        findsNothing,
-        reason: 'محتوى مخترَع ظهر على الشاشة: $forbidden',
-      );
+  // The primary guard is over the SOURCE, not the render tree. A widget-tree
+  // sweep can only see what is currently built, and a lazy CustomScrollView
+  // disposes slivers as they leave the viewport — so a single check at one
+  // scroll offset silently inspects almost nothing. Reading the files also
+  // catches strings sitting behind a branch the test never renders.
+  test('ملفات الشاشة لا تحتوي أي محتوى مخترَع من الصورة المرجعية', () {
+    for (final path in screenSourceFiles) {
+      final source = File(path).readAsStringSync();
+      for (final forbidden in forbiddenContent) {
+        expect(
+          source.contains(forbidden),
+          isFalse,
+          reason: 'محتوى مخترَع في $path: $forbidden',
+        );
+      }
+    }
+  });
+
+  testWidgets('لا يظهر أي محتوى مخترَع عند أي موضع تمرير', (tester) async {
+    await openPath(tester);
+
+    // Check at every scroll offset, so each sliver is in the tree at least
+    // once during the sweep.
+    void checkVisibleTree() {
+      for (final forbidden in forbiddenContent) {
+        expect(
+          find.textContaining(forbidden),
+          findsNothing,
+          reason: 'محتوى مخترَع ظهر على الشاشة: $forbidden',
+        );
+      }
+    }
+
+    checkVisibleTree();
+    for (var i = 0; i < 10; i++) {
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -320));
+      await tester.pumpAndSettle();
+      checkVisibleTree();
     }
   });
 
@@ -189,8 +230,45 @@ void main() {
   testWidgets('يحتفظ بعلامات المصدر والبيانات التجريبية', (tester) async {
     await openPath(tester);
 
-    expect(find.byType(SourceChip), findsWidgets);
-    expect(find.byType(MockChip), findsWidgets);
+    // Scoped per container: a global findsWidgets would still pass after
+    // losing every marker but one.
+    expect(
+      find.descendant(
+        of: find.byType(PathHeroBand),
+        matching: find.byType(SourceChip),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(PathOverviewCard),
+        matching: find.byType(SourceChip),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(PathOverviewCard),
+        matching: find.byType(MockChip),
+      ),
+      findsOneWidget,
+    );
+
+    await scrollTo(tester, find.byType(PathContinueCard));
+    expect(
+      find.descendant(
+        of: find.byType(PathContinueCard),
+        matching: find.byType(SourceChip),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(PathContinueCard),
+        matching: find.byType(MockChip),
+      ),
+      findsOneWidget,
+    );
 
     await scrollTo(tester, find.byType(MockBanner));
     expect(find.byType(MockBanner), findsOneWidget);
@@ -256,18 +334,46 @@ void main() {
     testWidgets('أهداف اللمس لا تقل عن 48dp — مقياس خط $scale',
         (tester) async {
       await openPath(tester, size: const Size(360, 690), textScale: scale);
-      await scrollToBottom(tester);
 
-      for (final type in const [FilledButton, TextButton]) {
-        final buttons = find.byType(type);
-        for (var i = 0; i < buttons.evaluate().length; i++) {
-          expect(
-            tester.getSize(buttons.at(i)).height,
-            greaterThanOrEqualTo(48.0),
-            reason: '$type رقم $i أصغر من 48dp',
-          );
+      // Measure while scrolling: the three buttons live at different offsets,
+      // and measuring only at the bottom finds none of them.
+      final measured = <String, double>{};
+      void measureVisible() {
+        for (final type in const [FilledButton, TextButton]) {
+          final buttons = find.byType(type);
+          for (var i = 0; i < buttons.evaluate().length; i++) {
+            final button = buttons.at(i);
+            final labels =
+                find.descendant(of: button, matching: find.byType(Text));
+            final label = labels.evaluate().isEmpty
+                ? '$type#$i'
+                : (labels.evaluate().first.widget as Text).data ?? '$type#$i';
+            measured[label] = tester.getSize(button).height;
+          }
         }
       }
+
+      measureVisible();
+      for (var i = 0; i < 10; i++) {
+        await tester.drag(find.byType(Scrollable).first, const Offset(0, -320));
+        await tester.pumpAndSettle();
+        measureVisible();
+      }
+
+      // Every interactive control on the screen must have been reached, or the
+      // assertion below would pass by measuring nothing.
+      expect(
+        measured.keys,
+        containsAll(<String>['تابعي مسارك', 'ادخلي الحلقة', 'تفاصيل تقدّمي']),
+        reason: 'لم تُقَس كل الأزرار: ${measured.keys}',
+      );
+      measured.forEach((label, height) {
+        expect(
+          height,
+          greaterThanOrEqualTo(48.0),
+          reason: 'الزر «$label» أصغر من 48dp ($height)',
+        );
+      });
     });
   }
 
@@ -302,28 +408,49 @@ void main() {
   });
 
   test('لوحة الألوان المحصورة تشتق الأخضر من شعار المؤسسة', () {
-    final light = PathPalette.schemeOf(
-      const ColorScheme.light().copyWith(brightness: Brightness.light),
-    );
-    expect(light.primary, AppColors.accentGreen);
+    expect(PathPalette.schemeOf(AppTheme.light.colorScheme).primary,
+        AppColors.accentGreen);
+    expect(PathPalette.schemeOf(AppTheme.dark.colorScheme).primary,
+        AppColors.successDark);
+  });
 
-    final dark = PathPalette.schemeOf(
-      const ColorScheme.dark().copyWith(brightness: Brightness.dark),
-    );
-    expect(dark.primary, AppColors.successDark);
+  test('كل تباينات اللوحة المحصورة تجتاز AA في الوضعين', () {
+    for (final base in [AppTheme.light.colorScheme, AppTheme.dark.colorScheme]) {
+      final s = PathPalette.schemeOf(base);
+      final where = 'ثيم ${base.brightness}';
+
+      for (final (name, fg, bg) in [
+        ('onPrimary/primary', s.onPrimary, s.primary),
+        ('onSurface/surface', s.onSurface, s.surface),
+        ('onSurfaceVariant/surface', s.onSurfaceVariant, s.surface),
+        (
+          'onPrimaryContainer/primaryContainer',
+          s.onPrimaryContainer,
+          s.primaryContainer
+        ),
+      ]) {
+        expect(_contrast(fg, bg), greaterThanOrEqualTo(4.5),
+            reason: '$name في $where');
+      }
+
+      // Both pastel tile families, foreground on their own tint.
+      for (final tone in PathTileTone.values) {
+        final t = PathPalette.tileFor(base.brightness, tone);
+        expect(_contrast(t.foreground, t.background),
+            greaterThanOrEqualTo(4.5),
+            reason: 'بطاقة $tone في $where');
+      }
+
+      // The progress arc against its track is non-text contrast (3:1 floor).
+      expect(_contrast(s.primary, s.surfaceContainerHighest),
+          greaterThanOrEqualTo(3.0),
+          reason: 'قوس التقدّم مقابل مساره في $where');
+    }
   });
 
   // ── RTL source lint ───────────────────────────────────────────────────────
 
   test('ملفات الشاشة الجديدة لا تستخدم يمين/يسار ثابتة', () {
-    const files = [
-      'lib/features/learning_path/learning_path_screen.dart',
-      'lib/features/learning_path/widgets/path_palette.dart',
-      'lib/features/learning_path/widgets/path_hero_band.dart',
-      'lib/features/learning_path/widgets/path_stat_tile.dart',
-      'lib/features/learning_path/widgets/path_overview_card.dart',
-      'lib/features/learning_path/widgets/path_continue_card.dart',
-    ];
     const forbidden = [
       'EdgeInsets.only(left:',
       'EdgeInsets.only(right:',
@@ -337,7 +464,7 @@ void main() {
       'Positioned(right:',
       'chevron_left',
     ];
-    for (final path in files) {
+    for (final path in screenSourceFiles) {
       final source = File(path).readAsStringSync();
       for (final token in forbidden) {
         expect(
@@ -348,4 +475,20 @@ void main() {
       }
     }
   });
+}
+
+double _luminance(Color color) {
+  double channel(double v) =>
+      v <= 0.04045 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+  return 0.2126 * channel(color.r) +
+      0.7152 * channel(color.g) +
+      0.0722 * channel(color.b);
+}
+
+double _contrast(Color a, Color b) {
+  final la = _luminance(a);
+  final lb = _luminance(b);
+  final hi = la > lb ? la : lb;
+  final lo = la > lb ? lb : la;
+  return (hi + 0.05) / (lo + 0.05);
 }

@@ -100,8 +100,13 @@ abstract final class PathPalette {
   /// Tile tints. `profile` is a green blend; `mock` deliberately borrows the
   /// honesty system's own amber rather than a decorative pastel, so provenance
   /// is never mistaken for brand colour.
-  static PathTileColors tile(BuildContext context, PathTileTone tone) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
+  static PathTileColors tile(BuildContext context, PathTileTone tone) =>
+      tileFor(Theme.of(context).brightness, tone);
+
+  /// Brightness-keyed variant, so the contrast of every pairing can be
+  /// asserted without pumping a widget.
+  static PathTileColors tileFor(Brightness brightness, PathTileTone tone) {
+    final dark = brightness == Brightness.dark;
     return switch (tone) {
       PathTileTone.profile => dark
           ? const PathTileColors(
