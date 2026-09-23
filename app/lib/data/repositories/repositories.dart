@@ -4,6 +4,7 @@ import '../models/feed.dart';
 import '../models/institution.dart';
 import '../models/learning.dart';
 import '../models/messaging.dart';
+import '../models/notifications.dart';
 import '../models/progress.dart';
 import '../models/program.dart';
 import '../models/student.dart';
@@ -58,7 +59,6 @@ abstract interface class CertificateRepository {
 
 abstract interface class FeedRepository {
   Future<List<Announcement>> getAnnouncements();
-  Future<List<AppNotification>> getNotifications();
 }
 
 /// Authentication — the only way the app signs a person in or out.
@@ -158,4 +158,46 @@ abstract interface class MessagingRepository {
     String messageId,
     String fileAssetId,
   );
+}
+
+/// Notifications — the signed-in person's own inbox, preferences and push
+/// devices (`/notifications`).
+///
+/// Every method throws [NotificationsException] with the server's code on
+/// refusal. There is no way to name another account: the server scopes every
+/// call to the caller, and another person's notification is, to this API,
+/// one that does not exist.
+abstract interface class NotificationsRepository {
+  /// Newest first; pass [cursor] from the previous page to continue.
+  Future<NotificationPage> list({String? cursor, int limit = 20});
+
+  /// Counted up to 99; beyond that the server only says "more".
+  Future<UnreadCount> unreadCount();
+
+  /// Idempotent: returns the notification as stored, read.
+  Future<AppNotification> markRead(String notificationId);
+
+  /// Marks read everything up to [throughId] (the newest one the person was
+  /// looking at) — or, without it, everything until now. Returns how many.
+  Future<int> markAllRead({String? throughId});
+
+  Future<List<ChannelPreferences>> preferences();
+
+  /// Changes one category's channels; switches left null keep their value.
+  Future<List<ChannelPreferences>> updatePreferences(
+    String category, {
+    bool? inApp,
+    bool? realtime,
+    bool? push,
+  });
+
+  /// Registers this device for push, for the signed-in account. The token is
+  /// sent once and never comes back.
+  Future<RegisteredDevice> registerDevice({
+    required String platform,
+    required String provider,
+    required String token,
+  });
+
+  Future<void> unregisterDevice(String deviceId);
 }

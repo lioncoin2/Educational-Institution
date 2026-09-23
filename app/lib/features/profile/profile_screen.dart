@@ -10,11 +10,13 @@ import '../../core/widgets/foundations/app_card.dart';
 import '../../core/widgets/foundations/async_view.dart';
 import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/foundations/section_header.dart';
+import '../../core/widgets/foundations/unread_badge.dart';
 import '../../core/widgets/layout/app_screen.dart';
 import '../../core/widgets/layout/contour_background.dart';
 import '../../core/widgets/layout/responsive_body.dart';
 import '../../core/widgets/patterns/info_row.dart';
 import '../../providers/app_providers.dart';
+import '../notifications/state/unread_count_controller.dart';
 import 'widgets/about_institution_section.dart';
 
 /// The learner's account, appearance settings, and the institution's own
@@ -27,6 +29,7 @@ class ProfileScreen extends ConsumerWidget {
     final student = ref.watch(studentProvider);
     final themeMode = ref.watch(themeModeProvider);
     final textScale = ref.watch(textScaleProvider);
+    final unreadNotifications = ref.watch(unreadNotificationCountProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -125,6 +128,7 @@ class ProfileScreen extends ConsumerWidget {
                     _NavRow(
                       icon: Icons.notifications_none_rounded,
                       label: 'الإشعارات',
+                      badge: unreadNotifications,
                       onTap: () => context.push(Routes.notifications),
                     ),
                     const Divider(indent: Insets.giant),
@@ -243,20 +247,34 @@ class _NavRow extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.badge = 0,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
 
+  /// An unread count shown before the chevron (see [UnreadBadge]).
+  final int badge;
+
   @override
   Widget build(BuildContext context) {
+    final chevron = Icon(Icons.chevron_right_rounded,
+        color: context.colors.onSurfaceVariant);
     return ListTile(
       onTap: onTap,
       leading: Icon(icon, color: context.colors.primary),
       title: Text(label, style: context.text.titleSmall),
-      trailing: Icon(Icons.chevron_right_rounded,
-          color: context.colors.onSurfaceVariant),
+      trailing: badge > 0
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                UnreadBadge(count: badge),
+                const SizedBox(width: Insets.xs),
+                chevron,
+              ],
+            )
+          : chevron,
       shape: const RoundedRectangleBorder(borderRadius: Radii.brLg),
     );
   }

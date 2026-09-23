@@ -99,8 +99,4 @@ class MockFeedRepository implements FeedRepository {
   @override
   Future<List<Announcement>> getAnnouncements() =>
       _delayed(MockData.announcements());
-
-  @override
-  Future<List<AppNotification>> getNotifications() =>
-      _delayed(MockData.notifications());
 }

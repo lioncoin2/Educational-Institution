@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quran_institution_app/app/app.dart';
-import 'package:quran_institution_app/providers/app_providers.dart';
+import 'package:quran_institution_app/features/notifications/state/unread_count_controller.dart';
 
 /// Walks the student journey by tapping, exactly as a reviewer would, and
 /// asserts the router lands where it should at every step.

@@ -9,6 +9,7 @@ import '../../core/widgets/foundations/section_header.dart';
 import '../../core/widgets/layout/app_screen.dart';
 import '../../data/models/program.dart';
 import '../../providers/app_providers.dart';
+import '../notifications/state/unread_count_controller.dart';
 import 'widgets/home_category_grid.dart';
 import 'widgets/home_featured_card.dart';
 import 'widgets/home_header.dart';

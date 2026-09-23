@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../models/messaging.dart';
+import '../models/notifications.dart';
 
 /// The realtime wire protocol, version 1, as the app reads it
 /// (backend/src/modules/realtime/domain/protocol.ts).
@@ -63,6 +64,9 @@ sealed class ServerFrame {
         'message.read' => MessageReadEvent._fromJson(json),
         'participant.added' => ParticipantAddedEvent._fromJson(json),
         'participant.removed' => ParticipantRemovedEvent._fromJson(json),
+        'notification.created' => NotificationCreatedEvent._fromJson(json),
+        'notification.read' => NotificationReadEvent._fromJson(json),
+        'notification.read_all' => NotificationsReadAllEvent._fromJson(json),
         _ => null,
       };
     } on FormatException {
@@ -149,21 +153,27 @@ final class ErrorFrame extends ServerFrame {
 
 /// Something that happened, for the app's state to absorb.
 sealed class RealtimeEvent extends ServerFrame {
-  const RealtimeEvent({
-    required this.eventId,
-    required this.occurredAt,
-    required this.conversationId,
-  });
+  const RealtimeEvent({required this.eventId, required this.occurredAt});
 
   /// The same for every delivery of the same fact.
   final String eventId;
   final DateTime occurredAt;
+}
+
+/// Something that happened in one conversation.
+sealed class ConversationEvent extends RealtimeEvent {
+  const ConversationEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required this.conversationId,
+  });
+
   final String conversationId;
 }
 
 /// A conversation the viewer is in was just created — shown before anything
 /// has been said in it. No content: the list fetches what it needs.
-final class ConversationCreatedEvent extends RealtimeEvent {
+final class ConversationCreatedEvent extends ConversationEvent {
   const ConversationCreatedEvent({
     required super.eventId,
     required super.occurredAt,
@@ -185,7 +195,7 @@ final class ConversationCreatedEvent extends RealtimeEvent {
 }
 
 /// A new message — exactly as the HTTP timeline renders it.
-final class MessageSentEvent extends RealtimeEvent {
+final class MessageSentEvent extends ConversationEvent {
   const MessageSentEvent({
     required super.eventId,
     required super.occurredAt,
@@ -229,7 +239,7 @@ final class MessageSentEvent extends RealtimeEvent {
 
 /// Someone's read mark moved — in V1, only ever the viewer's own, from
 /// another of their devices.
-final class MessageReadEvent extends RealtimeEvent {
+final class MessageReadEvent extends ConversationEvent {
   const MessageReadEvent({
     required super.eventId,
     required super.occurredAt,
@@ -251,7 +261,7 @@ final class MessageReadEvent extends RealtimeEvent {
   final int lastReadSequence;
 }
 
-final class ParticipantAddedEvent extends RealtimeEvent {
+final class ParticipantAddedEvent extends ConversationEvent {
   const ParticipantAddedEvent({
     required super.eventId,
     required super.occurredAt,
@@ -273,7 +283,7 @@ final class ParticipantAddedEvent extends RealtimeEvent {
   final ParticipantRole role;
 }
 
-final class ParticipantRemovedEvent extends RealtimeEvent {
+final class ParticipantRemovedEvent extends ConversationEvent {
   const ParticipantRemovedEvent({
     required super.eventId,
     required super.occurredAt,
@@ -295,4 +305,77 @@ final class ParticipantRemovedEvent extends RealtimeEvent {
 
   /// `left`, `removed` or `moderated`.
   final String reason;
+}
+
+/// Something that happened in the viewer's own notification inbox. Only ever
+/// the viewer's: the server sends a notification to its recipient alone.
+sealed class NotificationEvent extends RealtimeEvent {
+  const NotificationEvent({required super.eventId, required super.occurredAt});
+}
+
+/// A new notification — exactly as the HTTP inbox renders it.
+final class NotificationCreatedEvent extends NotificationEvent {
+  const NotificationCreatedEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required this.notification,
+  });
+
+  factory NotificationCreatedEvent._fromJson(Map<String, Object?> json) =>
+      NotificationCreatedEvent(
+        eventId: json['eventId']! as String,
+        occurredAt: DateTime.parse(json['occurredAt']! as String),
+        notification: AppNotification.fromJson(
+          (json['notification']! as Map).cast<String, Object?>(),
+        ),
+      );
+
+  final AppNotification notification;
+}
+
+/// One notification was read — on another of the viewer's devices.
+final class NotificationReadEvent extends NotificationEvent {
+  const NotificationReadEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required this.notificationId,
+    required this.readAt,
+  });
+
+  factory NotificationReadEvent._fromJson(Map<String, Object?> json) =>
+      NotificationReadEvent(
+        eventId: json['eventId']! as String,
+        occurredAt: DateTime.parse(json['occurredAt']! as String),
+        notificationId: json['notificationId']! as String,
+        readAt: DateTime.parse(json['readAt']! as String),
+      );
+
+  final String notificationId;
+  final DateTime readAt;
+}
+
+/// Everything up to a point was marked read — on another of the viewer's
+/// devices: every notification created before [throughCreatedAt], and those
+/// created at it with an id up to [throughId] (all of them when null).
+final class NotificationsReadAllEvent extends NotificationEvent {
+  const NotificationsReadAllEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required this.throughCreatedAt,
+    required this.readAt,
+    this.throughId,
+  });
+
+  factory NotificationsReadAllEvent._fromJson(Map<String, Object?> json) =>
+      NotificationsReadAllEvent(
+        eventId: json['eventId']! as String,
+        occurredAt: DateTime.parse(json['occurredAt']! as String),
+        throughCreatedAt: DateTime.parse(json['throughCreatedAt']! as String),
+        throughId: json['throughId'] as String?,
+        readAt: DateTime.parse(json['readAt']! as String),
+      );
+
+  final DateTime throughCreatedAt;
+  final String? throughId;
+  final DateTime readAt;
 }

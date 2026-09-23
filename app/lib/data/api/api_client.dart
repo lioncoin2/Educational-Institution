@@ -101,6 +101,9 @@ class ApiClient {
     bool authenticated = true,
   }) => _json('POST', path, body: body, authenticated: authenticated);
 
+  Future<Map<String, Object?>> patch(String path, {Object? body}) =>
+      _json('PATCH', path, body: body);
+
   Future<Map<String, Object?>> delete(String path) => _json('DELETE', path);
 
   /// PUTs raw bytes to a signed upload URL. No bearer token: the URL's

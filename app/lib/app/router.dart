@@ -13,6 +13,7 @@ import '../features/learning_path/program_levels_screen.dart';
 import '../features/lesson/lesson_screen.dart';
 import '../features/messaging/conversation_screen.dart';
 import '../features/messaging/conversations_screen.dart';
+import '../features/notifications/notification_settings_screen.dart';
 import '../features/notifications/notifications_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/programs/program_detail_screen.dart';
@@ -42,6 +43,14 @@ GoRouter buildRouter() {
         name: 'notifications',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const NotificationsScreen(),
+        routes: [
+          GoRoute(
+            path: 'settings',
+            name: 'notification-settings',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) => const NotificationSettingsScreen(),
+          ),
+        ],
       ),
       GoRoute(
         path: Routes.announcements,

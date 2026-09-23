@@ -8,6 +8,7 @@ import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/foundations/async_view.dart';
 import '../../core/widgets/layout/app_screen.dart';
 import '../../providers/app_providers.dart';
+import '../notifications/state/unread_count_controller.dart';
 import '../home/widgets/home_palette.dart';
 import 'widgets/programs_bottom_cta.dart';
 import 'widgets/programs_grid.dart';

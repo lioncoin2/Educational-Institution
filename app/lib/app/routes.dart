@@ -9,6 +9,7 @@ abstract final class Routes {
   static const String profile = '/profile';
   static const String progress = '/progress';
   static const String notifications = '/notifications';
+  static const String notificationSettings = '/notifications/settings';
   static const String announcements = '/announcements';
   static const String messages = '/messages';
   static const String signIn = '/sign-in';

@@ -1,36 +1,39 @@
 import 'package:flutter/material.dart';
 
-import '../../../data/models/feed.dart';
 import '../../extensions/context_ext.dart';
 import '../../theme/app_tokens.dart';
 import '../foundations/app_card.dart';
 
+/// One notification in a list: what kind (icon), what it says, when, and
+/// whether it is unread. Presentational only — the screen decides the words
+/// (from the notification's keys) and what a tap does.
 class NotificationTile extends StatelessWidget {
   const NotificationTile({
     super.key,
-    required this.notification,
+    required this.icon,
+    required this.title,
+    required this.body,
+    required this.timeLabel,
+    required this.isRead,
     this.onTap,
   });
 
-  final AppNotification notification;
+  final IconData icon;
+  final String title;
+  final String body;
+  final String timeLabel;
+  final bool isRead;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final icon = switch (notification.kind) {
-      NotificationKind.halaqa => Icons.groups_2_outlined,
-      NotificationKind.lesson => Icons.play_lesson_outlined,
-      NotificationKind.certificate => Icons.workspace_premium_outlined,
-      NotificationKind.announcement => Icons.campaign_outlined,
-    };
-
     return AppCard(
       onTap: onTap,
-      color: notification.isRead
+      color: isRead
           ? context.colors.surfaceContainerLow
           : context.colors.surfaceContainerLowest,
       padding: const EdgeInsets.all(Insets.md),
-      semanticLabel: notification.title,
+      semanticLabel: isRead ? '$title. $body' : 'غير مقروء. $title. $body',
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -38,7 +41,7 @@ class NotificationTile extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: notification.isRead
+              color: isRead
                   ? context.colors.surfaceContainerHigh
                   : context.colors.primaryContainer,
               borderRadius: Radii.brMd,
@@ -46,7 +49,7 @@ class NotificationTile extends StatelessWidget {
             child: Icon(
               icon,
               size: 20,
-              color: notification.isRead
+              color: isRead
                   ? context.colors.onSurfaceVariant
                   : context.colors.onPrimaryContainer,
             ),
@@ -60,16 +63,17 @@ class NotificationTile extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        notification.title,
+                        title,
                         style: context.text.titleSmall?.copyWith(
-                          fontWeight: notification.isRead
+                          fontWeight: isRead
                               ? FontWeight.w500
                               : FontWeight.w700,
                         ),
                       ),
                     ),
-                    if (!notification.isRead)
+                    if (!isRead)
                       Container(
+                        key: const ValueKey('unread-dot'),
                         width: 8,
                         height: 8,
                         decoration: BoxDecoration(
@@ -80,9 +84,9 @@ class NotificationTile extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: Insets.xs),
-                Text(notification.body, style: context.text.bodySmall),
+                Text(body, style: context.text.bodySmall),
                 const SizedBox(height: Insets.sm),
-                Text(notification.timeLabel, style: context.text.labelSmall),
+                Text(timeLabel, style: context.text.labelSmall),
               ],
             ),
           ),

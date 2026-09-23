@@ -291,7 +291,9 @@ class ConversationController extends AsyncNotifier<ConversationState> {
   // ── The live connection ─────────────────────────────────────────────────
 
   void _onEvent(RealtimeEvent event) {
-    if (event.conversationId != conversationId) return;
+    if (event is! ConversationEvent || event.conversationId != conversationId) {
+      return;
+    }
     final current = state.value;
     // Loading: the page, then _sync, cover it. Removed: nothing more of it.
     if (current == null || current.removed) return;

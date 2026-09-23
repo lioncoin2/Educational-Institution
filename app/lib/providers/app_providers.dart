@@ -17,12 +17,15 @@ import '../data/models/learning.dart';
 import '../data/models/progress.dart';
 import '../data/models/program.dart';
 import '../data/models/student.dart';
+import '../data/push/push_seams.dart';
 import '../data/realtime/realtime_client.dart';
 import '../data/realtime/websocket_realtime_client.dart';
 import '../data/repositories/http/http_auth_repository.dart';
 import '../data/repositories/http/http_messaging_repository.dart';
+import '../data/repositories/http/http_notifications_repository.dart';
 import '../data/repositories/mock/mock_auth_repository.dart';
 import '../data/repositories/mock/mock_messaging_repository.dart';
+import '../data/repositories/mock/mock_notifications_repository.dart';
 import '../data/repositories/mock/mock_repositories.dart';
 import '../data/repositories/repositories.dart';
 
@@ -142,6 +145,25 @@ final StreamProvider<RealtimeStatus> realtimeStatusProvider =
       yield* client.statuses;
     });
 
+// ── Notifications ──────────────────────────────────────────────────────────
+// The inbox, its badge and its preferences live in
+// features/notifications/state; these are the seams under them.
+
+final notificationsRepositoryProvider = Provider<NotificationsRepository>(
+  (ref) => BackendConfig.isConfigured
+      ? HttpNotificationsRepository(ref.watch(apiClientProvider))
+      : MockNotificationsRepository(),
+);
+
+/// Where this device's push token comes from — nowhere yet (see
+/// push_seams.dart): no push plugin is installed.
+final pushTokenSourceProvider = Provider<PushTokenSource>(
+  (ref) => const UnavailablePushTokenSource(),
+);
+
+/// "Now", for relative times ("قبل 5 دقائق") — a provider so tests can fix it.
+final clockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
+
 /// Device capabilities, unbound in this milestone (see media_seams.dart).
 final attachmentPickerProvider = Provider<AttachmentPicker>(
   (ref) => const UnavailableAttachmentPicker(),
@@ -226,40 +248,6 @@ final certificateProvider = FutureProvider.family<Certificate?, String>(
 final announcementsProvider = FutureProvider<List<Announcement>>(
   (ref) => ref.watch(feedRepositoryProvider).getAnnouncements(),
 );
-
-/// Notifications keep a little local state so "mark as read" feels real in the
-/// prototype. Nothing is persisted — a reload restores the seeded list.
-class NotificationsNotifier extends AsyncNotifier<List<AppNotification>> {
-  @override
-  Future<List<AppNotification>> build() =>
-      ref.watch(feedRepositoryProvider).getNotifications();
-
-  void markAllRead() {
-    final current = state.value;
-    if (current == null) return;
-    state = AsyncData([
-      for (final n in current) n.copyWith(isRead: true),
-    ]);
-  }
-
-  void markRead(String id) {
-    final current = state.value;
-    if (current == null) return;
-    state = AsyncData([
-      for (final n in current) n.id == id ? n.copyWith(isRead: true) : n,
-    ]);
-  }
-}
-
-final notificationsProvider =
-    AsyncNotifierProvider<NotificationsNotifier, List<AppNotification>>(
-  NotificationsNotifier.new,
-);
-
-final unreadNotificationCountProvider = Provider<int>((ref) {
-  final list = ref.watch(notificationsProvider).value ?? const [];
-  return list.where((n) => !n.isRead).length;
-});
 
 // ── Appearance ─────────────────────────────────────────────────────────────
 

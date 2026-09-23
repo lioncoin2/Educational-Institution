@@ -420,48 +420,4 @@ abstract final class MockData {
           channels: ['وسائل التواصل الاجتماعي'],
         ),
       ];
-
-  // ── Notifications ────────────────────────────────────────────────────────
-  static List<AppNotification> notifications() => const [
-        AppNotification(
-          id: 'n1',
-          kind: NotificationKind.halaqa,
-          title: 'حلقتك تبدأ بعد ساعة',
-          body: 'الحلقة الخامسة · قسم تجويد متوسط · مع أ. خديجة',
-          timeLabel: 'قبل 10 دقائق',
-          isRead: false,
-        ),
-        AppNotification(
-          id: 'n2',
-          kind: NotificationKind.lesson,
-          title: 'درس جديد متاح',
-          body: 'التجويد: تطبيق على المقطع — الحلقة الخامسة',
-          timeLabel: 'اليوم · 9:20 صباحاً',
-          isRead: false,
-        ),
-        AppNotification(
-          id: 'n3',
-          kind: NotificationKind.certificate,
-          title: 'شهادتك جاهزة',
-          body: 'شهادة تقدير على الانتظام في الحضور',
-          timeLabel: 'أمس',
-          isRead: false,
-        ),
-        AppNotification(
-          id: 'n4',
-          kind: NotificationKind.announcement,
-          title: 'إعلان من قسم الإعلام',
-          body: 'فتح التسجيل في قسم التهجي',
-          timeLabel: 'قبل يومين',
-          isRead: true,
-        ),
-        AppNotification(
-          id: 'n5',
-          kind: NotificationKind.halaqa,
-          title: 'تم تسجيل حضورك',
-          body: 'جلسة الأحد · 5:00 مساءً',
-          timeLabel: 'قبل 3 أيام',
-          isRead: true,
-        ),
-      ];
 }

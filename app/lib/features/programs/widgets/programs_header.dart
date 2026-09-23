@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/extensions/context_ext.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/foundations/unread_badge.dart';
 
 /// The centered Programs identity with a notification bell and a profile button
 /// in the corners — the reference's header composition.
@@ -99,8 +100,9 @@ class _CircleButton extends StatelessWidget {
   }
 }
 
-/// The bell with a small unread dot. One actionable semantics node: the label
-/// carries the count and excludeSemantics drops the decorative dot and tooltip.
+/// The bell with its unread count (0: none, 1–99, then "99+"). One
+/// actionable semantics node: the label carries the count and
+/// excludeSemantics drops the decorative badge and tooltip.
 class _NotificationButton extends StatelessWidget {
   const _NotificationButton({required this.count, required this.onTap});
 
@@ -114,7 +116,11 @@ class _NotificationButton extends StatelessWidget {
       button: true,
       excludeSemantics: true,
       onTap: onTap,
-      label: count > 0 ? 'الإشعارات، $count غير مقروءة' : 'الإشعارات',
+      label: count <= 0
+          ? 'الإشعارات'
+          : count > 99
+          ? 'الإشعارات، أكثر من 99 غير مقروءة'
+          : 'الإشعارات، $count غير مقروءة',
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -133,20 +139,9 @@ class _NotificationButton extends StatelessWidget {
           ),
           if (count > 0)
             PositionedDirectional(
-              end: 8,
-              top: 8,
-              child: Container(
-                width: 11,
-                height: 11,
-                decoration: BoxDecoration(
-                  color: context.colors.error,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: context.colors.surfaceContainerLowest,
-                    width: 1.5,
-                  ),
-                ),
-              ),
+              end: 2,
+              top: 2,
+              child: UnreadBadge(count: count),
             ),
         ],
       ),

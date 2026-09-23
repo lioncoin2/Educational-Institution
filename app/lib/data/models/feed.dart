@@ -37,35 +37,3 @@ class Announcement implements Sourced {
   @override
   DataOrigin get origin => DataOrigin.mock;
 }
-
-enum NotificationKind { halaqa, lesson, certificate, announcement }
-
-class AppNotification implements Sourced {
-  const AppNotification({
-    required this.id,
-    required this.kind,
-    required this.title,
-    required this.body,
-    required this.timeLabel,
-    required this.isRead,
-  });
-
-  final String id;
-  final NotificationKind kind;
-  final String title;
-  final String body;
-  final String timeLabel;
-  final bool isRead;
-
-  AppNotification copyWith({bool? isRead}) => AppNotification(
-        id: id,
-        kind: kind,
-        title: title,
-        body: body,
-        timeLabel: timeLabel,
-        isRead: isRead ?? this.isRead,
-      );
-
-  @override
-  DataOrigin get origin => DataOrigin.mock;
-}
