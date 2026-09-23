@@ -158,6 +158,8 @@ export class EnrollStudentUseCase {
  * what either requires is its policy (Q30), not a rule here. The record
  * stays, as history. Ending it the same way again is a harmless retry;
  * ending it another way is refused rather than rewriting what happened.
+ * Neither outcome describes a move (placement correction, support, ضخ,
+ * merge): Q37. A move is not recorded through this until that is answered.
  */
 @Injectable()
 export class EndEnrollmentUseCase {

@@ -101,7 +101,8 @@ which teachers teach it — with history.
 structure; enroll a student and end the enrollment; assign a teacher and end
 the assignment; read a halaqa's students and teachers (resource-scoped);
 read someone's history (administrators); read one's own record; seed the
-structure from the institution profile.
+structure from the printed institution profile (provisional — see
+[academic-reconciliation.md](academic-reconciliation.md)).
 
 **Public contract.** `ACADEMIC_RELATIONSHIPS` — `isEnrolled`, `isTeaching`,
 `activeStudentIds` — plus the vocabulary (`SectionKind`, statuses, roles) and

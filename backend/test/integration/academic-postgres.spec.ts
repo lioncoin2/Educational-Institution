@@ -427,9 +427,13 @@ describeWithPostgres('academic on Postgres', () => {
       expect(outcomes.filter((o) => o.kind === 'created')).toHaveLength(3);
       expect(outcomes.filter((o) => o.kind === 'limit_reached')).toHaveLength(5);
 
-      const [program] = await rows<{ id: ProgramId }>(
-        sql`select id from academic_programs where code = 'contended-0'`,
+      // Which three of the eight won the race is not fixed, so take one that
+      // exists rather than assuming `contended-0` was among them.
+      const created = await rows<{ id: ProgramId }>(
+        sql`select id from academic_programs where section_id = ${section.value.id} order by code`,
       );
+      expect(created).toHaveLength(3);
+      const [program] = created;
       const sameCode = await Promise.all(
         Array.from({ length: 6 }, () => {
           const halaqa = createHalaqa({

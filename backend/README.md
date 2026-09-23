@@ -43,7 +43,7 @@ With Postgres:
 ```bash
 export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/institution
 npm run db:migrate
-npm run build && npm run academic:seed-structure   # the institution's sections, programs and 45 halaqat
+npm run build && npm run academic:seed-structure   # the printed profile's sections, programs and 45 halaqat (see the hold below)
 npm run start:dev
 ```
 
@@ -56,6 +56,15 @@ and prints what it created and found. Run it once after migrating, and again
 safely at any time. It creates no student, teacher, enrollment or progress.
 Without a database the in-memory store is seeded at boot. See
 [academic.md §11](../docs/architecture/academic.md).
+
+**Hold: do not run it against a production or shared database yet.** The
+file holds the *printed* profile's structure, and the owner has since
+described a different one. That description is not yet mapped
+([owner-information.md](../docs/owner-information.md), open questions
+Q35–Q39). Seeding makes the codes, `sec-spelling`'s kind and literacy's five
+halaqat permanent, and later edits to the file do not update existing rows.
+Development and scratch databases are fine. See
+[academic-reconciliation.md §14](../docs/architecture/academic-reconciliation.md#14-hazards-and-operating-rules-while-the-reconciliation-is-open).
 
 There is **no seeded account and no default password.** The system starts with
 zero users, on purpose. Create the first owner on the server — the password is

@@ -7,7 +7,8 @@
  */
 
 /**
- * What kind of area a section is — as the institution profile groups them:
+ * What kind of area a section is — as the printed institution profile groups
+ * them (the owner's seven core sections are not yet mapped onto these: Q35):
  *
  *   PROGRESSIVE    the graded sections of profile page 6 (محو الأمية … تجويد متقدم)
  *   SPECIAL        the sections with their own pages: التهجي، البراعم، اللغات (pp. 7–9)
@@ -34,7 +35,13 @@ export type StructureStatus = (typeof STRUCTURE_STATUSES)[number];
 export const ENROLLMENT_STATUSES = ['ACTIVE', 'COMPLETED', 'WITHDRAWN'] as const;
 export type EnrollmentStatus = (typeof ENROLLMENT_STATUSES)[number];
 
-/** How an enrollment may end. */
+/**
+ * How an enrollment may end. Provisional (Q30), and known NOT to cover every
+ * ending the institution describes: a placement correction, a support move, a
+ * move under «نظام الضخ بين الأقسام» or a merge is neither (Q37). An ended
+ * outcome is never rewritten, so those moves are not recorded as either one
+ * until Q37 is answered.
+ */
 export const ENROLLMENT_OUTCOMES = ['COMPLETED', 'WITHDRAWN'] as const;
 export type EnrollmentOutcome = (typeof ENROLLMENT_OUTCOMES)[number];
 

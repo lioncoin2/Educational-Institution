@@ -110,7 +110,10 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
      *
      * `academic.study`: eligible to be enrolled in a halaqa. Only students
      * hold it (besides OWNER and ADMIN, which hold everything they grant); a
-     * staff member who also studies holds the STUDENT role as well (Q30).
+     * staff member who also studies holds the STUDENT role as well — roles
+     * combine, so that narrows nothing. Whether teacher-preparation trainees
+     * (a core flow in the owner's description) are students, serving staff
+     * or both is open (Q30, Q38).
      */
     [Roles.student]: [
       Permissions.academic.read,

@@ -1,10 +1,15 @@
 import structure from './institution-structure.json';
 
 /**
- * The institution's academic structure as its profile states it — read from
- * `institution-structure.json`, the one copy of those facts in the codebase.
- * The Flutter app's `ProfileData` is held to the same file by a test, so the
- * two cannot drift apart unnoticed.
+ * The institution's academic structure as its printed profile states it — read
+ * from `institution-structure.json`, the one copy of those facts in the
+ * codebase. The Flutter app's `ProfileData` is held to the same file by a test,
+ * so the two cannot drift apart unnoticed.
+ *
+ * Provisional: the owner's later description (seven core sections, 10 basic
+ * halaqat each, مدينة التهجي) differs and is not yet mapped onto it — see
+ * `docs/owner-information.md` and open questions Q35–Q39. Nothing here encodes
+ * the owner's statements.
  */
 export interface ProfileProgram {
   readonly code: string;

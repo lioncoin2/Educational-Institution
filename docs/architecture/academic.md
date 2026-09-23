@@ -12,6 +12,23 @@ without changing them. Nothing in V1 grades, schedules, promotes or completes
 anyone: the institution has not said how, and none of it is invented
 ([§15](#15-unresolved-academic-policies)).
 
+> **Reconciliation open (2026-09-23).** After V1 was finished, the owner
+> described the academic organisation differently from the printed profile
+> this module was built from. The owner gave seven core sections, 10 basic
+> halaqat each plus additional ones, assessment and placement, «نظام الضخ
+> بين الأقسام», مدينة التهجي with 40 groups, and a development path up to
+> teacher preparation and leadership. Those statements are recorded,
+> unmapped, in [owner-information.md](../owner-information.md). The audit is
+> [academic-reconciliation.md](academic-reconciliation.md), and the
+> questions are Q35–Q39.
+>
+> **Nothing below has changed because of it.** Read the seeded structure
+> (9 sections, 9 programs, 45 halaqat) as *the printed profile's structure,
+> provisional*, not as the institution's confirmed one. Follow the operating
+> rules in [§18](#18-operating-rules-while-the-reconciliation-is-open). Do not
+> start Assignments, Attendance, Progress or Promotion until the
+> reconciliation has been reviewed.
+
 ---
 
 ## 1. Terminology
@@ -22,9 +39,9 @@ column; the app shows the Arabic one.
 | Arabic | Code | What it is |
 | --- | --- | --- |
 | قسم | `Section` | A top-level educational area of the institution (page 6–10 of the profile) |
-| الأقسام المتدرجة | `PROGRESSIVE` | The five graded sections of page 6 — مساري's ladder |
+| الأقسام المتدرجة | `PROGRESSIVE` | The five graded sections of page 6, which مساري draws as its ladder. That is a display choice: no sequence is decided (Q29), and the owner's seven core sections are not yet mapped onto them (Q35) |
 | الأقسام الخاصة | `SPECIAL` | التهجي، البراعم، اللغات (pages 7–9) |
-| البرامج المرافقة | `ACCOMPANYING` | The page-10 group: مدينة الحفاظ، علوم النحو، المقارئ، المتون |
+| البرامج المرافقة | `ACCOMPANYING` | The page-10 group: مدينة الحفاظ، علوم النحو، المقارئ، المتون. The section row holding them is an engineering container, because programs need a parent (Q39) |
 | برنامج | `Program` | An educational offering inside one section |
 | حلقة / حلقات | `Halaqa` / `halaqat` | The group students are enrolled in and teachers teach |
 | تسجيل | `Enrollment` | A student in a halaqa, over a period of time |
@@ -33,6 +50,11 @@ column; the app shows the Arabic one.
 
 "Halaqa" is never a teacher's class list or a chat group: messaging's groups
 are messaging's. A halaqa is academic's, and other modules refer to it by id.
+
+"Placement" in the code (`Placement`, "where an enrollment sits") means a
+halaqa's position in the structure. It does **not** mean the institution's
+placement decision after an assessment (التسكين), which is not modelled
+(Q37).
 
 ---
 
@@ -99,6 +121,11 @@ Every transition is an explicit, named operation — there is no "set status".
 - **Account state is not academic state.** Suspending an account does not end
   its enrollments; restoring it finds them where they were. Only an ACTIVE
   account can be newly enrolled or assigned.
+- **The two endings are provisional and known to be incomplete.** COMPLETED
+  and WITHDRAWN do not describe a placement correction, a support move, a ضخ
+  move or a merge. The owner describes all four (Q37). Because an outcome can
+  never be rewritten, those moves are not recorded in real data as either
+  ending until Q37 is answered.
 
 ---
 
@@ -154,7 +181,18 @@ enrollable is recorded as part of Q30.
 A teacher's access ends the moment their assignment ends, and also when their
 account no longer holds `academic.teach`: an assignment alone is not enough.
 Supervisors see no rosters — what they may see is not decided (Q31). An
-unknown halaqa is 404 to everyone; a known one the caller may not read is 403
+assigned teacher's roster includes the halaqa's **ended** enrollments (by
+status filter), even from before their assignment; Q31 asks whether that is
+intended.
+
+Identity's provisional matrix gives SUPERVISOR unscoped `attendance.read`,
+`assignments.read` and `reports.read`, and TEACHER unscoped
+`attendance.manage` and `assignments.manage`. The modules that will use
+those grants must scope them through `ACADEMIC_RELATIONSHIPS`, or they
+bypass this boundary. That is a precondition for Attendance and Assignments
+([reconciliation §13](academic-reconciliation.md#13-minimal-recommended-changes-before-the-next-milestone)).
+
+An unknown halaqa is 404 to everyone; a known one the caller may not read is 403
 (its existence is public — the catalogue lists it).
 
 Every route declares its permission (`@RequirePermission`); an architecture
@@ -279,10 +317,23 @@ imports identity's, messaging's, notifications' or files' (architecture test).
 
 ## 11. Seeding the institution's structure
 
-**One source.** `backend/src/modules/academic/application/institution-structure.json`
-is the structure as the profile states it. The seed reads it; the app's
-`ProfileData` and its demo repository are held to it by
+**One file, one source.** `backend/src/modules/academic/application/institution-structure.json`
+is the structure **as the printed profile states it**. The seed reads it; the
+app's `ProfileData` and its demo repository are held to it by
 `app/test/academic/profile_structure_test.dart`, so the two cannot drift.
+
+**It is provisional, and it differs from the owner's later description**
+(Q35, Q36, Q39):
+
+- the owner names seven core sections that do not map one-to-one onto these;
+- the owner says 10 basic halaqat per section, where literacy has 5 here;
+- the owner makes Tahajji a core section with halaqat, where here it is
+  SPECIAL and empty.
+
+The file is not edited until the owner answers. It then changes only through
+an ADR recording each code→name decision, with owner-sourced entries marked
+as such. Owner wording never goes into `pdf-content-extract.md`: the seed's
+provenance test matches names anywhere in that file.
 
 **What it holds — and nothing more:**
 
@@ -304,7 +355,10 @@ state them as structure:** no student, teacher, enrollment, assignment,
 progress or description; البراعم's three levels, النحو's five levels and
 the five languages are not turned into programs or halaqat; التهجي's
 "استيعاب 40 مجموعة" is not turned into 40 halaqat; the six study fields
-(page 5) are not linked to any program.
+(page 5) are not linked to any program. Pages 11–13 (media, cadre
+development, certificates) are departments or services, not academic
+structure. The `accompanying` row is an engineering container, not a
+profile section.
 
 **How it runs.** Seeding is an explicit, idempotent bootstrap step, not a
 schema migration — the structure is institutional data that administrators
@@ -319,6 +373,27 @@ will change:
   seeded at boot, so the app has the structure out of the box.
 
 Every created row is audited (`source: institution-profile`) and announced.
+
+**Hold.** Until Q35 and Q36 are answered, do not run
+`academic:seed-structure` against a production or shared database. The
+reason is what the seed makes permanent:
+
+- the codes;
+- `sec-spelling`'s SPECIAL kind, which the API cannot change;
+- literacy's `-h1…h5`.
+
+Later edits to the file do not update rows that already exist. Names can be
+patched at any time. (CI runs the seed use case only against a scratch
+Postgres.)
+
+Two limits of the seed matter for the answers:
+
+- It derives halaqa codes from the **section**, so it cannot express two
+  halaqa-bearing programs in one section.
+- It adopts an existing seed-style halaqa code under any program without
+  checking the parent.
+
+Both are fixed together with the first owner-sourced entries.
 
 ---
 
@@ -361,7 +436,12 @@ workspace and notifications will ask it instead of reading academic's tables:
   in enrollment order, at most 1,000 a page.
 
 It says nothing about account state: whether an account may sign in is
-identity's question, asked separately.
+identity's question, asked separately. **Nor does it say anything about the
+structure's state.** `isTeaching` and `isEnrolled` read ACTIVE relationships
+regardless of whether the halaqa, its program or its section is INACTIVE.
+Assignments survive a halaqa's closure (Q32). A module that must not act on a
+closed halaqa checks the structure itself. It must not read `isTeaching` as
+"this halaqa is running", and must not settle Q32 by default.
 
 ---
 
@@ -399,6 +479,18 @@ screens → providers → CatalogRepository · LearningRepository · Institution
 - **Read-only.** The app offers no enrollment, assignment or structure
   editing — those are staff acts, and self-enrollment is not the
   institution's stated policy.
+- **Placeholders, not rules.** None of the following is a specification for
+  Progress or Promotion (Q29, Q9):
+  - the demo's locked ladder («يفتح بعد إتمام ما قبله», «متاح», «4 من 10»);
+  - the "levels" wording (`/programs/:id/levels/…`, «المسار والمستويات»);
+  - the sample certificates «إتمام قسم …», which are mock in both modes.
+
+  The demo is published to GitHub Pages from this branch on every push.
+- **One list per section.** A section's halaqat are shown as one list across
+  its programs, and route ids resolve across section and program codes. Until
+  the app groups halaqat by program, a section has at most one
+  halaqa-bearing program, and every code is unique across both tables
+  ([§18](#18-operating-rules-while-the-reconciliation-is-open)).
 - **Defensive parsing.** An unknown kind, status or role is kept as unknown
   and never shown as open, active or current; an unreadable item is skipped.
 - **Errors surface.** Academic reads are not retried silently; the screen
@@ -419,6 +511,11 @@ Provisional defaults make V1 executable; each is labelled and listed in
 | Q32 | Who may deactivate structure, and what happens to its assignments and enrollments? | OWNER and ADMIN; enrollments must be ended first; assignments untouched |
 | Q33 | How is the structure really organised inside a section, and what are halaqat called? | one program per progressive section, named after it; halaqat by number |
 | Q34 | Page 8's disputed word | no description seeded; the app's existing text unchanged |
+| Q35 | The owner's seven core sections against the printed profile: mapping, literacy 5 or 10, basic vs additional halaqat, display order, names | the printed profile's 9 / 9 / 45, unchanged, labelled provisional; seed held |
+| Q36 | Tahajji: دورة التهجي وإعداد المعلمات, مدينة التهجي (A or B), the 40 groups, intakes | `sec-spelling` SPECIAL and empty; the 40 groups are profile text only |
+| Q37 | Assessment, placement, strengthening, نظام الضخ: the ending of a moved enrollment, and the link between enrollments | nothing modelled; moves are not recorded as COMPLETED/WITHDRAWN in real data |
+| Q38 | The development path, teacher preparation, trainees, leadership, supervision scope | trainees need the STUDENT role; no path entity; supervisors see no roster |
+| Q39 | البراعم, اللغات, the accompanying programs, page 4's audiences | seeded and ACTIVE, unchanged; silence is not removal |
 
 ---
 
@@ -450,3 +547,29 @@ sign-in, unknown statuses), and source boundaries.
   (marked current) but not on مساري's ladder, which is the page-6 ladder.
 - Multilingual names (Q11): one `name` column each, Arabic as the profile
   states it.
+
+---
+
+## 18. Operating rules while the reconciliation is open
+
+Until Q35–Q39 are answered and recorded in an ADR, the following hold. The
+reasons are in
+[academic-reconciliation.md §14](academic-reconciliation.md#14-hazards-and-operating-rules-while-the-reconciliation-is-open).
+
+1. Do not run `academic:seed-structure` against a production or shared
+   database.
+2. Do not record placement corrections, support moves, ضخ moves, merges or
+   closures as COMPLETED or WITHDRAWN in real data.
+3. Do not open real halaqat through the API with seed-style codes
+   (`<section>-h<n>`).
+4. Do not create a second halaqa-bearing program inside a PROGRESSIVE or
+   SPECIAL section.
+5. Keep every new code unique across sections **and** programs.
+6. Never move halaqat between programs. Settle levels inside a section before
+   real enrollments exist.
+7. Never change a section's kind by data migration.
+8. Before any rename or retirement through the API, record the code→name
+   decision, with its date and source. The audit trail keeps field names,
+   not values.
+9. Modules consuming `ACADEMIC_RELATIONSHIPS` check the structure's status
+   themselves, and scope their SUPERVISOR and TEACHER grants through it.

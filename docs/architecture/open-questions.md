@@ -189,10 +189,18 @@ named person? What evidence must exist? Can one be revoked?
 Its issuance rule is the institution's to state.
 
 **Built instead.** Nothing. The prototype displays certificates; no issuance
-logic exists on the backend.
+logic exists on the backend. The app's certificates are **mock data in both
+modes**: `certificateRepositoryProvider` is always the mock one. Their titles
+(«إتمام قسم محو الأمية / تلقين الحروف / تجويد مبتدئ») imply that a *section*
+is completed, and completed in page-6 order. That is a placeholder, not a
+rule. Page 13 of the profile speaks of passing «البرامج و الدورات» «وفق
+معايير و ضوابط معتمدة» and states no criteria. The owner's information of
+2026-09-23 (mastery, progression) bears on this; see
+[Q37](#q37--moving-between-halaqat-and-sections-assessment-placement-strengthening-نظام-الضخ)
+and [Q38](#q38--the-development-path-teacher-preparation-and-who-trains).
 
 **When answered.** A `certificates` module, or a slice of `academic`. Nothing
-existing changes.
+existing changes, apart from the mock titles and the backend-mode wiring.
 
 ---
 
@@ -252,6 +260,17 @@ everywhere rather than `new Date()` being called. No recurrence model exists
 yet, so nothing has been decided wrongly.
 
 **When answered.** The recurrence model in `operations`.
+
+**Also bears on the academic structure.** The owner calls one core section a
+«دورة» (course), and the profile's page 13 speaks of «الدورات». If a course
+runs in intakes, it raises three questions:
+
+- Should halaqat or programs carry dates or a term? They carry none today.
+- Are groups opened again for each intake?
+- Should the 200-halaqat-per-program cap still count INACTIVE halaqat? It
+  counts them today, and they are never deleted.
+
+See [Q36](#q36--tahajji-دورة-التهجي-وإعداد-المعلمات-مدينة-التهجي-and-the-40-groups).
 
 ---
 
@@ -641,9 +660,10 @@ their types.
 
 **Question.**
 
-- Are the five graded sections of page 6 (محو الأمية → تلقين الحروف → تجويد
-  مبتدئ → متوسط → متقدم) **strictly sequential**? Must a student finish one
-  before joining the next, and may they skip one?
+- Are the five graded sections of page 6 (محو الأمية، تلقين الحروف، تجويد
+  مبتدئ، متوسط، متقدم — listed, not ordered, by the profile) **strictly
+  sequential**? Must a student finish one before joining the next, and may
+  they skip one?
 - Are التهجي، البراعم and اللغات **parallel** to that ladder, alternatives to
   it, or entry points into it? Are the accompanying programs taken alongside
   a section, or on their own?
@@ -651,6 +671,15 @@ their types.
   decision, an examination, a count of completed halaqat? Who decides?
 - Are a section's halaqat **levels** (taken in order) or **parallel groups**
   (the same level, different times or teachers)?
+
+**Owner information (2026-09-23), still open.** The owner has since named
+assessment, placement, mastery, progression to higher levels,
+strengthening/support and «نظام الضخ بين الأقسام» as parts of progression
+([owner-information.md](../owner-information.md), S3 and S5), and listed seven
+core sections (S1). None of this states a sequence, a prerequisite, a
+criterion or who decides. The owner's numbering 1–7 is a list, not an order
+of study. What those words mean for the record is asked in
+[Q37](#q37--moving-between-halaqat-and-sections-assessment-placement-strengthening-نظام-الضخ).
 
 **Why not guessed.** Each answer is a promotion rule, a prerequisite or a
 completion rule — academic policy the profile does not state. A ladder drawn
@@ -664,11 +693,28 @@ account may study. Against the server, مساري marks where the learner is
 enrolled and claims nothing about any other rung (neither done, nor open,
 nor locked). Nothing promotes anyone.
 
-**When answered.** Prerequisites become a check in `EnrollStudentUseCase`
-(reading the student's history through the read model, already indexed);
-promotion becomes an explicit operation — end one enrollment, create the
-next — in one transaction. The app's ladder would then show real completed
-and locked rungs from the same records.
+Three things in the app look like answers and are not:
+
+- **The demo ladder** (and the public Pages build of it) is a placeholder.
+  That covers its locked rungs «يفتح بعد إتمام ما قبله», the «متاح» next
+  rung, «4 من 10» halaqa completion and "a section is complete when its
+  halaqat are".
+- **The "levels" wording** in routes and titles (`/programs/:id/levels/…`,
+  «المسار والمستويات») is inherited prototype wording, not a model of
+  halaqat as levels.
+- **The test fixture** in `access.spec.ts` that ends a tajweed-2 enrollment
+  as COMPLETED before a tajweed-3 one is test data exercising access, not a
+  promotion rule.
+
+None of these is a specification for Progress or Promotion.
+
+**When answered.** A prerequisite, if one is stated, becomes a check in
+`EnrollStudentUseCase`, reading the student's history through the read
+model, which is already indexed. A move, if one is defined, becomes an
+explicit operation in one transaction, with the ending and link Q37 decides.
+The app's مساري then shows whatever shape the answer has, which may not be a
+ladder. The "levels" copy changes to match. If the path ever changes,
+`/levels` stays as a redirect so deep links survive.
 
 ---
 
@@ -687,6 +733,18 @@ and locked rungs from the same records.
   one continuous record?
 - May an owner or an administrator be enrolled as a student?
 
+**Owner information (2026-09-23), still open.** Placement follows an
+assessment (S3), which describes an act by the institution, not by the
+student. Nothing was said about self-enrollment. "Strengthening/support" may
+mean a second, simultaneous halaqa or a move, and teacher preparation inside
+a core section makes serving staff possible learners. Both are asked in
+[Q37](#q37--moving-between-halaqat-and-sections-assessment-placement-strengthening-نظام-الضخ)
+and [Q38](#q38--the-development-path-teacher-preparation-and-who-trains).
+**COMPLETED and WITHDRAWN are known not to cover every ending.** A placement
+correction, a support move, a ضخ move or a merge is neither. Until Q37 is
+answered, do not record those in real data as either: an ended outcome
+cannot be changed.
+
 **Why not guessed.** Self-enrollment is a registration workflow (forms,
 approval, capacity) the profile does not describe; a one-halaqa limit or a
 completion rule decides who may study what.
@@ -702,10 +760,17 @@ and ADMIN, because the no-escalation rule makes them hold what they grant
 student with no enrollment exactly that — not a "pending" state that does
 not exist.
 
-**When answered.** Self-enrollment: a permission, a use case and a route (and
-probably a request/approval state — a migration adding a status). Limits: a
-check in the enroll use case, with the count indexed already. Transfer: one
-use case ending and creating in a transaction. Who may enrol: the role matrix
+**When answered.** Self-enrollment needs a permission, a use case and a
+route. A request or awaiting-placement stage, if one is needed, is a
+**separate intake record in a new table**, not a new enrollment status. An
+enrollment status would relax `academic_enrollments_ended_consistent` and
+fall outside the ACTIVE unique index and the halaqa-deactivation check.
+
+Limits, if the institution states any, are a check in the enroll use case;
+the count is indexed already.
+
+A transfer or move is one use case that ends and creates in a transaction,
+with the ending and link decided in Q37. Who may enrol is the role matrix
 (Q1).
 
 ---
@@ -732,10 +797,40 @@ outside it. Supervisors see no roster. Students see their own record and
 their own halaqa's teachers by display name. Administrators (`academic.manage`)
 see all.
 
+**What ships and is not yet decided.**
+
+- An assigned teacher can list a halaqa's **ended** enrollments (the roster's
+  status filter). That includes students who left before the teacher's
+  assignment started.
+- Nothing ends a teacher's assignment when the halaqa closes, so a closed
+  halaqa's teacher keeps reading its roster.
+
+Both need an answer: may a teacher see former students, and those from
+before their time?
+
+**Owner information (2026-09-23), still open.** Leadership/management is a
+stage of the owner's development path (S4), and page 12 trains supervisors
+and section management. Neither says what a supervisor may see.
+[Q38](#q38--the-development-path-teacher-preparation-and-who-trains) asks
+whether supervision is scoped to a section.
+
+**A precondition for Attendance and Assignments.** Identity's provisional
+matrix gives:
+
+- SUPERVISOR **unscoped** `attendance.read`, `assignments.read` and
+  `reports.read`;
+- TEACHER **unscoped** `attendance.manage` and `assignments.manage`.
+
+Those modules must scope these grants through `ACADEMIC_RELATIONSHIPS` (or
+leave them unexercised). Otherwise they bypass the roster boundary academic
+enforces here, and answer this question by accident.
+
 **When answered.** A resource rule in `AcademicAccess.halaqaMembers` (e.g.
-"supervisors of section S"), or a grant in the role matrix. Assistant
-teachers' distinct duties would be permissions checked in the future
-modules that act per halaqa.
+"supervisors of section S", backed by a relationship table if supervision is
+scoped), or a grant in the role matrix. Hiding enrollments from before a
+teacher's assignment is a filter in the roster use case. Assistant teachers'
+distinct duties would be permissions checked in the future modules that act
+per halaqa.
 
 ---
 
@@ -757,9 +852,30 @@ closes it to **new** enrollment only. A halaqa **cannot be deactivated while
 it has ACTIVE enrollments** — staff end them first, with the outcome they
 choose. Teacher assignments are left as they are.
 
+**Owner information (2026-09-23), still open.** Additional halaqat are
+opened "according to level and need" (S2), so closing a halaqa when the need
+passes may become routine. Its students then need somewhere to go and an
+ending that is neither completed nor withdrawn. Until
+[Q37](#q37--moving-between-halaqat-and-sections-assessment-placement-strengthening-نظام-الضخ)
+defines that ending, do not close such halaqat in real data by ending their
+students as COMPLETED or WITHDRAWN.
+
+Also still open:
+
+- Is closure per student or for the whole cohort?
+- May halaqat be merged or split?
+- Who opens and closes additional halaqat?
+
+Consumers should also know that `ACADEMIC_RELATIONSHIPS.isTeaching` and
+`isEnrolled` read ACTIVE relationships **regardless of the halaqa's,
+program's or section's status**. A module that must not act on a closed
+halaqa checks the structure itself, and does not answer this question
+by default.
+
 **When answered.** Ending assignments on closure is a few lines in
-`ChangeHalaqaStatusUseCase` inside the same transaction; an `ARCHIVED` state
-is a vocabulary value and a check-constraint migration.
+`ChangeHalaqaStatusUseCase`, inside the same transaction. Moving a closing
+halaqa's students uses the move operation from Q37. An `ARCHIVED` state is a
+vocabulary value and a check-constraint migration.
 
 ---
 
@@ -785,10 +901,29 @@ linked to nothing. All of it is in one file,
 `backend/src/modules/academic/application/institution-structure.json`, which
 the app's profile data is tested against.
 
-**When answered.** Rename or add programs and halaqat through the API — no
-schema change; update the structure file so a fresh environment seeds the
-real shape. The provisional program keeps its code; nothing refers to it by
-name.
+**Owner information (2026-09-23), still open.** The owner says each section
+has 10 basic halaqat and that more are opened "according to level and need"
+(S2). That may mean levels inside a section, which is exactly this
+question; it is asked again in
+[Q35](#q35--the-seven-core-sections-against-the-printed-profile). The
+Tahajji figure is asked in
+[Q36](#q36--tahajji-دورة-التهجي-وإعداد-المعلمات-مدينة-التهجي-and-the-40-groups).
+
+**Levels or tracks must be settled before real enrollments exist.** A
+halaqa's program never changes, and moving halaqat between programs would
+silently move every past enrollment's placement. Afterwards, only new
+halaqat can be created.
+
+**When answered.** Rename or add programs and halaqat through the API, with
+no schema change. The provisional program keeps its code, and nothing refers
+to it by name.
+
+The structure file changes **only through the provenance model** of
+[academic-reconciliation.md §1](academic-reconciliation.md#1-sources-and-how-they-are-kept-apart):
+an ADR that records the owner's answer and each code→name decision, and
+owner-sourced entries marked as such. The file's tests keep printed-profile
+entries pinned to the profile. Owner facts are never merged into the file
+as if the profile stated them.
 
 ---
 
@@ -813,6 +948,287 @@ here.
 **When answered.** One string in `app/lib/data/sources/profile_data.dart`,
 or — if the institution writes its own description — a `PATCH` to the
 section, which the app then shows instead of the profile's text.
+
+---
+
+## Q35 — The seven core sections against the printed profile
+
+**Question.** On 2026-09-23 the owner listed seven core academic sections
+([owner-information.md](../owner-information.md), S1): محو الأمية، تلقين
+الحروف، المبتدئ، تجويد الحروف، التجويد المتوسط، التجويد المتقدم، دورة التهجي
+وإعداد المعلمات. The owner also said each section has **10 basic halaqat**,
+with more opened "according to level and need" (S2). The printed profile has
+five graded sections (page 6) and three special ones (pages 7–9). Neither
+المبتدئ nor تجويد الحروف appears in it as a section name.
+
+- **Mapping.** There are three readings; which is right?
+  - (a) المبتدئ is «قسم تجويد مبتدئ» (`dep-tajweed-1`), and تجويد الحروف is
+    new;
+  - (b) تجويد الحروف is «قسم تجويد مبتدئ», and المبتدئ is new;
+  - (c) both are new, and the printed section was split or renamed.
+
+  Are the owner's other names the same sections as the printed ones
+  («قسم تجويد متوسط» and «التجويد المتوسط», and so on)?
+- **Completeness.** Are the seven *all* the academic sections, or the core
+  ones among others? That question is continued in Q39.
+- **Literacy.** Page 6 gives محو الأمية **5** halaqat. Does "10 basic"
+  apply to it, and is page 6 out of date?
+- **Basic and additional halaqat.** Does "10 basic" mean ten that run today,
+  or a standard? Once opened, does an additional halaqa differ from a basic
+  one, and must the record show which is which? Who opens and closes
+  halaqat? Does "level" mean levels *inside* a section (Q33)? Does "need"
+  mean waiting students or a kind of learner (page 4's audiences)?
+- **Order.** Is the numbering 1–7 the order to *display* the sections? This
+  is asked about display only, not as a rule for moving students (Q29).
+- **Names.** Should the printed names be kept anywhere (for example as an
+  official name), or does the owner's wording replace them? Should the name
+  carry «قسم»?
+
+**Why not guessed.** Choosing between the mapping readings decides which
+existing code gets which name, and whether one or two sections are created.
+Section codes and kinds are hard to undo: nothing is deleted, codes are
+never reused, and kind cannot be changed through the API. Adding halaqat
+6–10 to literacy, or labelling halaqat "additional", would each assert a fact
+the owner has not confirmed.
+
+**Built instead.** Nothing changed. The seeded structure is still the printed
+profile's: 9 sections, 9 programs and 45 halaqat. It is now labelled as
+that, provisional
+([academic-reconciliation.md](academic-reconciliation.md)). Additional
+halaqat can already be opened through the API.
+
+Until this is answered:
+
+- Do not run the seed command against a production or shared database.
+- Do not open real halaqat with seed-style codes (`<section>-h<n>`); the seed
+  would adopt them as "basic".
+- Do not create a second halaqa-bearing program in a section.
+
+**When answered.** No schema change for names, counts or order; that is data.
+Renames and new sections go through the API. The structure file changes
+through the provenance model: an ADR records each code→name decision with
+its date and source, and owner-sourced entries are marked as such. The seed
+gains a parent check and explicit per-entry halaqa codes. Only a basic or
+additional **marker** with consequences would be a new nullable column, in a
+new migration.
+
+---
+
+## Q36 — Tahajji: دورة التهجي وإعداد المعلمات، مدينة التهجي, and the 40 groups
+
+**Question.** The printed profile has «قسم التهجي» (page 7). It describes
+teaching reading from letters and harakat to correct recitation, with
+«استيعاب 40 مجموعة» and no mention of teacher preparation. The owner (S1,
+S6) names «دورة التهجي وإعداد المعلمات» as a core section, and «مدينة
+التهجي» with 40 specialized groups and teacher preparation.
+
+- Is دورة التهجي وإعداد المعلمات the printed «قسم التهجي»? If yes, which
+  name is shown, and does page 7's description still apply?
+- Is مدينة التهجي **(A)** the same structure as دورة التهجي, or **(B)** a
+  separate one? If separate, is it its own section, a part of دورة التهجي, or
+  an accompanying program like «مدينة الحفاظ»?
+- Is a Tahajji «مجموعة» a halaqa (students enrolled, teachers assigned), a
+  smaller group inside a halaqa, or a WhatsApp/Telegram group?
+- Do 40 groups **exist now**, or is 40 the number it **can hold**? Can more
+  be opened?
+- How do the 40 groups relate to the section's 10 basic halaqat (Q35)?
+- Who studies there: students from other sections, new applicants, or
+  serving teachers? Is its «إعداد المعلمات» page 12's «تأهيل معلمات»?
+- Does it run in **intakes** (دفعات), with groups opened again for each one
+  (Q12)?
+- Is it a step on the same path as the other six sections, or a separate
+  track? This is asked as a description, not as a rule.
+
+**Why not guessed.** Each answer changes a different entity:
+
+- (A) renames `sec-spelling`, which is `SPECIAL` with no program or halaqa;
+- (B) creates a new section or program;
+- "a group is a halaqa" creates 40 halaqat;
+- "a group is inside a halaqa" needs a new table.
+
+Making `sec-spelling` a core or graded section cannot be done through the
+API, because kind is immutable. It would also change the app's home page,
+whose featured card is taken from the SPECIAL sections.
+
+**Built instead.** `sec-spelling` stays `SPECIAL`, with no program and no
+halaqa, and the 40 groups are **not** structure. The app shows the profile's
+«استيعاب 40 مجموعة» as profile text only. The `prototype-spec.md` phrases
+«مجموعات التهجي (من أصل 40)» and «من أصل 40» assume a ceiling and are marked
+unconfirmed.
+
+**When answered.**
+
+- **(A)** is data: `PATCH` the name, then `POST` programs and halaqat.
+- **(B)** is data: a new section or program. Its code must differ from
+  `prog-hifz-city` and be unique across sections and programs.
+- **40 halaqat** fit the current cap of 200 per program.
+- **A sub-group unit** or **intakes** (dates) is an additive migration.
+- **Re-classifying** `sec-spelling` is an explicit, audited change-kind
+  operation, or a new section code. It is never a data migration: that would
+  bypass the audit trail, and would be a no-op on fresh databases because
+  migrations run before the seed.
+- **Trainees** are Q38.
+
+---
+
+## Q37 — Moving between halaqat and sections: assessment, placement, strengthening, نظام الضخ
+
+**Question.** The owner describes progression as assessment/evaluation,
+appropriate placement, mastery, progression to higher levels,
+strengthening/support, and «نظام الضخ بين الأقسام» (S3, S5). None of these
+has a definition yet.
+
+- **Assessment.** Is it recorded? Who performs it? Is only the decision
+  recorded, or a result too? Is it done before the first placement, between
+  levels, or both? Is there a **standard evaluation form**, and what does it
+  record? (The prototype's الإتقان / التجويد / الطلاقة with مقبول / إعادة
+  was invented and will not be used unless confirmed.)
+- **Awaiting placement.** Is there a period when someone is registered with
+  the institution but not yet assessed or placed? Should the app show it?
+- **Who places and moves students?** Administration, a section head, a
+  supervisor, the teacher, or a committee? May a student be placed above her
+  level directly (skipping a section), or moved down?
+- **نظام الضخ.** What does it move: a student, a whole halaqa, or trained
+  teachers? In which direction? Who decides, and when?
+- **The ending.** When a student leaves a halaqa because she is moved (after
+  assessment, for support, or by ضخ), is the old enrollment "completed",
+  "withdrawn", or something else? What does the institution call each kind of
+  move?
+- **Continuity.** Should successive halaqat be recorded as one path ("moved
+  from X to Y"), with the move as one act?
+- **Strengthening/support.** Is it a separate halaqa taken alongside the
+  regular one or instead of it, help inside the same halaqa, or a status on
+  the student?
+- **Merges and closures.** When a halaqa closes or merges, are its students
+  moved (Q32)? Is that recorded as a move?
+- **Mastery.** Should mastery be recorded per student and level, or is it
+  only the reason staff give for a move? This asks whether to record it, not
+  for criteria.
+
+**Why not guessed.** Each answer is a placement, promotion or completion rule,
+which the brief forbids inventing. More concretely, the only endings that
+exist are COMPLETED and WITHDRAWN, and an ended outcome can never be changed
+(409). Guessing which one a move "is" would mislabel real students
+permanently.
+
+**Built instead.** Nothing new. A move today is two acts: end, then enroll.
+There is no link between them and no move-specific ending. No assessment,
+placement, mastery or awaiting state exists; the model says so rather than
+pretending. **Operating rule:** until this is answered, placement corrections,
+support moves, ضخ moves and merges are not recorded in real data as COMPLETED
+or WITHDRAWN.
+
+**When answered.** Each of these is an **additive** change in a new
+migration; `0007` and `0008` are untouched.
+
+- **A move ending:** widen `academic_enrollments_status_valid` to a superset
+  (dropping and re-adding a CHECK loses no data), or add a nullable
+  transition-type column. It also needs a vocabulary value, an event (see
+  `events.md`) and a Q28 decision on notification.
+- **Continuity:** a nullable self-reference on the enrollment, or a moves
+  table, plus one transactional move operation.
+- **Assessment or placement:** a new table, with only the columns the owner
+  defines.
+- **Awaiting placement:** a separate intake table, not an enrollment status
+  (Q30).
+- **Who may move students:** grants in the role matrix (Q1) and a resource
+  rule.
+
+---
+
+## Q38 — The development path, teacher preparation, and who trains
+
+**Question.** The owner describes a development path: educational level,
+mastery, specialization, training, teacher preparation, leadership and
+management (S4). One core section includes teacher preparation (S1), and so
+does مدينة التهجي (S6). The profile's page 12, «تأهيل و بناء الكوادر»,
+lists four tracks: تأهيل مشرفات، تأهيل معلمات، التدريب على إدارة الحلقات،
+التدريب على إدارة الاقسام. Page 5 lists six «مجالات التعليم و التخصص».
+
+- Are the path's stages sections or programs with halaqat and enrolled
+  learners, or staff roles and qualifications? Is "mastery" a programme the
+  institution runs (for example مدينة الحفاظ), or something a student shows
+  within her section?
+- Are they page 12's tracks? Is "specialization" page 5's fields, and which
+  sections or programs serve each field?
+- Who are teacher-preparation trainees: students, serving teachers, or both?
+  When a graduate starts teaching, is it the same account?
+- Must preparation be completed before someone may be assigned to teach, or
+  is there no such requirement?
+- May trainees teach or assist in real halaqat (practicum)? If so, may they
+  see those rosters?
+- May one person be a student in one halaqa and a teacher in another at the
+  same time? In the same halaqa?
+- Leadership and management: is it training (enrollments), roles, or both?
+  Is a supervisor attached to a section, and should she see that section's
+  rosters (Q31)?
+
+**Why not guessed.** A prerequisite to teach, a trainee category, or
+supervision scope would each be a rule nobody stated. Page 12 describes
+*training*, which may be enrollments; so leadership cannot simply be assumed
+to be an identity role.
+
+**Built instead.** Nothing new. Only accounts holding `academic.study`
+(STUDENT, plus OWNER and ADMIN) can be enrolled. A serving teacher who
+trains needs the STUDENT role as well. Roles combine, so that grants the
+teacher nothing she did not have. The comment in `provisional-policy.ts` now
+says that the trainee model is open. Enrollment and assignment history,
+together with roles, already records who studied and taught what. No path or
+stage entity exists.
+
+**When answered.**
+
+- An extra STUDENT role for trainees is a data row.
+- Granting `academic.study` to a staff role changes the policy constant
+  **and** needs a new `role_permissions` migration; a test pins the two
+  together.
+- A prerequisite to teach is a check in the assign use case, reading
+  enrollment history, which is already indexed.
+- Section-scoped supervision is a relationship table plus an
+  `AcademicAccess` rule.
+- A study-field link is a fields vocabulary plus a join table.
+- A new section category is a widened kind CHECK in a new migration, and
+  also needs the app, which hides unknown kinds.
+
+---
+
+## Q39 — What is outside the seven core sections, and who are they for?
+
+**Question.** The owner's seven core sections do not include:
+
+- قسم البراعم (page 8, three levels);
+- قسم اللغات (page 9, five languages);
+- the accompanying programs (page 10): مدينة الحفاظ، علوم النحو، المقارئ،
+  المتون.
+
+The questions:
+
+- Are these still offered? Where do they sit relative to the seven: taken
+  alongside, instead, or as the "specialization" stage (Q38)?
+- Does "core academic sections" separate them from the non-academic
+  departments (page 11 «قسم الإعلام والإعلان والتصاميم», page 13 «قسم
+  الشهادات»), from البراعم, اللغات and the accompanying programs, or both?
+- Page 4 lists البراعم and محو الأمية as **target groups** as well as
+  sections. Is البراعم a section, or an age group that studies within the
+  seven? Are some halaqat set aside for a group (الناشئات، كبار السن، غير
+  الناطقين باللغة العربية)?
+- Does «المقارئ — لكل قسم» mean one مقرأة per section?
+
+**Why not guessed.** Silence is not removal. Deactivating البراعم or اللغات
+would erase a printed offering on the owner's silence, and making البراعم an
+audience would invent a rule about who studies where.
+
+**Built instead.** Nothing changed: the three special sections and the four
+accompanying programs stay seeded and ACTIVE. The `accompanying` row is an
+engineering container, not a profile section: programs need a parent. So the
+honest comparison is the profile's **8** academic sections against the
+owner's **7**. Pages 11–13 are deliberately not academic structure. No
+halaqa is linked to an audience.
+
+**When answered.** Data: deactivate (reversible, nothing deleted), rename, or
+add programs and halaqat through the API. An audience attached to halaqat
+would be additive, and only if the owner says halaqat are dedicated to
+audiences.
 
 ---
 

@@ -11,6 +11,11 @@ export const ACADEMIC_RELATIONSHIPS_MAX_PAGE = 1000;
  * Answers come from academic's records: an ACTIVE enrollment, an ACTIVE
  * teacher assignment. Nothing here says whether an account may sign in or
  * what its roles allow — that is identity's question, asked separately.
+ *
+ * Nor does anything here say whether the halaqa is running: answers ignore
+ * the halaqa's, program's and section's status, and an assignment survives
+ * its halaqa's closure (Q32). A caller that must not act on a closed halaqa
+ * checks the structure itself — `isTeaching` is not "this halaqa is open".
  */
 export interface AcademicRelationships {
   /** Whether the account is enrolled in the halaqa now. */

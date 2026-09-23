@@ -544,7 +544,9 @@ export class UpdateHalaqaUseCase {
  * halaqa has ACTIVE enrollments: the institution ends each of them — as
  * completed or withdrawn, its decision — first. So there is never an active
  * enrollment in an inactive halaqa, and no outcome is invented on anyone's
- * behalf. Teacher assignments are left as they are (Q32).
+ * behalf. Teacher assignments are left as they are (Q32). Students moved out
+ * of a closing halaqa are neither completed nor withdrawn; that ending does
+ * not exist yet (Q37), so such closures wait for it.
  */
 @Injectable()
 export class ChangeHalaqaStatusUseCase {

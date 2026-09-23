@@ -11,7 +11,7 @@
 | **أساس المعمارية** (`backend/`) | ✅ Foundation V1 — الأساس والحدود والوحدات الأولى |
 | **الهوية والصلاحيات** (Identity & Access V1) | ✅ تسجيل الدخول، رموز تحديث دوّارة، جلسات لكل جهاز، إدارة الحسابات من قِبل الموظفين، سجلّ تدقيق في PostgreSQL |
 | **المراسلة والاتصال المباشر والإشعارات** | ✅ Messaging V1 · Realtime Messaging V1 · Notifications V1 |
-| **النواة الأكاديمية** (Academic Core V1) | ✅ الأقسام والبرامج والحلقات من الملف التعريفي، التسجيل وتكليف المعلّمات مع السجلّ التاريخي، صلاحيات على مستوى الحلقة |
+| **النواة الأكاديمية** (Academic Core V1) | ✅ الأقسام والبرامج والحلقات من الملف التعريفي المطبوع، التسجيل وتكليف المعلّمات مع السجلّ التاريخي، صلاحيات على مستوى الحلقة · ⏸ **مراجعة مفتوحة** مع معلومات المالكة الأحدث ([`academic-reconciliation.md`](docs/architecture/academic-reconciliation.md)) — لا تبدأ الواجبات ولا الحضور ولا التقدّم ولا الترقية قبل مراجعتها |
 | الوحدات المكتملة في الـ Backend | `identity` · `live` (الغرف الصوتية) · `files` · `messaging` · `realtime` · `notifications` · `academic` |
 | الوحدات المُعرَّفة كحدود فقط | `people` · `operations` · `assignments` · `automation` · `reporting` |
 
@@ -36,6 +36,7 @@
 | [`docs/architecture/messaging.md`](docs/architecture/messaging.md) | حدود وحدة المراسلة |
 | [`docs/architecture/notifications.md`](docs/architecture/notifications.md) | الإشعارات: الصندوق المحفوظ، التفضيلات، الأجهزة |
 | [`docs/architecture/academic.md`](docs/architecture/academic.md) | النواة الأكاديمية: الأقسام والبرامج والحلقات، التسجيل، التكليف، الصلاحيات، التهيئة من الملف التعريفي |
+| [`docs/architecture/academic-reconciliation.md`](docs/architecture/academic-reconciliation.md) | مراجعة النواة الأكاديمية مقابل معلومات المالكة (2026-09-23): التعارضات، ما هو آمن، ما يُؤجَّل، أسئلة المالكة |
 | [`docs/architecture/storage.md`](docs/architecture/storage.md) | الملفات والتخزين |
 | [`docs/architecture/persistence.md`](docs/architecture/persistence.md) | قاعدة البيانات واستراتيجية الترحيل |
 | [`docs/architecture/observability.md`](docs/architecture/observability.md) | السجلّات، سجلّ التدقيق، الفحوص الصحّية |
@@ -48,7 +49,8 @@
 |---|---|
 | [`docs/prototype-spec.md`](docs/prototype-spec.md) | **المواصفة الكاملة** — 16 قسماً (A–P): نظرة المنتج، المستخدمون، بنية المعلومات، التنقّل، 56 شاشة، رحلات المستخدمين الثلاث، نظام التصميم، بنية المشروع، اعتبارات Web/iOS، التوسعات المستقبلية |
 | [`docs/pdf-content-extract.md`](docs/pdf-content-extract.md) | **المحتوى المستخرج حرفياً** من الملف التعريفي، صفحةً بصفحة — مرجع التحقّق |
-| [`docs/institution-profile.pdf`](docs/institution-profile.pdf) | الملف التعريفي للمؤسسة (14 صفحة) — **المصدر الوحيد لمعلومات المؤسسة** |
+| [`docs/institution-profile.pdf`](docs/institution-profile.pdf) | الملف التعريفي المطبوع للمؤسسة (14 صفحة) — **المصدر الأول لمعلومات المؤسسة**، وعليه بُني الهيكل الحالي |
+| [`docs/owner-information.md`](docs/owner-information.md) | **تصريحات المالكة** اللاحقة (2026-09-23) كما وردت، مؤرَّخة — مصدر ثانٍ **لم يُطابَق بعدُ** مع الملف التعريفي **ولم يُنفَّذ**، مع أسئلة المالكة |
 
 ## 🔐 الأمن
 
@@ -75,7 +77,9 @@ cd backend && npm run verify
   والبيانات الأكاديمية حقيقية؛ الدروس والحضور والتقدّم والشهادات والإعلانات ما زالت تجريبية،
   ولا يُعرض تقدّم غير مسجَّل.
 - لا واجهة لغرفة الـ 2500 مشارك، ولا لوحة للمعلّمة أو للإدارة (خارج نطاق هذه المرحلة عمداً).
-- كل بيان غير موجود في الملف التعريفي **مُعلَّم صراحةً كـ Mock Data**.
+- كل بيان غير موجود في الملف التعريفي **مُعلَّم صراحةً كـ Mock Data**. تصريحات المالكة
+  (`docs/owner-information.md`) لا تُعرض في التطبيق قبل أن تصبح سجلات على الخادم، ولا تُكتب
+  في `pdf-content-extract.md`؛ والمسار المقفل والشهادات في العرض التجريبي عيّنات لا قواعد.
 
 ## 📌 الخطوة التالية
 

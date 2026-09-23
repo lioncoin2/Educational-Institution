@@ -193,7 +193,7 @@ by a real broker and subscribers become consumers. Again the port is unchanged.
 | `notifications.notification.read` | notifications — once, when one goes from unread to read | **realtime — subscribed** (the recipient's other devices) |
 | `notifications.notification.all_read` | notifications — "mark all read" changed something | **realtime — subscribed** (the recipient's other devices) |
 | `academic.section\|program\|halaqa.created` · `.updated` · `.activated` · `.deactivated` | academic — only when something changed | reporting; none subscribed |
-| `academic.student.enrolled` · `academic.student.enrollment_ended` | academic — a new ACTIVE enrollment; one ended (COMPLETED / WITHDRAWN) | attendance, notifications (Q28), reporting; none subscribed |
+| `academic.student.enrolled` · `academic.student.enrollment_ended` | academic — a new ACTIVE enrollment; one ended (COMPLETED / WITHDRAWN — provisional, and known not to cover moves: Q30, Q37) | attendance, notifications (Q28), reporting; none subscribed |
 | `academic.teacher.assigned` · `academic.teacher.assignment_ended` | academic | a teacher's workspace, notifications (Q28); none subscribed |
 
 The `live.speaker.*`, `identity.*`, `messaging.*`, `notifications.*` and
