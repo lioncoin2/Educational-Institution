@@ -8,6 +8,7 @@ const PRODUCTION = {
   LIVEKIT_URL: 'wss://rtc.example.org',
   LIVEKIT_API_KEY: 'key',
   LIVEKIT_API_SECRET: 'a-real-livekit-secret',
+  STORAGE_SIGNING_SECRET: 'b'.repeat(48),
 };
 
 describe('loadConfig', () => {
@@ -33,6 +34,24 @@ describe('loadConfig', () => {
       );
     },
   );
+
+  it('requires its own storage signing secret in production', () => {
+    const { STORAGE_SIGNING_SECRET: _omitted, ...withoutStorageSecret } = PRODUCTION;
+    expect(() => loadConfig(withoutStorageSecret)).toThrow(/STORAGE_SIGNING_SECRET is required/);
+    expect(() =>
+      loadConfig({ ...PRODUCTION, STORAGE_SIGNING_SECRET: 'short-storage-key' }),
+    ).toThrow(/STORAGE_SIGNING_SECRET must be at least 32 bytes/);
+    expect(() => loadConfig({ ...PRODUCTION, STORAGE_SIGNING_SECRET: 'change-me' })).toThrow(
+      /STORAGE_SIGNING_SECRET still holds a placeholder/,
+    );
+  });
+
+  // One leaked key must not forge both sessions and file links.
+  it('refuses a storage signing secret equal to the JWT secret', () => {
+    expect(() =>
+      loadConfig({ ...PRODUCTION, STORAGE_SIGNING_SECRET: PRODUCTION.JWT_SECRET }),
+    ).toThrow(/STORAGE_SIGNING_SECRET must differ from JWT_SECRET/);
+  });
 
   it('refuses a session shorter than its access token', () => {
     expect(() =>

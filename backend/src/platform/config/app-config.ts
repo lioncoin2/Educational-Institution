@@ -48,7 +48,14 @@ export interface AppConfig {
     readonly apiKey: string;
     readonly apiSecret: string;
   };
-  readonly storage: { readonly localRoot: string };
+  readonly storage: {
+    readonly localRoot: string;
+    /**
+     * Signs storage transfer URLs (see LocalStorageProvider). Its own key, not
+     * the JWT key: one key, one purpose, and either can rotate alone.
+     */
+    readonly signingSecret: string;
+  };
 }
 
 export class ConfigurationError extends Error {
@@ -63,6 +70,7 @@ const PLACEHOLDER_SECRETS = new Set([
   'change-me',
   'change-me-in-every-environment',
   'development-only-secret',
+  'development-only-storage-secret',
   'devkey',
   'secret',
   '',
@@ -70,9 +78,11 @@ const PLACEHOLDER_SECRETS = new Set([
 
 /**
  * HS256 is only as strong as its key. RFC 7518 §3.2 requires a key at least
- * as long as the hash output: 256 bits, i.e. 32 bytes.
+ * as long as the hash output: 256 bits, i.e. 32 bytes. The same bound applies
+ * to the HMAC-SHA256 key that signs storage URLs.
  */
 const MIN_JWT_SECRET_BYTES = 32;
+const MIN_STORAGE_SECRET_BYTES = 32;
 
 const DAY = 24 * 60 * 60;
 
@@ -115,6 +125,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     problems.push(`JWT_SECRET must be at least ${MIN_JWT_SECRET_BYTES} bytes in production`);
   }
 
+  const storageSigningSecret = secret('STORAGE_SIGNING_SECRET', 'development-only-storage-secret');
+  if (isProduction && Buffer.byteLength(storageSigningSecret, 'utf8') < MIN_STORAGE_SECRET_BYTES) {
+    problems.push(
+      `STORAGE_SIGNING_SECRET must be at least ${MIN_STORAGE_SECRET_BYTES} bytes in production`,
+    );
+  }
+  if (isProduction && storageSigningSecret === jwtSecret) {
+    // One leaked key must not forge both sessions and file links.
+    problems.push('STORAGE_SIGNING_SECRET must differ from JWT_SECRET');
+  }
+
   const accessTtlSeconds = readInt(env.JWT_ACCESS_TTL, 900);
   const refreshSessionTtlSeconds = readInt(env.REFRESH_SESSION_TTL_SECONDS, 30 * DAY);
   if (accessTtlSeconds <= 0 || refreshSessionTtlSeconds <= accessTtlSeconds) {
@@ -144,7 +165,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       apiKey: required('LIVEKIT_API_KEY', 'devkey'),
       apiSecret: secret('LIVEKIT_API_SECRET', 'development-only-secret'),
     }),
-    storage: Object.freeze({ localRoot: env.STORAGE_LOCAL_ROOT ?? './.storage' }),
+    storage: Object.freeze({
+      localRoot: env.STORAGE_LOCAL_ROOT ?? './.storage',
+      signingSecret: storageSigningSecret,
+    }),
   });
 
   if (problems.length > 0) throw new ConfigurationError(problems);

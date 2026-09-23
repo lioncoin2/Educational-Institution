@@ -20,7 +20,43 @@ const SENSITIVE_KEYS = [
   'secret',
   'jwtSecret',
   'apiSecret',
+  'signingSecret',
 ] as const;
+
+/**
+ * Query parameters that carry a capability. A signed storage URL is a bearer
+ * credential until it expires: whoever reads it from a log could use it.
+ */
+const SENSITIVE_QUERY_PARAMS = /([?&](?:sig|signature|token|access_token)=)[^&#]*/gi;
+
+/** The URL with every capability-bearing query value replaced. */
+export function redactUrl(url: string): string {
+  return url.replace(SENSITIVE_QUERY_PARAMS, '$1[redacted]');
+}
+
+interface SerializedRequest {
+  url?: unknown;
+  query?: unknown;
+  [key: string]: unknown;
+}
+
+/**
+ * pino's standard request serializer records the full URL and the parsed
+ * query. Path-and-key redaction cannot reach inside a URL string, so the
+ * request is rewritten here — on a copy: `query` is the live request's object.
+ */
+export function serializeRequest(req: SerializedRequest): SerializedRequest {
+  const out: SerializedRequest = { ...req };
+  if (typeof req.url === 'string') out.url = redactUrl(req.url);
+  if (typeof req.query === 'object' && req.query !== null) {
+    const query: Record<string, unknown> = { ...(req.query as Record<string, unknown>) };
+    for (const key of Object.keys(query)) {
+      if (/^(sig|signature|token|access_token)$/i.test(key)) query[key] = '[redacted]';
+    }
+    out.query = query;
+  }
+  return out;
+}
 
 /**
  * Paths censored in every log line.
@@ -55,6 +91,7 @@ export function loggerOptions(config: AppConfig): Params {
           : randomUUID();
       },
       redact: { paths: [...REDACTED_PATHS], censor: '[redacted]' },
+      serializers: { req: serializeRequest },
     },
   };
 }

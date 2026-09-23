@@ -1,11 +1,23 @@
-/** What kind of thing a file is. Declared publicly: messaging and assignments
- *  both reference stored files and must be able to name their kind. */
-export type FileKind = 'image' | 'document' | 'audio' | 'voice_message';
+/**
+ * What kind of thing a stored file is.
+ *
+ *   IMAGE     photos and pictures
+ *   VOICE     a recorded voice message
+ *   AUDIO     an audio file — e.g. a recitation recording
+ *   DOCUMENT  a document (PDF in V1)
+ *
+ * Public because the modules that attach files (messaging, later assignments)
+ * must name the kinds they accept.
+ */
+export type FileKind = 'IMAGE' | 'VOICE' | 'AUDIO' | 'DOCUMENT';
 
-/** A durable reference other modules store instead of a URL (URLs expire). */
-export interface FileAssetRef {
-  readonly fileAssetId: string;
-  readonly kind: FileKind;
-  readonly contentType: string;
-  readonly byteSize: number;
+export const FILE_KINDS: readonly FileKind[] = Object.freeze([
+  'IMAGE',
+  'VOICE',
+  'AUDIO',
+  'DOCUMENT',
+]);
+
+export function isFileKind(value: string): value is FileKind {
+  return (FILE_KINDS as readonly string[]).includes(value);
 }

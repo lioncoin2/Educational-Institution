@@ -30,3 +30,18 @@ export function domainEvent<TName extends string, TPayload>(
 export interface EventPublisher {
   publish(events: readonly DomainEvent[]): Promise<void>;
 }
+
+export type EventHandler = (event: DomainEvent) => void | Promise<void>;
+export type Unsubscribe = () => void;
+
+/**
+ * Anything that can deliver events to a subscriber. Implemented in platform.
+ *
+ * The other half of the event contract: without it a module could publish
+ * facts but never react to anyone else's without importing platform's
+ * concrete bus. A subscriber must tolerate receiving the same event twice —
+ * once delivery is durable and retried, it will.
+ */
+export interface EventSubscriber {
+  subscribe(eventName: string, handler: EventHandler): Unsubscribe;
+}

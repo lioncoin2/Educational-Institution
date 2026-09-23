@@ -13,6 +13,8 @@ export type CreateUserOutcome = 'created' | 'identifier_taken';
 
 export interface UserRepository {
   findById(id: UserId): Promise<User | null>;
+  /** Batch lookup; unknown ids are absent from the result. One query, not N. */
+  findManyByIds(ids: readonly UserId[]): Promise<readonly User[]>;
   findByIdentifier(identifier: LoginIdentifier): Promise<User | null>;
   /**
    * Inserts a new account. Reports a taken identifier as an outcome rather

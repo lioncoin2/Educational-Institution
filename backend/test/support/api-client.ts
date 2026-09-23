@@ -9,6 +9,8 @@ export interface ApiResponse {
 
 export interface RunningApi {
   readonly app: INestApplication;
+  /** e.g. http://127.0.0.1:41234 — for raw requests the JSON helper cannot make. */
+  readonly base: string;
   /** Every response body this API has returned — for "never leaks" assertions. */
   readonly transcript: string[];
   call(
@@ -43,6 +45,7 @@ export async function startApi(env: Record<string, string> = {}): Promise<Runnin
 
   return {
     app,
+    base,
     transcript,
     async call(method, path, options = {}) {
       const response = await fetch(`${base}${path}`, {

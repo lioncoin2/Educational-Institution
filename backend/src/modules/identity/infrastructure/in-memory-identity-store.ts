@@ -39,6 +39,13 @@ export class InMemoryUserRepository implements UserRepository {
     return this.byId.get(id) ?? null;
   }
 
+  async findManyByIds(ids: readonly UserId[]): Promise<readonly User[]> {
+    return ids.flatMap((id) => {
+      const user = this.byId.get(id);
+      return user === undefined ? [] : [user];
+    });
+  }
+
   async findByIdentifier(identifier: LoginIdentifier): Promise<User | null> {
     for (const user of this.byId.values()) {
       if (

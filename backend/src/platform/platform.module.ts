@@ -4,6 +4,7 @@ import { LoggerModule } from 'nestjs-pino';
 import {
   AUDIT_LOG,
   CLOCK,
+  EVENT_SUBSCRIBER,
   ID_GENERATOR,
   RATE_LIMITER,
   type Clock,
@@ -65,9 +66,13 @@ const config = loadConfig();
         );
       },
     },
+    // One bus, two faces: modules publish through one port and subscribe
+    // through the other, and never see the concrete class.
+    { provide: EVENT_SUBSCRIBER, useExisting: EVENT_PUBLISHER },
   ],
   exports: [
     APP_CONFIG,
+    EVENT_SUBSCRIBER,
     CLOCK,
     ID_GENERATOR,
     EVENT_PUBLISHER,

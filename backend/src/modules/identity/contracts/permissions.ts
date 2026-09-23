@@ -52,9 +52,18 @@ export const Permissions = {
     submit: 'assignments.submit',
     manage: 'assignments.manage',
   },
+  /**
+   * Reading and sending are always scoped to conversations the principal is a
+   * member of — holding `messaging.read` never means "may read everything".
+   * STARTING a conversation is its own permission, because who may initiate
+   * contact with whom is a safeguarding decision (open-questions.md Q6).
+   */
   messaging: {
     read: 'messaging.read',
     send: 'messaging.send',
+    startDirect: 'messaging.start_direct',
+    createGroup: 'messaging.create_group',
+    createChannel: 'messaging.create_channel',
     manage: 'messaging.manage',
   },
   live: {

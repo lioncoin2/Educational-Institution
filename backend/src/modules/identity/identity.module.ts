@@ -7,6 +7,7 @@ import { DATABASE, type Database } from '../../platform/database';
 import { AdminUsersController } from './api/admin-users.controller';
 import { AuthController } from './api/auth.controller';
 import { AccessGuard } from './api/guards/access.guard';
+import { IdentityAccountDirectory } from './application/account-directory.service';
 import { AccountAdministration } from './application/admin/account-administration';
 import { ChangeAccountStatusUseCase } from './application/admin/account-status.use-case';
 import { CreateUserUseCase } from './application/admin/create-user.use-case';
@@ -31,6 +32,7 @@ import {
   LogoutUseCase,
   RevokeMySessionUseCase,
 } from './application/session-management.use-cases';
+import { ACCOUNT_DIRECTORY } from './contracts/account-directory';
 import { AUTHORIZATION_SERVICE } from './contracts/authorization';
 import {
   AUTH_SESSION_REPOSITORY,
@@ -73,9 +75,10 @@ function persistent<T>(
 /**
  * Identity & Access — the composition root.
  *
- * It exports exactly one thing, `AUTHORIZATION_SERVICE`: the only way any
- * other module asks an access question. Everything else — users, sessions,
- * tokens, the role matrix — is private to this module.
+ * It exports exactly two things: `AUTHORIZATION_SERVICE`, the only way any
+ * other module asks an access question, and `ACCOUNT_DIRECTORY`, the only way
+ * one learns who an account is (id, display name, active). Everything else —
+ * users, sessions, tokens, the role matrix — is private to this module.
  *
  * No account is seeded and no default credential exists. The first owner is
  * created with `npm run identity:bootstrap-owner` (see backend/README.md).
@@ -143,6 +146,7 @@ function persistent<T>(
     // PROVISIONAL: every rule here is unconfirmed institutional policy (Q1).
     { provide: POLICY_RULES, useValue: PROVISIONAL_POLICY_RULES },
     { provide: AUTHORIZATION_SERVICE, useClass: PolicyAuthorizationService },
+    { provide: ACCOUNT_DIRECTORY, useClass: IdentityAccountDirectory },
 
     RolePermissions,
     AccountAdministration,
@@ -169,6 +173,6 @@ function persistent<T>(
     // application root never reaches into identity's internals.
     { provide: APP_GUARD, useExisting: AccessGuard },
   ],
-  exports: [AUTHORIZATION_SERVICE],
+  exports: [AUTHORIZATION_SERVICE, ACCOUNT_DIRECTORY],
 })
 export class IdentityModule {}

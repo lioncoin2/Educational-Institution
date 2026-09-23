@@ -1,7 +1,12 @@
-import type { DomainEvent, EventPublisher } from '../../shared';
+import type {
+  DomainEvent,
+  EventHandler,
+  EventPublisher,
+  EventSubscriber,
+  Unsubscribe,
+} from '../../shared';
 
-export type EventHandler = (event: DomainEvent) => void | Promise<void>;
-export type Unsubscribe = () => void;
+export type { EventHandler, Unsubscribe };
 
 /** DI token for the publisher port (defined in the shared kernel). */
 export { EVENT_PUBLISHER } from '../../shared';
@@ -18,7 +23,7 @@ export { EVENT_PUBLISHER } from '../../shared';
  * table replaces this class and subscribers become consumers — the
  * `EventPublisher` port the modules depend on does not change.
  */
-export class InProcessEventBus implements EventPublisher {
+export class InProcessEventBus implements EventPublisher, EventSubscriber {
   private readonly handlers = new Map<string, Set<EventHandler>>();
 
   constructor(

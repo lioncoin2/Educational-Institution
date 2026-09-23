@@ -3,7 +3,7 @@ import { Writable } from 'node:stream';
 import pino from 'pino';
 
 import { loadConfig } from '../config/app-config';
-import { REDACTED_PATHS, loggerOptions } from './logger-options';
+import { REDACTED_PATHS, loggerOptions, redactUrl, serializeRequest } from './logger-options';
 
 /** A pino logger with the application's real redaction, writing to a string. */
 function capture(): { logger: pino.Logger; output: () => string } {
@@ -34,6 +34,7 @@ const SECRETS = {
   secret: 'generic-secret-value',
   jwtSecret: 'jwt-signing-key',
   apiSecret: 'livekit-api-secret',
+  signingSecret: 'storage-signing-key',
 };
 
 describe('log redaction — secrets are never logged', () => {
@@ -57,10 +58,12 @@ describe('log redaction — secrets are never logged', () => {
     const config = loadConfig({
       JWT_SECRET: 'the-jwt-signing-key-in-this-dump',
       LIVEKIT_API_SECRET: 'the-livekit-secret-in-this-dump',
+      STORAGE_SIGNING_SECRET: 'the-storage-signing-key-in-this-dump',
     });
     logger.info({ config }, 'config at boot');
     expect(output()).not.toContain('the-jwt-signing-key-in-this-dump');
     expect(output()).not.toContain('the-livekit-secret-in-this-dump');
+    expect(output()).not.toContain('the-storage-signing-key-in-this-dump');
   });
 
   it('censors the credentials in request headers', () => {
@@ -72,9 +75,30 @@ describe('log redaction — secrets are never logged', () => {
     expect(output()).not.toContain('abc123');
   });
 
+  // A signed storage URL is a bearer credential until it expires.
+  it('censors the signature of a signed URL in the access log', () => {
+    const url = '/files/local/aW1hZ2U?exp=1900000000&ct=image%2Fpng&max=10&sig=SIGNATURE-VALUE';
+    expect(redactUrl(url)).toBe(
+      '/files/local/aW1hZ2U?exp=1900000000&ct=image%2Fpng&max=10&sig=[redacted]',
+    );
+    expect(redactUrl('/files/local/x?sig=A&token=B&keep=C')).toBe(
+      '/files/local/x?sig=[redacted]&token=[redacted]&keep=C',
+    );
+
+    const query = { exp: '1900000000', sig: 'SIGNATURE-VALUE' };
+    const serialized = serializeRequest({ id: '1', method: 'PUT', url, query });
+    expect(JSON.stringify(serialized)).not.toContain('SIGNATURE-VALUE');
+    // The live request's own query object is left untouched.
+    expect(query.sig).toBe('SIGNATURE-VALUE');
+  });
+
   it('is the configuration the application actually uses', () => {
-    const options = loggerOptions(loadConfig({})).pinoHttp as { redact: { paths: string[] } };
+    const options = loggerOptions(loadConfig({})).pinoHttp as {
+      redact: { paths: string[] };
+      serializers: { req: unknown };
+    };
     expect(options.redact.paths).toEqual([...REDACTED_PATHS]);
+    expect(options.serializers.req).toBe(serializeRequest);
   });
 
   it('refuses to adopt an inbound request id that could forge log lines', () => {

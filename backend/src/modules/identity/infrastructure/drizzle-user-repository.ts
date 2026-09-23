@@ -1,14 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 
-import { DATABASE, type Database } from '../../../platform/database';
+import { DATABASE, isUniqueViolation, type Database } from '../../../platform/database';
 import type { Page, PageRequest } from '../../../shared';
 import { AccountStatuses } from '../domain/account-status';
 import type { LoginIdentifier } from '../domain/login-identifier';
 import type { CreateUserOutcome, UserRepository } from '../domain/ports';
 import type { RoleCode } from '../domain/role';
 import type { RoleAssignment, User, UserId } from '../domain/user';
-import { isUniqueViolation } from './postgres-errors';
 import { userIdentifiers, userRoles, users } from './schema';
 
 type UserRow = typeof users.$inferSelect;
@@ -32,6 +31,15 @@ export class DrizzleUserRepository implements UserRepository {
     const rows = await this.db.select().from(users).where(eq(users.id, id)).limit(1);
     const row = rows[0];
     return row === undefined ? null : ((await this.hydrate([row]))[0] ?? null);
+  }
+
+  async findManyByIds(ids: readonly UserId[]): Promise<readonly User[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .select()
+      .from(users)
+      .where(inArray(users.id, [...ids]));
+    return this.hydrate(rows);
   }
 
   async findByIdentifier(identifier: LoginIdentifier): Promise<User | null> {

@@ -54,6 +54,8 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
       Permissions.reports.read,
       Permissions.messaging.read,
       Permissions.messaging.send,
+      Permissions.messaging.startDirect,
+      Permissions.messaging.createGroup,
       Permissions.live.join,
       Permissions.files.read,
     ],
@@ -67,6 +69,8 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
       Permissions.assignments.manage,
       Permissions.messaging.read,
       Permissions.messaging.send,
+      Permissions.messaging.startDirect,
+      Permissions.messaging.createGroup,
       Permissions.live.join,
       Permissions.live.speak,
       Permissions.live.moderate,
@@ -74,7 +78,11 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
       Permissions.files.upload,
     ],
 
-    /** Provisional: Q1 — may an assistant speak in, or moderate, a live room? */
+    /**
+     * Provisional: Q1 — may an assistant speak in, or moderate, a live room?
+     * Like students, assistants take part in conversations but do not start
+     * them (Q6).
+     */
     [Roles.assistantTeacher]: [
       Permissions.academic.read,
       Permissions.attendance.read,
@@ -87,8 +95,12 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
 
     /**
      * Students may ask for the floor (`live.raise_hand`) but never take it
-     * (`live.speak`) — speaking is granted per session by a host. Q6 decides who
-     * a student may message; `messaging.send` here only means "may send at all".
+     * (`live.speak`) — speaking is granted per session by a host.
+     *
+     * Messaging: students read and reply in conversations staff place them in,
+     * but may not START one — no direct messages to peers or to adults of their
+     * choosing, no groups of their own. The conservative default for an
+     * institution of children; the institution decides otherwise (Q6).
      */
     [Roles.student]: [
       Permissions.academic.read,

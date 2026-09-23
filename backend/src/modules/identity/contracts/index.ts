@@ -1,3 +1,4 @@
+export * from './account-directory';
 export * from './authorization';
 export * from './permissions';
 export * from './principal';

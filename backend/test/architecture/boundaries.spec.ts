@@ -1,22 +1,4 @@
-import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
-
-interface Violation {
-  readonly from: string;
-  readonly to: string;
-  readonly rule: { readonly name: string; readonly severity: string };
-}
-
-interface CruiseOutput {
-  readonly summary: {
-    readonly violations: readonly Violation[];
-    readonly totalCruised: number;
-  };
-  readonly modules: readonly {
-    readonly source: string;
-    readonly dependencies: readonly { readonly resolved: string }[];
-  }[];
-}
+import { cruise, type CruiseOutput } from '../support/dependency-graph';
 
 /**
  * The architecture, asserted.
@@ -30,26 +12,10 @@ interface CruiseOutput {
  * runs precisely what CI runs).
  */
 describe('module boundaries', () => {
-  const projectRoot = join(__dirname, '..', '..');
   let output: CruiseOutput;
 
   beforeAll(() => {
-    const binary = join(projectRoot, 'node_modules', '.bin', 'depcruise');
-    let stdout: string;
-    try {
-      stdout = execFileSync(
-        binary,
-        ['src', '--config', '.dependency-cruiser.cjs', '--output-type', 'json'],
-        { cwd: projectRoot, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 },
-      );
-    } catch (error) {
-      // depcruise exits non-zero when it finds violations; the report is still
-      // on stdout and is exactly what we want to assert against.
-      const execError = error as { stdout?: string };
-      if (typeof execError.stdout !== 'string' || execError.stdout.length === 0) throw error;
-      stdout = execError.stdout;
-    }
-    output = JSON.parse(stdout) as CruiseOutput;
+    output = cruise();
   }, 180_000);
 
   it('analysed the source tree', () => {

@@ -78,9 +78,12 @@ describe('route authorization', () => {
 
   it('finds every controller in the source tree', () => {
     expect(controllers.sort()).toEqual([
+      'modules/files/api/uploads.controller.ts#UploadsController',
+      'modules/files/infrastructure/local-transfer.controller.ts#LocalTransferController',
       'modules/identity/api/admin-users.controller.ts#AdminUsersController',
       'modules/identity/api/auth.controller.ts#AuthController',
       'modules/live/api/live.controller.ts#LiveController',
+      'modules/messaging/api/conversations.controller.ts#ConversationsController',
       'platform/health/health.controller.ts#HealthController',
     ]);
     expect(routes.length).toBeGreaterThanOrEqual(20);
@@ -114,11 +117,18 @@ describe('route authorization', () => {
 
     // Sign-in, token refresh, and the two health probes. Anything else must be
     // argued for — in this list, in review.
+    //
+    // The local storage transfer routes are public in the guard's sense only:
+    // each request carries a purpose-bound HMAC signature that expires in
+    // minutes, which is the authorization — exactly as for a presigned
+    // object-store URL, which never sees a bearer token either.
     expect(publicRoutes).toEqual([
       'AuthController.login',
       'AuthController.refresh',
       'HealthController.live',
       'HealthController.ready',
+      'LocalTransferController.download',
+      'LocalTransferController.upload',
     ]);
   });
 
