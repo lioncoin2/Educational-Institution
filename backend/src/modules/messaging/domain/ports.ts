@@ -165,6 +165,8 @@ export interface MessagingReadModel {
       readonly excludeUserId?: string;
       /** Only members whose visibility window includes this sequence. */
       readonly visibleSequence?: number;
+      /** Only these people, when they are members. */
+      readonly onlyUserIds?: readonly string[];
     },
   ): Promise<{ readonly userIds: readonly string[]; readonly next: string | null }>;
 }

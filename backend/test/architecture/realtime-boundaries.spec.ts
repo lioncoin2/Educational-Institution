@@ -6,8 +6,10 @@ import { cruise, edgesFrom, reachableFrom, type CruiseOutput } from '../support/
  *
  *   - messaging (domain, application, contracts, api, adapters) reaches no
  *     WebSocket library and nothing of the realtime module;
- *   - identity and notifications reach neither either — and notifications and
- *     realtime, two independent subscribers, never reach each other;
+ *   - identity and notifications reach neither either;
+ *   - realtime knows notifications only through its contracts (the events
+ *     and the reader it renders a notification with) — never its storage,
+ *     its tables or its use cases; realtime owns no notification state;
  *   - inside realtime, only the infrastructure adapter knows a socket library;
  *   - realtime knows messaging and identity through their contracts only;
  *   - nothing but the composition root imports realtime.
@@ -58,10 +60,29 @@ describe('realtime boundaries', () => {
     ).toEqual([]);
   });
 
-  it('keeps realtime and notifications independent of each other', () => {
+  it('lets realtime know notifications only through its contracts', () => {
+    const intrusions = edgesFrom(output, inModule('realtime'))
+      .filter(
+        (edge) =>
+          edge.resolved.startsWith('src/modules/notifications/') &&
+          !edge.resolved.startsWith('src/modules/notifications/contracts/'),
+      )
+      .map((edge) => `${edge.source} -> ${edge.resolved}`);
+    expect(intrusions).toEqual([]);
+    // …and through them, nothing of notifications' persistence or logic.
     expect(
-      reaching(inModule('realtime'), (path) => path.startsWith('src/modules/notifications/')),
+      reaching(inModule('realtime'), (path) =>
+        /^src\/modules\/notifications\/(domain|application|infrastructure|api)\//.test(path),
+      ),
     ).toEqual([]);
+  });
+
+  it('finds realtime using the notifications contract — the check above is not vacuous', () => {
+    expect(
+      edgesFrom(output, inModule('realtime')).some((edge) =>
+        edge.resolved.startsWith('src/modules/notifications/contracts/'),
+      ),
+    ).toBe(true);
   });
 
   it('lets only the realtime adapter know a socket library', () => {

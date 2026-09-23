@@ -85,7 +85,7 @@ module.exports = {
       from: { path: '^src/modules/[^/]+/application/' },
       to: {
         dependencyTypes: ['npm'],
-        path: '^(livekit-server-sdk|drizzle-orm|pg|ioredis|express|@nestjs/platform-express|nestjs-pino|pino|ws|socket\\.io|@nestjs/websockets|@nestjs/platform-ws|@nestjs/platform-socket\\.io)',
+        path: '^(livekit-server-sdk|drizzle-orm|pg|ioredis|express|@nestjs/platform-express|nestjs-pino|pino|ws|socket\\.io|@nestjs/websockets|@nestjs/platform-ws|@nestjs/platform-socket\\.io|firebase|firebase-admin|@firebase/|apn|@parse/node-apn|node-apn|web-push|node-pushnotifications)',
       },
     },
     {
@@ -99,6 +99,20 @@ module.exports = {
       from: { path: '^src/', pathNot: '^src/modules/realtime/infrastructure/' },
       to: {
         path: '^node_modules/(@types/)?(ws|socket\\.io|socket\\.io-client|engine\\.io|@nestjs/websockets|@nestjs/platform-ws|@nestjs/platform-socket\\.io)/',
+      },
+    },
+
+    {
+      name: 'push-sdks-only-in-the-notifications-adapter',
+      severity: 'error',
+      comment:
+        'Push delivery is an adapter behind the notifications module\'s PushProvider ' +
+        'port: exactly one directory may know a push SDK (Firebase, APNs, web push), ' +
+        'so notification logic never depends on a vendor and no other module can ' +
+        'send a push behind the notification pipeline\'s back.',
+      from: { path: '^src/', pathNot: '^src/modules/notifications/infrastructure/' },
+      to: {
+        path: '^node_modules/(@types/)?(firebase|firebase-admin|@firebase/[^/]+|apn|@parse/node-apn|node-apn|web-push|node-pushnotifications)/',
       },
     },
 

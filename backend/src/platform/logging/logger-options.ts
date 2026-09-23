@@ -17,6 +17,10 @@ const SENSITIVE_KEYS = [
   'previousRefreshTokenHash',
   'accessToken',
   'token',
+  // A push provider's address for a device: not a credential, but never
+  // logged either (notifications.md, "Devices").
+  'pushToken',
+  'deviceToken',
   'secret',
   'jwtSecret',
   'apiSecret',

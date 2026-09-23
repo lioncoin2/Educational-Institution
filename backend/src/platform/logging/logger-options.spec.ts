@@ -31,6 +31,8 @@ const SECRETS = {
   previousRefreshTokenHash: 'stored-previous-hash',
   accessToken: 'eyJ.access.token',
   token: 'bare-token-value',
+  pushToken: 'fcm-registration-token-value',
+  deviceToken: 'apns-device-token-value',
   secret: 'generic-secret-value',
   jwtSecret: 'jwt-signing-key',
   apiSecret: 'livekit-api-secret',

@@ -23,6 +23,9 @@
  *   message.read          the reader's own read mark moved (their other devices)
  *   participant.added     the reader was added to a conversation
  *   participant.removed   the reader was removed from, or left, a conversation
+ *   notification.created  a notification in the reader's own inbox
+ *   notification.read     one of the reader's notifications was read (another device)
+ *   notification.read_all the reader marked everything up to a point read
  *
  * Nothing here knows a socket library. See docs/architecture/realtime.md.
  */

@@ -84,6 +84,7 @@ describe('route authorization', () => {
       'modules/identity/api/auth.controller.ts#AuthController',
       'modules/live/api/live.controller.ts#LiveController',
       'modules/messaging/api/conversations.controller.ts#ConversationsController',
+      'modules/notifications/api/notifications.controller.ts#NotificationsController',
       'platform/health/health.controller.ts#HealthController',
     ]);
     expect(routes.length).toBeGreaterThanOrEqual(20);
@@ -130,6 +131,26 @@ describe('route authorization', () => {
       'LocalTransferController.download',
       'LocalTransferController.upload',
     ]);
+  });
+
+  // A person's own inbox, preferences and devices: authentication and nothing
+  // else, because every use case is scoped to the caller's own id — and never
+  // public, because there is no inbox without an account.
+  it('keeps every notification route authenticated — never public, never widened', () => {
+    const notificationRoutes = routes.filter((route) =>
+      route.name.startsWith('NotificationsController.'),
+    );
+    expect(notificationRoutes.map((route) => route.name).sort()).toEqual([
+      'NotificationsController.changePreferences',
+      'NotificationsController.device',
+      'NotificationsController.forgetDevice',
+      'NotificationsController.list',
+      'NotificationsController.preferences',
+      'NotificationsController.read',
+      'NotificationsController.readAll',
+      'NotificationsController.unread',
+    ]);
+    expect(notificationRoutes.filter((route) => !route.authenticated)).toEqual([]);
   });
 
   it('puts every administrative route behind a permission, never mere authentication', () => {

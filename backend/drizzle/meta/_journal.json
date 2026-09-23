@@ -43,6 +43,13 @@
       "when": 1790134564871,
       "tag": "0005_seed_messaging_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790145788832,
+      "tag": "0006_notifications",
+      "breakpoints": true
     }
   ]
 }

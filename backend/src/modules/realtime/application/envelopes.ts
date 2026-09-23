@@ -1,14 +1,15 @@
 import type { MessageView, PersonView } from '../../messaging/contracts/message-view';
 import type { ConversationPosition } from '../../messaging/contracts/message-delivery';
 import type { ConversationType, ParticipantRole } from '../../messaging/contracts/vocabulary';
+import type { NotificationView } from '../../notifications/contracts/notification-reader';
 import { PROTOCOL_VERSION, type RealtimeErrorCode } from '../domain/protocol';
 
 /**
  * Server → client frames, version 1. Every one is built here, field by field,
- * from messaging's contract views and the event's identifiers — never by
- * spreading a domain event or a stored row onto the wire, so nothing the
- * contract does not name (an audit field, a storage key, a signed URL, a
- * token) can reach a client by accident.
+ * from messaging's and notifications' contract views and the event's
+ * identifiers — never by spreading a domain event or a stored row onto the
+ * wire, so nothing the contract does not name (an audit field, a storage key,
+ * a signed URL, a token, a deduplication key) can reach a client by accident.
  *
  * Each builder returns the serialized frame: an event is serialized once and
  * the same string is sent to every connection that receives it.
@@ -219,5 +220,62 @@ export function participantRemovedFrame(input: {
     conversationId: input.conversationId,
     userId: input.userId,
     reason: input.reason,
+  });
+}
+
+// ── Notifications ──────────────────────────────────────────────────────────
+//
+// A notification exactly as the HTTP inbox renders one (`NotificationResponse`
+// in the notifications module): the recipient's own, so it carries no
+// recipient id.
+
+function wireNotification(view: NotificationView): Record<string, unknown> {
+  return {
+    id: view.id,
+    type: view.type,
+    category: view.category,
+    titleKey: view.titleKey,
+    bodyKey: view.bodyKey,
+    params: { ...view.params },
+    target: { ...view.target },
+    createdAt: view.createdAt.toISOString(),
+    readAt: iso(view.readAt),
+  };
+}
+
+export function notificationCreatedFrame(view: NotificationView): string {
+  return frame({
+    type: 'notification.created',
+    eventId: `notification.created:${view.id}`,
+    occurredAt: view.createdAt.toISOString(),
+    notification: wireNotification(view),
+  });
+}
+
+export function notificationReadFrame(input: {
+  readonly notificationId: string;
+  readonly readAt: string;
+}): string {
+  return frame({
+    type: 'notification.read',
+    eventId: `notification.read:${input.notificationId}`,
+    occurredAt: input.readAt,
+    notificationId: input.notificationId,
+    readAt: input.readAt,
+  });
+}
+
+export function notificationsReadFrame(input: {
+  readonly throughCreatedAt: string;
+  readonly throughId: string | null;
+  readonly readAt: string;
+}): string {
+  return frame({
+    type: 'notification.read_all',
+    eventId: `notification.read_all:${input.throughCreatedAt}:${input.throughId ?? '*'}:${input.readAt}`,
+    occurredAt: input.readAt,
+    throughCreatedAt: input.throughCreatedAt,
+    throughId: input.throughId,
+    readAt: input.readAt,
   });
 }

@@ -187,7 +187,7 @@ export async function messagingHarness(
     removeParticipant: new RemoveParticipantUseCase(access, repository, audit, events, clock),
     leave: new LeaveConversationUseCase(access, repository, audit, events, clock),
     attachmentLink: new GetAttachmentLinkUseCase(access, repository, files.fileAssets),
-    recipients: new MessageRecipientsService(readModel),
+    recipients: new MessageRecipientsService(readModel, directory),
     delivery: new MessageDeliveryService(repository, views, getConversation),
 
     /** A new ACTIVE account with these roles, and the principal it signs in as. */

@@ -249,14 +249,17 @@ export class InMemoryMessagingStore implements MessagingRepository, MessagingRea
       readonly afterUserId?: string;
       readonly excludeUserId?: string;
       readonly visibleSequence?: number;
+      readonly onlyUserIds?: readonly string[];
     },
   ) {
+    const only = page.onlyUserIds === undefined ? undefined : new Set(page.onlyUserIds);
     const ids = this.members(conversationId, page.afterUserId)
       .filter(
         (participant) =>
           page.visibleSequence === undefined ||
           participant.hiddenThroughSequence < page.visibleSequence,
       )
+      .filter((participant) => only === undefined || only.has(participant.userId))
       .map((participant) => participant.userId)
       .filter((userId) => userId !== page.excludeUserId);
     const userIds = ids.slice(0, page.limit);

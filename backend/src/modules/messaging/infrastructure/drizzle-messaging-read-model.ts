@@ -140,8 +140,10 @@ export class DrizzleMessagingReadModel implements MessagingReadModel {
       readonly afterUserId?: string;
       readonly excludeUserId?: string;
       readonly visibleSequence?: number;
+      readonly onlyUserIds?: readonly string[];
     },
   ) {
+    if (page.onlyUserIds?.length === 0) return { userIds: [], next: null };
     const rows = await this.db
       .select({ userId: conversationParticipants.userId })
       .from(conversationParticipants)
@@ -155,6 +157,9 @@ export class DrizzleMessagingReadModel implements MessagingReadModel {
           page.visibleSequence === undefined
             ? undefined
             : lt(conversationParticipants.hiddenThroughSequence, page.visibleSequence),
+          page.onlyUserIds === undefined
+            ? undefined
+            : inArray(conversationParticipants.userId, [...page.onlyUserIds]),
         ),
       )
       .orderBy(asc(conversationParticipants.userId))

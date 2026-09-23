@@ -29,6 +29,19 @@ export interface MessageRecipients {
        * it; without this they would be told about a message they cannot open.
        */
       readonly visibleSequence?: number;
+      /**
+       * Only members who may READ the conversation now: active accounts whose
+       * roles grant `messaging.read` — the two conditions, besides
+       * membership, that the HTTP API checks before showing it. For a
+       * delivery module that tells people about content, rather than one
+       * that relies on its own connection-time check.
+       */
+      readonly readersOnly?: boolean;
+      /**
+       * Only these people, if they are members (at most `MAX_RECIPIENT_PAGE`)
+       * — "is this person still in it?" without walking everyone.
+       */
+      readonly onlyUserIds?: readonly string[];
       readonly cursor?: string | null;
       readonly limit: number;
     },
