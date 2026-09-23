@@ -25,6 +25,7 @@ export class MessageRecipientsService implements MessageRecipients {
     conversationId: string,
     options: {
       readonly excludeUserId?: string;
+      readonly visibleSequence?: number;
       readonly cursor?: string | null;
       readonly limit: number;
     },
@@ -35,6 +36,7 @@ export class MessageRecipientsService implements MessageRecipients {
       limit: Math.max(1, Math.min(options.limit, MAX_RECIPIENT_PAGE)),
       afterUserId: after.value,
       excludeUserId: options.excludeUserId,
+      visibleSequence: options.visibleSequence,
     });
     return {
       userIds: page.userIds,

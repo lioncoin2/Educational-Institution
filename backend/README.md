@@ -26,7 +26,12 @@ fallbacks are deliberate and are logged.
 Production refuses to start without its own `JWT_SECRET` and
 `STORAGE_SIGNING_SECRET` (each ≥ 32 bytes, not a placeholder, not equal to each
 other). For the Flutter **web** app, list its origin in `CORS_ORIGINS`
-(explicit origins only; native apps need nothing). See `.env.example`.
+(explicit origins only; native apps need nothing) — the same list decides
+which browser pages may open the realtime WebSocket. See `.env.example`.
+
+The realtime endpoint is served by the same process, on the same port:
+`ws://localhost:3000/realtime`. Nothing to configure; with no one connected it
+costs nothing.
 
 With Postgres:
 
@@ -78,10 +83,12 @@ through `/admin/users`. See
 | Attachment link | `GET …/:id/messages/:messageId/attachments/:fileAssetId/link` | `messaging.read` + `files.read` + membership |
 | Membership | `POST …/:id/participants`, `DELETE …/participants/:userId`, `POST …/:id/leave` | owner / moderator, per use case |
 | Health | `GET /health/live`, `GET /health/ready` | public |
+| Realtime | WebSocket `/realtime` — `auth`, `subscribe`, `ping` in; `message.sent`, `message.read`, `conversation.created`, `participant.added` / `.removed` out | access token in the first frame · `messaging.read` · events only for conversations you are in |
 
 Messaging and files are described in
 [messaging.md](../docs/architecture/messaging.md) and
-[storage.md](../docs/architecture/storage.md).
+[storage.md](../docs/architecture/storage.md); the realtime protocol in
+[realtime.md, Part M](../docs/architecture/realtime.md).
 
 Errors always have one shape:
 `{ "error": { "kind"?, "code", "message", "details"? }, "requestId" }`.

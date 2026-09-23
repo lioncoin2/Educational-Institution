@@ -2,7 +2,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 
 import { CLOCK, type Clock } from '../../../shared';
-import type { AccessToken, AccessTokenSubject, TokenIssuer } from '../domain/ports';
+import type {
+  AccessToken,
+  AccessTokenSubject,
+  TokenIssuer,
+  VerifiedAccessToken,
+} from '../domain/ports';
 
 export interface AccessTokenSettings {
   /** HMAC key. Validated for length at boot in production (platform/config). */
@@ -53,7 +58,7 @@ export class JwtTokenIssuer implements TokenIssuer {
     return { token, expiresInSeconds: this.settings.ttlSeconds };
   }
 
-  async verifyAccessToken(token: string): Promise<AccessTokenSubject | null> {
+  async verifyAccessToken(token: string): Promise<VerifiedAccessToken | null> {
     try {
       const claims = await this.jwt.verifyAsync<Record<string, unknown>>(token, {
         secret: this.settings.secret,
@@ -62,8 +67,14 @@ export class JwtTokenIssuer implements TokenIssuer {
         audience: this.settings.audience,
         clockTimestamp: this.nowSeconds(),
       });
-      if (typeof claims.sub !== 'string' || typeof claims.sid !== 'string') return null;
-      return { userId: claims.sub, sessionId: claims.sid };
+      if (
+        typeof claims.sub !== 'string' ||
+        typeof claims.sid !== 'string' ||
+        typeof claims.exp !== 'number'
+      ) {
+        return null;
+      }
+      return { userId: claims.sub, sessionId: claims.sid, expiresAt: new Date(claims.exp * 1000) };
     } catch {
       // Expired, tampered, wrong issuer, wrong algorithm — all the same answer.
       return null;

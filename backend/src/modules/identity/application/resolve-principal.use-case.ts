@@ -1,6 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import { CLOCK, type Clock } from '../../../shared';
+import type {
+  AccessTokenAuthenticator,
+  Authentication,
+  SessionReference,
+} from '../contracts/access-tokens';
 import type { Principal } from '../contracts/principal';
 import { canAuthenticate } from '../domain/account-status';
 import { isSessionActive, type AuthSessionId } from '../domain/auth-session';
@@ -8,6 +13,7 @@ import {
   AUTH_SESSION_REPOSITORY,
   TOKEN_ISSUER,
   USER_REPOSITORY,
+  type AccessTokenSubject,
   type AuthSessionRepository,
   type TokenIssuer,
   type UserRepository,
@@ -29,9 +35,12 @@ import { RolePermissions } from './role-permissions';
  * The price is two primary-key reads per authenticated request (the role
  * matrix itself is cached). That is deliberate: a token that outlives the
  * decision to revoke it is the failure mode this exists to prevent.
+ *
+ * It is also identity's `AccessTokenAuthenticator`: a realtime connection is
+ * authenticated by exactly this code, and re-checked by the second half of it.
  */
 @Injectable()
-export class ResolvePrincipalUseCase {
+export class ResolvePrincipalUseCase implements AccessTokenAuthenticator {
   constructor(
     @Inject(TOKEN_ISSUER) private readonly tokens: TokenIssuer,
     @Inject(AUTH_SESSION_REPOSITORY) private readonly sessions: AuthSessionRepository,
@@ -42,9 +51,22 @@ export class ResolvePrincipalUseCase {
 
   /** The principal, or null when the caller must be treated as anonymous. */
   async execute(accessToken: string): Promise<Principal | null> {
-    const subject = await this.tokens.verifyAccessToken(accessToken);
-    if (subject === null) return null;
+    return (await this.authenticate(accessToken))?.principal ?? null;
+  }
 
+  async authenticate(accessToken: string): Promise<Authentication | null> {
+    const verified = await this.tokens.verifyAccessToken(accessToken);
+    if (verified === null) return null;
+    const principal = await this.principalFor(verified);
+    return principal === null ? null : { principal, expiresAt: verified.expiresAt };
+  }
+
+  async revalidate(session: SessionReference): Promise<Principal | null> {
+    return this.principalFor(session);
+  }
+
+  /** Everything after the signature: the session, the account, the roles — as of now. */
+  private async principalFor(subject: AccessTokenSubject): Promise<Principal | null> {
     const session = await this.sessions.findById(subject.sessionId as AuthSessionId);
     if (
       session === null ||

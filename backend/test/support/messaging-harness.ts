@@ -18,6 +18,7 @@ import {
   StartDirectConversationUseCase,
 } from '../../src/modules/messaging/application/create-conversation.use-cases';
 import { MarkReadUseCase } from '../../src/modules/messaging/application/mark-read.use-case';
+import { MessageDeliveryService } from '../../src/modules/messaging/application/message-delivery.service';
 import {
   AddParticipantsUseCase,
   LeaveConversationUseCase,
@@ -156,6 +157,8 @@ export async function messagingHarness(
     ids,
   );
 
+  const getConversation = new GetConversationUseCase(access, readModel, views);
+
   let people = 0;
   const h = {
     clock,
@@ -176,7 +179,7 @@ export async function messagingHarness(
     sendImage: new SendImageMessageUseCase(sender),
     sendFile: new SendFileMessageUseCase(sender),
     listConversations: new ListConversationsUseCase(access, readModel, views),
-    getConversation: new GetConversationUseCase(access, readModel, views),
+    getConversation,
     listMessages: new ListMessagesUseCase(access, readModel, views),
     listParticipants: new ListParticipantsUseCase(access, readModel, views),
     markRead: new MarkReadUseCase(access, repository, events, clock),
@@ -185,6 +188,7 @@ export async function messagingHarness(
     leave: new LeaveConversationUseCase(access, repository, audit, events, clock),
     attachmentLink: new GetAttachmentLinkUseCase(access, repository, files.fileAssets),
     recipients: new MessageRecipientsService(readModel),
+    delivery: new MessageDeliveryService(repository, views, getConversation),
 
     /** A new ACTIVE account with these roles, and the principal it signs in as. */
     person(role: KnownRoleCode, displayName?: string, extraRoles: KnownRoleCode[] = []): Principal {

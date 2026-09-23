@@ -37,7 +37,8 @@
     "pino": "^9.5.0",
     "pino-http": "^10.3.0",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@nestjs/testing": "^11.0.0",
@@ -45,6 +46,7 @@
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.11.10",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
     "dependency-cruiser": "^16.0.0",

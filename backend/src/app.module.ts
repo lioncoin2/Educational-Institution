@@ -10,6 +10,7 @@ import { MessagingModule } from './modules/messaging/messaging.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { PeopleModule } from './modules/people/people.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
 import { ReportingModule } from './modules/reporting/reporting.module';
 import { DatabaseModule } from './platform/database';
 import { PlatformModule } from './platform/platform.module';
@@ -35,6 +36,7 @@ import { PlatformModule } from './platform/platform.module';
     LiveModule,
     FilesModule,
     NotificationsModule,
+    RealtimeModule,
     AutomationModule,
     ReportingModule,
   ],

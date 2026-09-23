@@ -1,34 +1,13 @@
-import type { FileAssetSummary } from '../../files/contracts/file-assets';
 import type { ConversationType, MessageType, ParticipantRole } from '../contracts/vocabulary';
 
-/** A file on a message. `file` is null once the file is no longer available. */
-export interface AttachmentView {
-  readonly fileAssetId: string;
-  readonly file: FileAssetSummary | null;
-}
+/**
+ * A message and its files, as a member sees them, are part of messaging's
+ * public contract — the realtime module delivers exactly these — so they are
+ * defined in `contracts/` and re-exported here for the application's use.
+ */
+import type { AttachmentView, MessageView, PersonView } from '../contracts/message-view';
 
-export interface MessageView {
-  readonly id: string;
-  readonly conversationId: string;
-  /** The order. Also the pagination cursor. */
-  readonly sequence: number;
-  readonly senderId: string;
-  readonly type: MessageType;
-  /** Null for a deleted message (a tombstone) and for media without a caption. */
-  readonly body: string | null;
-  readonly replyToMessageId: string | null;
-  /** Only on the viewer's own messages: how their other devices reconcile a send. */
-  readonly clientMessageId: string | null;
-  readonly createdAt: Date;
-  readonly editedAt: Date | null;
-  readonly deletedAt: Date | null;
-  readonly attachments: readonly AttachmentView[];
-}
-
-export interface PersonView {
-  readonly userId: string;
-  readonly displayName: string;
-}
+export type { AttachmentView, MessageView, PersonView };
 
 export interface MessagePreview {
   readonly sequence: number;

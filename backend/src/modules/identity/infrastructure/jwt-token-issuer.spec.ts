@@ -27,8 +27,10 @@ const decode = (token: string, part: 0 | 1): Record<string, unknown> =>
 const b64 = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
 
 describe('JwtTokenIssuer', () => {
-  it('round-trips the subject and session', async () => {
-    const tokens = issuer();
+  it('round-trips the subject and session, and reports when the token expires', async () => {
+    const clock = new AdjustableClock();
+    const tokens = issuer(clock);
+    const issuedAt = Math.floor(clock.now().getTime() / 1000);
     const { token, expiresInSeconds } = await tokens.issueAccessToken({
       userId: 'u-1',
       sessionId: 's-1',
@@ -37,6 +39,7 @@ describe('JwtTokenIssuer', () => {
     await expect(tokens.verifyAccessToken(token)).resolves.toEqual({
       userId: 'u-1',
       sessionId: 's-1',
+      expiresAt: new Date((issuedAt + 900) * 1000),
     });
   });
 

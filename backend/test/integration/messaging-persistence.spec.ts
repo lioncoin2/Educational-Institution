@@ -549,6 +549,30 @@ describeWithPostgres('messaging and files on Postgres', () => {
       } while (afterUserId !== undefined);
       expect(collected).toEqual([...members].sort());
     });
+
+    it('leaves out, for a given message, members whose window starts after it', async () => {
+      const owner = `window-${ids.next()}`;
+      const early = `window-early-${ids.next()}`;
+      const late = `window-late-${ids.next()}`;
+      const conversation = group(owner, [early]);
+      const id = conversation.conversation.id;
+      await repository.createConversation(conversation);
+      await repository.appendMessage(text(id, owner, 'before'));
+      await repository.addParticipants({
+        conversationId: id,
+        userIds: [late],
+        role: 'MEMBER',
+        addedBy: owner,
+        at: AT,
+        capacity: 500,
+      });
+      await repository.appendMessage(text(id, owner, 'after'));
+
+      const audience = async (visibleSequence: number) =>
+        [...(await readModel.listMemberIds(id, { limit: 10, visibleSequence })).userIds].sort();
+      expect(await audience(1)).toEqual([early, owner].sort());
+      expect(await audience(2)).toEqual([early, late, owner].sort());
+    });
   });
 
   describe('file assets', () => {

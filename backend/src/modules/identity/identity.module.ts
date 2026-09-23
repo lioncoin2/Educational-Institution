@@ -32,6 +32,7 @@ import {
   LogoutUseCase,
   RevokeMySessionUseCase,
 } from './application/session-management.use-cases';
+import { ACCESS_TOKEN_AUTHENTICATOR } from './contracts/access-tokens';
 import { ACCOUNT_DIRECTORY } from './contracts/account-directory';
 import { AUTHORIZATION_SERVICE } from './contracts/authorization';
 import {
@@ -75,10 +76,12 @@ function persistent<T>(
 /**
  * Identity & Access — the composition root.
  *
- * It exports exactly two things: `AUTHORIZATION_SERVICE`, the only way any
- * other module asks an access question, and `ACCOUNT_DIRECTORY`, the only way
- * one learns who an account is (id, display name, active). Everything else —
- * users, sessions, tokens, the role matrix — is private to this module.
+ * It exports exactly three things: `AUTHORIZATION_SERVICE`, the only way any
+ * other module asks an access question; `ACCOUNT_DIRECTORY`, the only way one
+ * learns who an account is (id, display name, active); and
+ * `ACCESS_TOKEN_AUTHENTICATOR`, the HTTP guard's own authentication for
+ * transports that are not a request (the realtime connection). Everything
+ * else — users, sessions, tokens, the role matrix — is private to this module.
  *
  * No account is seeded and no default credential exists. The first owner is
  * created with `npm run identity:bootstrap-owner` (see backend/README.md).
@@ -151,6 +154,8 @@ function persistent<T>(
     RolePermissions,
     AccountAdministration,
     ResolvePrincipalUseCase,
+    // One implementation of authentication: the guard's and the contract's.
+    { provide: ACCESS_TOKEN_AUTHENTICATOR, useExisting: ResolvePrincipalUseCase },
     LoginUseCase,
     RefreshSessionUseCase,
     LogoutUseCase,
@@ -173,6 +178,6 @@ function persistent<T>(
     // application root never reaches into identity's internals.
     { provide: APP_GUARD, useExisting: AccessGuard },
   ],
-  exports: [AUTHORIZATION_SERVICE, ACCOUNT_DIRECTORY],
+  exports: [AUTHORIZATION_SERVICE, ACCOUNT_DIRECTORY, ACCESS_TOKEN_AUTHENTICATOR],
 })
 export class IdentityModule {}

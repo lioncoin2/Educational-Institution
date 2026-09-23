@@ -27,6 +27,8 @@ export function describeWithPostgres(name: string, body: () => void): void {
 }
 
 export interface ScratchDatabase {
+  /** Its connection string — for booting the whole application against it. */
+  readonly url: string;
   readonly pool: Pool;
   readonly db: Database;
   drop(): Promise<void>;
@@ -44,11 +46,13 @@ export async function scratchDatabase(options: { upTo?: number } = {}): Promise<
   await admin.query(`CREATE DATABASE "${name}"`);
   await admin.end();
 
-  const pool = new Pool({ connectionString: withDatabase(adminUrl, name), max: 4 });
+  const url = withDatabase(adminUrl, name);
+  const pool = new Pool({ connectionString: url, max: 4 });
   const db = createDatabase(pool);
   await migrateTo(db, options.upTo);
 
   return {
+    url,
     pool,
     db,
     async drop() {

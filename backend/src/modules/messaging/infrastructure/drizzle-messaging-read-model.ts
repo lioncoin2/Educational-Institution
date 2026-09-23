@@ -139,6 +139,7 @@ export class DrizzleMessagingReadModel implements MessagingReadModel {
       readonly limit: number;
       readonly afterUserId?: string;
       readonly excludeUserId?: string;
+      readonly visibleSequence?: number;
     },
   ) {
     const rows = await this.db
@@ -150,6 +151,10 @@ export class DrizzleMessagingReadModel implements MessagingReadModel {
           page.excludeUserId === undefined
             ? undefined
             : ne(conversationParticipants.userId, page.excludeUserId),
+          // Someone who joined after this message was sent cannot see it.
+          page.visibleSequence === undefined
+            ? undefined
+            : lt(conversationParticipants.hiddenThroughSequence, page.visibleSequence),
         ),
       )
       .orderBy(asc(conversationParticipants.userId))

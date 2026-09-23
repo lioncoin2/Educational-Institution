@@ -14,6 +14,7 @@ import {
   StartDirectConversationUseCase,
 } from './application/create-conversation.use-cases';
 import { MarkReadUseCase } from './application/mark-read.use-case';
+import { MessageDeliveryService } from './application/message-delivery.service';
 import {
   AddParticipantsUseCase,
   LeaveConversationUseCase,
@@ -34,6 +35,7 @@ import {
   SendTextMessageUseCase,
   SendVoiceMessageUseCase,
 } from './application/send-message.use-cases';
+import { MESSAGE_DELIVERY } from './contracts/message-delivery';
 import { MESSAGE_RECIPIENTS } from './contracts/message-recipients';
 import {
   MESSAGING_READ_MODEL,
@@ -52,8 +54,9 @@ import { InMemoryMessagingStore } from './infrastructure/in-memory-messaging-sto
  * account?) and files' contract (is this upload attachable? a link to it,
  * please), and on nothing else. It never imports a push provider or a
  * realtime transport: it publishes `messaging.*` events, and delivery
- * modules subscribe. It exports one thing — `MESSAGE_RECIPIENTS`, current
- * membership for those delivery modules.
+ * modules subscribe. It exports two things for those delivery modules —
+ * `MESSAGE_RECIPIENTS` (who, as of now) and `MESSAGE_DELIVERY` (what they
+ * see, and whether someone may follow a conversation).
  */
 @Module({
   imports: [IdentityModule, FilesModule],
@@ -100,7 +103,8 @@ import { InMemoryMessagingStore } from './infrastructure/in-memory-messaging-sto
     LeaveConversationUseCase,
     GetAttachmentLinkUseCase,
     { provide: MESSAGE_RECIPIENTS, useClass: MessageRecipientsService },
+    { provide: MESSAGE_DELIVERY, useClass: MessageDeliveryService },
   ],
-  exports: [MESSAGE_RECIPIENTS],
+  exports: [MESSAGE_RECIPIENTS, MESSAGE_DELIVERY],
 })
 export class MessagingModule {}

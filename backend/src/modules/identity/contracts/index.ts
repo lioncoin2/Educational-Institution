@@ -1,3 +1,4 @@
+export * from './access-tokens';
 export * from './account-directory';
 export * from './authorization';
 export * from './permissions';

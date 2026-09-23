@@ -85,7 +85,20 @@ module.exports = {
       from: { path: '^src/modules/[^/]+/application/' },
       to: {
         dependencyTypes: ['npm'],
-        path: '^(livekit-server-sdk|drizzle-orm|pg|ioredis|express|@nestjs/platform-express|nestjs-pino|pino)',
+        path: '^(livekit-server-sdk|drizzle-orm|pg|ioredis|express|@nestjs/platform-express|nestjs-pino|pino|ws|socket\\.io|@nestjs/websockets|@nestjs/platform-ws|@nestjs/platform-socket\\.io)',
+      },
+    },
+    {
+      name: 'websocket-library-only-in-the-realtime-adapter',
+      severity: 'error',
+      comment:
+        'Realtime delivery is an adapter behind the realtime module: exactly one ' +
+        'directory may know a WebSocket library, so the transport stays replaceable and ' +
+        'no business module — messaging, identity, notifications — can grow a dependency ' +
+        'on how bytes reach a client.',
+      from: { path: '^src/', pathNot: '^src/modules/realtime/infrastructure/' },
+      to: {
+        path: '^node_modules/(@types/)?(ws|socket\\.io|socket\\.io-client|engine\\.io|@nestjs/websockets|@nestjs/platform-ws|@nestjs/platform-socket\\.io)/',
       },
     },
 

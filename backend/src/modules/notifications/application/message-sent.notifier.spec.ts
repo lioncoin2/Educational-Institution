@@ -20,13 +20,20 @@ class RecordingDelivery implements NotificationDelivery {
 /** A conversation's members, paged exactly as the messaging contract pages them. */
 class FakeRecipients implements MessageRecipients {
   readonly calls: { cursor: string | null | undefined; limit: number }[] = [];
+  readonly visibleSequences: (number | undefined)[] = [];
   constructor(private readonly members: readonly string[]) {}
 
   async list(
     _conversationId: string,
-    options: { excludeUserId?: string; cursor?: string | null; limit: number },
+    options: {
+      excludeUserId?: string;
+      visibleSequence?: number;
+      cursor?: string | null;
+      limit: number;
+    },
   ): Promise<RecipientPage> {
     this.calls.push({ cursor: options.cursor, limit: options.limit });
+    this.visibleSequences.push(options.visibleSequence);
     const ids = this.members.filter((id) => id !== options.excludeUserId);
     const start =
       options.cursor === null || options.cursor === undefined ? 0 : Number(options.cursor);
@@ -74,6 +81,13 @@ describe('new-message notifications', () => {
         collapseKey: 'messaging:c-1',
       },
     ]);
+  });
+
+  // Someone added after the message was sent cannot open it, so is not told.
+  it('asks only for members who can see the message', async () => {
+    const { subject, recipients } = notifier(['sender', 'a']);
+    await subject.notify(sent(PAYLOAD));
+    expect(recipients.visibleSequences).toEqual([7]);
   });
 
   // A 10,000-member channel is walked in bounded pages, never loaded whole.

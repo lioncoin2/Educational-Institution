@@ -167,7 +167,80 @@ describe('ResolvePrincipalUseCase', () => {
     const h = identityHarness();
     for (const token of ['', 'abc', 'a.b.c', 'Bearer x']) {
       expect(await h.resolvePrincipal.execute(token)).toBeNull();
+      expect(await h.resolvePrincipal.authenticate(token)).toBeNull();
     }
+  });
+});
+
+// The same decision, offered to transports that are not a request.
+describe('ResolvePrincipalUseCase as the AccessTokenAuthenticator', () => {
+  it('authenticates with the principal the guard would see, and the token expiry', async () => {
+    const h = identityHarness();
+    const user = await h.seedUser({ email: 'a@example.com', roles: ['STUDENT'] });
+    const signedIn = await h.signIn('a@example.com');
+
+    const authentication = await h.resolvePrincipal.authenticate(signedIn.accessToken);
+
+    expect(authentication?.principal).toEqual(
+      await h.resolvePrincipal.execute(signedIn.accessToken),
+    );
+    expect(authentication?.principal.userId).toBe(user.id);
+    expect(authentication?.expiresAt).toEqual(new Date(h.clock.now().getTime() + 900_000));
+  });
+
+  it('refuses an expired token and a revoked session alike', async () => {
+    const h = identityHarness();
+    await h.seedUser({ email: 'a@example.com' });
+    const expired = await h.signIn('a@example.com');
+    h.clock.advance(901);
+    expect(await h.resolvePrincipal.authenticate(expired.accessToken)).toBeNull();
+
+    const live = await h.signIn('a@example.com');
+    const principal = (await h.resolvePrincipal.execute(live.accessToken))!;
+    expectOk(await h.logout.execute({ principal, meta: META }));
+    expect(await h.resolvePrincipal.authenticate(live.accessToken)).toBeNull();
+  });
+
+  it('revalidates a principal without its token — and stops once the session ends', async () => {
+    const h = identityHarness();
+    await h.seedUser({ email: 'a@example.com', roles: ['TEACHER'] });
+    const signedIn = await h.signIn('a@example.com');
+    const principal = (await h.resolvePrincipal.execute(signedIn.accessToken))!;
+
+    const session = { userId: principal.userId, sessionId: principal.sessionId! };
+    expect(await h.resolvePrincipal.revalidate(session)).toEqual(principal);
+
+    expectOk(await h.logout.execute({ principal, meta: META }));
+    expect(await h.resolvePrincipal.revalidate(session)).toBeNull();
+  });
+
+  it('revalidates with permissions as they are now, and not at all once suspended', async () => {
+    const h = identityHarness();
+    await h.seedUser({ email: 'owner@example.com', roles: ['OWNER'] });
+    const teacher = await h.seedUser({ email: 't@example.com', roles: ['TEACHER'] });
+    const principal = await h.principalOf('t@example.com');
+    const actor = await h.principalOf('owner@example.com');
+
+    const session = { userId: principal.userId, sessionId: principal.sessionId! };
+    expectOk(
+      await h.revokeRole.execute({ actor, userId: teacher.id, role: 'TEACHER', meta: META }),
+    );
+    const demoted = await h.resolvePrincipal.revalidate(session);
+    expect(demoted?.roles).toEqual([]);
+    expect(demoted?.permissions.has('messaging.read')).toBe(false);
+
+    await h.users.save({ ...(await h.userById(teacher.id)), status: 'SUSPENDED' });
+    expect(await h.resolvePrincipal.revalidate(session)).toBeNull();
+  });
+
+  it("never revalidates a session under someone else's account", async () => {
+    const h = identityHarness();
+    const other = await h.seedUser({ email: 'b@example.com' });
+    await h.seedUser({ email: 'a@example.com' });
+    const principal = await h.principalOf('a@example.com');
+    expect(
+      await h.resolvePrincipal.revalidate({ userId: other.id, sessionId: principal.sessionId! }),
+    ).toBeNull();
   });
 });
 

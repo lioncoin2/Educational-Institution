@@ -76,6 +76,7 @@ export class MessageSentNotifier implements OnModuleInit, OnModuleDestroy {
     do {
       const page = await this.recipients.list(payload.conversationId, {
         excludeUserId: payload.senderId,
+        visibleSequence: payload.sequence,
         cursor,
         limit: MAX_RECIPIENTS_PER_REQUEST,
       });

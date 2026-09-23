@@ -83,6 +83,12 @@ export interface AccessToken {
   readonly expiresInSeconds: number;
 }
 
+/** A token that passed every check: whose it is, which session, and until when. */
+export interface VerifiedAccessToken extends AccessTokenSubject {
+  /** The token's own expiry — a long-lived connection must re-authenticate before it. */
+  readonly expiresAt: Date;
+}
+
 /**
  * Mints and checks access tokens. The domain states the need; infrastructure
  * picks JWT. No layer above infrastructure imports a JWT library.
@@ -93,7 +99,7 @@ export interface AccessToken {
 export interface TokenIssuer {
   issueAccessToken(subject: AccessTokenSubject): Promise<AccessToken>;
   /** The subject, or null for anything invalid, expired, or not ours. Never throws. */
-  verifyAccessToken(token: string): Promise<AccessTokenSubject | null>;
+  verifyAccessToken(token: string): Promise<VerifiedAccessToken | null>;
 }
 
 /**
