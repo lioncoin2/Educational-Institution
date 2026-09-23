@@ -217,9 +217,14 @@ events are grandfathered). Since Phase 0 that includes live's events
 | `academic.section\|program\|halaqa.created` · `.updated` · `.activated` · `.deactivated` | academic — only when something changed | reporting; none subscribed |
 | `academic.student.enrolled` · `academic.student.enrollment_ended` | academic — a new ACTIVE enrollment; one ended (COMPLETED / WITHDRAWN — provisional, and known not to cover moves: Q30, Q37) | attendance, notifications (Q28), reporting; none subscribed |
 | `academic.teacher.assigned` · `academic.teacher.assignment_ended` | academic | a teacher's workspace, notifications (Q28); none subscribed |
+| `communities.community.created` | communities — always followed by `member.added` for the owner | none in v1 |
+| `communities.community.locked` · `.unlocked` | communities — a real status change only, with its `lifecycleVersion` | realtime relay (P5), Live's `ProtectLiveSessions` accelerator (P6); none subscribed yet — no consumer enforces a lock from the event |
+| `communities.member.added` | communities — a manager's add (`source: ADDED`) or a link redemption (`INVITATION`), with its `membershipVersion` | Messaging's projection wake-up (P4), realtime relay (P5); none subscribed yet |
+| `communities.member.removed` | communities — a leave (`reason: LEFT`) or a removal (`REMOVED`); class **S** | Live ejection (P6), Messaging wake-up (P4), realtime relay (P5); none subscribed yet |
+| `communities.invitation.created` · `.revoked` | communities | none; never on any wire — revocation takes effect inside redemption |
 
-The `live.speaker.*`, `identity.*`, `messaging.*`, `notifications.*` and
-`academic.*` events are raised by implemented code today; messaging's have two real subscribers,
+The `live.speaker.*`, `identity.*`, `messaging.*`, `notifications.*`,
+`academic.*` and `communities.*` events are raised by implemented code today; messaging's have two real subscribers,
 notifications and realtime, and notifications' have realtime and its own push
 delivery. The rest are declared so the vocabulary is settled before the
 modules arrive. Notifications' events carry ids, codes and channel flags — a

@@ -58,11 +58,17 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
       Permissions.messaging.createGroup,
       Permissions.live.join,
       Permissions.files.read,
+      Permissions.communities.read,
     ],
 
     /**
      * `academic.teach`: eligible to be assigned to a halaqa. Which halaqat a
      * teacher then sees is decided by those assignments, never by the role.
+     *
+     * `communities.moderate`: eligible to own a community or hold a delegated
+     * capability in one — a ceiling, not a power. A teacher acts in a
+     * community only as its owner or through a grant there (Q44); creating
+     * one is OWNER and ADMIN only (Q41).
      */
     [Roles.teacher]: [
       Permissions.people.read,
@@ -81,6 +87,8 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
       Permissions.live.moderate,
       Permissions.files.read,
       Permissions.files.upload,
+      Permissions.communities.read,
+      Permissions.communities.moderate,
     ],
 
     /**
@@ -97,6 +105,7 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
       Permissions.messaging.send,
       Permissions.live.join,
       Permissions.files.read,
+      Permissions.communities.read,
     ],
 
     /**
@@ -126,6 +135,7 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
       Permissions.live.raiseHand,
       Permissions.files.read,
       Permissions.files.upload,
+      Permissions.communities.read,
     ],
   };
 

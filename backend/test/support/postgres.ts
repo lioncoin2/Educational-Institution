@@ -47,7 +47,7 @@ export async function scratchDatabase(options: { upTo?: number } = {}): Promise<
   await admin.end();
 
   const url = withDatabase(adminUrl, name);
-  const pool = new Pool({ connectionString: url, max: 4 });
+  const pool = tolerateTeardown(new Pool({ connectionString: url, max: 4 }));
   const db = createDatabase(pool);
   await migrateTo(db, options.upTo);
 
@@ -62,6 +62,19 @@ export async function scratchDatabase(options: { upTo?: number } = {}): Promise<
       await cleanup.end();
     },
   };
+}
+
+/**
+ * `pool.end()` resolves once the pool has let go of its clients, not once
+ * their sockets have closed; dropping the database WITH (FORCE) straight
+ * after can terminate one that is still closing (57P01). That is teardown,
+ * not a failure — anything else an idle client reports still surfaces.
+ */
+export function tolerateTeardown(pool: Pool): Pool {
+  pool.on('error', (error) => {
+    if ((error as { code?: unknown }).code !== '57P01') throw error;
+  });
+  return pool;
 }
 
 /**

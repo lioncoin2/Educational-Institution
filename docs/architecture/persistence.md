@@ -137,6 +137,17 @@ transcribed, and a test asserts the database and the constants agree.
 | `0007_academic_core` | generated, **additive only** (plus a header comment) | the five academic tables, with their uniques, CHECKs, `RESTRICT` foreign keys inside the module and the two partial unique "one ACTIVE" indexes; no foreign key to another module |
 | `0008_seed_academic_permissions` | **custom data**, generated from constants | `academic.teach`, `academic.study`, and their provisional grants |
 
+### Communities core (P2) — two steps
+
+| Migration | Kind | Does |
+| --- | --- | --- |
+| `0009_seed_communities_permissions` | **custom data**, generated from constants | `communities.read`, `create`, `moderate`, `manage`, and their provisional grants (Q41, Q43, Q44) |
+| `0010_communities` | generated, **additive only** (plus a header comment) | `communities`, `community_members` (one row per stint) and `community_invitations`, with their CHECKs, the partial unique "one ACTIVE stint" and "one owner" indexes, the version index that orders the membership changefeed, and `RESTRICT` foreign keys inside the module only |
+
+Each has its own upgrade test (`test/integration/communities-migrations.spec.ts`)
+asserting exactly its delta on a database already in use; the academic upgrade
+test stays pinned to 0007–0008.
+
 **The institution's structure is not in a migration.** Sections, programs and
 halaqat are institutional data that administrators change; they are seeded
 by an explicit, idempotent command (`npm run academic:seed-structure`) that
@@ -377,6 +388,21 @@ and say so on stderr; CI always sets it.
   the structure once, keeps an administrator's change and runs concurrently
   without duplicates; migrations 0007–0008 on a database already in use add
   their tables and grants and touch nothing else.
+- **Communities** (`communities-postgres.spec.ts`, `communities-scale.spec.ts`):
+  every named CHECK and partial unique index bites; no foreign key leaves the
+  module; a community with history cannot be deleted; twenty simultaneous
+  redemptions by one person make one member and use one use; fifty people
+  racing for a link's last ten places admit exactly ten; a revocation racing
+  fifty redemptions leaves `uses` equal to the joins; nothing joins after a
+  lock commits; ten simultaneous locks change the community once; overlapping
+  adds, removals, redemptions, leaves, locks and unlocks through six store
+  instances (six "processes") never deadlock; a reader following the
+  changefeed during a storm reconstructs the final membership exactly; and
+  the in-memory store passes the same contract suite. At 30,000 and 100,000
+  members over about 900,000 stint rows, `EXPLAIN` of the statements the
+  adapter actually sends shows index scans only, `members()` walks 30,000 in
+  exactly 30 pages, a roster page is two statements and one directory call,
+  and no request path counts.
 
 ---
 

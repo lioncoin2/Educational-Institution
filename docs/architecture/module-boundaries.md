@@ -156,6 +156,49 @@ architecture test); schedules, attendance, lessons, grades. A halaqa
 
 ---
 
+## communities
+
+**State:** implemented — P2, Communities core ([communities.md](communities.md),
+[ADR 0016](decisions/0016-communities-module.md),
+[ADR 0017](decisions/0017-community-scoped-authorization.md)). Delegated
+capabilities and ownership transfer are P3.
+
+**Responsibility.** Persistent spaces — the brief's "groups" — and who belongs
+to them: membership stints with history, invitation links, the OPEN/LOCKED
+lifecycle, and the one decision every module asks before acting in a
+community for a person.
+
+**Owned entities.** `Community`, `Stint` (a membership), `Invitation` (tables
+`communities`, `community_members`, `community_invitations`).
+
+**Use cases.** Create a community (its creator becomes owner and first
+member); view one; list one's own, or — for an overseer — all; lock and
+unlock; add members; remove a member; leave; list members; create, list and
+revoke invitation links; join by link. One use case per act, one evaluator,
+one journal — no `CommunitiesService`.
+
+**Public contract.** `COMMUNITY_AUTHORIZATION` (`authorize`, `authorizeEach`:
+ceiling AND membership, ownership or oversight AND the lifecycle gate, as a
+`CommunityPermit` naming its basis), `COMMUNITY_MEMBERSHIP` (`heads`,
+`listHeads`, `statesOf`, `changesSince`, `members` — facts for trusted
+consumers, never access), `COMMUNITY_DIRECTORY` (titles, for display); the
+act vocabulary (`community.*`), the wire vocabulary and the event types.
+
+**Events.** `communities.community.created|locked|unlocked`,
+`communities.member.added|removed`, `communities.invitation.created|revoked`
+— ids, codes and versions only; never a title, a name, a token or its hash.
+
+**Depends on.** `identity/contracts` (authorization, the account directory,
+the permission catalogue), `shared`. Nothing else — an architecture test
+(`communities-boundaries.spec.ts`) and the module's own wiring test pin it.
+
+**Must not know.** Conversations and chat data, live sessions and LiveKit,
+attendance, realtime, notifications, academic and halaqat, and every other
+module's tables. Messaging, Live and Attendance ask Communities; Communities
+never asks them.
+
+---
+
 ## operations
 
 **State:** contract only.

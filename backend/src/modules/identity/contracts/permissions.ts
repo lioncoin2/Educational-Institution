@@ -84,6 +84,26 @@ export const Permissions = {
     speak: 'live.speak',
     moderate: 'live.moderate',
   },
+  /**
+   * Communities — ceilings only (docs/architecture/communities.md §6.2).
+   * Each is required on every path to a community act and never sufficient
+   * alone: which communities a person may act in, and how, is decided by
+   * Communities' own records (membership, ownership, oversight).
+   *
+   *   read      take part in the communities one belongs to; eligible to
+   *             become a member by any path
+   *   create    create a community — the creator becomes its owner
+   *   moderate  grants nothing by itself, like `academic.teach`: eligibility
+   *             to own a community or hold a delegated capability in one
+   *   manage    institutional oversight of communities one does not belong to
+   *             (Q43) — never adding members, never reading chats
+   */
+  communities: {
+    read: 'communities.read',
+    create: 'communities.create',
+    moderate: 'communities.moderate',
+    manage: 'communities.manage',
+  },
   files: {
     read: 'files.read',
     upload: 'files.upload',

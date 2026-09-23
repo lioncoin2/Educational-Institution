@@ -58,8 +58,9 @@ The namespaces the brief named, plus identity's own:
 | `live` | `join`, `raise_hand`, `speak`, `moderate` |
 | `files` | `read`, `upload` |
 | `reports` | `read` |
+| `communities` | `read`, `create`, `moderate`, `manage` |
 
-30 permissions. The catalogue says what **can** be granted. It says nothing
+34 permissions. The catalogue says what **can** be granted. It says nothing
 about who holds what; that is the role matrix below.
 
 **Academic permissions separate eligibility from access.** `academic.read`
@@ -70,6 +71,17 @@ by themselves: they say which ACTIVE accounts may be *assigned* to teach or
 `academic.study`?") instead of checking a role name. What a teacher may see
 comes from an ACTIVE assignment to that halaqa, never from the permission
 ([academic.md §5](academic.md)).
+
+**Communities permissions are ceilings.** `communities.read` is taking part
+in the communities one belongs to (and eligibility to join one);
+`communities.create` is creating one, whose creator becomes its owner;
+`communities.moderate` grants nothing by itself, like `academic.teach` — it
+makes an account eligible to own a community or hold a delegated capability
+in one; `communities.manage` is institutional oversight without membership,
+which never adds members. What anyone may do in a given community is decided
+by Communities' own records through `COMMUNITY_AUTHORIZATION`, never by a
+role alone ([communities.md §6](communities.md#6-authorization)). The
+provisional holders are Q41, Q43 and Q44.
 
 **Messaging permissions are always membership-scoped.** `messaging.read` means
 "may read the conversations you are a current member of", never "may read

@@ -61,6 +61,7 @@ Depth of implementation varies deliberately:
 | `notifications` | **Notifications V1**: a persistent inbox fed by messaging's facts; idempotent by a database constraint; read state, capped unread count, keyset pages; per-channel preferences; device registration; push behind a provider port (logging adapter — no provider chosen, Q24). On Postgres, tested |
 | `realtime` | **Realtime Messaging V1**: authenticated WebSocket at `/realtime`; messaging events to current members' connections, per event; each person's new notifications and reads to their own connections; multi-device; heartbeat; limits. Single instance, tested on Postgres |
 | `academic` | **Academic Core V1**: sections → programs → halaqat, seeded from the printed institution profile (provisional: the owner's later description differs and is under [reconciliation](academic-reconciliation.md)); dated enrollments and teacher assignments with history; one-active invariants in the database; resource-level access (a teacher's roster through their assignment); `ACADEMIC_RELATIONSHIPS` for later modules ([academic.md](academic.md)). On Postgres, tested |
+| `communities` | **Communities core (P2)**: persistent spaces (the brief's "groups") and who belongs — membership stints with history, invitation links (only the token's SHA-256 is stored), OPEN/LOCKED; one evaluator behind `COMMUNITY_AUTHORIZATION` (ceiling AND membership, ownership or oversight AND lifecycle); `COMMUNITY_MEMBERSHIP` and `COMMUNITY_DIRECTORY` for later consumers ([communities.md](communities.md)). Delegation is P3. On Postgres, tested at 30,000 and 100,000 members |
 | the other five | Contracts and a Nest module only — deliberately empty |
 
 > **Proposed change:** see
@@ -76,7 +77,8 @@ Depth of implementation varies deliberately:
 > community-scoped ([ADR 0019](decisions/0019-community-scoped-live-sessions.md)).
 > [30,000 community members is not 30,000 live participants](communities-live-attendance.md#13-30000-members-is-not-30000-live-participants):
 > a live session has its own measured cap, and a self-hosted LiveKit room
-> must fit on one node. Neither module exists today.
+> must fit on one node. **Update (2026-09-23):** `communities` exists as of
+> P2 (the row above); `attendance` does not, and stays held.
 
 The near-empty modules exist so that the boundary is decided before the
 code arrives, not after. An empty `contracts/index.ts` is a cheap commitment; a

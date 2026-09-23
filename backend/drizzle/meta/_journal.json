@@ -64,6 +64,20 @@
       "when": 1790151712739,
       "tag": "0008_seed_academic_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790196271888,
+      "tag": "0009_seed_communities_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790197732803,
+      "tag": "0010_communities",
+      "breakpoints": true
     }
   ]
 }

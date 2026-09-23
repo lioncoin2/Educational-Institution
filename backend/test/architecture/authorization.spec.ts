@@ -81,6 +81,8 @@ describe('route authorization', () => {
       'modules/academic/api/my-academic.controller.ts#MyAcademicController',
       'modules/academic/api/relationships.controller.ts#AcademicRelationshipsController',
       'modules/academic/api/structure.controller.ts#AcademicStructureController',
+      'modules/communities/api/communities.controller.ts#CommunitiesController',
+      'modules/communities/api/community-invitations.controller.ts#CommunityInvitationsController',
       'modules/files/api/uploads.controller.ts#UploadsController',
       'modules/files/infrastructure/local-transfer.controller.ts#LocalTransferController',
       'modules/identity/api/admin-users.controller.ts#AdminUsersController',
@@ -199,6 +201,36 @@ describe('route authorization', () => {
       'MyAcademicController.me': read,
       'MyAcademicController.enrollments': read,
       'MyAcademicController.teaching': read,
+    });
+  });
+
+  // Every communities route declares communities.read at the edge, except
+  // creation (communities.create); none is public or merely authenticated.
+  // The edge is never the decision: every use case asks COMMUNITY_AUTHORIZATION
+  // again with the community in context.
+  it('holds every communities route to its edge permission', () => {
+    const communities = Object.fromEntries(
+      routes
+        .filter((route) =>
+          /^(CommunitiesController|CommunityInvitationsController)\./.test(route.name),
+        )
+        .map((route) => [route.name, route.permission]),
+    );
+    const read = 'communities.read';
+    expect(communities).toEqual({
+      'CommunitiesController.list': read,
+      'CommunitiesController.create': 'communities.create',
+      'CommunitiesController.join': read,
+      'CommunitiesController.get': read,
+      'CommunitiesController.lock': read,
+      'CommunitiesController.unlock': read,
+      'CommunitiesController.members': read,
+      'CommunitiesController.add': read,
+      'CommunitiesController.remove': read,
+      'CommunitiesController.leave': read,
+      'CommunityInvitationsController.create': read,
+      'CommunityInvitationsController.list': read,
+      'CommunityInvitationsController.revoke': read,
     });
   });
 

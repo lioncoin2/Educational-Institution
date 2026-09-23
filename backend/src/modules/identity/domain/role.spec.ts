@@ -83,10 +83,9 @@ describe('provisional role matrix', () => {
   // Realtime admits a connection only for an account holding messaging.read
   // (realtime-sessions.ts), and the app stops retrying after a 4403. A role
   // that may join a live session or read a community but lacks messaging.read
-  // would silently receive no frames at all (Q66). Communities' permissions
-  // join this list when they are catalogued.
+  // would silently receive no frames at all (Q66).
   it('gives every role that may take part in live or communities the realtime gate', () => {
-    const participation: readonly string[] = [Permissions.live.join, 'communities.read'];
+    const participation: readonly string[] = [Permissions.live.join, Permissions.communities.read];
     for (const [role, granted] of Object.entries(PROVISIONAL_ROLE_PERMISSIONS)) {
       const held = new Set<string>(granted);
       if (participation.some((permission) => held.has(permission))) {
@@ -102,6 +101,40 @@ describe('provisional role matrix', () => {
         (granted as readonly string[]).includes(Permissions.live.join),
       ),
     ).toBe(true);
+  });
+
+  // Communities' ceilings nest (communities.md §6.2): every creator is an
+  // eligible owner (the creator becomes the owner), every eligible owner can
+  // take part, and oversight implies taking part in what one oversees.
+  it('nests the communities ceilings: create ⇒ moderate ⇒ read, and manage ⇒ read', () => {
+    const { read, create, moderate, manage } = Permissions.communities;
+    for (const [role, granted] of Object.entries(PROVISIONAL_ROLE_PERMISSIONS)) {
+      const held = new Set<string>(granted);
+      const implies = (from: string, to: string) => !held.has(from) || held.has(to);
+      expect({
+        role,
+        createImpliesModerate: implies(create, moderate),
+        moderateImpliesRead: implies(moderate, read),
+        manageImpliesRead: implies(manage, read),
+      }).toEqual({
+        role,
+        createImpliesModerate: true,
+        moderateImpliesRead: true,
+        manageImpliesRead: true,
+      });
+    }
+  });
+
+  it('lets every active role take part in communities, and only OWNER and ADMIN create or oversee them', () => {
+    const holders = (permission: string) =>
+      Object.entries(PROVISIONAL_ROLE_PERMISSIONS)
+        .filter(([, granted]) => (granted as readonly string[]).includes(permission))
+        .map(([role]) => role)
+        .sort();
+    expect(holders(Permissions.communities.read)).toEqual([...ACTIVE_ROLES].sort());
+    expect(holders(Permissions.communities.create)).toEqual(['ADMIN', 'OWNER']);
+    expect(holders(Permissions.communities.manage)).toEqual(['ADMIN', 'OWNER']);
+    expect(holders(Permissions.communities.moderate)).toEqual(['ADMIN', 'OWNER', 'TEACHER']);
   });
 
   it('registers the host-only moderation rule', () => {

@@ -24,6 +24,53 @@ failure kind, the academic migration pin) come first either way
 **Every default below is PROVISIONAL** and names the open question that
 decides it. Nothing here decides an institutional policy.
 
+> **P2 landed (2026-09-23).** The Communities core is implemented in
+> `backend/src/modules/communities/` with the layout of [§17](#17-module-layout-and-architecture-specs),
+> migrations `0009_seed_communities_permissions` and `0010_communities`
+> ([§5.5](#55-migrations)), and the routes of [§12](#12-api) except the P3
+> grant and ownership routes. Implemented as designed: stints, invitation
+> links with only the token's SHA-256 stored, OPEN/LOCKED with the
+> [§8.3](#83-statepermits-and-communityheadeffects) tables, the evaluator of
+> [§6.5](#65-the-evaluator) with the membership, owner and oversight bases,
+> `COMMUNITY_AUTHORIZATION` (`authorize`, `authorizeEach`),
+> `COMMUNITY_MEMBERSHIP` (all five reads), `COMMUNITY_DIRECTORY`, every
+> transaction in the [§4](#the-global-lock-order) lock order behind the
+> per-community admission mutex, one deadlock retry, and 503 `unavailable`
+> for a store or directory outage. Not yet, by phase: the grant basis,
+> `COMMUNITY_CAPABILITY_HOLDERS`, grants and transfer (P3);
+> `COMMUNITY_CHAT_READ_CEILING` (P4); `permittedAmong` and
+> `community.live.remain` (P6). No consumer uses the contracts yet.
+>
+> Choices the design left to implementation, all technical rather than
+> policy:
+>
+> - Creating a community checks `communities.moderate` as well as
+>   `communities.create`: the creator becomes owner, and [§6.7](#67-the-owner)
+>   makes ownership require it. Today's role matrix makes the two coincide.
+> - Codes the design did not name: 403 `communities.person_required` (a system
+>   principal can neither own nor join, having no stint); 422
+>   `communities.members_invalid` (the 1–200 bound, for callers that bypass the
+>   DTO); 429 `communities.too_many_additions` and
+>   `communities.too_many_invitations`. Member adds are limited to 60 requests
+>   per 10 minutes per person (PROVISIONAL, [Q26](open-questions.md#q26--realtime-limits)).
+> - The oversight listing of every community is audited once per page, with
+>   resource id `*`.
+> - The authorization statement may be served by `community_members_user_idx`
+>   instead of `community_members_current_unique` when the planner judges the
+>   person's memberships few. Both are one bounded probe keyed by community
+>   and person; the scale suite accepts either and checks the index condition
+>   names both.
+> - The 503 mapping is a platform interceptor
+>   (`DatabaseUnavailableInterceptor`) that the two Communities controllers opt
+>   into. It maps connection-class failures only; any other error is still a 500.
+>
+> Evidence: `test/integration/communities-postgres.spec.ts` (constraints, the
+> [§7.4](#74-race-semantics) races through six store instances, the contract
+> suite shared with the in-memory store), `communities-scale.spec.ts` (about
+> 900,000 stint rows, 30,000 and 100,000 members, `EXPLAIN` of the statements
+> actually sent), `communities-migrations.spec.ts`, the application and API
+> suites, and `test/architecture/communities-boundaries.spec.ts`.
+
 ---
 
 ## 1. Terminology

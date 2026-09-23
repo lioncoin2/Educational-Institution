@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { AcademicModule } from './modules/academic/academic.module';
 import { AssignmentsModule } from './modules/assignments/assignments.module';
 import { AutomationModule } from './modules/automation/automation.module';
+import { CommunitiesModule } from './modules/communities/communities.module';
 import { FilesModule } from './modules/files/files.module';
 import { IdentityModule } from './modules/identity/identity.module';
 import { LiveModule } from './modules/live/live.module';
@@ -30,6 +31,7 @@ import { PlatformModule } from './platform/platform.module';
     IdentityModule,
     PeopleModule,
     AcademicModule,
+    CommunitiesModule,
     OperationsModule,
     AssignmentsModule,
     MessagingModule,

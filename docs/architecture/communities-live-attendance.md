@@ -1803,7 +1803,7 @@ and [Q36](open-questions.md#q36--tahajji-دورة-التهجي-وإعداد-ال
 | --- | --- |
 | P0 Corrections and guards | **Landed 2026-09-23.** Items 1–11 of [§25.1](#251-phase-0-corrections): the vendor-SDK rule matches resolved paths; `livekit-sdk-only-in-the-live-adapter`; `rules-match.spec.ts`, `live-boundaries.spec.ts`, `events.spec.ts`; exports-are-contracts and no-`forwardRef` checks; derived module lists; the realtime gate-coupling test; live's events in `live/contracts/events.ts`; `FailureKind 'unavailable'` → 503; the academic upgrade test pinned to its own migrations; the Flutter live guard; the operations and live comments corrected |
 | P1 Live hardening | **Landed 2026-09-23.** Everything in the P1 row below, plus `CapabilityConvergence` (the reconciler's targeted watch, pulled forward and scoped to changed participants) to keep the 120-second token from making reconnection unreliable — see [live.md](live.md#1-what-exists-today) |
-| P2 Communities core | not started |
+| P2 Communities core | **Landed 2026-09-23.** The module (domain, Postgres and in-memory adapters, `/communities`, journal, events); stints, invitation links with the creator re-check, lock/unlock; `COMMUNITY_AUTHORIZATION` (membership, owner and oversight bases), `COMMUNITY_MEMBERSHIP`, `COMMUNITY_DIRECTORY`; four catalogue leaves with migration 0009 and the schema with 0010; the boundary spec; the concurrency suite; `EXPLAIN` at 30,000 and 100,000 members. Choices made during implementation are recorded in [communities.md](communities.md) |
 | P3–P8, P10–P12 | not started |
 | P9 Attendance | **held** (Q40 ruling: until Q68/Q69 and the related attendance questions are answered) |
 
