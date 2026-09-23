@@ -1,8 +1,9 @@
 # 0021 — Cross-cutting rules for the new modules: events in contracts, journals, durability classes, the realtime transport matrix, protocol v1 growth, `FailureKind 'unavailable'`, executable guards
 
-**State: PROPOSED — design only. Nothing here is implemented; no table, endpoint, event publisher or screen exists.**
+**State: ACCEPTED (2026-09-23) — the executable guards and the event and failure-kind rules landed in P0; the rest lands with the phases that need it ([the hub's §25](../communities-live-attendance.md#25-implementation-phases)).**
 
-**Status:** Proposed
+**Status:** Accepted
+**Accepted:** 2026-09-23, by the user (the architecture design was approved to proceed; the Q40 ruling is recorded in [0016](0016-communities-module.md)).
 **Date:** 2026-09-23
 
 **Amends [0006](0006-event-architecture.md)**: event types live in the

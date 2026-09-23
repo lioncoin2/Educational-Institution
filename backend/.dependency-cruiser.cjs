@@ -81,11 +81,13 @@ module.exports = {
       severity: 'error',
       comment:
         'Vendor SDKs belong in infrastructure adapters only, behind a port. ' +
-        '@nestjs/common is permitted for DI decorators.',
+        '@nestjs/common is permitted for DI decorators. The pattern matches the ' +
+        'RESOLVED path (node_modules/<package>/…), which is what dependency-cruiser ' +
+        'compares against: anchored at the bare package name, as it once was, the ' +
+        'rule could never fire (test/architecture/rules-match.spec.ts keeps it honest).',
       from: { path: '^src/modules/[^/]+/application/' },
       to: {
-        dependencyTypes: ['npm'],
-        path: '^(livekit-server-sdk|drizzle-orm|pg|ioredis|express|@nestjs/platform-express|nestjs-pino|pino|ws|socket\\.io|@nestjs/websockets|@nestjs/platform-ws|@nestjs/platform-socket\\.io|firebase|firebase-admin|@firebase/|apn|@parse/node-apn|node-apn|web-push|node-pushnotifications)',
+        path: '^node_modules/(@types/)?(livekit-server-sdk|@livekit/[^/]+|drizzle-orm|pg|ioredis|express|@nestjs/platform-express|nestjs-pino|pino|ws|socket\\.io|@nestjs/websockets|@nestjs/platform-ws|@nestjs/platform-socket\\.io|firebase|firebase-admin|@firebase/[^/]+|apn|@parse/node-apn|node-apn|web-push|node-pushnotifications)/',
       },
     },
     {
@@ -113,6 +115,21 @@ module.exports = {
       from: { path: '^src/', pathNot: '^src/modules/notifications/infrastructure/' },
       to: {
         path: '^node_modules/(@types/)?(firebase|firebase-admin|@firebase/[^/]+|apn|@parse/node-apn|node-apn|web-push|node-pushnotifications)/',
+      },
+    },
+
+    {
+      name: 'livekit-sdk-only-in-the-live-adapter',
+      severity: 'error',
+      comment:
+        'Media transport is an adapter behind the live module\'s RTC ports: exactly ' +
+        'one directory may know the LiveKit server SDK (or any @livekit package), so ' +
+        'no other module — and no domain, application or api layer of live itself — ' +
+        'can depend on the vendor. test/architecture/live-boundaries.spec.ts asserts ' +
+        'the adapter really does import it, so this rule is not vacuous.',
+      from: { path: '^src/', pathNot: '^src/modules/live/infrastructure/' },
+      to: {
+        path: '^node_modules/(@types/)?(livekit-server-sdk|@livekit/[^/]+)/',
       },
     },
 

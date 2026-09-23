@@ -1,35 +1,24 @@
-import { domainEvent, type DomainEvent } from '../../../shared';
+import { domainEvent } from '../../../shared/domain-event';
+import {
+  LiveEvents,
+  type LiveSessionEnded,
+  type LiveSessionStarted,
+  type SpeakerPermissionGranted,
+  type SpeakerPermissionRevoked,
+  type SpeakerRequested,
+} from '../contracts/events';
 
 /**
- * Facts other modules react to.
- *
- * Operations turns `LiveSessionStarted`/`Ended` into attendance; Notifications
- * turns `SpeakerPermissionGranted` into a nudge. Neither module imports Live.
+ * Builds live's facts. Their names and payload types are the public contract
+ * (`../contracts/events.ts`), so a subscriber never needs live's domain.
  */
-export type LiveSessionStarted = DomainEvent<
-  'live.session.started',
-  { readonly sessionId: string; readonly roomId: string; readonly hostUserId: string }
->;
-
-export type LiveSessionEnded = DomainEvent<
-  'live.session.ended',
-  { readonly sessionId: string; readonly roomId: string; readonly durationSeconds: number }
->;
-
-export type SpeakerRequested = DomainEvent<
-  'live.speaker.requested',
-  { readonly sessionId: string; readonly requestId: string; readonly userId: string }
->;
-
-export type SpeakerPermissionGranted = DomainEvent<
-  'live.speaker.granted',
-  { readonly sessionId: string; readonly userId: string; readonly grantedBy: string }
->;
-
-export type SpeakerPermissionRevoked = DomainEvent<
-  'live.speaker.revoked',
-  { readonly sessionId: string; readonly userId: string; readonly revokedBy: string }
->;
+export type {
+  LiveSessionEnded,
+  LiveSessionStarted,
+  SpeakerPermissionGranted,
+  SpeakerPermissionRevoked,
+  SpeakerRequested,
+} from '../contracts/events';
 
 export function liveSessionStarted(
   sessionId: string,
@@ -37,7 +26,7 @@ export function liveSessionStarted(
   hostUserId: string,
   at: Date,
 ): LiveSessionStarted {
-  return domainEvent('live.session.started', sessionId, { sessionId, roomId, hostUserId }, at);
+  return domainEvent(LiveEvents.sessionStarted, sessionId, { sessionId, roomId, hostUserId }, at);
 }
 
 export function liveSessionEnded(
@@ -46,7 +35,12 @@ export function liveSessionEnded(
   durationSeconds: number,
   at: Date,
 ): LiveSessionEnded {
-  return domainEvent('live.session.ended', sessionId, { sessionId, roomId, durationSeconds }, at);
+  return domainEvent(
+    LiveEvents.sessionEnded,
+    sessionId,
+    { sessionId, roomId, durationSeconds },
+    at,
+  );
 }
 
 export function speakerRequested(
@@ -55,7 +49,7 @@ export function speakerRequested(
   userId: string,
   at: Date,
 ): SpeakerRequested {
-  return domainEvent('live.speaker.requested', sessionId, { sessionId, requestId, userId }, at);
+  return domainEvent(LiveEvents.speakerRequested, sessionId, { sessionId, requestId, userId }, at);
 }
 
 export function speakerPermissionGranted(
@@ -64,7 +58,7 @@ export function speakerPermissionGranted(
   grantedBy: string,
   at: Date,
 ): SpeakerPermissionGranted {
-  return domainEvent('live.speaker.granted', sessionId, { sessionId, userId, grantedBy }, at);
+  return domainEvent(LiveEvents.speakerGranted, sessionId, { sessionId, userId, grantedBy }, at);
 }
 
 export function speakerPermissionRevoked(
@@ -73,5 +67,5 @@ export function speakerPermissionRevoked(
   revokedBy: string,
   at: Date,
 ): SpeakerPermissionRevoked {
-  return domainEvent('live.speaker.revoked', sessionId, { sessionId, userId, revokedBy }, at);
+  return domainEvent(LiveEvents.speakerRevoked, sessionId, { sessionId, userId, revokedBy }, at);
 }

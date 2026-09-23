@@ -577,7 +577,9 @@ describeWithPostgres('migrations 0007–0008 on a database already in use', () =
       insert into users (id, display_name, status, password_hash, password_changed_at, created_at, updated_at)
       values ('u-kept', 'باقٍ', 'ACTIVE', '$scrypt$16384$8$1$c2FsdA==$aGFzaA==', now(), now(), now())`);
 
-    await migrateTo(scratch.db);
+    // Up to and including 0008 — this test is about academic's migrations.
+    // Later migrations (0009 onwards) assert their own deltas in their own tests.
+    await migrateTo(scratch.db, 9);
 
     const after = await grants();
     expect(after.filter((grant) => !before.includes(grant))).toEqual([

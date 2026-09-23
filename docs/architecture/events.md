@@ -62,7 +62,7 @@ without any of them present.
 >
 > **Proposed change:** see
 > [attendance.md §3](attendance.md#3-the-smallest-change-to-existing-documents)
-> (design only, [ADR 0020](decisions/0020-attendance-snapshots.md) Proposed).
+> (approved design, [ADR 0020](decisions/0020-attendance-snapshots.md) Accepted).
 > The attendance half of this example would be superseded: who is connected
 > at a moment is a question, answered through a Live contract, not an event.
 
@@ -186,13 +186,19 @@ by a real broker and subscribers become consumers. Again the port is unchanged.
 
 ## 5. Events currently declared
 
+Every event's name and payload type is declared in the publishing module's
+`contracts/events.ts`, where subscribers can import it; domain code builds
+events from those types (`test/architecture/events.spec.ts`; identity's four
+events are grandfathered). Since Phase 0 that includes live's events
+(`live/contracts/events.ts`, `LiveEvents`).
+
 | Event | Raised by | Likely subscribers |
 | --- | --- | --- |
 | `live.speaker.requested` | live — a hand is raised. *Correction (2026-09-23): raised today by `RequestSpeakerUseCase` (`request-speaker.use-case.ts:90`) and missing from this table until now* | none subscribed |
 | `live.speaker.granted` | live | reporting, audit |
 | `live.speaker.revoked` | live | reporting, audit |
 | `live.session.started` | live | operations, notifications |
-| `live.session.ended` | live | operations (attendance), reporting |
+| `live.session.ended` | live | reporting. *Not attendance: live-session presence is an attendance-module snapshot taken through live's contracts (ADR 0020, implementation held), not a reaction to this event* |
 | `identity.user.created` | identity | people, notifications |
 | `identity.role.assigned` | identity | notifications, reporting |
 | `identity.role.revoked` | identity | reporting |
@@ -237,7 +243,7 @@ into every subscriber's storage.
 > [communities-live-attendance.md §14](communities-live-attendance.md#14-event-model)
 > (design only,
 > [ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md)
-> Proposed). It would add `communities.*` events and new live events
+> Accepted). It would add `communities.*` events and new live events
 > (`live.speaker.withdrawn`, `.declined` and `.expired`,
 > `live.screen_share.started` and `.stopped`, with `communityId` and
 > `stateVersion` in live payloads). It

@@ -64,8 +64,8 @@ Depth of implementation varies deliberately:
 | the other five | Contracts and a Nest module only — deliberately empty |
 
 > **Proposed change:** see
-> [communities-live-attendance.md](communities-live-attendance.md) (design
-> only, [ADR 0016](decisions/0016-communities-module.md) Proposed). Two new
+> [communities-live-attendance.md](communities-live-attendance.md) (approved
+> design, [ADR 0016](decisions/0016-communities-module.md) Accepted). Two new
 > modules would join this map. `communities` is what the brief calls
 > "groups"; the code name is Community because "group" already means
 > messaging's `GROUP` conversation type, and is used for Tahajji's «مجموعة»
@@ -162,6 +162,14 @@ Every external dependency sits behind a port, in exactly one adapter file:
 every other vendor SDK. This is checked by
 `application-has-no-vendor-sdks` and `domain-is-dependency-free`.
 
+> **Resolved in Phase 0 (2026-09-23)** for LiveKit: the rule
+> `livekit-sdk-only-in-the-live-adapter` now confines every LiveKit package
+> to `live/infrastructure/`, `application-has-no-vendor-sdks` matches resolved
+> paths, and `live-boundaries.spec.ts` and `rules-match.spec.ts` prove both can
+> fire ([dependency-rules.md](dependency-rules.md#livekit-sdk-only-in-the-live-adapter)).
+> The second sentence remains inaccurate as written: the other SDKs are
+> confined to infrastructure layers, not to one file each.
+>
 > **Correction (2026-09-23):** the first sentence is true today by search
 > (`live/infrastructure/livekit-rtc-provider.ts:2`). The second is false:
 > other SDKs that `application-has-no-vendor-sdks` lists are imported by

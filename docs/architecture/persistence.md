@@ -266,7 +266,7 @@ leaves its enrollments alone.
 > [communities.md §5.2](communities.md#52-counters-and-version-allocation)
 > and the
 > [global lock order](communities-live-attendance.md#52-the-global-lock-order-communities)
-> (design only, [ADR 0016](decisions/0016-communities-module.md) Proposed).
+> (approved design, [ADR 0016](decisions/0016-communities-module.md) Accepted).
 > The proposed `communities` tables would take a per-aggregate,
 > commit-ordered version from `communities.membership_version` under the
 > community row lock, as messaging takes `conversations.last_sequence`

@@ -80,6 +80,30 @@ describe('provisional role matrix', () => {
     }
   });
 
+  // Realtime admits a connection only for an account holding messaging.read
+  // (realtime-sessions.ts), and the app stops retrying after a 4403. A role
+  // that may join a live session or read a community but lacks messaging.read
+  // would silently receive no frames at all (Q66). Communities' permissions
+  // join this list when they are catalogued.
+  it('gives every role that may take part in live or communities the realtime gate', () => {
+    const participation: readonly string[] = [Permissions.live.join, 'communities.read'];
+    for (const [role, granted] of Object.entries(PROVISIONAL_ROLE_PERMISSIONS)) {
+      const held = new Set<string>(granted);
+      if (participation.some((permission) => held.has(permission))) {
+        expect({ role, messagingRead: held.has(Permissions.messaging.read) }).toEqual({
+          role,
+          messagingRead: true,
+        });
+      }
+    }
+    // Not vacuous: live.join is granted today.
+    expect(
+      Object.values(PROVISIONAL_ROLE_PERMISSIONS).some((granted) =>
+        (granted as readonly string[]).includes(Permissions.live.join),
+      ),
+    ).toBe(true);
+  });
+
   it('registers the host-only moderation rule', () => {
     expect(PROVISIONAL_POLICY_RULES.map((rule) => rule.id)).toEqual(['host-only-moderation']);
   });

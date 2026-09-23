@@ -1,6 +1,6 @@
 # Attendance
 
-**State: PROPOSED — design only. Nothing here is implemented; no table, endpoint, event publisher or screen exists.**
+**State: APPROVED as designed (2026-09-23) — implementation HELD** until the institution answers the attendance policy questions, especially [Q68](open-questions.md#q68--what-counts-as-present-in-a-snapshot) and [Q69](open-questions.md#q69--who-records-and-who-views-snapshots) (the user's Q40 ruling). Nothing here exists.
 
 > **HELD.** Implementing this module is held, and nothing in this document
 > lifts the hold. Three things stand in the way, and all three must clear
@@ -26,7 +26,7 @@ during a live session (brief §13–§15), phase **P9**. It is one part of the
 Communities + Live + Attendance package. The overview, dependency graph,
 cross-module contracts and phase table are in the hub,
 [communities-live-attendance.md](communities-live-attendance.md). The decision
-is [ADR 0020](decisions/0020-attendance-snapshots.md) (Proposed; implementation
+is [ADR 0020](decisions/0020-attendance-snapshots.md) (Accepted; implementation
 HELD), and the rules it follows for events, journals and failure kinds are
 [ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md). Live's side
 of the observation is in [live.md](live.md); the community acts it asks about

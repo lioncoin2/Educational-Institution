@@ -1,8 +1,9 @@
 # 0017 — Community-scoped authorization: identity ceilings AND community standing; delegated capabilities; host-only moderation retired
 
-**State: PROPOSED — design only. Nothing here is implemented; no table, endpoint, event publisher or screen exists.**
+**State: ACCEPTED (2026-09-23) — implemented in phases (P2 catalogue and bases, P3 delegation, P6 the retirement of `host-only-moderation`). What a phase has not delivered does not exist yet; [the hub's §25](../communities-live-attendance.md#25-implementation-phases) records which phases have landed.**
 
-**Status:** Proposed
+**Status:** Accepted
+**Accepted:** 2026-09-23, by the user (the architecture design was approved to proceed; the Q40 ruling is recorded in [0016](0016-communities-module.md)).
 **Date:** 2026-09-23
 
 **Amends** [0005](0005-authorization-architecture.md). Its mechanism (one

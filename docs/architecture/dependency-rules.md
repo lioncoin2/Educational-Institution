@@ -93,6 +93,12 @@ ports injectable in the first place, and Nest's decorators do not impose a data
 model the way an ORM or an SFK SDK does. It is the one framework concession in
 the application layer.
 
+> **Resolved in Phase 0 (2026-09-23).** The pattern now matches resolved
+> paths — `^node_modules/(@types/)?(livekit-server-sdk|@livekit/…|drizzle-orm|…)/`
+> — and reports no violation on today's graph. `test/architecture/rules-match.spec.ts`
+> proves every forbidden rule with a target path can fire (below). The note
+> that follows is kept as the record of the defect.
+>
 > **Correction (2026-09-23):** this rule never fires. Its target pattern is
 > anchored at the package name (`^(livekit-server-sdk|drizzle-orm|pg|…)`,
 > `backend/.dependency-cruiser.cjs:88`), but dependency-cruiser matches the
@@ -115,7 +121,46 @@ the application layer.
 > every rule matches something
 > ([communities-live-attendance.md §25.1](communities-live-attendance.md#251-phase-0-corrections);
 > [ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md),
-> Proposed).
+> Accepted).
+
+### `livekit-sdk-only-in-the-live-adapter`
+
+No file under `src/` may import `livekit-server-sdk` or any `@livekit/*`
+package — including their type packages — except
+`modules/live/infrastructure/`. Media transport is an adapter behind live's RTC
+ports, exactly as realtime delivery is behind realtime's adapter and push
+behind notifications'. This also covers live's own `domain/`, `application/`
+and `api/`, and every other module, including the ones that do not exist yet.
+`test/architecture/live-boundaries.spec.ts` states the same properties one by
+one and checks the rule is not vacuous: the adapter really does import the
+SDK, and it is the only file that does.
+
+### Every rule can fire — `rules-match.spec.ts`
+
+A forbidden rule that matches nothing always passes, which is exactly how
+`application-has-no-vendor-sdks` stayed green while enforcing nothing.
+`test/architecture/rules-match.spec.ts` gives every forbidden rule that names
+a target path one representative violation, and checks the rule matches it
+exactly as dependency-cruiser evaluates it (including `pathNot` and the `$1`
+back-reference). Where the target is a package the backend imports, the
+representative path is taken from the live dependency graph. A new rule
+without a representative fails the suite, and so does a stale one.
+
+### Module-level checks in `boundaries.spec.ts` and `events.spec.ts`
+
+- **Exports are contract tokens.** Every identifier a `*.module.ts` lists in
+  `exports` must be imported from that module's own `./contracts/` — never a
+  use case, repository or adapter class, which would hand another module a
+  door around the rules above.
+- **No `forwardRef`.** It is how Nest papers over a circular module import;
+  the graph must stay acyclic at the Nest level, not only file by file.
+- **Events live in contracts.** An event type (`DomainEvent<'…'>` or
+  `DomainEvent<typeof …>`) is declared only in a module's `contracts/`, so a
+  subscriber can import it; identity's four events are grandfathered until
+  their first outside subscriber (ADR 0021).
+- **Module lists are derived.** The notifications and realtime boundary specs
+  read `src/modules/*` instead of naming modules, so a module added later is
+  checked without anyone remembering to add it.
 
 ### `websocket-library-only-in-the-realtime-adapter`
 

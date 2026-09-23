@@ -46,22 +46,28 @@ describe('notifications boundaries', () => {
   const reaching = (from: (source: string) => boolean, target: (path: string) => boolean) =>
     [...reachableFrom(output, from)].filter(target);
 
-  it.each([
-    'messaging',
-    'academic',
-    'assignments',
-    'live',
-    'identity',
-    'files',
-    'people',
-    'operations',
-    'automation',
-    'reporting',
-  ])('keeps %s free of notifications — it publishes events, notifications subscribes', (name) => {
-    expect(
-      reaching(inModule(name), (path) => path.startsWith('src/modules/notifications/')),
-    ).toEqual([]);
+  // Derived, not listed: a module added later is checked without anyone
+  // remembering to add it here. Realtime is the one module that delivers
+  // notifications, through their contracts (asserted below).
+  const PUBLISHERS = readdirSync(join(SRC, 'modules'))
+    .filter((name) => statSync(join(SRC, 'modules', name)).isDirectory())
+    .filter((name) => name !== 'notifications' && name !== 'realtime');
+
+  it('checks every other module — the list below is complete', () => {
+    expect(PUBLISHERS.length).toBeGreaterThanOrEqual(10);
+    expect(PUBLISHERS).toEqual(
+      expect.arrayContaining(['messaging', 'academic', 'live', 'identity']),
+    );
   });
+
+  it.each(PUBLISHERS)(
+    'keeps %s free of notifications — it publishes events, notifications subscribes',
+    (name) => {
+      expect(
+        reaching(inModule(name), (path) => path.startsWith('src/modules/notifications/')),
+      ).toEqual([]);
+    },
+  );
 
   it('is imported only by the composition root, and by realtime through its contracts', () => {
     const importers = edgesFrom(

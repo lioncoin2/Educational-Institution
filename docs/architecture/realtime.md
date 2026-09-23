@@ -367,7 +367,7 @@ the design does about it, and — at the end, explicitly — **what has been pro
 and what has not.**
 
 > **Proposed change:** see [live.md](live.md) (design only,
-> [ADR 0019](decisions/0019-community-scoped-live-sessions.md) Proposed).
+> [ADR 0019](decisions/0019-community-scoped-live-sessions.md) Accepted).
 > Live sessions would belong to a community instead of a halaqa, with
 > Postgres as the record, a presenter slot for screen sharing, narrow RTC
 > ports and a reconciler that brings LiveKit back in line with the record.
@@ -647,6 +647,12 @@ truth lives only in Redis.
 - A host publishes only while also holding `live.speak`.
 - Nothing outside `livekit-rtc-provider.ts` imports LiveKit.
 
+> **Resolved in Phase 0 (2026-09-23):** the last item is now enforced by the
+> rule `livekit-sdk-only-in-the-live-adapter` and asserted by
+> `test/architecture/live-boundaries.spec.ts`
+> ([dependency-rules.md](dependency-rules.md#livekit-sdk-only-in-the-live-adapter)).
+> The note below records the gap it closed.
+>
 > **Correction (2026-09-23):** the last item is true today by search: only
 > `live/infrastructure/livekit-rtc-provider.ts:2` imports
 > `livekit-server-sdk`. But no test or rule proves it for the repository.

@@ -1,8 +1,9 @@
 # 0019 — Community-scoped live sessions: Postgres truth, level-triggered LiveKit convergence, a presenter slot, narrow RTC ports
 
-**State: PROPOSED — design only. Nothing here is implemented; no table, endpoint, event publisher or screen exists.**
+**State: ACCEPTED (2026-09-23) — implemented in phases (P1 hardening of the existing module, P6 community-scoped sessions, P7 realtime and Flutter). What a phase has not delivered does not exist yet; [the hub's §25](../communities-live-attendance.md#25-implementation-phases) records which phases have landed.**
 
-**Status:** Proposed
+**Status:** Accepted
+**Accepted:** 2026-09-23, by the user (the architecture design was approved to proceed; the Q40 ruling is recorded in [0016](0016-communities-module.md)).
 **Date:** 2026-09-23
 
 **Amends [0003](0003-rtc-provider-abstraction.md)**: the port is split into

@@ -1301,13 +1301,13 @@ audiences.
 
 ---
 
-> **Q40–Q72 — Communities, Live and Attendance.** State: PROPOSED — design
-> only. Nothing here is implemented; no table, endpoint, event publisher or
-> screen exists. These questions come from the design package in
-> [communities-live-attendance.md](communities-live-attendance.md). Nothing
-> was built for any of them, so each **Built instead** reads "nothing",
-> followed by the default the design would use. Every such default is
-> PROVISIONAL, belongs to the question it sits under, and is not a decision.
+> **Q40–Q72 — Communities, Live and Attendance.** The design package in
+> [communities-live-attendance.md](communities-live-attendance.md) was
+> approved on 2026-09-23 and is implemented in phases; Q40 is answered. Each
+> **Built instead** below was written before implementation and reads
+> "nothing", followed by the default the design uses; the phase that builds a
+> default updates its entry. Every such default is PROVISIONAL, belongs to the
+> question it sits under, and is not a decision.
 >
 > The brief's "group" is the **Community** aggregate here: "group" already
 > means messaging's `GROUP` conversation type, and is used for Tahajji's
@@ -1321,45 +1321,25 @@ audiences.
 
 ## Q40 — Governance: which gates apply to the new modules?
 
-**Question.** This one is for the user, who set both constraints.
+**Answered (2026-09-23), by the user; recorded in
+[ADR 0016](decisions/0016-communities-module.md).** The heading stays so the
+links to it keep working; the question is closed.
 
-- (a) [academic-reconciliation.md §13](academic-reconciliation.md#13-minimal-recommended-changes-before-the-next-milestone)
-  says that **before any new module**, Q35 and Q36 are answered and ADR 0015
-  lands. Does that step apply to the proposed `communities` module, and so
-  to what is built on it: community-scoped live sessions, the community chat
-  and delegation?
-- (b) The Attendance hold (`academic-reconciliation.md:19-21`,
-  `academic.md:28-30`) says Attendance does not start until the
-  reconciliation has been reviewed. Does it cover the proposed `attendance`
-  module (live-presence snapshots, [attendance.md](attendance.md))? And, if
-  it does, do §13's Attendance preconditions (Q8, Q12, no TE-04 states)
-  apply to snapshots?
+1. **Communities is not blocked** by the academic reconciliation hold. It
+   proceeds after the Phase 0 guards.
+2. **Live-session architecture and hardening may proceed.**
+3. **Attendance is approved as designed, but its implementation is held**
+   until the institutional attendance questions are answered — especially
+   [Q68](#q68--what-counts-as-present-in-a-snapshot) and
+   [Q69](#q69--who-records-and-who-views-snapshots), and the related ones
+   (Q70–Q72).
+4. **Academic Progress and Promotion remain blocked** by their own unanswered
+   academic questions (Q29, Q37 and those the reconciliation lists).
 
-**Why not guessed.** Both constraints were set by the user, and their wording
-is unqualified. A design that ruled itself outside them would be lifting the
-user's constraint on its own. Snapshots differ from the held Attendance (no
-`attendance.*` permission, amendment, calendar, `AttendanceState` or halaqa
-id), but they are still records of children's presence.
-
-**Built instead.** Nothing — design only
-([communities-live-attendance.md §0.2](communities-live-attendance.md#02-the-three-gating-conditions)).
-PROVISIONAL default: both apply. P0 (guards and corrections) and P1
-(hardening the existing live module) change only existing modules, and so
-are not gated by this question; they start only after the design is
-accepted and, for P1, after its visible behaviour changes are approved. The
-communities module waits for the §13 step (Q35/Q36 and ADR 0015) or the
-user's ruling on Q40; the attendance module also waits for the
-reconciliation review (with §13's Attendance row) or that ruling. The module
-is named `communities` and has no halaqa link, so nothing answers Q36 in the
-meantime.
-
-**When answered.** No design changes either way; only phase entry does. If
-both apply, P2 waits for the §13 step (Q35/Q36 and ADR 0015), and P9 also
-for the reconciliation review and for §13's Attendance row (scoping through
-[Q69](#q69--who-records-and-who-views-snapshots); Q8 and Q12 answered, or
-ruled not to apply). If either does not apply, the ruling is recorded in an
-ADR, and P2 or P9 may start once its other entry conditions hold (P9 also
-needs P6 and [Q69](#q69--who-records-and-who-views-snapshots)).
+The same ruling approved three visible changes to the existing live module
+(P1): listeners lose the LiveKit data channel; a repeated equivalent
+raise-hand answers 200 (the first 201); the join token lives 120 seconds,
+provided reconnection stays reliable for legitimate participants.
 
 ---
 

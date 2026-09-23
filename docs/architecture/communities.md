@@ -1,6 +1,6 @@
 # Communities
 
-**State: PROPOSED — design only. Nothing here is implemented; no table, endpoint, event publisher or screen exists.**
+**State: APPROVED (2026-09-23) — implemented in phases: P2 (core) and P3 (delegation).** What a phase has not delivered does not exist yet; [the hub's §25](communities-live-attendance.md#25-implementation-phases) records which phases have landed.
 
 The design of the `communities` module: the Community aggregate, membership,
 invitation links, the OPEN/LOCKED lifecycle (phase **P2**), and delegated
@@ -10,7 +10,7 @@ realtime matrix and phases are in the hub,
 [communities-live-attendance.md](communities-live-attendance.md). Decisions are
 recorded in [ADR 0016](decisions/0016-communities-module.md) (the module) and
 [ADR 0017](decisions/0017-community-scoped-authorization.md) (authorization and
-delegation), both Proposed.
+delegation), both Accepted (2026-09-23).
 
 **Implementation is gated.** The communities module is a new module, and
 [academic-reconciliation.md §13](academic-reconciliation.md#13-minimal-recommended-changes-before-the-next-milestone)

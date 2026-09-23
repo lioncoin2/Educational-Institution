@@ -1,6 +1,6 @@
 # Communities, Live and Attendance
 
-**State: PROPOSED — design only. Nothing here is implemented; no table, endpoint, event publisher or screen exists.**
+**State: APPROVED (2026-09-23) — implemented in phases.** [§25](#25-implementation-phases) records which phases have landed; what a phase has not delivered does not exist yet. Attendance is approved as designed but its implementation is **held** (Q40 ruling).
 
 This is the hub of the design package for the brief's eight features:
 communities (the brief's "groups"), membership and invitation links, the
@@ -17,7 +17,7 @@ repeating them.
 | [community-chat.md](community-chat.md) | messaging's community chat: the named projection, access, recipients, capacity gates | P4 |
 | [live.md](live.md) | live sessions, the speaker and presenter state machines, RTC ports, the reconciler, capacity | P1, P6, P7 |
 | [attendance.md](attendance.md) | the snapshot model, observation rule and idempotency — **HELD** | P9 |
-| [ADR 0016](decisions/0016-communities-module.md) – [ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md) | the decisions, status Proposed | — |
+| [ADR 0016](decisions/0016-communities-module.md) – [ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md) | the decisions, status Accepted (2026-09-23) | — |
 | [open-questions.md](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules), Q40–Q72 | the policy this design does not invent | — |
 
 **The name.** In code and in these documents the brief's "Group" is the
@@ -265,7 +265,7 @@ the chat, or in a live session, and each of those has its own bound:
 | Module | Status | Owns | Exports | Must not know |
 | --- | --- | --- | --- | --- |
 | **identity** (existing, extended) | Implemented. Gains 4 catalogue leaves (`communities.read`, `.create`, `.moderate`, `.manage`) with data migration 0009 (P2). `PROVISIONAL_POLICY_RULES` becomes `[]` (P6) | Accounts, roles, the permission catalogue, the provisional role matrix, `AuthorizationService` (synchronous, deny-overrides), `AccountDirectory` (`describe`, `withPermission`, ≤ 1,000 ids). Role-wide ceilings only | Unchanged: `AUTHORIZATION_SERVICE`, `ACCOUNT_DIRECTORY`, `ACCESS_TOKEN_AUTHENTICATOR` (`identity.module.ts:181`) | Communities, stints, grants, invitations; live sessions, hosts, attendance. After P6 it receives no `ownerUserId` for community or live decisions. No other module contributes a `PolicyRule`. No three-segment permission |
-| **communities** (NEW) | Proposed. P2 core, P3 delegation. Implementation gated by Q40 | The Community aggregate; membership stints; invitation links; capability grants (P3); the act-rules and lifecycle tables; one evaluator (`decideCommunityAct`); one use case per act; `CommunitiesJournal`; `CommunityPeople` | `COMMUNITY_AUTHORIZATION`, `COMMUNITY_MEMBERSHIP`, `COMMUNITY_DIRECTORY`, `COMMUNITY_CAPABILITY_HOLDERS` (P3). Type-only: `capabilities.ts`, `vocabulary.ts`, `events.ts` | Messaging and chat data (no last message, no unread count); live sessions ("live now" is composed by the client); LiveKit, attendance, realtime, notifications; academic and halaqat (Q50); any other module's tables. Imports `IdentityModule` only; its contracts import `shared` and `identity/contracts/permissions.ts`, never the identity barrel |
+| **communities** (NEW) | Approved. P2 core, P3 delegation. Not gated by the academic hold (Q40, answered) | The Community aggregate; membership stints; invitation links; capability grants (P3); the act-rules and lifecycle tables; one evaluator (`decideCommunityAct`); one use case per act; `CommunitiesJournal`; `CommunityPeople` | `COMMUNITY_AUTHORIZATION`, `COMMUNITY_MEMBERSHIP`, `COMMUNITY_DIRECTORY`, `COMMUNITY_CAPABILITY_HOLDERS` (P3). Type-only: `capabilities.ts`, `vocabulary.ts`, `events.ts` | Messaging and chat data (no last message, no unread count); live sessions ("live now" is composed by the client); LiveKit, attendance, realtime, notifications; academic and halaqat (Q50); any other module's tables. Imports `IdentityModule` only; its contracts import `shared` and `identity/contracts/permissions.ts`, never the identity barrel |
 | **messaging** (existing, extended in P4) | Implemented; gains an additive community-chat branch | Conversations, messages, attachment references, ordering, idempotent sends, watermarks, history windows. NEW: the link `conversations.community_id`; the named, non-authoritative projection of a community's ACTIVE members; `CommunityChatSync`, `CommunityChatSweeper`, `CommunityChatReconciler`, `GetCommunityChatUseCase`. `ConversationAccess` stays the single checkpoint | Unchanged: `MESSAGE_RECIPIENTS`, `MESSAGE_DELIVERY` (`messaging.module.ts:108`) | Community rules (who may join, invite, lock or post: it asks); invitations; lifecycle status values; live, LiveKit, notifications, realtime. `messaging/domain` never imports communities; messaging never reaches live, even transitively |
 | **live** (existing, evolved in place) | Implemented today in memory and halaqa-bound. P1 hardening, P6 community scope, P9 observation | `LiveSession` (replaces `LiveRoom`), `SpeakerRequest`, `PresenterGrant`, moderation actions; `capabilitiesFor`; the media room name; the RTC ports and the only LiveKit adapter; `LiveAccess`, `LiveReconciler`, `ProtectLiveSessions`, `LiveAudienceService`; the observation rule `provider_registry_v1` (applied by `LivePresenceService` behind `LIVE_PRESENCE`, P9); one use case per act | Today nothing (`live.module.ts:36-62`). Then `LIVE_AUDIENCE` (P6), `LIVE_SESSIONS` (P6), `LIVE_PRESENCE` (P9, attendance only) | Membership storage and community rules (it asks); the raw lifecycle status (it reads effects flags and refusals); attendance semantics (it reports raw connection states); messaging, realtime, notifications, academic, operations |
 | **attendance** (NEW, **HELD**) | Designed only. Blocked by Q40, Q69 and P6 | `AttendanceSnapshot` (header and entries); the recorded `observation_rule` id; the idempotency key; four use cases; `AttendanceAccess`; `AttendanceJournal` | Nothing in v1; type-only `contracts/events.ts`. A reader contract waits for its first consumer | LiveKit and live internals; operations' `AttendanceState`; academic and halaqa ids; `attendance.read` and `attendance.manage` (never consulted; a grep test enforces it); notifications, realtime. Only `app.module` imports it |
@@ -1708,7 +1708,7 @@ Flutter row; load testing → [§21](#21-load-testing-plan).
 
 ## 23. ADR index
 
-All status **Proposed**. ADR 0015 stays reserved for the academic structure
+All status **Accepted** (2026-09-23, by the user). ADR 0015 stays reserved for the academic structure
 change (`academic-reconciliation.md:410`, `:490`, `:506`). Existing ADRs are
 never edited.
 
@@ -1796,6 +1796,16 @@ and [Q36](open-questions.md#q36--tahajji-دورة-التهجي-وإعداد-ال
 ---
 
 ## 25. Implementation phases
+
+**Implementation status** (updated as each phase lands):
+
+| Phase | Status |
+| --- | --- |
+| P0 Corrections and guards | **Landed 2026-09-23.** Items 1–11 of [§25.1](#251-phase-0-corrections): the vendor-SDK rule matches resolved paths; `livekit-sdk-only-in-the-live-adapter`; `rules-match.spec.ts`, `live-boundaries.spec.ts`, `events.spec.ts`; exports-are-contracts and no-`forwardRef` checks; derived module lists; the realtime gate-coupling test; live's events in `live/contracts/events.ts`; `FailureKind 'unavailable'` → 503; the academic upgrade test pinned to its own migrations; the Flutter live guard; the operations and live comments corrected |
+| P1 Live hardening | not started |
+| P2 Communities core | not started |
+| P3–P8, P10–P12 | not started |
+| P9 Attendance | **held** (Q40 ruling: until Q68/Q69 and the related attendance questions are answered) |
 
 Every phase exits with `npm run verify` and `flutter test` green. No phase
 leaves a caller without its callee, a frame without its HTTP reconciliation

@@ -38,6 +38,7 @@ const CODE_BY_STATUS: Readonly<Record<number, string>> = {
   409: 'conflict',
   422: 'validation',
   429: 'rate_limited',
+  503: 'unavailable',
 };
 
 /**
@@ -53,6 +54,7 @@ const KIND_BY_STATUS: Readonly<Record<number, FailureKind>> = {
   412: 'precondition_failed',
   422: 'validation',
   429: 'rate_limited',
+  503: 'unavailable',
 };
 
 /** Our own shape, already built by `FailureException`. */

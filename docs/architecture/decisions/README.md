@@ -7,7 +7,7 @@ last section is the one that matters in two years: it is the record of what was
 already thought about, so a decision is only reopened with new information
 rather than with an argument that was already had.
 
-**Status** is one of `Accepted`, `Superseded by NNNN`, or `Deprecated`. An ADR
+**Status** is one of `Proposed`, `Accepted`, `Superseded by NNNN`, or `Deprecated`. An ADR
 is never edited to change its decision — a new one supersedes it. The record is
 the history, not the current state.
 
@@ -28,20 +28,20 @@ the history, not the current state.
 | [0013](0013-notifications-v1.md) | Notifications V1: a stored inbox, idempotent by the database, delivered by subscribers | Accepted |
 | [0014](0014-academic-core-v1.md) | Academic Core V1: academic owns the structure and who is in it | Accepted |
 | 0015 | *Reserved* for the academic structure change: the ADR superseding the parts of 0014 that the owner's answers change ([academic-reconciliation.md §13](../academic-reconciliation.md#13-minimal-recommended-changes-before-the-next-milestone)). Not yet written | — |
-| [0016](0016-communities-module.md) | Communities: a new module owns communities, membership, invitation links and lifecycle | Proposed |
-| [0017](0017-community-scoped-authorization.md) | Community-scoped authorization: identity ceilings AND community standing; delegated capabilities; host-only moderation retired | Proposed |
-| [0018](0018-community-chat-projection.md) | Community chat: messaging keeps a named, versioned projection of community membership | Proposed |
-| [0019](0019-community-scoped-live-sessions.md) | Community-scoped live sessions: Postgres truth, level-triggered LiveKit convergence, a presenter slot, narrow RTC ports | Proposed |
-| [0020](0020-attendance-snapshots.md) | Attendance snapshots are observations owned by a new attendance module (implementation held) | Proposed |
-| [0021](0021-cross-cutting-rules-for-new-modules.md) | Cross-cutting rules for the new modules: events in contracts, journals, durability classes, the realtime transport matrix, protocol v1 growth, `FailureKind 'unavailable'`, executable guards | Proposed |
+| [0016](0016-communities-module.md) | Communities: a new module owns communities, membership, invitation links and lifecycle | Accepted |
+| [0017](0017-community-scoped-authorization.md) | Community-scoped authorization: identity ceilings AND community standing; delegated capabilities; host-only moderation retired | Accepted |
+| [0018](0018-community-chat-projection.md) | Community chat: messaging keeps a named, versioned projection of community membership | Accepted |
+| [0019](0019-community-scoped-live-sessions.md) | Community-scoped live sessions: Postgres truth, level-triggered LiveKit convergence, a presenter slot, narrow RTC ports | Accepted |
+| [0020](0020-attendance-snapshots.md) | Attendance snapshots are observations owned by a new attendance module (implementation held) | Accepted (implementation held) |
+| [0021](0021-cross-cutting-rules-for-new-modules.md) | Cross-cutting rules for the new modules: events in contracts, journals, durability classes, the realtime transport matrix, protocol v1 growth, `FailureKind 'unavailable'`, executable guards | Accepted |
 
-> **Proposed change (2026-09-23):** adds the status `Proposed`: a design under
-> review, with nothing implemented. It becomes `Accepted` when the user accepts
-> it (dated in the ADR), which must happen before implementation starts, or it
-> is withdrawn. Acceptance alone does not start 0016 or 0020: their
-> implementation also waits on
-> [Q40](../open-questions.md#q40--governance-which-gates-apply-to-the-new-modules),
-> and 0020's on [Q69](../open-questions.md#q69--who-records-and-who-views-snapshots).
+> **`Proposed`** (added 2026-09-23): a design under review, with nothing
+> implemented. It becomes `Accepted` when the user accepts it (dated in the
+> ADR), or it is withdrawn. 0016–0021 were accepted by the user on
+> 2026-09-23. Acceptance does not by itself start implementation: 0016–0019
+> and 0021 are implemented in phases, and 0020's implementation is held until
+> the attendance policy questions are answered (the Q40 ruling in
+> [0016](0016-communities-module.md)).
 
 **0015 is reserved.** The academic reconciliation names ADR 0015 for its
 structure change (`academic-reconciliation.md:410`, `:490`, `:506`), which

@@ -1,8 +1,9 @@
 # 0018 — Community chat: messaging keeps a named, versioned projection of community membership
 
-**State: PROPOSED — design only. Nothing here is implemented; no table, endpoint, event publisher or screen exists.**
+**State: ACCEPTED (2026-09-23) — implemented in P4. Until then nothing here exists.**
 
-**Status:** Proposed
+**Status:** Accepted
+**Accepted:** 2026-09-23, by the user (the architecture design was approved to proceed; the Q40 ruling is recorded in [0016](0016-communities-module.md)).
 **Date:** 2026-09-23
 
 **Supersedes [0011](0011-messaging-v1.md) §4–5 in part**: for a conversation

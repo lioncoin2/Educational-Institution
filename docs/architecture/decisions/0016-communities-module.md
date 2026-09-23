@@ -1,9 +1,31 @@
 # 0016 — Communities: a new module owns communities, membership, invitation links and lifecycle
 
-**State: PROPOSED — design only. Nothing here is implemented; no table, endpoint, event publisher or screen exists.**
+**State: ACCEPTED (2026-09-23) — implemented in phases (P2 core, P3 delegation). What a phase has not delivered does not exist yet; [the hub's §25](../communities-live-attendance.md#25-implementation-phases) records which phases have landed.**
 
-**Status:** Proposed
+**Status:** Accepted
+**Accepted:** 2026-09-23, by the user (the architecture design was approved to proceed; the Q40 ruling is recorded in [0016](0016-communities-module.md)).
 **Date:** 2026-09-23
+
+> **Q40 ruling (2026-09-23, by the user):**
+> 1. Communities is **not** blocked by the academic reconciliation hold; it
+>    proceeds after the Phase 0 guards.
+> 2. Live-session architecture and hardening may proceed.
+> 3. Attendance is approved as designed, but its implementation is **held**
+>    until the institutional attendance questions are answered, especially
+>    [Q68](../open-questions.md#q68--what-counts-as-present-in-a-snapshot) and
+>    [Q69](../open-questions.md#q69--who-records-and-who-views-snapshots).
+> 4. Academic Progress and Promotion remain blocked by their own unanswered
+>    academic questions.
+>
+> The approved changes to the existing live module are: listeners lose the
+> LiveKit data channel; a repeated equivalent raise-hand answers 200 (the
+> first 201); the join token lives 120 seconds — without making reconnection
+> unreliable for legitimate participants.
+>
+> The provisional defaults of Q41–Q49 proceed as provisional. In particular
+> the one-owner partial unique index (Q42) is built: it is reversible — if
+> the institution wants several owners, a later migration drops the index,
+> and no data is lost.
 
 Adds a module; **supersedes nothing**. **Amends**
 [module-boundaries.md](../module-boundaries.md), which gains a `communities`

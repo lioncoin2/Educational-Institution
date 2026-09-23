@@ -14,7 +14,7 @@ and a Nest module, no implementation. Deciding the boundary before the code
 arrives is cheap; retrofitting one is not.
 
 > **Proposed change:** see [communities.md](communities.md) (design only,
-> [ADR 0016](decisions/0016-communities-module.md) Proposed): a new
+> [ADR 0016](decisions/0016-communities-module.md) Accepted): a new
 > `communities` module owning communities, their membership, invitation
 > links and lifecycle. It is what the brief calls "groups". The code name is
 > Community because "group" already means messaging's `GROUP` conversation
@@ -22,7 +22,7 @@ arrives is cheap; retrofitting one is not.
 > [Q36](open-questions.md#q36--tahajji-دورة-التهجي-وإعداد-المعلمات-مدينة-التهجي-and-the-40-groups).
 >
 > **Proposed change:** see [attendance.md](attendance.md) (design only,
-> [ADR 0020](decisions/0020-attendance-snapshots.md) Proposed): a new
+> [ADR 0020](decisions/0020-attendance-snapshots.md) Accepted): a new
 > `attendance` module owning attendance snapshots taken during a live
 > session. Its implementation is **held**.
 >
@@ -73,10 +73,14 @@ HTTP plumbing).
 
 **Must not know.** Programs, halaqat, attendance, messages, rooms. A permission
 string is opaque to identity: it does not know that `live.moderate` concerns
-audio, which is why any module can define permissions without identity changing.
-And no other module may read identity's tables. A test asserts that nothing
-outside identity imports its schema.
+audio. Adding a permission is still identity's change — its catalogue, its
+provisional matrix and a seed migration, kept in step by a test — even though
+identity never learns what the permission means. And no other module may read
+identity's tables. A test asserts that nothing outside identity imports its
+schema.
 
+> **Rewritten in Phase 0 (2026-09-23)** to match the correction below.
+>
 > **Correction (2026-09-23):** the claim that "any module can define
 > permissions without identity changing" is false. A permission exists only
 > if it is in identity's catalogue (`identity/contracts/permissions.ts:16-17`:
@@ -173,13 +177,17 @@ edited.
 **Depends on.** `academic/contracts`, `people/contracts`.
 
 **Must not know.** How a session is delivered. A session held in a live audio
-room is the same session to operations; it subscribes to `live.session.ended`
-and records attendance from it, and would work identically for a room with
-chairs.
+room is the same session to operations. Presence in a live session is not
+operations' record: it is an attendance-module snapshot
+([ADR 0020](decisions/0020-attendance-snapshots.md), approved; implementation
+held), and whether a snapshot ever feeds `AttendanceRecord` is
+[Q70](open-questions.md#q70--is-a-snapshot-the-attendance-record). *(Until
+2026-09-23 this said operations subscribes to `live.session.ended` and records
+attendance from it; nothing ever did.)*
 
 > **Proposed change:** see
 > [attendance.md §3](attendance.md#3-the-smallest-change-to-existing-documents)
-> (design only, [ADR 0020](decisions/0020-attendance-snapshots.md) Proposed).
+> (approved design, [ADR 0020](decisions/0020-attendance-snapshots.md) Accepted).
 > Presence in a live session would be recorded as attendance-module
 > snapshots, not derived by operations from `live.session.ended`. Operations
 > would depend on `attendance/contracts` only if
@@ -247,8 +255,8 @@ real time, how bytes are stored, or LiveKit. Architecture tests assert each:
 nothing in messaging reaches `notifications`, `realtime`, `live`, a WebSocket
 library, a push or object-store SDK, the filesystem, or files' internals.
 
-> **Proposed change:** see [community-chat.md](community-chat.md) (design
-> only, [ADR 0018](decisions/0018-community-chat-projection.md) Proposed). A
+> **Proposed change:** see [community-chat.md](community-chat.md) (approved
+> design, [ADR 0018](decisions/0018-community-chat-projection.md) Accepted). A
 > community's chat would be a `CHANNEL` conversation linked by
 > `community_id`, and its participant rows a named, versioned projection of
 > Communities membership. Messaging's application layer would depend on
@@ -278,10 +286,12 @@ moderation of who may speak.
 - `ModerateSpeakerUseCase` — grant or revoke speaking permission. Updates own
   state, then the provider, then audit, then raises an event.
 
-**Public contract.** `ParticipantRole`.
+**Public contract.** `ParticipantRole`, and the event names and payload
+types (`LiveEvents`, in `live/contracts/events.ts` since Phase 0).
 
-**Events.** `live.speaker.granted`, `live.speaker.revoked`,
-`live.session.started`, `live.session.ended`.
+**Events.** `live.speaker.requested`, `live.speaker.granted`,
+`live.speaker.revoked`, `live.session.started`, `live.session.ended` (the last
+two declared, not yet raised).
 
 **Depends on.** `identity/contracts` (authorization), `shared`, `platform`.
 
@@ -307,7 +317,7 @@ attendance — operations derives that from the events.
 >   subscribes to any `live.*` event, and operations is contract only.
 >
 > **Proposed change:** see [live.md](live.md) (design only,
-> [ADR 0019](decisions/0019-community-scoped-live-sessions.md) Proposed). A
+> [ADR 0019](decisions/0019-community-scoped-live-sessions.md) Accepted). A
 > community-scoped `LiveSession` would replace the halaqa-bound `LiveRoom`.
 > Live would depend on `communities/contracts` and export `LIVE_AUDIENCE`,
 > `LIVE_SESSIONS` and `LIVE_PRESENCE`; only attendance may import
@@ -455,7 +465,7 @@ WebSocket library.
 > and [§16](communities-live-attendance.md#16-realtime-transport-matrix)
 > (design only,
 > [ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md)
-> Proposed). Realtime would gain `CommunitiesRealtimeRelay` (P5) and
+> Accepted). Realtime would gain `CommunitiesRealtimeRelay` (P5) and
 > `LiveRealtimeRelay` (P7), and so also depend on `communities/contracts`
 > (`COMMUNITY_MEMBERSHIP.members`, `CommunityEvents`) and `live/contracts`
 > (`LIVE_AUDIENCE`, `LiveEvents`). It would still export nothing and be

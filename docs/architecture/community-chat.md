@@ -1,6 +1,6 @@
 # Community chat
 
-**State: PROPOSED — design only. Nothing here is implemented; no table, endpoint, event publisher or screen exists.**
+**State: APPROVED (2026-09-23) — implemented in P4.** Until P4 lands, nothing here exists.
 
 How messaging carries a community's chat (phase **P4**). Communities decides
 who belongs and who may read or post; messaging stores the messages and
@@ -9,7 +9,7 @@ package. The overview, dependency graph, realtime matrix and phases are in the
 hub, [communities-live-attendance.md](communities-live-attendance.md). The
 community side (stints, versions, act rules, the lifecycle table) is in
 [communities.md](communities.md). The decision is recorded in
-[ADR 0018](decisions/0018-community-chat-projection.md), status Proposed.
+[ADR 0018](decisions/0018-community-chat-projection.md), status Accepted (2026-09-23).
 
 **The name.** In code and in these documents the brief's "Group" is the
 **Community** aggregate: module `communities`, id `communityId`. "Group" is

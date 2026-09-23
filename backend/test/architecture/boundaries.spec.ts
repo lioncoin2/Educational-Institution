@@ -1,4 +1,44 @@
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
+
 import { cruise, type CruiseOutput } from '../support/dependency-graph';
+
+const SRC = join(__dirname, '..', '..', 'src');
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir).flatMap((entry) => {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) return sourceFiles(path);
+    return path.endsWith('.ts') && !path.endsWith('.spec.ts') ? [path] : [];
+  });
+}
+
+/** Every `src/modules/<name>/<name>.module.ts`, with its text. */
+function moduleFiles(): { name: string; text: string }[] {
+  const modules = join(SRC, 'modules');
+  return readdirSync(modules)
+    .filter((name) => statSync(join(modules, name)).isDirectory())
+    .map((name) => ({
+      name,
+      text: readFileSync(join(modules, name, `${name}.module.ts`), 'utf8'),
+    }));
+}
+
+/** name -> the module specifier it is imported from, for every named import in a file. */
+function importSources(text: string): Map<string, string> {
+  const sources = new Map<string, string>();
+  for (const match of text.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*'([^']+)'/g)) {
+    for (const specifier of match[1].split(',')) {
+      const local = specifier
+        .replace(/^\s*type\s+/, '')
+        .split(/\s+as\s+/)
+        .pop()
+        ?.trim();
+      if (local) sources.set(local, match[2]);
+    }
+  }
+  return sources;
+}
 
 /**
  * The architecture, asserted.
@@ -69,5 +109,41 @@ describe('module boundaries', () => {
       .map((module) => module.source)
       .filter((source) => !source.startsWith('src/modules/identity/'));
     expect(readers).toEqual([]);
+  });
+
+  // A module is used through what it exports, so its exports ARE its public
+  // surface. Each must be a token declared in the module's own contracts —
+  // never a use case, a repository or an adapter class, which would hand
+  // another module a door around every rule above.
+  it('exports only tokens declared in the module’s own contracts', () => {
+    const offending: string[] = [];
+    let exported = 0;
+    for (const { name, text } of moduleFiles()) {
+      const list = /exports:\s*\[([^\]]*)\]/.exec(text);
+      if (!list) continue;
+      const sources = importSources(text);
+      for (const token of list[1]
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean)) {
+        exported += 1;
+        const source = sources.get(token);
+        if (source === undefined || !/^\.\/contracts(\/|$)/.test(source)) {
+          offending.push(`${name}: ${token} from ${source ?? '(not imported)'}`);
+        }
+      }
+    }
+    expect(offending).toEqual([]);
+    // Not vacuous: several modules export several tokens today.
+    expect(exported).toBeGreaterThanOrEqual(8);
+  });
+
+  // forwardRef is how Nest papers over a circular module import. The graph
+  // must stay acyclic at the Nest level too, not just file by file.
+  it('never uses forwardRef', () => {
+    const users = sourceFiles(SRC)
+      .filter((path) => /\bforwardRef\s*\(/.test(readFileSync(path, 'utf8')))
+      .map((path) => relative(SRC, path));
+    expect(users).toEqual([]);
   });
 });

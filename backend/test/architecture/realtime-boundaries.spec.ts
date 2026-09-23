@@ -1,3 +1,6 @@
+import { readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { cruise, edgesFrom, reachableFrom, type CruiseOutput } from '../support/dependency-graph';
 
 /**
@@ -16,6 +19,13 @@ import { cruise, edgesFrom, reachableFrom, type CruiseOutput } from '../support/
  */
 const SOCKET_LIBRARIES =
   /^node_modules\/(@types\/)?(ws|socket\.io|socket\.io-client|engine\.io|@nestjs\/websockets|@nestjs\/platform-ws|@nestjs\/platform-socket\.io)\//;
+
+const MODULES_DIR = join(__dirname, '..', '..', 'src', 'modules');
+
+/** Every module but realtime itself, read from the source tree. */
+const OTHER_MODULES = readdirSync(MODULES_DIR)
+  .filter((name) => statSync(join(MODULES_DIR, name)).isDirectory())
+  .filter((name) => name !== 'realtime');
 
 const inModule = (name: string) => (source: string) =>
   source.startsWith(`src/modules/${name}/`) && source !== `src/modules/${name}/${name}.module.ts`;
@@ -37,7 +47,14 @@ describe('realtime boundaries', () => {
     expect(adapterEdges.some((path) => SOCKET_LIBRARIES.test(path))).toBe(true);
   });
 
-  it.each(['messaging', 'identity', 'notifications'])(
+  it('checks every other module — the list below is derived, not remembered', () => {
+    expect(OTHER_MODULES.length).toBeGreaterThanOrEqual(11);
+    expect(OTHER_MODULES).toEqual(
+      expect.arrayContaining(['messaging', 'identity', 'notifications', 'live', 'academic']),
+    );
+  });
+
+  it.each(OTHER_MODULES)(
     'keeps %s free of any WebSocket library and of the realtime module',
     (name) => {
       expect(

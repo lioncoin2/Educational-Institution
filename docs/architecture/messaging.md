@@ -28,8 +28,8 @@ checked **in addition to** institutional permissions, never instead of them.
 `MODERATOR` and `ADMIN` conversation roles are the expected next members of
 that list; the column is text + CHECK, so adding one is a cheap migration.
 
-> **Proposed change:** see [community-chat.md](community-chat.md) (design
-> only, [ADR 0018](decisions/0018-community-chat-projection.md) Proposed). A
+> **Proposed change:** see [community-chat.md](community-chat.md) (approved
+> design, [ADR 0018](decisions/0018-community-chat-projection.md) Accepted). A
 > community's chat would be a `CHANNEL` conversation linked to it by
 > `community_id`. Who belongs, reads and posts would be answered by the
 > communities module. Messaging would keep a named, versioned projection of

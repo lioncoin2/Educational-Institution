@@ -199,7 +199,7 @@ loads the room.
 > **Proposed change:** see
 > [communities-live-attendance.md §8](communities-live-attendance.md#8-authorization-model)
 > (design only,
-> [ADR 0017](decisions/0017-community-scoped-authorization.md) Proposed).
+> [ADR 0017](decisions/0017-community-scoped-authorization.md) Accepted).
 > Inside a community, a decision would be identity's role-wide ceiling AND
 > the principal's standing in that community. The communities module would
 > hold that standing (owner, member, and capabilities the owner delegates)

@@ -1,6 +1,6 @@
 # Live
 
-**State: PROPOSED — design only. Nothing here is implemented; no table, endpoint, event publisher or screen exists.**
+**State: APPROVED (2026-09-23) — implemented in phases: P1 (hardening the existing module), P6 (community-scoped sessions), P7 (realtime and Flutter), P7b (media).** What a phase has not delivered does not exist yet; [the hub's §25](communities-live-attendance.md#25-implementation-phases) records which phases have landed.
 
 §1 describes the code that exists today, and says so. Everything after §1 is
 a proposal.
@@ -16,7 +16,7 @@ are [ADR 0019](decisions/0019-community-scoped-live-sessions.md) (sessions,
 convergence, presenter slot, ports), [ADR 0017](decisions/0017-community-scoped-authorization.md)
 (community-scoped authorization; host-only moderation retired) and
 [ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md) (events in
-contracts, `FailureKind 'unavailable'`, the transport matrix), all Proposed.
+contracts, `FailureKind 'unavailable'`, the transport matrix), all Accepted (2026-09-23).
 
 **The name.** The brief's "Group" is the **Community** aggregate here: module
 `communities`, id `communityId`. "Group" is avoided because it already means

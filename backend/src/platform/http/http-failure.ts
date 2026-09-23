@@ -17,6 +17,7 @@ const STATUS_BY_KIND: Readonly<Record<FailureKind, HttpStatus>> = {
   validation: HttpStatus.UNPROCESSABLE_ENTITY,
   precondition_failed: HttpStatus.PRECONDITION_FAILED,
   rate_limited: HttpStatus.TOO_MANY_REQUESTS,
+  unavailable: HttpStatus.SERVICE_UNAVAILABLE,
 };
 
 export interface ErrorBody {

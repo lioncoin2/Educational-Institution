@@ -1,8 +1,9 @@
 # 0020 — Attendance snapshots are observations owned by a new attendance module (implementation HELD)
 
-**State: PROPOSED — design only. Nothing here is implemented; no table, endpoint, event publisher or screen exists.**
+**State: ACCEPTED as designed (2026-09-23) — implementation HELD until the institution answers the attendance policy questions, especially [Q68](../open-questions.md#q68--what-counts-as-present-in-a-snapshot) and [Q69](../open-questions.md#q69--who-records-and-who-views-snapshots). Nothing here exists.**
 
-**Status:** Proposed
+**Status:** Accepted
+**Accepted:** 2026-09-23, by the user, as designed. Implementation stays HELD until the attendance policy questions are answered (the user's ruling on Q40, recorded in [0016](0016-communities-module.md)).
 **Date:** 2026-09-23
 **Implementation:** HELD (decision 11)
 

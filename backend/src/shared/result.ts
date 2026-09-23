@@ -25,7 +25,14 @@ export type FailureKind =
   | 'conflict'
   | 'validation'
   | 'precondition_failed'
-  | 'rate_limited';
+  | 'rate_limited'
+  /**
+   * A dependency the use case needs right now — the media provider, for
+   * instance — cannot be reached. Nothing was changed; the caller may retry.
+   * Distinct from a fault: the system knows exactly what went wrong, and the
+   * client gets a stable code instead of an opaque 500.
+   */
+  | 'unavailable';
 
 export interface Failure {
   readonly kind: FailureKind;
