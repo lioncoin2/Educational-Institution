@@ -17,7 +17,7 @@ import {
 import { Permissions } from '../../identity/contracts/permissions';
 import { ruleFor } from '../domain/act-rules';
 import { COMMUNITY_NOT_FOUND } from '../domain/authority';
-import { MEMBER_HOLDS_MORE_CAPABILITIES } from '../domain/delegation';
+import { CANNOT_REMOVE_SELF, MEMBER_HOLDS_MORE_CAPABILITIES } from '../domain/delegation';
 import { memberAdded, memberRemoved } from '../domain/events';
 import {
   COMMUNITY_READ_MODEL,
@@ -176,9 +176,9 @@ export class AddMembersUseCase {
 /**
  * A manager removes a member: the owner, a delegate holding
  * `community.members.remove`, or oversight. Allowed while LOCKED. The owner
- * is never removed, and a delegate never removes someone holding a
- * capability the delegate does not effectively hold (R6, decided under
- * lock). The member's grants end with the stint. Only the removed person is
+ * is never removed; nobody removes themself (that is a leave); and a
+ * delegate never removes someone holding a capability the delegate does not
+ * effectively hold (R6, decided under lock). The member's grants end with the stint. Only the removed person is
  * told (P5); nothing else is announced to members (Q49).
  */
 @Injectable()
@@ -235,6 +235,8 @@ export class RemoveMemberUseCase {
         return ok(undefined);
       case 'not_member':
         return err(MEMBER_NOT_FOUND);
+      case 'self':
+        return err(CANNOT_REMOVE_SELF);
       case 'holds_more':
         return err(MEMBER_HOLDS_MORE_CAPABILITIES);
       case 'owner':

@@ -230,6 +230,7 @@ describeWithPostgres('Communities at scale', () => {
     for (const afterUserId of [undefined, middle?.user_id]) {
       const nodes = await plansOf(() =>
         readModel.holderCandidates('c-30k', 'community.members.remove', {
+          includeOwner: true,
           afterUserId,
           limit: 1001,
         }),
@@ -239,6 +240,7 @@ describeWithPostgres('Communities at scale', () => {
       expect(indexes(nodes)).toContain('community_members_owner_unique');
     }
     const first = await readModel.holderCandidates('c-30k', 'community.members.remove', {
+      includeOwner: true,
       limit: 5000,
     });
     // Every grantee and the owner, once each — and nobody whose grant ended.

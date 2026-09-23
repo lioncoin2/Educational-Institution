@@ -44,6 +44,13 @@ export const GRANTEE_INELIGIBLE = failure(
   'That account cannot hold these capabilities in this community.',
 );
 
+/** Removing oneself would end the stint as REMOVED — closing the way back by link (Q49). */
+export const CANNOT_REMOVE_SELF = failure(
+  'validation',
+  'communities.cannot_remove_self',
+  'You cannot remove yourself; leave the community instead.',
+);
+
 /** R6. Deliberately without detail: which capabilities a member holds is the owner's to see (Q45). */
 export const MEMBER_HOLDS_MORE_CAPABILITIES = failure(
   'forbidden',
@@ -124,23 +131,27 @@ export function effectiveCapabilities(
   return new Set(granted.filter((capability) => ceilingHeld.has(capability)));
 }
 
-export type RemovalDecision = 'allowed' | 'owner' | 'holds_more';
+export type RemovalDecision = 'allowed' | 'owner' | 'self' | 'holds_more';
 
 /**
  * Who may be removed (§3.2, R6), decided under lock. The owner never is —
- * by anyone. A delegate (the grant basis) removes only someone whose ACTIVE
- * grants, dormant ones included, are all among the delegate's own effective
+ * by anyone. Nobody removes themself: leaving is a leave (LEFT, and a way
+ * back by link), never a removal (REMOVED, which closes it — Q49). A
+ * delegate (the grant basis) removes only someone whose ACTIVE grants,
+ * dormant ones included, are all among the delegate's own effective
  * capabilities: nobody can take out a peer stronger than themself, and two
  * delegates can never remove each other in one interleaving. The owner and
  * oversight are not bounded by R6.
  */
 export function mayRemove(input: {
   readonly basis: 'owner' | 'grant' | 'oversight';
-  readonly target: { readonly standing: MembershipStanding };
+  readonly target: { readonly userId: string; readonly standing: MembershipStanding };
   readonly targetGrants: readonly CommunityCapability[];
+  readonly removerUserId: string | null;
   readonly removerEffective: ReadonlySet<CommunityCapability>;
 }): RemovalDecision {
   if (input.target.standing === 'OWNER') return 'owner';
+  if (input.target.userId === input.removerUserId) return 'self';
   if (input.basis !== 'grant') return 'allowed';
   return input.targetGrants.every((capability) => input.removerEffective.has(capability))
     ? 'allowed'

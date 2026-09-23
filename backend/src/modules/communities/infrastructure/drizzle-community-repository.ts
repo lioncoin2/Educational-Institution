@@ -79,6 +79,12 @@ const CAPABILITY_ORDER = new Map<string, number>(
   COMMUNITY_CAPABILITIES.map((capability, index) => [capability, index]),
 );
 
+/** Grants in the vocabulary's order, as both stores report them. */
+const byCapability = (grants: readonly CapabilityGrant[]): CapabilityGrant[] =>
+  [...grants].sort(
+    (a, b) => (CAPABILITY_ORDER.get(a.capability) ?? 0) - (CAPABILITY_ORDER.get(b.capability) ?? 0),
+  );
+
 /** A grant's ACTIVE predicate, unqualified — as the partial unique index states it. */
 const GRANT_ACTIVE = sql`ended_at is null`;
 
@@ -353,12 +359,14 @@ export class DrizzleCommunityRepository implements CommunityStore {
         basis: actor.kind,
         target,
         targetGrants: targetGrants.map((grant) => grant.capability),
+        removerUserId: input.removedBy,
         removerEffective: effectiveCapabilities(
           basis.grants.map((grant) => grant.capability),
           input.removerCeilings,
         ),
       });
       if (decision === 'owner') return { kind: 'owner' };
+      if (decision === 'self') return { kind: 'self' };
       if (decision === 'holds_more') return { kind: 'holds_more' };
       const endedGrants = await this.endGrantsOf(
         tx,
@@ -645,49 +653,59 @@ export class DrizzleCommunityRepository implements CommunityStore {
         if (grantee === null || !mayGrant({ grantorUserId: owner.userId, grantee })) {
           return { kind: 'grantee_ineligible' };
         }
-        // 6: one row per capability not already held; an identical grant in
-        // flight is waited for on the partial unique index, then skipped (R7).
-        const inserted = await tx
-          .insert(communityCapabilityGrants)
-          .values(
-            capabilities.map((capability) =>
-              grantRow(
-                newGrant({
-                  id: input.newId(),
-                  communityId: input.communityId,
-                  membershipId: grantee.id,
-                  userId: grantee.userId,
-                  capability,
-                  grantedBy: owner.userId,
-                  at: input.at,
-                }),
-              ),
-            ),
-          )
-          .onConflictDoNothing({
-            target: [communityCapabilityGrants.membershipId, communityCapabilityGrants.capability],
-            where: GRANT_ACTIVE,
-          })
-          .returning();
-        const created = inserted.map(toGrant);
-        const createdCapabilities = new Set(created.map((grant) => grant.capability));
-        const held = capabilities.filter((capability) => !createdCapabilities.has(capability));
-        const unchanged =
-          held.length === 0
+        // 4: the grants already held, FOR SHARE: each stays ACTIVE until this
+        // commits — a revocation of one waits — so `unchanged` is true at commit.
+        const held = await this.lockActiveGrants(tx, grantee.id, capabilities);
+        const missing = capabilities.filter(
+          (capability) => !held.some((grant) => grant.capability === capability),
+        );
+        // 6: one row per capability not held; an identical grant in flight is
+        // waited for on the partial unique index, then skipped (R7).
+        const created =
+          missing.length === 0
             ? []
             : (
                 await tx
-                  .select()
-                  .from(communityCapabilityGrants)
-                  .where(
-                    and(
-                      eq(communityCapabilityGrants.membershipId, grantee.id),
-                      inArray(communityCapabilityGrants.capability, held),
-                      isNull(communityCapabilityGrants.endedAt),
+                  .insert(communityCapabilityGrants)
+                  .values(
+                    missing.map((capability) =>
+                      grantRow(
+                        newGrant({
+                          id: input.newId(),
+                          communityId: input.communityId,
+                          membershipId: grantee.id,
+                          userId: grantee.userId,
+                          capability,
+                          grantedBy: owner.userId,
+                          at: input.at,
+                        }),
+                      ),
                     ),
                   )
+                  .onConflictDoNothing({
+                    target: [
+                      communityCapabilityGrants.membershipId,
+                      communityCapabilityGrants.capability,
+                    ],
+                    where: GRANT_ACTIVE,
+                  })
+                  .returning()
               ).map(toGrant);
-        return { kind: 'granted', created, unchanged };
+        // What an identical grant committed while this one waited: locked like
+        // the rest — the one lock taken after an insert, and it closes no
+        // cycle: the grant that inserted it has committed, and a revocation of
+        // it waits for nothing this transaction holds. If even that is gone —
+        // revoked in between — nothing is written: the caller may ask again.
+        const raced = missing.filter(
+          (capability) => !created.some((grant) => grant.capability === capability),
+        );
+        const joined = raced.length === 0 ? [] : await this.lockActiveGrants(tx, grantee.id, raced);
+        if (joined.length !== raced.length) throw new Rollback<GrantOutcome>({ kind: 'conflict' });
+        return {
+          kind: 'granted',
+          created: byCapability(created),
+          unchanged: byCapability([...held, ...joined]),
+        };
       }),
     );
   }
@@ -967,6 +985,27 @@ export class DrizzleCommunityRepository implements CommunityStore {
       )
       .for('share');
     return row !== undefined;
+  }
+
+  /** Step 4: a stint's ACTIVE grants of these capabilities, FOR SHARE in ascending id. */
+  private async lockActiveGrants(
+    tx: Transaction,
+    membershipId: string,
+    capabilities: readonly CommunityCapability[],
+  ): Promise<CapabilityGrant[]> {
+    const rows = await tx
+      .select()
+      .from(communityCapabilityGrants)
+      .where(
+        and(
+          eq(communityCapabilityGrants.membershipId, membershipId),
+          inArray(communityCapabilityGrants.capability, [...capabilities]),
+          isNull(communityCapabilityGrants.endedAt),
+        ),
+      )
+      .orderBy(asc(communityCapabilityGrants.id))
+      .for('share');
+    return rows.map(toGrant);
   }
 
   /** Step 4: a stint's ACTIVE grants, FOR UPDATE in ascending id — they are about to end. */

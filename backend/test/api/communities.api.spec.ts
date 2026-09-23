@@ -464,6 +464,16 @@ describe('communities API', () => {
   });
 
   it('removes and leaves: 204, and never the owner', async () => {
+    // A delegate holding community.members.remove still cannot remove themself: that is a leave.
+    await call('POST', `/communities/${communityId}/grants`, admin, {
+      userId: teacher.id,
+      capabilities: ['community.members.remove'],
+    });
+    const self = await call('DELETE', `/communities/${communityId}/members/${teacher.id}`, teacher);
+    expect({ status: self.status, code: code(self) }).toEqual({
+      status: 422,
+      code: 'communities.cannot_remove_self',
+    });
     expect(
       (await call('DELETE', `/communities/${communityId}/members/${teacher.id}`, admin)).status,
     ).toBe(204);

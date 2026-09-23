@@ -132,7 +132,19 @@ describe('delegation', () => {
       expect(h.journal.entries).toHaveLength(0);
     });
 
-    it('refuses the whole batch when one capability is out of reach — atomically', async () => {
+    it('refuses the whole batch when one capability is out of reach — nothing is granted', async () => {
+      // No provisional role holds communities.moderate without live.moderate:
+      // an account made for the purpose, eligible for community.lock alone.
+      h.person('lock-only', ['TEACHER']);
+      await h.addPeople(admin, id, 'lock-only');
+      h.accounts.setPermissions('lock-only', ['communities.read', 'communities.moderate']);
+      expect(codeOf(await grant('lock-only', ['community.lock', 'community.live.start']))).toBe(
+        'communities.grantee_ineligible',
+      );
+      expect(await h.readModel.grants(id, { limit: 10 })).toEqual([]);
+      // The part within reach, asked alone, is given.
+      unwrap(await grant('lock-only', ['community.lock']));
+
       h.person('assistant', ['ASSISTANT_TEACHER']);
       await h.addPeople(admin, id, 'assistant');
       expect(codeOf(await grant('assistant', ['community.members.view']))).toBe(
@@ -142,7 +154,9 @@ describe('delegation', () => {
         'communities.capabilities_invalid',
       );
       expect(codeOf(await grant('teacher-1', []))).toBe('communities.capabilities_invalid');
-      expect(await h.readModel.grants(id, { limit: 10 })).toEqual([]);
+      expect((await h.readModel.grants(id, { limit: 10 })).map((g) => g.userId)).toEqual([
+        'lock-only',
+      ]);
     });
 
     it('limits grants per person (PROVISIONAL)', async () => {
@@ -307,6 +321,18 @@ describe('delegation', () => {
       ).toEqual(['communities.capability.granted', 'communities.capability.granted']);
       await h.addPeople(admin, id, 'teacher-2');
       expect((await me(principalWith('teacher-2', ['TEACHER']))).capabilities).toEqual([]);
+    });
+
+    it('never removes oneself — that is a leave; the owner still hears it is not removable', async () => {
+      await h.delegate(admin, id, 'teacher-1', 'community.members.remove');
+      expect(codeOf(await remove(teacher, 'teacher-1'))).toBe('communities.cannot_remove_self');
+      // A member who is also an overseer is refused alike.
+      const overseer = h.person('owner-role', ['OWNER']);
+      await h.addPeople(admin, id, 'owner-role');
+      expect(codeOf(await remove(overseer, 'owner-role'))).toBe('communities.cannot_remove_self');
+      expect(codeOf(await remove(admin, 'admin-1'))).toBe('communities.owner_not_removable');
+      expect((await me(teacher)).standing).toBe('MEMBER');
+      unwrap(await h.leave.execute({ principal: teacher, communityId: id, meta: META }));
     });
 
     it('does not bound the owner or oversight by R6', async () => {
@@ -494,6 +520,25 @@ describe('delegation', () => {
     it('answers a transfer to the current owner with 200 and records nothing', async () => {
       unwrap(await transfer(admin, 'admin-1'));
       expect(h.journal.order).toEqual([]);
+    });
+
+    it('audits an overseer’s transfer that changes nothing — it still shows them the community', async () => {
+      const overseer = h.person('owner-role', ['OWNER']);
+      unwrap(await transfer(overseer, 'admin-1'));
+      expect(h.journal.entries.map((entry) => [entry.action, entry.metadata])).toEqual([
+        [
+          'communities.oversight.read',
+          {
+            act: null,
+            operation: 'community.ownership.transfer',
+            outcome: 'unchanged',
+          },
+        ],
+      ]);
+      expect(h.journal.events).toEqual([]);
+      // The owner repeating their own ownership reads nothing new: no entry.
+      unwrap(await transfer(admin, 'admin-1'));
+      expect(h.journal.entries).toHaveLength(1);
     });
 
     it('lets oversight recover ownership — never for itself', async () => {

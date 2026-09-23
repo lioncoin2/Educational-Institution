@@ -250,12 +250,18 @@ export class DrizzleCommunityReadModel implements CommunityReadModel {
   async holderCandidates(
     communityId: string,
     capability: CommunityCapability,
-    page: { readonly afterUserId?: string; readonly limit: number },
+    page: {
+      readonly includeOwner: boolean;
+      readonly afterUserId?: string;
+      readonly limit: number;
+    },
   ): Promise<readonly string[]> {
     // Keyset by user id over two bounded branches: the capability's ACTIVE
-    // grantees (…_active_by_community) and the owner (community_members_owner_unique).
+    // grantees (…_active_by_community) and, when asked, the owner
+    // (community_members_owner_unique).
     const after = (column: unknown) =>
       page.afterUserId === undefined ? sql`` : sql` and ${column} > ${page.afterUserId}`;
+    const owner = page.includeOwner ? sql`` : sql` and false`;
     const result = await this.db.execute<{ readonly user_id: string }>(sql`
       select h.user_id
         from ((select g.user_id
@@ -269,7 +275,7 @@ export class DrizzleCommunityReadModel implements CommunityReadModel {
               (select m.user_id
                  from ${communityMembers} m
                 where m.community_id = ${communityId}
-                  and m.standing = 'OWNER'${after(sql`m.user_id`)})) as h
+                  and m.standing = 'OWNER'${after(sql`m.user_id`)}${owner})) as h
        order by h.user_id
        limit ${page.limit}`);
     return result.rows.map((row) => row.user_id);

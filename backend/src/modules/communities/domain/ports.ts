@@ -83,6 +83,8 @@ export type RemoveOutcome =
     }
   | { readonly kind: 'not_member' }
   | { readonly kind: 'owner' }
+  /** The remover named themself: that is a leave. */
+  | { readonly kind: 'self' }
   /** R6: a delegate cannot remove someone holding a capability they do not effectively hold. */
   | { readonly kind: 'holds_more' }
   | { readonly kind: 'not_found' }
@@ -222,9 +224,10 @@ export interface CommunityStore {
 
   /**
    * Ends someone else's ACTIVE stint as REMOVED, and every grant on it. The
-   * owner is never removed; a delegate is bounded by R6, decided under lock
-   * against the delegate's ACTIVE grants and `removerCeilings` — the
-   * capabilities whose identity ceiling the remover holds right now.
+   * owner is never removed, and `removedBy` never removes themself; a
+   * delegate is bounded by R6, decided under lock against the delegate's
+   * ACTIVE grants and `removerCeilings` — the capabilities whose identity
+   * ceiling the remover holds right now.
    */
   removeMember(input: {
     readonly communityId: string;
@@ -393,13 +396,18 @@ export interface CommunityReadModel {
   ): Promise<readonly CapabilityGrant[]>;
   /**
    * Who may hold `capability` by standing, before any ceiling is checked:
-   * the owner and every ACTIVE grantee of it, in user-id order after
+   * every ACTIVE grantee of it — and the owner, when `includeOwner` (the act
+   * rules say whether the owner holds it implicitly) — in user-id order after
    * `afterUserId`. Never an overseer.
    */
   holderCandidates(
     communityId: string,
     capability: CommunityCapability,
-    page: { readonly afterUserId?: string; readonly limit: number },
+    page: {
+      readonly includeOwner: boolean;
+      readonly afterUserId?: string;
+      readonly limit: number;
+    },
   ): Promise<readonly string[]>;
   /** ACTIVE member ids in id order, after `afterUserId`. */
   memberIds(

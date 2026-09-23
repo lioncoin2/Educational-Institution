@@ -116,7 +116,13 @@ export class Journal implements AuditLog, EventPublisher {
 export class StubAccounts implements AccountDirectory {
   private readonly accounts = new Map<
     string,
-    { displayName: string; roles: KnownRoleCode[]; active: boolean }
+    {
+      displayName: string;
+      roles: KnownRoleCode[];
+      active: boolean;
+      /** Replaces what the roles grant — for combinations no provisional role has. */
+      permissions?: readonly string[];
+    }
   >();
   describeCalls = 0;
 
@@ -132,6 +138,12 @@ export class StubAccounts implements AccountDirectory {
   setRoles(userId: string, roles: readonly KnownRoleCode[]): void {
     const account = this.accounts.get(userId);
     if (account !== undefined) account.roles = [...roles];
+  }
+
+  /** Exactly these permissions, whatever the account's roles say. */
+  setPermissions(userId: string, permissions: readonly Permission[]): void {
+    const account = this.accounts.get(userId);
+    if (account !== undefined) account.permissions = [...permissions];
   }
 
   async describe(userIds: readonly string[]): Promise<readonly AccountSummary[]> {
@@ -151,12 +163,10 @@ export class StubAccounts implements AccountDirectory {
     return new Set(
       userIds.filter((userId) => {
         const account = this.accounts.get(userId);
-        return (
-          account !== undefined &&
-          account.active &&
-          account.roles.some((role) =>
-            (PROVISIONAL_ROLE_PERMISSIONS[role] as readonly string[]).includes(permission),
-          )
+        if (account === undefined || !account.active) return false;
+        if (account.permissions !== undefined) return account.permissions.includes(permission);
+        return account.roles.some((role) =>
+          (PROVISIONAL_ROLE_PERMISSIONS[role] as readonly string[]).includes(permission),
         );
       }),
     );

@@ -1000,6 +1000,236 @@ describeWithPostgres('Communities in Postgres', () => {
     });
   });
 
+  /**
+   * The locks delegation rests on, pinned deterministically. A raw
+   * transaction holds the community row, so a transaction that reaches step
+   * 5 of the lock order parks there, still holding every lock it took
+   * before; the other side then either waits on one of those locks — seen in
+   * pg_stat_activity — or does not. Racing both and accepting either outcome
+   * would pass with the lock deleted; these do not.
+   */
+  describe('the locks delegation rests on (deterministic interleavings)', () => {
+    let stores: DrizzleCommunityRepository[];
+    let h: CommunitiesHarness;
+    let communityId: string;
+    let ownerStintId: string;
+
+    beforeEach(async () => {
+      await reset();
+      stores = [new DrizzleCommunityRepository(db), new DrizzleCommunityRepository(db)];
+      h = postgresHarness();
+      communityId = await h.community(h.person('admin-1', ['ADMIN']));
+      ownerStintId = (await h.store.authorityOf(communityId, 'admin-1')).stint?.id ?? '';
+      for (const userId of ['delegate', 'member', 'grantee']) h.person(userId, ['TEACHER']);
+      await h.addPeople(admin(), communityId, 'delegate', 'member', 'grantee');
+    });
+
+    const admin = () => h.person('admin-1', ['ADMIN']);
+    const owner = () => ({ userId: 'admin-1', membershipId: ownerStintId });
+    const store = (i: number) => stores[i];
+    const at = () => h.clock.now();
+
+    /**
+     * Runs `scenario` while a raw transaction holds `statement`'s rows, and
+     * always ends that transaction afterwards — so a failing scenario never
+     * leaves a lock behind for the rest of the suite.
+     */
+    const whileHolding = async (
+      statement: string,
+      params: unknown[],
+      scenario: (release: () => Promise<void>) => Promise<void>,
+    ): Promise<void> => {
+      const client = await pool.connect();
+      let open = true;
+      const release = async () => {
+        if (!open) return;
+        open = false;
+        await client.query('rollback');
+      };
+      try {
+        await client.query('begin');
+        await client.query(statement, params);
+        await scenario(release);
+      } finally {
+        await release();
+        client.release();
+      }
+    };
+
+    /** A transaction that reaches step 5 parks here, still holding every lock it took before. */
+    const communityRow = 'select id from communities where id = $1 for update';
+
+    /** Resolves once at least `n` backends of this database wait on a lock; throws after 5 s. */
+    const lockWaiters = async (n: number): Promise<void> => {
+      for (let i = 0; i < 500; i += 1) {
+        const waiting = await count(sql`select count(*)::int as n from pg_stat_activity
+                                         where datname = current_database()
+                                           and wait_event_type = 'Lock'`);
+        if (waiting >= n) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error(`fewer than ${n} backends ever waited on a lock`);
+    };
+
+    const settled = (promise: Promise<unknown>): (() => boolean) => {
+      let done = false;
+      promise.then(
+        () => (done = true),
+        () => (done = true),
+      );
+      return () => done;
+    };
+
+    it('a revocation waits for the delegate act resting on the grant — the act commits first', async () => {
+      const [grantId] = await h.delegate(
+        admin(),
+        communityId,
+        'delegate',
+        'community.members.remove',
+      );
+      const delegateStint = (await h.store.authorityOf(communityId, 'delegate')).stint?.id ?? '';
+      let removal: ReturnType<DrizzleCommunityRepository['removeMember']> | undefined;
+      let revocation: ReturnType<DrizzleCommunityRepository['revokeGrant']> | undefined;
+      await whileHolding(communityRow, [communityId], async (release) => {
+        removal = store(0).removeMember({
+          communityId,
+          userId: 'member',
+          actor: {
+            kind: 'grant',
+            userId: 'delegate',
+            membershipId: delegateStint,
+            grantId: grantId ?? '',
+            capability: 'community.members.remove',
+          },
+          removerCeilings: new Set(['community.members.remove']),
+          removedBy: 'delegate',
+          at: at(),
+        });
+        await lockWaiters(1); // the removal, parked at the community row with its grant held
+        revocation = store(1).revokeGrant({
+          communityId,
+          grantId: grantId ?? '',
+          owner: owner(),
+          at: at(),
+        });
+        const revoked = settled(revocation);
+        await lockWaiters(2); // the revocation, waiting on the grant the removal holds
+        expect(revoked()).toBe(false);
+        await release();
+      });
+      expect((await removal)?.kind).toBe('removed');
+      expect((await revocation)?.kind).toBe('revoked');
+    });
+
+    it('a grant waits for its grantee’s removal — and is refused, never left on an ended stint', async () => {
+      let removal: ReturnType<DrizzleCommunityRepository['removeMember']> | undefined;
+      let granting: ReturnType<DrizzleCommunityRepository['grant']> | undefined;
+      await whileHolding(communityRow, [communityId], async (release) => {
+        removal = store(0).removeMember({
+          communityId,
+          userId: 'grantee',
+          actor: { kind: 'oversight' },
+          removerCeilings: new Set(),
+          removedBy: 'overseer',
+          at: at(),
+        });
+        await lockWaiters(1); // the removal, parked with the grantee's stint FOR UPDATE
+        granting = store(1).grant({
+          communityId,
+          owner: owner(),
+          granteeUserId: 'grantee',
+          capabilities: ['community.lock'],
+          at: at(),
+          newId: () => 'g-racing-the-removal',
+        });
+        await lockWaiters(2);
+        await release();
+      });
+      expect((await removal)?.kind).toBe('removed');
+      expect(await granting).toEqual({ kind: 'grantee_ineligible' });
+      expect(await count(sql`select count(*)::int as n from communities_capability_grants`)).toBe(
+        0,
+      );
+    });
+
+    it('a revocation of a link creator’s grant waits for the redemption resting on it', async () => {
+      const [inviteGrant] = await h.delegate(
+        admin(),
+        communityId,
+        'delegate',
+        'community.members.invite',
+      );
+      const { invitationId } = await h.link(h.person('delegate', ['TEACHER']), communityId);
+      let redemption: ReturnType<DrizzleCommunityRepository['redeem']> | undefined;
+      let revocation: ReturnType<DrizzleCommunityRepository['revokeGrant']> | undefined;
+      await whileHolding(communityRow, [communityId], async (release) => {
+        redemption = store(0).redeem({
+          invitationId,
+          communityId,
+          userId: 'joiner',
+          creatorUserId: 'delegate',
+          creatorCapability: 'community.members.invite',
+          stintId: 'stint-joiner',
+          at: at(),
+        });
+        await lockWaiters(1); // the redemption, parked with the creator's grant held
+        revocation = store(1).revokeGrant({
+          communityId,
+          grantId: inviteGrant ?? '',
+          owner: owner(),
+          at: at(),
+        });
+        const revoked = settled(revocation);
+        await lockWaiters(2);
+        expect(revoked()).toBe(false);
+        await release();
+      });
+      expect((await redemption)?.kind).toBe('joined');
+      expect((await revocation)?.kind).toBe('revoked');
+    });
+
+    it('a revocation waits for a grant that found the capability held — "unchanged" holds at commit', async () => {
+      const [lockGrant] = await h.delegate(admin(), communityId, 'grantee', 'community.lock');
+      const granteeStint = (await h.store.authorityOf(communityId, 'grantee')).stint?.id ?? '';
+      let granting: ReturnType<DrizzleCommunityRepository['grant']> | undefined;
+      let revocation: ReturnType<DrizzleCommunityRepository['revokeGrant']> | undefined;
+      // An identical grant of members.view, in flight and uncommitted: the
+      // batch below parks at its insert, after locking the grant it found held.
+      await whileHolding(
+        `insert into communities_capability_grants (id, community_id, membership_id, user_id,
+                                                    capability, granted_by, granted_at)
+         values ('g-in-flight', $1, $2, 'grantee', 'community.members.view', 'admin-1', now())`,
+        [communityId, granteeStint],
+        async (release) => {
+          granting = store(0).grant({
+            communityId,
+            owner: owner(),
+            granteeUserId: 'grantee',
+            capabilities: ['community.lock', 'community.members.view'],
+            at: at(),
+            newId: () => 'g-second',
+          });
+          await lockWaiters(1); // the batch, waiting on the in-flight row
+          revocation = store(1).revokeGrant({
+            communityId,
+            grantId: lockGrant ?? '',
+            owner: owner(),
+            at: at(),
+          });
+          const revoked = settled(revocation);
+          await lockWaiters(2); // the revocation, waiting on the grant the batch found held
+          expect(revoked()).toBe(false);
+          await release(); // the in-flight grant rolls back
+        },
+      );
+      const outcome = await granting;
+      if (outcome?.kind !== 'granted') throw new Error(outcome?.kind);
+      expect(outcome.created.map((grant) => grant.capability)).toEqual(['community.members.view']);
+      expect(outcome.unchanged.map((grant) => grant.id)).toEqual([lockGrant]);
+      expect((await revocation)?.kind).toBe('revoked');
+    });
+  });
+
   describe('the use cases, on Postgres', () => {
     it('create, add, redeem, leave, remove and lock end as they do in memory', async () => {
       await reset();

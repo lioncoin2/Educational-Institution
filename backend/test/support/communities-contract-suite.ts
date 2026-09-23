@@ -309,15 +309,20 @@ export function communityContractSuite(
         communityId: id,
         owner: owner(),
         granteeUserId: 'teacher-1',
-        capabilities: ['community.lock', 'community.live.start'],
+        capabilities: ['community.lock', 'community.live.start', 'community.members.view'],
         at: h.clock.now(),
         newId: () => h.ids.next(),
       });
       if (again.kind !== 'granted') throw new Error(again.kind);
       expect(again.created.map((grant) => grant.capability)).toEqual(['community.live.start']);
-      expect(again.unchanged.map((grant) => grant.id)).toEqual([
-        first.created.find((grant) => grant.capability === 'community.lock')?.id,
+      // Both lists in the vocabulary's order, on every adapter.
+      expect(again.unchanged.map((grant) => grant.capability)).toEqual([
+        'community.members.view',
+        'community.lock',
       ]);
+      expect(again.unchanged.map((grant) => grant.id)).toEqual(
+        first.created.map((grant) => grant.id),
+      );
       expect(
         (await h.readModel.grants(id, { userId: 'teacher-1', limit: 10 })).map(
           (grant) => grant.capability,
@@ -476,6 +481,16 @@ export function communityContractSuite(
         'community.lock',
         'community.members.view',
       ]);
+      expect(
+        await h.store.removeMember({
+          communityId: id,
+          userId: 'teacher-1',
+          actor: remover,
+          removerCeilings: everything,
+          removedBy: 'teacher-1',
+          at: h.clock.now(),
+        }),
+      ).toEqual({ kind: 'self' });
       const removal = (userId: string, removerCeilings: ReadonlySet<CommunityCapability>) =>
         h.store.removeMember({
           communityId: id,
@@ -650,6 +665,21 @@ export function communityContractSuite(
         userIds: [],
         nextCursor: null,
       });
+    });
+
+    it('leaves the owner out of the candidates when the act rules do not make them a holder', async () => {
+      h.person('t-a', ['TEACHER']);
+      await h.addPeople(admin, id, 't-a');
+      await h.delegate(admin, id, 't-a', 'community.lock');
+      expect(
+        await h.readModel.holderCandidates(id, 'community.lock', {
+          includeOwner: false,
+          limit: 10,
+        }),
+      ).toEqual(['t-a']);
+      expect(
+        await h.readModel.holderCandidates(id, 'community.lock', { includeOwner: true, limit: 10 }),
+      ).toEqual(['admin-1', 't-a']);
     });
 
     it('throws RangeError on a bad limit, a forged cursor or an unknown capability', async () => {

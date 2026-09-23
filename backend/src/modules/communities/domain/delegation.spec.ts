@@ -147,28 +147,55 @@ describe('dormancy (R4)', () => {
   });
 });
 
-describe('who may be removed (R6)', () => {
+describe('who may be removed (§3.2, R6)', () => {
   const remover = new Set<CommunityCapability>(['community.members.remove', 'community.lock']);
+  const member = { userId: 'm', standing: 'MEMBER' as const };
 
   it('never the owner — whatever the basis', () => {
     for (const basis of ['owner', 'grant', 'oversight'] as const) {
       expect(
         mayRemove({
           basis,
-          target: { standing: 'OWNER' },
+          target: { userId: 'o', standing: 'OWNER' },
           targetGrants: [],
+          removerUserId: 'r',
           removerEffective: remover,
         }),
       ).toBe('owner');
     }
   });
 
+  it('never oneself — whatever the basis: that is a leave (Q49)', () => {
+    for (const basis of ['grant', 'oversight'] as const) {
+      expect(
+        mayRemove({
+          basis,
+          target: member,
+          targetGrants: [],
+          removerUserId: 'm',
+          removerEffective: remover,
+        }),
+      ).toBe('self');
+    }
+    // The owner removing themself is refused as the owner.
+    expect(
+      mayRemove({
+        basis: 'owner',
+        target: { userId: 'o', standing: 'OWNER' },
+        targetGrants: [],
+        removerUserId: 'o',
+        removerEffective: new Set(),
+      }),
+    ).toBe('owner');
+  });
+
   it('bounds a delegate by a subset rule that counts dormant grants', () => {
     const decide = (targetGrants: CommunityCapability[]) =>
       mayRemove({
         basis: 'grant',
-        target: { standing: 'MEMBER' },
+        target: member,
         targetGrants,
+        removerUserId: 'r',
         removerEffective: remover,
       });
     expect(decide([])).toBe('allowed');
@@ -183,8 +210,9 @@ describe('who may be removed (R6)', () => {
       expect(
         mayRemove({
           basis,
-          target: { standing: 'MEMBER' },
+          target: member,
           targetGrants: ['community.live.moderate', 'community.chat.post'],
+          removerUserId: basis === 'owner' ? 'o' : null,
           removerEffective: new Set(),
         }),
       ).toBe('allowed');
@@ -196,8 +224,9 @@ describe('who may be removed (R6)', () => {
     expect(
       mayRemove({
         basis: 'grant',
-        target: { standing: 'MEMBER' },
+        target: member,
         targetGrants: ['community.members.remove'],
+        removerUserId: 'r',
         removerEffective: same,
       }),
     ).toBe('allowed');

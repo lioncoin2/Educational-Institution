@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { MAX_HOLDER_PAGE, type CommunityCapabilityHolders } from '../contracts/capability-holders';
 import { isCommunityCapability, type CommunityCapability } from '../contracts/capabilities';
+import { ruleFor } from '../domain/act-rules';
 import { ceilingOf } from '../domain/delegation';
 import { COMMUNITY_READ_MODEL, type CommunityReadModel } from '../domain/ports';
 import { CommunityPeople } from './community-people';
@@ -38,6 +39,8 @@ export class CapabilityHoldersService implements CommunityCapabilityHolders {
         ? undefined
         : decodeHolderCursor(page.cursor);
     const candidates = await this.readModel.holderCandidates(communityId, capability, {
+      // Whether the owner holds it implicitly is the act rules' to say (Q42).
+      includeOwner: ruleFor(capability).ownerImplicit,
       afterUserId: after,
       limit: page.limit + 1,
     });

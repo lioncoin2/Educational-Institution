@@ -161,13 +161,41 @@ decides it. Nothing here decides an institutional policy.
 >   holding every permission of the capability's ceiling. Its cursor follows
 >   the candidates, so a page may be short, even empty.
 >
+> - After an independent review of P3:
+>   - The races that fire both sides and accept either outcome passed with a
+>     load-bearing lock deleted. Four deterministic interleavings now pin
+>     them: a raw transaction holds the community row, so one side parks at
+>     lock-order step 5 still holding its earlier locks, and the test asserts
+>     that the other side waits (seen in `pg_stat_activity`) and how both
+>     end. They cover a revocation against a delegate's act, a grant against
+>     its grantee's removal, a revocation against a redemption through the
+>     delegate's link, and a revocation against a grant that found the
+>     capability held. Each fails with its lock removed.
+>   - A grant request locks the grants it finds already held (`FOR SHARE`)
+>     before inserting the rest, so a concurrent revocation waits and
+>     `unchanged` is still true at commit. A grant an identical request
+>     committed meanwhile is locked the same way — the one lock taken after an
+>     insert, and it closes no cycle. If even that was revoked in between,
+>     nothing is written and the answer is 409 `communities.conflict`. Both
+>     stores list `created` and `unchanged` in the vocabulary's order.
+>   - Nobody removes themself: 422 `communities.cannot_remove_self` (leaving
+>     is `/leave`, which ends the stint LEFT and keeps the way back by link,
+>     Q49). The owner removing themself is still 412
+>     `communities.owner_not_removable`.
+>   - A transfer through oversight that changes nothing still shows the
+>     overseer the community, so it is audited as an oversight read
+>     (PROVISIONAL, Q43).
+>   - Whether the owner is among a capability's holders comes from the act
+>     rules (`ownerImplicit`), not from the holders query.
+>
 > Evidence: `domain/delegation.spec.ts`, `grant.spec.ts` and the grant rows
 > of `authority.spec.ts`; `application/delegation.spec.ts`; the P3 cases of
-> the contract suite, run on both adapters; the grant constraints and seven
-> delegation races of `communities-postgres.spec.ts` (under
-> `statement_timeout`, deadlock retries asserted zero); the delegate's
-> authorization, holders and grant-list `EXPLAIN`s beside 20,000 ended grants
-> in `communities-scale.spec.ts`; the 0011 upgrade test; and the API suite.
+> the contract suite, run on both adapters; the grant constraints, seven
+> delegation races and four deterministic interleavings of
+> `communities-postgres.spec.ts` (under `statement_timeout`, deadlock retries
+> asserted zero); the delegate's authorization, holders and grant-list
+> `EXPLAIN`s beside 20,000 ended grants in `communities-scale.spec.ts`; the
+> 0011 upgrade test; and the API suite.
 
 ---
 
@@ -1555,7 +1583,7 @@ unwrap Results; no business logic.
 | `POST /communities/:communityId/lock` · `/unlock` | `lock` | 200 `CommunityResponse` (idempotent) | 403, 404 |
 | `GET /communities/:communityId/members?cursor&limit` | `members.view` | 200 `{items: [{userId, displayName, active, joinedAt}], nextCursor}`; default 50, max 200 | 403 `communities.capability_required`, 404 |
 | `POST /communities/:communityId/members {userIds[1..200]}` | `members.invite` | 201 `{added, unchanged}` when anyone was added, 200 when nobody was | 412 `communities.community_locked`, 422 `communities.members_not_eligible {userIds}`, 429 |
-| `DELETE /communities/:communityId/members/:userId` | `members.remove` (+ R6) | 204 | 404 `communities.member_not_found`, 412 `communities.owner_not_removable`, 403 |
+| `DELETE /communities/:communityId/members/:userId` | `members.remove` (+ R6) | 204 | 404 `communities.member_not_found`, 412 `communities.owner_not_removable`, 422 `communities.cannot_remove_self`, 403 `communities.member_holds_more_capabilities` (R6), 403 |
 | `POST /communities/:communityId/leave` | `view` | 204 | 412 `communities.owner_cannot_leave`, 404 |
 | `POST /communities/:communityId/invitations {expiresInSeconds?, maxUses?}` | `members.invite` | 201 `{invitation: InvitationResponse, token}` — the only response that ever holds the token | 412 `communities.community_locked`, 422 `communities.invitation_terms_invalid {field}`, 429 |
 | `GET /communities/:communityId/invitations?cursor&limit` | `members.invite`, or oversight | 200 `{items: InvitationResponse[], nextCursor}` | 403, 404 |

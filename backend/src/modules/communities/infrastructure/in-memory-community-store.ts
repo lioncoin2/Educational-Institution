@@ -194,9 +194,11 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
       basis: input.actor.kind,
       target: stint,
       targetGrants: this.activeGrantsOf(stint.id).map((grant) => grant.capability),
+      removerUserId: input.removedBy,
       removerEffective: effectiveCapabilities(basis.capabilities, input.removerCeilings),
     });
     if (decision === 'owner') return { kind: 'owner' };
+    if (decision === 'self') return { kind: 'self' };
     if (decision === 'holds_more') return { kind: 'holds_more' };
     const endedGrants = this.endGrantsOf(stint.id, 'membership_ended', input.removedBy, input.at);
     const ended = this.end(community, stint, 'REMOVED', input.removedBy, input.at);
@@ -546,12 +548,16 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
   async holderCandidates(
     communityId: string,
     capability: CommunityCapability,
-    page: { readonly afterUserId?: string; readonly limit: number },
+    page: {
+      readonly includeOwner: boolean;
+      readonly afterUserId?: string;
+      readonly limit: number;
+    },
   ): Promise<readonly string[]> {
     const holders = new Set<string>();
     for (const stint of this.activeStintsOf(communityId)) {
       if (
-        stint.standing === 'OWNER' ||
+        (page.includeOwner && stint.standing === 'OWNER') ||
         this.activeGrantsOf(stint.id).some((grant) => grant.capability === capability)
       ) {
         holders.add(stint.userId);

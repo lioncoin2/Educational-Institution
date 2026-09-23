@@ -38,7 +38,7 @@ import {
   ownerBasis,
   ownerRefusalAfterBasisLost,
 } from './community-acts';
-import { CommunityAuthorizationService } from './community-authorization.service';
+import { CommunityAuthorizationService, type OwnerPermit } from './community-authorization.service';
 import { CommunityPeople } from './community-people';
 import { CommunitiesJournal, ownerAuthorityOf } from './communities-journal';
 import {
@@ -430,7 +430,7 @@ export class TransferOwnershipUseCase {
       })
     ) {
       case 'unchanged':
-        return this.answer(principal, communityId);
+        return this.unchanged(permit, principal, command.meta);
       case 'self_assignment':
         return err(OWNER_SELF_ASSIGNMENT);
       case 'proceed':
@@ -486,7 +486,7 @@ export class TransferOwnershipUseCase {
         return this.answer(principal, communityId);
       }
       case 'unchanged':
-        return this.answer(principal, communityId);
+        return this.unchanged(permit, principal, command.meta);
       case 'target_not_member':
         return err(OWNER_INELIGIBLE);
       case 'owner_conflict':
@@ -496,6 +496,29 @@ export class TransferOwnershipUseCase {
       case 'conflict':
         return err(COMMUNITY_CONFLICT);
     }
+  }
+
+  /**
+   * Nothing changed, and the caller is shown the community anyway. On the
+   * oversight basis that is a read without membership, audited like every
+   * other (PROVISIONAL, Q43) — though nothing was transferred.
+   */
+  private async unchanged(
+    permit: OwnerPermit,
+    principal: Principal,
+    meta: CallMetadata,
+  ): Promise<Result<CommunityView>> {
+    if (permit.basis === 'oversight') {
+      await this.journal.oversightRead({
+        actorUserId: actorOf(principal),
+        communityId: permit.communityId,
+        act: null,
+        at: this.clock.now(),
+        correlationId: meta.correlationId,
+        detail: { operation: permit.operation, outcome: 'unchanged' },
+      });
+    }
+    return this.answer(principal, permit.communityId);
   }
 
   /** The community as the caller now stands in it — read after the change. */
