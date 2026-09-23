@@ -24,10 +24,12 @@ class PathContinueCard extends StatelessWidget {
   });
 
   /// The rung of the graded path the learner currently stands on. Its name and
-  /// halaqat count come from the profile; the position is prototype data.
+  /// halaqat count come from the profile; the position is prototype data in
+  /// the demo, and the learner's enrollment against the server.
   final PathStep step;
 
-  /// The halaqa surfaced as "next" — prototype data.
+  /// The halaqa surfaced as "next" — prototype data in the demo; against the
+  /// server, the halaqa the learner is enrolled in.
   final Halaqa halaqa;
 
   final VoidCallback onOpen;
@@ -41,18 +43,22 @@ class PathContinueCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Three chips need two runs at the largest text scale on a phone.
-          const Wrap(
+          Wrap(
             spacing: Insets.sm,
             runSpacing: Insets.sm,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              StatBadge(
+              const StatBadge(
                 label: 'القسم الحالي',
                 icon: Icons.school_outlined,
                 tone: StatBadgeTone.soft,
               ),
-              SourceChip(page: 6),
-              MockChip(compact: true),
+              // The rung is the profile's in the demo, the institution's
+              // records against the server — which carry no page.
+              if (step.origin.isMock) ...const [
+                SourceChip(page: 6),
+                MockChip(compact: true),
+              ],
             ],
           ),
           const SizedBox(height: Insets.lg),
@@ -61,44 +67,50 @@ class PathContinueCard extends StatelessWidget {
           Text(halaqa.name, style: context.text.bodyMedium),
           const SizedBox(height: Insets.lg),
 
-          Row(
-            children: [
-              Semantics(
-                label: 'أتممتِ ${step.completedHalaqat} من '
-                    '${step.halaqatCount} حلقة في هذا القسم',
-                excludeSemantics: true,
-                child: AppProgressRing(
-                  value: step.ratio,
-                  centerTop: '${step.completedHalaqat}',
-                  centerBottom: 'من ${step.halaqatCount}',
-                  size: 96,
-                  strokeWidth: 9,
-                ),
-              ),
-              const SizedBox(width: Insets.xl),
-              Expanded(
-                // Same treatment as the ring above. AppCard's InkWell merges
-                // this whole subtree into one semantics node, so an unwrapped
-                // ProgressIndicator would stamp role=progressBar (and its
-                // value) onto the entire card — with the CTA button nested
-                // inside it, which is invalid ARIA.
-                child: Semantics(
-                  label: 'دروس الحلقة: ${halaqa.completedLessons} '
-                      'من ${halaqa.lessons.length}',
+          // Progress is drawn only where it is recorded — never from nothing.
+          if (step.ratio case final ratio? when halaqa.hasProgress)
+            Row(
+              children: [
+                Semantics(
+                  label:
+                      'أتممتِ ${step.completedHalaqat} من '
+                      '${step.halaqatCount} حلقة في هذا القسم',
                   excludeSemantics: true,
-                  child: AppProgressBar(
-                    value: halaqa.ratio,
-                    label: 'دروس الحلقة',
-                    trailingLabel:
-                        '${halaqa.completedLessons} من ${halaqa.lessons.length}',
+                  child: AppProgressRing(
+                    value: ratio,
+                    centerTop: '${step.completedHalaqat}',
+                    centerBottom: 'من ${step.halaqatCount}',
+                    size: 96,
+                    strokeWidth: 9,
                   ),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: Insets.xl),
+                Expanded(
+                  // Same treatment as the ring above. AppCard's InkWell merges
+                  // this whole subtree into one semantics node, so an unwrapped
+                  // ProgressIndicator would stamp role=progressBar (and its
+                  // value) onto the entire card — with the CTA button nested
+                  // inside it, which is invalid ARIA.
+                  child: Semantics(
+                    label:
+                        'دروس الحلقة: ${halaqa.completedLessons} '
+                        'من ${halaqa.lessons.length}',
+                    excludeSemantics: true,
+                    child: AppProgressBar(
+                      value: halaqa.ratio,
+                      label: 'دروس الحلقة',
+                      trailingLabel:
+                          '${halaqa.completedLessons} من ${halaqa.lessons.length}',
+                    ),
+                  ),
+                ),
+              ],
+            ),
 
-          const SizedBox(height: Insets.lg),
-          _MetaRow(halaqa: halaqa),
+          if (halaqa.teacherName != null || halaqa.scheduleLabel != null) ...[
+            const SizedBox(height: Insets.lg),
+            _MetaRow(halaqa: halaqa),
+          ],
           const SizedBox(height: Insets.xl),
 
           SizedBox(
@@ -133,16 +145,18 @@ class _MetaRow extends StatelessWidget {
         spacing: Insets.lg,
         runSpacing: Insets.sm,
         children: [
-          _MetaItem(
-            icon: Icons.person_outline_rounded,
-            label: halaqa.teacherName,
-            maxWidth: constraints.maxWidth,
-          ),
-          _MetaItem(
-            icon: Icons.schedule_rounded,
-            label: halaqa.scheduleLabel,
-            maxWidth: constraints.maxWidth,
-          ),
+          if (halaqa.teacherName case final teacher?)
+            _MetaItem(
+              icon: Icons.person_outline_rounded,
+              label: teacher,
+              maxWidth: constraints.maxWidth,
+            ),
+          if (halaqa.scheduleLabel case final schedule?)
+            _MetaItem(
+              icon: Icons.schedule_rounded,
+              label: schedule,
+              maxWidth: constraints.maxWidth,
+            ),
         ],
       ),
     );

@@ -5,6 +5,7 @@ import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/foundations/app_card.dart';
 import '../../core/widgets/foundations/async_view.dart';
+import '../../core/widgets/foundations/empty_state.dart';
 import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/foundations/progress_indicators.dart';
 import '../../core/widgets/foundations/section_header.dart';
@@ -15,7 +16,8 @@ import '../../data/models/progress.dart';
 import '../../providers/app_providers.dart';
 
 /// Cumulative standing. Deliberately self-referential: there is no ranking,
-/// no comparison with other learners and no streak pressure.
+/// no comparison with other learners and no streak pressure. When nothing is
+/// recorded (the real backend, for now) it says so instead of drawing zeros.
 class ProgressScreen extends ConsumerWidget {
   const ProgressScreen({super.key});
 
@@ -30,106 +32,108 @@ class ProgressScreen extends ConsumerWidget {
         child: AsyncView(
           value: progress,
           loading: const Center(child: CircularProgressIndicator()),
-          builder: (context, data) => CustomScrollView(
-            slivers: [
-              SliverGutter(child: _Headline(progress: data)),
+          builder: (context, data) => data == null
+              ? const _NothingRecorded()
+              : CustomScrollView(
+                  slivers: [
+                    SliverGutter(child: _Headline(progress: data)),
 
-              SliverGutter(
-                top: Insets.xl,
-                child: const MockBanner(
-                  message:
-                      'الهياكل حقيقية من الملف التعريفي: 30 جزءاً في مدينة '
-                      'الحفاظ، 45 حلقة في الأقسام الخمسة، والمتون الثلاثة. '
-                      'أما الأرقام والنِسَب فبيانات تجريبية.',
-                ),
-              ),
+                    SliverGutter(
+                      top: Insets.xl,
+                      child: const MockBanner(
+                        message:
+                            'الهياكل حقيقية من الملف التعريفي: 30 جزءاً في مدينة '
+                            'الحفاظ، 45 حلقة في الأقسام الخمسة، والمتون الثلاثة. '
+                            'أما الأرقام والنِسَب فبيانات تجريبية.',
+                      ),
+                    ),
 
-              // ── مدينة الحفاظ ──────────────────────────────────────────
-              SliverGutter(
-                top: Insets.xxl,
-                child: const SectionHeader(
-                  title: 'مدينة الحفاظ',
-                  subtitle: 'ثلاثون جزءاً',
-                  trailing: SourceChip(page: 10),
-                ),
-              ),
-              SliverGutter(
-                top: Insets.lg,
-                child: AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                    // ── مدينة الحفاظ ──────────────────────────────────────────
+                    SliverGutter(
+                      top: Insets.xxl,
+                      child: const SectionHeader(
+                        title: 'مدينة الحفاظ',
+                        subtitle: 'ثلاثون جزءاً',
+                        trailing: SourceChip(page: 10),
+                      ),
+                    ),
+                    SliverGutter(
+                      top: Insets.lg,
+                      child: AppCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: StatBadge(
+                                    label:
+                                        '${data.memorisedJuz.length} من ${data.totalJuz}',
+                                    icon: Icons.auto_stories_outlined,
+                                  ),
+                                ),
+                                const SizedBox(width: Insets.sm),
+                                Text(
+                                  '${(data.juzRatio * 100).round()}%',
+                                  style: context.text.titleMedium?.copyWith(
+                                    color: context.colors.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: Insets.lg),
+                            JuzGrid(
+                              memorised: data.memorisedJuz,
+                              total: data.totalJuz,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // ── المتون ───────────────────────────────────────────────
+                    SliverGutter(
+                      top: Insets.xxl,
+                      child: const SectionHeader(
+                        title: 'المتون',
+                        subtitle: 'تحفة الأطفال · الجزرية · الشاطبية',
+                        trailing: SourceChip(page: 10),
+                      ),
+                    ),
+                    SliverGutter(
+                      top: Insets.lg,
+                      child: AppCard(
+                        child: Column(
+                          children: [
+                            for (var i = 0; i < data.mutun.length; i++) ...[
+                              if (i > 0) const SizedBox(height: Insets.xl),
+                              _MatnRow(matn: data.mutun[i]),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // ── آخر النشاط ───────────────────────────────────────────
+                    SliverGutter(
+                      top: Insets.xxl,
+                      child: const SectionHeader(title: 'آخر النشاط'),
+                    ),
+                    SliverGutter(
+                      top: Insets.lg,
+                      bottom: Insets.giant,
+                      child: Column(
                         children: [
-                          Flexible(
-                            child: StatBadge(
-                              label:
-                                  '${data.memorisedJuz.length} من ${data.totalJuz}',
-                              icon: Icons.auto_stories_outlined,
+                          for (final entry in data.recentActivity)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: Insets.md),
+                              child: _ActivityRow(entry: entry),
                             ),
-                          ),
-                          const SizedBox(width: Insets.sm),
-                          Text(
-                            '${(data.juzRatio * 100).round()}%',
-                            style: context.text.titleMedium?.copyWith(
-                              color: context.colors.primary,
-                            ),
-                          ),
                         ],
                       ),
-                      const SizedBox(height: Insets.lg),
-                      JuzGrid(
-                        memorised: data.memorisedJuz,
-                        total: data.totalJuz,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ── المتون ───────────────────────────────────────────────
-              SliverGutter(
-                top: Insets.xxl,
-                child: const SectionHeader(
-                  title: 'المتون',
-                  subtitle: 'تحفة الأطفال · الجزرية · الشاطبية',
-                  trailing: SourceChip(page: 10),
-                ),
-              ),
-              SliverGutter(
-                top: Insets.lg,
-                child: AppCard(
-                  child: Column(
-                    children: [
-                      for (var i = 0; i < data.mutun.length; i++) ...[
-                        if (i > 0) const SizedBox(height: Insets.xl),
-                        _MatnRow(matn: data.mutun[i]),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-
-              // ── آخر النشاط ───────────────────────────────────────────
-              SliverGutter(
-                top: Insets.xxl,
-                child: const SectionHeader(title: 'آخر النشاط'),
-              ),
-              SliverGutter(
-                top: Insets.lg,
-                bottom: Insets.giant,
-                child: Column(
-                  children: [
-                    for (final entry in data.recentActivity)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: Insets.md),
-                        child: _ActivityRow(entry: entry),
-                      ),
+                    ),
                   ],
                 ),
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -153,11 +157,15 @@ class _Headline extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(progress.studentName,
-                        style: context.text.headlineMedium),
+                    Text(
+                      progress.studentName,
+                      style: context.text.headlineMedium,
+                    ),
                     const SizedBox(height: Insets.xs),
-                    Text(progress.currentProgramName,
-                        style: context.text.bodyMedium),
+                    Text(
+                      progress.currentProgramName,
+                      style: context.text.bodyMedium,
+                    ),
                     const SizedBox(height: Insets.md),
                     const MockChip(compact: true),
                   ],
@@ -264,8 +272,11 @@ class _ActivityRow extends StatelessWidget {
               color: context.colors.primaryContainer,
               borderRadius: Radii.brSm,
             ),
-            child: Icon(icon,
-                size: 18, color: context.colors.onPrimaryContainer),
+            child: Icon(
+              icon,
+              size: 18,
+              color: context.colors.onPrimaryContainer,
+            ),
           ),
           const SizedBox(width: Insets.md),
           Expanded(
@@ -282,6 +293,19 @@ class _ActivityRow extends StatelessWidget {
           Text(entry.dateLabel, style: context.text.labelSmall),
         ],
       ),
+    );
+  }
+}
+
+class _NothingRecorded extends StatelessWidget {
+  const _NothingRecorded();
+
+  @override
+  Widget build(BuildContext context) {
+    return const EmptyState(
+      icon: Icons.insights_rounded,
+      title: 'لا يوجد تقدّم مسجَّل بعد',
+      message: 'لم يُسجَّل لكِ حضور أو إنجاز في الحلقات حتى الآن.',
     );
   }
 }

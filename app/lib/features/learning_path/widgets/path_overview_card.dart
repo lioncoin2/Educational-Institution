@@ -17,11 +17,13 @@ import 'path_stat_tile.dart';
 ///
 /// The split is structural, not cosmetic — a divider and a labelled [MockChip]
 /// separate the two pairs, and the tints reinforce it, so no reader can mistake
-/// a placeholder for an institution figure.
+/// a placeholder for an institution figure. When no progress is recorded (the
+/// real backend, for now) the second pair is not drawn at all: it says so.
 class PathOverviewCard extends StatelessWidget {
   const PathOverviewCard({super.key, required this.progress});
 
-  final AsyncValue<ProgressSummary> progress;
+  /// Null data: nothing recorded.
+  final AsyncValue<ProgressSummary?> progress;
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +68,9 @@ class PathOverviewCard extends StatelessWidget {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text('موقعك على المسار', style: context.text.labelLarge),
-              const MockChip(compact: true),
+              // Marked once there are figures to mark — and never over "none".
+              if (progress.value?.origin.isMock == true)
+                const MockChip(compact: true),
             ],
           ),
           const SizedBox(height: Insets.md),
@@ -75,20 +79,25 @@ class PathOverviewCard extends StatelessWidget {
           AsyncView(
             value: progress,
             loading: const SkeletonBox(height: 104),
-            builder: (context, data) => PathStatTilePair(
-              start: PathStatTile(
-                icon: Icons.check_circle_outline_rounded,
-                value: '${data.completedHalaqat}',
-                caption: 'حلقة مُتمّة',
-                tone: PathTileTone.mock,
-              ),
-              end: PathStatTile(
-                icon: Icons.how_to_reg_outlined,
-                value: '${(data.attendanceRatio * 100).round()}%',
-                caption: 'نسبة الحضور',
-                tone: PathTileTone.mock,
-              ),
-            ),
+            builder: (context, data) => data == null
+                ? Text(
+                    'لا يوجد تقدّم أو حضور مسجَّل بعد.',
+                    style: context.text.bodyMedium,
+                  )
+                : PathStatTilePair(
+                    start: PathStatTile(
+                      icon: Icons.check_circle_outline_rounded,
+                      value: '${data.completedHalaqat}',
+                      caption: 'حلقة مُتمّة',
+                      tone: PathTileTone.mock,
+                    ),
+                    end: PathStatTile(
+                      icon: Icons.how_to_reg_outlined,
+                      value: '${(data.attendanceRatio * 100).round()}%',
+                      caption: 'نسبة الحضور',
+                      tone: PathTileTone.mock,
+                    ),
+                  ),
           ),
         ],
       ),

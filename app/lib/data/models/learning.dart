@@ -1,11 +1,17 @@
 import 'data_origin.dart';
 
 /// Where the learner stands on a step of the ladder.
-enum ProgressState { completed, current, available, locked }
+///
+/// [none] says nothing at all: the learner has no relationship with the step
+/// that is recorded — neither done, nor open to them, nor closed. It is what
+/// real records show for every step but the ones the learner is enrolled in,
+/// because completion and prerequisites are not modelled (and not invented).
+enum ProgressState { completed, current, available, locked, none }
 
 /// One rung of the graded path — a department from page 6 plus the learner's
-/// position on it. The rung itself is real; the position is mock.
-class PathStep {
+/// position on it. The rung itself is real; in the demo the position is mock,
+/// against the server it is the learner's actual enrollment.
+class PathStep implements Sourced {
   const PathStep({
     required this.programId,
     required this.name,
@@ -13,57 +19,72 @@ class PathStep {
     required this.halaqatCount,
     required this.state,
     required this.completedHalaqat,
+    this.origin = DataOrigin.mock,
   });
 
   final String programId;
   final String name;
   final int order;
 
-  /// From page 6 — real.
+  /// From page 6, or the server's count of ACTIVE halaqat — real.
   final int halaqatCount;
 
-  /// Mock.
   final ProgressState state;
 
-  /// Mock.
-  final int completedHalaqat;
+  /// Null when no progress is recorded — then no progress is shown.
+  final int? completedHalaqat;
 
-  double get ratio =>
-      halaqatCount == 0 ? 0 : (completedHalaqat / halaqatCount).clamp(0.0, 1.0);
+  /// Of the position: mock in the demo, records against the server.
+  @override
+  final DataOrigin origin;
+
+  double? get ratio {
+    final done = completedHalaqat;
+    if (done == null) return null;
+    return halaqatCount == 0 ? 0 : (done / halaqatCount).clamp(0.0, 1.0);
+  }
 }
 
 /// A حلقة — the unit the institution actually organises teaching around.
 ///
-/// The *number* of halaqat per department is from the profile; an individual
-/// halaqa's name, teacher and schedule are invented for the prototype.
+/// In the demo, the *number* of halaqat per department is from the profile
+/// and an individual halaqa's name, teacher and schedule are invented.
+/// Against the server ([DataOrigin.records]) a halaqa is what the records
+/// hold: its name, its position, whether the learner is enrolled in it and,
+/// for their own halaqat, who teaches it. What is not recorded — a schedule,
+/// lessons, attendance — is null or empty, and is not shown.
 class Halaqa implements Sourced {
   const Halaqa({
     required this.id,
     required this.programId,
     required this.name,
     required this.index,
-    required this.teacherName,
-    required this.scheduleLabel,
-    required this.groupChannelLabel,
-    required this.lessons,
-    required this.attendedSessions,
-    required this.totalSessions,
     required this.state,
+    this.teacherName,
+    this.scheduleLabel,
+    this.groupChannelLabel,
+    this.lessons = const [],
+    this.attendedSessions = 0,
+    this.totalSessions = 0,
+    this.origin = DataOrigin.mock,
   });
 
   final String id;
+
+  /// The route id of the program it belongs to.
   final String programId;
   final String name;
 
   /// 1-based position inside its department.
   final int index;
 
-  final String teacherName;
-  final String scheduleLabel;
+  /// Null when unknown to the viewer.
+  final String? teacherName;
+  final String? scheduleLabel;
 
   /// The profile says teaching runs through WhatsApp / Telegram groups (p11);
   /// this label stands in for that link. Tapping it does not open anything.
-  final String groupChannelLabel;
+  final String? groupChannelLabel;
 
   final List<Lesson> lessons;
   final int attendedSessions;
@@ -71,7 +92,10 @@ class Halaqa implements Sourced {
   final ProgressState state;
 
   @override
-  DataOrigin get origin => DataOrigin.mock;
+  final DataOrigin origin;
+
+  /// Whether lessons or attendance are recorded for it at all.
+  bool get hasProgress => lessons.isNotEmpty || totalSessions > 0;
 
   int get completedLessons =>
       lessons.where((l) => l.state == LessonState.completed).length;

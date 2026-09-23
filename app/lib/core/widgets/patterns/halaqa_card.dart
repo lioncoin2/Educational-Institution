@@ -9,8 +9,10 @@ import '../foundations/progress_indicators.dart';
 
 /// A حلقة — the unit the institution organises teaching around.
 ///
-/// The *count* of halaqat per department is from the profile; this card's
-/// teacher, schedule and progress are invented, hence the mock chip.
+/// In the demo the *count* of halaqat per department is from the profile and
+/// this card's teacher, schedule and progress are invented, hence the mock
+/// chip. Against the server it shows only what is recorded: a row for what
+/// is known, none for what is not, and no chip.
 class HalaqaCard extends StatelessWidget {
   const HalaqaCard({super.key, required this.halaqa, this.onTap});
 
@@ -27,7 +29,9 @@ class HalaqaCard extends StatelessWidget {
       child: AppCard(
         onTap: locked ? null : onTap,
         borderColor: isCurrent ? context.colors.primary : null,
-        semanticLabel: '${halaqa.name} مع ${halaqa.teacherName}',
+        semanticLabel: halaqa.teacherName == null
+            ? halaqa.name
+            : '${halaqa.name} مع ${halaqa.teacherName}',
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -64,14 +68,15 @@ class HalaqaCard extends StatelessWidget {
                       color: context.colors.onSurfaceVariant),
               ],
             ),
-            const SizedBox(height: Insets.md),
-            _MetaRow(icon: Icons.person_outline_rounded, text: halaqa.teacherName),
-            const SizedBox(height: Insets.sm),
-            _MetaRow(
-              icon: Icons.schedule_rounded,
-              text: halaqa.scheduleLabel,
-            ),
-            if (!locked) ...[
+            if (halaqa.teacherName case final teacher?) ...[
+              const SizedBox(height: Insets.md),
+              _MetaRow(icon: Icons.person_outline_rounded, text: teacher),
+            ],
+            if (halaqa.scheduleLabel case final schedule?) ...[
+              const SizedBox(height: Insets.sm),
+              _MetaRow(icon: Icons.schedule_rounded, text: schedule),
+            ],
+            if (!locked && halaqa.lessons.isNotEmpty) ...[
               const SizedBox(height: Insets.lg),
               AppProgressBar(
                 value: halaqa.ratio,
@@ -80,11 +85,13 @@ class HalaqaCard extends StatelessWidget {
                     '${halaqa.completedLessons} من ${halaqa.lessons.length}',
               ),
             ],
-            const SizedBox(height: Insets.md),
-            const Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: MockChip(compact: true),
-            ),
+            if (halaqa.origin.isMock) ...[
+              const SizedBox(height: Insets.md),
+              const Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: MockChip(compact: true),
+              ),
+            ],
           ],
         ),
       ),
@@ -110,7 +117,7 @@ class _StateDot extends StatelessWidget {
           context.colors.onPrimary,
           Icons.play_arrow_rounded,
         ),
-      ProgressState.available => (
+      ProgressState.available || ProgressState.none => (
           context.colors.primaryContainer,
           context.colors.onPrimaryContainer,
           Icons.circle_outlined,

@@ -14,15 +14,17 @@ enum ProgramKind {
 
 /// A program, department or section offered by the institution.
 ///
-/// Names, halaqa counts and badges are all from the profile PDF. Anything the
-/// PDF does not state (a long description, prerequisites, timing) is either
-/// absent or explicitly marked as mock at the point of use.
+/// Names, halaqa counts and badges are all from the profile PDF — or, against
+/// the server, from the institution's own records ([DataOrigin.records]),
+/// with the profile's descriptive text alongside. Anything neither states (a
+/// long description, prerequisites, timing) is absent or explicitly marked
+/// as mock at the point of use.
 class Program implements Sourced {
   const Program({
     required this.id,
     required this.name,
     required this.kind,
-    required this.sourcePage,
+    this.sourcePage,
     this.order = 0,
     this.halaqatCount,
     this.badge,
@@ -31,19 +33,24 @@ class Program implements Sourced {
     this.levelsCount,
     this.capacityNote,
     this.iconName = 'book',
+    this.origin = DataOrigin.profile,
   });
 
+  /// Stable across the demo and the server: the code (`dep-literacy`,
+  /// `sec-kids`, `prog-nahw`), never a name.
   final String id;
   final String name;
   final ProgramKind kind;
 
-  /// Page of `docs/institution-profile.pdf` this program was taken from.
-  final int sourcePage;
+  /// Page of `docs/institution-profile.pdf` the text shown with this program
+  /// was taken from; null when none of it was.
+  final int? sourcePage;
 
   /// Position on the graded ladder (departments only).
   final int order;
 
-  /// Number of halaqat, as stated on page 6.
+  /// Number of halaqat, as stated on page 6 — or, against the server, the
+  /// ACTIVE halaqat it records. Null when there are none to count.
   final int? halaqatCount;
 
   /// The badge shown next to companion programs on page 10
@@ -65,7 +72,7 @@ class Program implements Sourced {
   final String iconName;
 
   @override
-  DataOrigin get origin => DataOrigin.profile;
+  final DataOrigin origin;
 
   bool get isDepartment => kind == ProgramKind.department;
 }

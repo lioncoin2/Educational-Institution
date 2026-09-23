@@ -77,7 +77,7 @@ class _Body extends StatelessWidget {
                     children: [
                       CardTitleRow(
                         title: 'عن القسم',
-                        trailing: SourceChip(page: program.sourcePage),
+                        trailing: _source(program),
                       ),
                       const SizedBox(height: Insets.md),
                       Text(
@@ -97,7 +97,7 @@ class _Body extends StatelessWidget {
                   children: [
                     SectionHeader(
                       title: _itemsTitle(program),
-                      trailing: SourceChip(page: program.sourcePage),
+                      trailing: _source(program),
                     ),
                     const SizedBox(height: Insets.lg),
                     AppCard(child: BulletList(items: program.items)),
@@ -166,6 +166,12 @@ class _Body extends StatelessWidget {
       ),
     );
   }
+
+  /// The profile page the text came from — none when it did not.
+  static Widget? _source(Program program) => switch (program.sourcePage) {
+        final page? => SourceChip(page: page),
+        null => null,
+      };
 
   static String _itemsTitle(Program program) => switch (program.id) {
         'sec-spelling' => 'مراحل القسم',

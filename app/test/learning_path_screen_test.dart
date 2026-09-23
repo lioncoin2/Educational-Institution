@@ -151,7 +151,7 @@ void main() {
   testWidgets('أرقام التقدّم التجريبية مشتقّة من المزوّد لا مكتوبة يدوياً',
       (tester) async {
     await openPath(tester);
-    final progress = await container.read(progressProvider.future);
+    final progress = (await container.read(progressProvider.future))!;
 
     expect(
       find.descendant(

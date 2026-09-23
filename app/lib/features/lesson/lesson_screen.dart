@@ -129,11 +129,11 @@ class _Body extends StatelessWidget {
                       label: 'مدة الجلسة',
                       value: lesson.durationLabel,
                     ),
-                    if (halaqa != null)
+                    if (halaqa?.teacherName case final teacher?)
                       InfoRow(
                         icon: Icons.person_outline_rounded,
                         label: 'المعلّمة',
-                        value: halaqa!.teacherName,
+                        value: teacher,
                       ),
                     InfoRow(
                       icon: Icons.flag_outlined,

@@ -7,7 +7,9 @@ import '../../theme/app_tokens.dart';
 /// The signature component of the app: the graded ladder of the five
 /// departments from page 6 of the profile, with the learner's position on it.
 ///
-/// The rungs and their halaqat counts are real. The position is mock.
+/// The rungs and their halaqat counts are real. In the demo the position is
+/// mock; against the server it is the learner's enrollment, and a rung with
+/// no recorded progress shows no bar and no "X of Y".
 class PathStepper extends StatelessWidget {
   const PathStepper({
     super.key,
@@ -110,16 +112,19 @@ class _StepRow extends StatelessWidget {
                         ),
                         const SizedBox(height: Insets.sm),
                         Text(
-                          '${step.halaqatCount} حلقات · ${visual.stateLabel}',
+                          visual.stateLabel.isEmpty
+                              ? '${step.halaqatCount} حلقات'
+                              : '${step.halaqatCount} حلقات · ${visual.stateLabel}',
                           style: context.text.labelMedium
                               ?.copyWith(color: visual.foreground.withValues(alpha: 0.85)),
                         ),
-                        if (step.state != ProgressState.locked) ...[
+                        if (step.state != ProgressState.locked &&
+                            step.ratio != null) ...[
                           const SizedBox(height: Insets.md),
                           ClipRRect(
                             borderRadius: Radii.pill,
                             child: LinearProgressIndicator(
-                              value: step.ratio,
+                              value: step.ratio!,
                               minHeight: 6,
                               color: visual.foreground,
                               backgroundColor:
@@ -192,7 +197,9 @@ class _CompactStrip extends StatelessWidget {
         for (var i = 0; i < steps.length; i++) ...[
           Expanded(
             child: Semantics(
-              label: '${steps[i].name} — ${_StepVisual.label(steps[i].state)}',
+              label: _StepVisual.label(steps[i].state).isEmpty
+                  ? steps[i].name
+                  : '${steps[i].name} — ${_StepVisual.label(steps[i].state)}',
               button: onStepTap != null,
               child: GestureDetector(
                 onTap: steps[i].state == ProgressState.locked || onStepTap == null
@@ -257,6 +264,8 @@ class _StepVisual {
         ProgressState.current => 'الحالي',
         ProgressState.available => 'متاح',
         ProgressState.locked => 'يفتح بعد إتمام ما قبله',
+        // Nothing recorded, so nothing is claimed.
+        ProgressState.none => '',
       };
 
   static _StepVisual of(BuildContext context, ProgressState state) {
@@ -278,7 +287,7 @@ class _StepVisual {
           markerForeground: c.onPrimaryContainer,
           stateLabel: label(state),
         ),
-      ProgressState.available => _StepVisual(
+      ProgressState.available || ProgressState.none => _StepVisual(
           background: c.surfaceContainerLow,
           foreground: c.onSurface,
           markerBackground: c.surfaceContainerLow,

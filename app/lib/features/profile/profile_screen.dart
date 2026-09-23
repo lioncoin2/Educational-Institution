@@ -15,6 +15,7 @@ import '../../core/widgets/layout/app_screen.dart';
 import '../../core/widgets/layout/contour_background.dart';
 import '../../core/widgets/layout/responsive_body.dart';
 import '../../core/widgets/patterns/info_row.dart';
+import '../../data/models/student.dart';
 import '../../providers/app_providers.dart';
 import '../notifications/state/unread_count_controller.dart';
 import 'widgets/about_institution_section.dart';
@@ -73,20 +74,26 @@ class ProfileScreen extends ConsumerWidget {
                           style: context.text.headlineMedium
                               ?.copyWith(color: context.colors.onPrimary),
                         ),
-                        const SizedBox(height: Insets.xs),
-                        Text(
-                          '${data.targetGroupName} · ${data.currentProgramName}',
-                          textAlign: TextAlign.center,
-                          style: context.text.bodySmall?.copyWith(
-                            color: context.colors.onPrimary
-                                .withValues(alpha: 0.78),
+                        // Only what the record holds: a real account has no
+                        // target group on file, and may be enrolled nowhere.
+                        if (_summary(data) case final summary?) ...[
+                          const SizedBox(height: Insets.xs),
+                          Text(
+                            summary,
+                            textAlign: TextAlign.center,
+                            style: context.text.bodySmall?.copyWith(
+                              color: context.colors.onPrimary
+                                  .withValues(alpha: 0.78),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: Insets.md),
-                        const MockChip(
-                          label: 'ملف طالبة تجريبي',
-                          compact: true,
-                        ),
+                        ],
+                        if (data.origin.isMock) ...[
+                          const SizedBox(height: Insets.md),
+                          const MockChip(
+                            label: 'ملف طالبة تجريبي',
+                            compact: true,
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -240,6 +247,15 @@ class ProfileScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// "target group · where they study", from whichever parts are known.
+String? _summary(StudentProfile student) {
+  final parts = [
+    ?student.targetGroupName,
+    ?student.currentProgramName,
+  ];
+  return parts.isEmpty ? null : parts.join(' · ');
 }
 
 class _NavRow extends StatelessWidget {

@@ -20,9 +20,14 @@ import '../data/models/student.dart';
 import '../data/push/push_seams.dart';
 import '../data/realtime/realtime_client.dart';
 import '../data/realtime/websocket_realtime_client.dart';
+import '../data/repositories/academic/academic_catalog_repository.dart';
+import '../data/repositories/academic/academic_learning_repository.dart';
+import '../data/repositories/academic/academic_profile_repositories.dart';
+import '../data/repositories/http/http_academic_repository.dart';
 import '../data/repositories/http/http_auth_repository.dart';
 import '../data/repositories/http/http_messaging_repository.dart';
 import '../data/repositories/http/http_notifications_repository.dart';
+import '../data/repositories/mock/mock_academic_repository.dart';
 import '../data/repositories/mock/mock_auth_repository.dart';
 import '../data/repositories/mock/mock_messaging_repository.dart';
 import '../data/repositories/mock/mock_notifications_repository.dart';
@@ -30,19 +35,51 @@ import '../data/repositories/mock/mock_repositories.dart';
 import '../data/repositories/repositories.dart';
 
 // ── Repository wiring ──────────────────────────────────────────────────────
-// Only these six lines change when a real backend arrives.
 
-final institutionRepositoryProvider = Provider<InstitutionRepository>(
-  (ref) => const MockInstitutionRepository(),
-);
+/// The real backend when API_BASE_URL is set at build time; the in-memory
+/// demo otherwise (the GitHub Pages build, widget tests). A provider, so a
+/// test can run the app in either mode.
+final backendModeProvider = Provider<bool>((ref) => BackendConfig.isConfigured);
+
+/// The institution's academic structure and the signed-in person's place in
+/// it: `/academic` against the backend, the profile's structure in the demo.
+final Provider<AcademicRepository> academicRepositoryProvider =
+    Provider<AcademicRepository>(
+      (ref) => ref.watch(backendModeProvider)
+          ? HttpAcademicRepository(ref.watch(apiClientProvider))
+          : MockAcademicRepository(),
+    );
+
+/// The institution is described by its profile in both modes; the person is
+/// the signed-in account and its academic record against the backend, and
+/// the demo's placeholder learner otherwise.
+final Provider<InstitutionRepository> institutionRepositoryProvider =
+    Provider<InstitutionRepository>(
+      (ref) => ref.watch(backendModeProvider)
+          ? AcademicInstitutionRepository(
+              ref.watch(academicRepositoryProvider),
+              ref.watch(authRepositoryProvider),
+            )
+          : const MockInstitutionRepository(),
+    );
+
+/// Always read through the academic repository — the server's structure, or
+/// the profile's in the demo.
 final catalogRepositoryProvider = Provider<CatalogRepository>(
-  (ref) => const MockCatalogRepository(),
+  (ref) => AcademicCatalogRepository(ref.watch(academicRepositoryProvider)),
 );
+
+/// Against the backend: the learner's real enrollments and no progress (none
+/// is recorded). In the demo: the placeholder path, lessons and progress.
 final learningRepositoryProvider = Provider<LearningRepository>(
-  (ref) => const MockLearningRepository(),
+  (ref) => ref.watch(backendModeProvider)
+      ? AcademicLearningRepository(ref.watch(academicRepositoryProvider))
+      : const MockLearningRepository(),
 );
 final progressRepositoryProvider = Provider<ProgressRepository>(
-  (ref) => const MockProgressRepository(),
+  (ref) => ref.watch(backendModeProvider)
+      ? const UnrecordedProgressRepository()
+      : const MockProgressRepository(),
 );
 final certificateRepositoryProvider = Provider<CertificateRepository>(
   (ref) => const MockCertificateRepository(),
@@ -51,10 +88,8 @@ final feedRepositoryProvider = Provider<FeedRepository>(
   (ref) => const MockFeedRepository(),
 );
 
-/// The real backend when API_BASE_URL is set at build time; the in-memory
-/// mock otherwise (the demo build, widget tests).
 final Provider<AuthRepository> authRepositoryProvider = Provider<AuthRepository>(
-  (ref) => BackendConfig.isConfigured
+  (ref) => ref.watch(backendModeProvider)
       ? HttpAuthRepository(ref.watch(apiClientProvider))
       : MockAuthRepository(),
 );
@@ -90,7 +125,7 @@ final FutureProvider<CurrentUser?> sessionUserProvider =
 // ── Messaging ──────────────────────────────────────────────────────────────
 
 final messagingRepositoryProvider = Provider<MessagingRepository>(
-  (ref) => BackendConfig.isConfigured
+  (ref) => ref.watch(backendModeProvider)
       ? HttpMessagingRepository(
           ref.watch(apiClientProvider),
           ref.watch(authRepositoryProvider),
@@ -104,7 +139,7 @@ final messagingRepositoryProvider = Provider<MessagingRepository>(
 /// nothing at all in the demo build.
 final Provider<RealtimeClient> realtimeClientProvider =
     Provider<RealtimeClient>((ref) {
-      if (!BackendConfig.isConfigured) return const DisabledRealtimeClient();
+      if (!ref.watch(backendModeProvider)) return const DisabledRealtimeClient();
       final api = ref.watch(apiClientProvider);
       final client = WebSocketRealtimeClient(
         endpoint: realtimeEndpoint(BackendConfig.baseUri),
@@ -150,7 +185,7 @@ final StreamProvider<RealtimeStatus> realtimeStatusProvider =
 // features/notifications/state; these are the seams under them.
 
 final notificationsRepositoryProvider = Provider<NotificationsRepository>(
-  (ref) => BackendConfig.isConfigured
+  (ref) => ref.watch(backendModeProvider)
       ? HttpNotificationsRepository(ref.watch(apiClientProvider))
       : MockNotificationsRepository(),
 );
@@ -175,47 +210,61 @@ final voicePlayerProvider = Provider<VoicePlayer>(
   (ref) => const UnavailableVoicePlayer(),
 );
 
+/// Academic reads may now be answered by the server, and a refusal (sign in,
+/// no access) is not something to try again silently: the error reaches the
+/// screen, which offers the retry — as for messaging and notifications.
+Duration? _noRetry(int _, Object _) => null;
+
 // ── Institution & learner ──────────────────────────────────────────────────
 
 final institutionProvider = FutureProvider<Institution>(
   (ref) => ref.watch(institutionRepositoryProvider).getInstitution(),
+  retry: _noRetry,
 );
 
 final studentProvider = FutureProvider<StudentProfile>(
   (ref) => ref.watch(institutionRepositoryProvider).getStudent(),
+  retry: _noRetry,
 );
 
 // ── Catalog ────────────────────────────────────────────────────────────────
 
 final departmentsProvider = FutureProvider<List<Program>>(
   (ref) => ref.watch(catalogRepositoryProvider).getDepartments(),
+  retry: _noRetry,
 );
 
 final specialSectionsProvider = FutureProvider<List<Program>>(
   (ref) => ref.watch(catalogRepositoryProvider).getSpecialSections(),
+  retry: _noRetry,
 );
 
 final companionProgramsProvider = FutureProvider<List<Program>>(
   (ref) => ref.watch(catalogRepositoryProvider).getCompanionPrograms(),
+  retry: _noRetry,
 );
 
 final programProvider = FutureProvider.family<Program?, String>(
   (ref, id) => ref.watch(catalogRepositoryProvider).getProgram(id),
+  retry: _noRetry,
 );
 
 // ── Learning ───────────────────────────────────────────────────────────────
 
 final pathProvider = FutureProvider<List<PathStep>>(
   (ref) => ref.watch(learningRepositoryProvider).getPath(),
+  retry: _noRetry,
 );
 
 final halaqatProvider = FutureProvider.family<List<Halaqa>, String>(
   (ref, programId) =>
       ref.watch(learningRepositoryProvider).getHalaqat(programId),
+  retry: _noRetry,
 );
 
 final halaqaProvider = FutureProvider.family<Halaqa?, String>(
   (ref, halaqaId) => ref.watch(learningRepositoryProvider).getHalaqa(halaqaId),
+  retry: _noRetry,
 );
 
 /// Keyed by "halaqaId/lessonId".
@@ -223,16 +272,20 @@ final lessonProvider = FutureProvider.family<Lesson?, ({String halaqaId, String 
   (ref, key) => ref
       .watch(learningRepositoryProvider)
       .getLesson(key.halaqaId, key.lessonId),
+  retry: _noRetry,
 );
 
 final currentHalaqaProvider = FutureProvider<Halaqa?>(
   (ref) => ref.watch(learningRepositoryProvider).getCurrentHalaqa(),
+  retry: _noRetry,
 );
 
 // ── Progress & certificates ────────────────────────────────────────────────
 
-final progressProvider = FutureProvider<ProgressSummary>(
+/// Null when no progress is recorded (always, against the backend — for now).
+final progressProvider = FutureProvider<ProgressSummary?>(
   (ref) => ref.watch(progressRepositoryProvider).getProgress(),
+  retry: _noRetry,
 );
 
 final certificatesProvider = FutureProvider<List<Certificate>>(

@@ -20,11 +20,14 @@ import 'profile_data.dart';
 ///    "بيانات تجريبية" ribbon wherever it appears.
 abstract final class MockData {
   // ── The learner ──────────────────────────────────────────────────────────
+  static const String _currentProgramId = 'dep-tajweed-2';
+  static const String _currentProgramName = 'قسم تجويد متوسط';
+
   static const StudentProfile student = StudentProfile(
     name: 'مريم',
     targetGroupName: 'الناشئات',
-    currentProgramId: 'dep-tajweed-2',
-    currentProgramName: 'قسم تجويد متوسط',
+    currentProgramId: _currentProgramId,
+    currentProgramName: _currentProgramName,
     joinedLabel: 'منضمّة منذ 8 أشهر',
     initials: 'م',
   );
@@ -102,7 +105,7 @@ abstract final class MockData {
       final done = _completedPerDepartment[dep.id] ?? 0;
       final total = dep.halaqatCount ?? 0;
       final ProgressState state;
-      if (dep.id == student.currentProgramId) {
+      if (dep.id == _currentProgramId) {
         state = ProgressState.current;
       } else if (done >= total && total > 0) {
         state = ProgressState.completed;
@@ -125,7 +128,7 @@ abstract final class MockData {
   }
 
   static int get _currentOrder => ProfileData.departments
-      .firstWhere((d) => d.id == student.currentProgramId)
+      .firstWhere((d) => d.id == _currentProgramId)
       .order;
 
   // ── Halaqat ──────────────────────────────────────────────────────────────
@@ -143,7 +146,7 @@ abstract final class MockData {
       if (index <= done) {
         state = ProgressState.completed;
       } else if (index == done + 1) {
-        state = program.id == student.currentProgramId
+        state = program.id == _currentProgramId
             ? ProgressState.current
             : ProgressState.available;
       } else {
@@ -223,7 +226,7 @@ abstract final class MockData {
   /// The halaqa highlighted on the home screen.
   static Halaqa? currentHalaqa() {
     final program = ProfileData.departments
-        .firstWhere((d) => d.id == student.currentProgramId);
+        .firstWhere((d) => d.id == _currentProgramId);
     final halaqat = halaqatFor(program);
     for (final h in halaqat) {
       if (h.state == ProgressState.current) return h;
@@ -237,7 +240,7 @@ abstract final class MockData {
         _completedPerDepartment.values.fold(0, (a, b) => a + b);
     return ProgressSummary(
       studentName: student.name,
-      currentProgramName: student.currentProgramName,
+      currentProgramName: _currentProgramName,
       memorisedJuz: const [1, 2, 3, 28, 29, 30],
       totalJuz: 30,
       attendanceRatio: 0.92,

@@ -4,14 +4,15 @@ import '../../models/feed.dart';
 import '../../models/institution.dart';
 import '../../models/learning.dart';
 import '../../models/progress.dart';
-import '../../models/program.dart';
 import '../../models/student.dart';
 import '../../sources/mock_data.dart';
 import '../../sources/profile_data.dart';
 import '../repositories.dart';
 
 /// In-memory implementations backed by [ProfileData] (real) and [MockData]
-/// (placeholder). No network, no storage, no side effects.
+/// (placeholder). No network, no storage, no side effects. The catalogue is
+/// not here: in the demo it is read through `MockAcademicRepository`, the
+/// same way it is read from the server.
 Future<T> _delayed<T>(T value) =>
     Future<T>.delayed(AppConfig.fakeLatency, () => value);
 
@@ -23,29 +24,6 @@ class MockInstitutionRepository implements InstitutionRepository {
 
   @override
   Future<StudentProfile> getStudent() => _delayed(MockData.student);
-}
-
-class MockCatalogRepository implements CatalogRepository {
-  const MockCatalogRepository();
-
-  @override
-  Future<List<Program>> getDepartments() => _delayed(ProfileData.departments);
-
-  @override
-  Future<List<Program>> getSpecialSections() =>
-      _delayed(ProfileData.specialSections);
-
-  @override
-  Future<List<Program>> getCompanionPrograms() =>
-      _delayed(ProfileData.companionPrograms);
-
-  @override
-  Future<Program?> getProgram(String id) {
-    for (final p in ProfileData.allPrograms) {
-      if (p.id == id) return _delayed<Program?>(p);
-    }
-    return _delayed<Program?>(null);
-  }
 }
 
 class MockLearningRepository implements LearningRepository {
@@ -78,7 +56,8 @@ class MockProgressRepository implements ProgressRepository {
   const MockProgressRepository();
 
   @override
-  Future<ProgressSummary> getProgress() => _delayed(MockData.progress());
+  Future<ProgressSummary?> getProgress() =>
+      _delayed<ProgressSummary?>(MockData.progress());
 }
 
 class MockCertificateRepository implements CertificateRepository {

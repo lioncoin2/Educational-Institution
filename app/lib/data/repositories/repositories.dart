@@ -1,5 +1,7 @@
+import '../models/academic.dart';
 import '../models/auth.dart';
 import '../models/certificate.dart';
+import '../models/data_origin.dart';
 import '../models/feed.dart';
 import '../models/institution.dart';
 import '../models/learning.dart';
@@ -33,6 +35,36 @@ abstract interface class CatalogRepository {
   Future<Program?> getProgram(String id);
 }
 
+/// Academic — the institution's sections, programs and halaqat, and the
+/// signed-in person's own place in them (`/academic`).
+///
+/// Every method throws [AcademicException] with the server's code on
+/// refusal. There is no way to name another person: [me] is always the
+/// caller's own record, and the server decides what anyone may see.
+///
+/// Enrolling and assigning teachers are staff acts on the server. This app
+/// offers neither — the institution has not said students may enrol
+/// themselves, so no registration flow is invented here.
+abstract interface class AcademicRepository {
+  /// Where the structure comes from: the printed profile (the demo build),
+  /// or the institution's own records (the server).
+  DataOrigin get origin;
+
+  /// Every section in order, each with its programs — every status: callers
+  /// decide what an inactive one means for them.
+  Future<List<AcademicSection>> catalogue();
+
+  /// One program with its section and halaqat, by the server's id — null
+  /// when there is no such program.
+  Future<AcademicProgramDetail?> program(String programId);
+
+  /// One halaqa and where it sits — null when there is no such halaqa.
+  Future<AcademicHalaqaDetail?> halaqa(String halaqaId);
+
+  /// What the caller studies and teaches, now.
+  Future<MyAcademic> me();
+}
+
 abstract interface class LearningRepository {
   /// The learner's position along the graded ladder.
   Future<List<PathStep>> getPath();
@@ -49,7 +81,9 @@ abstract interface class LearningRepository {
 }
 
 abstract interface class ProgressRepository {
-  Future<ProgressSummary> getProgress();
+  /// The learner's standing — or null when nothing is recorded to stand on:
+  /// no progress is ever computed from nothing, or made up.
+  Future<ProgressSummary?> getProgress();
 }
 
 abstract interface class CertificateRepository {

@@ -156,6 +156,9 @@ abstract final class ProfileData {
   ];
 
   // ── Page 10 — البرامج المرافقة ──────────────────────────────────────────
+  /// The page's heading — the name of the group the four programs form.
+  static const String companionProgramsHeading = 'البرامج المرافقة';
+
   static const List<Program> companionPrograms = [
     Program(
       id: 'prog-hifz-city',
