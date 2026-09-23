@@ -214,10 +214,12 @@ rows exist.
 - **Parameters in `notification.created`.** That would spread a person's name
   to every subscriber and, later, to the outbox.
 - **Tying devices to sessions** and disabling a device when its session ends.
-  Sessions (ADR 0010) carry no device identity, a revoked or expired session
-  is discovered lazily, and identity publishes no session events. Rebinding
-  on registration, together with the privacy-safe push text, covers the
-  shared device. Revisit if identity gains a session-ended event.
+  Sessions (ADR 0010) describe a device — platform, label, app version — but
+  hold nothing that identifies the app installation a push registration
+  names; a revoked or expired session is discovered lazily; and identity
+  publishes no session events. Rebinding on registration, together with the
+  privacy-safe push text, covers the shared device. Revisit if identity gains
+  a session-ended event.
 - **Adding a push SDK now** (`firebase-admin`, `@parse/node-apn`,
   `web-push`; `firebase_messaging` in the app). Evaluated on 2026-09-23 —
   licences, maintenance, platforms; the table is in notifications.md §12 —
