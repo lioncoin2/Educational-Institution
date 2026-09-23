@@ -1,12 +1,41 @@
-# المؤسسة العالمية لتعليم القرآن الكريم وعلومه الشرعية السبعة — تطبيق تعليمي (Prototype)
+# المؤسسة العالمية لتعليم القرآن الكريم وعلومه الشرعية السبعة — منصّة تعليمية
 
-مشروع **Prototype واجهات فقط** لتطبيق تعليمي للمؤسسة، مبني على Flutter (Mobile-first مع دعم Web).
+منصّة تعليمية للمؤسسة: تطبيق **Flutter** (Mobile-first مع دعم Web)،
+و**Backend** مبني على NestJS/TypeScript بمعمارية Modular Monolith.
 
 ## 🚦 حالة المشروع
 
-**المرحلة الحالية: تحليل ومواصفة — لم يُكتب كود Flutter بعد، بانتظار اعتماد المواصفة.**
+| المكوّن | الحالة |
+|---|---|
+| **Prototype الواجهات** (`app/`) | ✅ مُنفَّذ — واجهات تعمل ببيانات Mock داخل الذاكرة |
+| **أساس المعمارية** (`backend/`) | ✅ Foundation V1 — الأساس والحدود والوحدات الأولى |
+| الوحدات المكتملة في الـ Backend | `identity` (الهوية والصلاحيات) · `live` (الغرف الصوتية) · `files` (جزئياً) |
+| الوحدات المُعرَّفة كحدود فقط | `people` · `academic` · `operations` · `assignments` · `messaging` · `notifications` · `automation` · `reporting` |
+
+> **الأساس ليس منتجاً جاهزاً للإنتاج.** ما لم يُنفَّذ ويُختبر فعلياً موثَّق صراحةً
+> في مستندات المعمارية تحت عنوان *Deferred* — ولم يُجرَ بعد أي اختبار حِمل
+> (Load Testing) لمتطلّب الـ 2500 مشارك.
 
 ## 📁 المستندات
+
+### معمارية النظام (`backend/`)
+
+| الملف | الوصف |
+|---|---|
+| [`docs/architecture/overview.md`](docs/architecture/overview.md) | **ابدأ من هنا** — شكل النظام، الوحدات، الطبقات، وما لم يُبنَ عمداً |
+| [`docs/architecture/dependency-rules.md`](docs/architecture/dependency-rules.md) | قواعد الاعتماد المُلزِمة — مُطبَّقة آلياً وتُفشِل البناء عند مخالفتها |
+| [`docs/architecture/module-boundaries.md`](docs/architecture/module-boundaries.md) | مسؤولية كل وحدة، وما **لا** يجوز لها معرفته |
+| [`docs/architecture/authorization.md`](docs/architecture/authorization.md) | الصلاحيات والسياسات — نقطة قرار واحدة مركزية |
+| [`docs/architecture/realtime.md`](docs/architecture/realtime.md) | تصميم الغرف الصوتية (‏2500 مشارك)، وما ثبت منه وما لم يثبت |
+| [`docs/architecture/events.md`](docs/architecture/events.md) | الأحداث بين الوحدات |
+| [`docs/architecture/messaging.md`](docs/architecture/messaging.md) | حدود وحدة المراسلة |
+| [`docs/architecture/storage.md`](docs/architecture/storage.md) | الملفات والتخزين |
+| [`docs/architecture/persistence.md`](docs/architecture/persistence.md) | قاعدة البيانات واستراتيجية الترحيل |
+| [`docs/architecture/observability.md`](docs/architecture/observability.md) | السجلّات، سجلّ التدقيق، الفحوص الصحّية |
+| [`docs/architecture/open-questions.md`](docs/architecture/open-questions.md) | **الأسئلة المفتوحة** — قرارات مؤسسية لم تُخمَّن عمداً |
+| [`docs/architecture/decisions/`](docs/architecture/decisions/) | سجلّات القرارات المعمارية (ADRs) |
+
+### مواصفة الواجهات والمصدر المؤسسي
 
 | الملف | الوصف |
 |---|---|
@@ -14,12 +43,35 @@
 | [`docs/pdf-content-extract.md`](docs/pdf-content-extract.md) | **المحتوى المستخرج حرفياً** من الملف التعريفي، صفحةً بصفحة — مرجع التحقّق |
 | [`docs/institution-profile.pdf`](docs/institution-profile.pdf) | الملف التعريفي للمؤسسة (14 صفحة) — **المصدر الوحيد لمعلومات المؤسسة** |
 
-## ⚠️ حدود هذه المرحلة
+## 🔐 الأمن
 
-لا Backend · لا Database · لا تسجيل دخول حقيقي · لا APIs · لا خدمات خارجية.
-كل بيان غير موجود في الملف التعريفي **مُعلَّم صراحةً كـ Mock Data**.
+لا توجد أسرار داخل تطبيق Flutter — ولا مفتاح LiveKit. العميل يستلم رمز دخول
+قصير الأجل تُصدره الخادم فقط. لا تُرفع أي بيانات اعتماد إلى Git، ولا يوجد
+حساب افتراضي أو كلمة مرور افتراضية في المستودع.
+
+## ⚙️ التشغيل
+
+```bash
+# الواجهات
+cd app && flutter pub get && flutter run
+
+# الخادم (يعمل بلا قاعدة بيانات: يستخدم مُهايئات داخل الذاكرة)
+cd backend && npm ci && npm run start:dev
+
+# بوّابة الجودة قبل أي دفع
+cd backend && npm run verify
+```
+
+## ⚠️ حدود المرحلة الحالية
+
+- واجهات `app/` ما زالت تعمل على **Mock Data**؛ لم تُربط بالـ Backend بعد.
+  نقطة الربط جاهزة في `app/lib/data/repositories/repositories.dart`.
+- لا واجهة مستخدم للمحادثات ولا لغرفة الـ 2500 مشارك (خارج نطاق هذه المرحلة عمداً).
+- كل بيان غير موجود في الملف التعريفي **مُعلَّم صراحةً كـ Mock Data**.
 
 ## 📌 الخطوة التالية
 
-مراجعة `docs/prototype-spec.md` والإجابة على الأسئلة العشرة في قسم
-«ما أحتاجه منك قبل كتابة أي كود»، ثم بدء بناء الواجهات.
+الإجابة على الأسئلة المفتوحة في
+[`docs/architecture/open-questions.md`](docs/architecture/open-questions.md) —
+وأهمّها **Q1** (صلاحيات كل دور) و**Q2** (كيفية إنشاء حساب المالك الأول)،
+إذ تعتمد عليهما بقية وحدات النظام.

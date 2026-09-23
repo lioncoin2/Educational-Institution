@@ -1,0 +1,100 @@
+# Continuous integration.
+#
+# Two independent jobs, because the backend and the Flutter app fail for
+# unrelated reasons and neither should hide the other's result.
+#
+# The backend job runs the same `npm run verify` a developer runs locally —
+# formatting, lint, typecheck, the architecture rules and the full test suite —
+# plus a real Postgres so the persistence tests actually execute here rather
+# than skipping.
+name: CI
+
+on:
+  push:
+    branches: [claude/quranic-education-app-prototype-gkzle8, main]
+  pull_request:
+  workflow_dispatch:
+
+# Only the default read access is needed; nothing here writes to the repository.
+permissions:
+  contents: read
+
+# A new push supersedes an in-flight run on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: institution_test
+        ports:
+          - 5432:5432
+        # Without this the first query races the container's startup.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # format:check, lint, typecheck, arch:graph, test — the same gate as local.
+      # TEST_DATABASE_URL is what turns the Postgres integration suite on; without
+      # it those tests skip, and a skipped test proves nothing.
+      - name: Verify
+        run: npm run verify
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/institution_test
+
+      - name: Build
+        run: npm run build
+
+  app:
+    name: Flutter app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.5
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # No `dart format` gate: the existing prototype predates one, and
+      # reformatting 56 working files to introduce it belongs in its own change,
+      # not in an architecture milestone. `flutter analyze` is the real check.
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test

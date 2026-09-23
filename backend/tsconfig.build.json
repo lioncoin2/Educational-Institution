@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "comment": "drizzle.config.ts is excluded so rootDir stays at src/ and the entry point emits to dist/main.js.",
+  "exclude": ["node_modules", "dist", "test", "drizzle.config.ts", "**/*.spec.ts"]
+}

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.local
+*.tsbuildinfo
+
+# Local object storage root used by LocalStorageProvider in development.
+.storage/
