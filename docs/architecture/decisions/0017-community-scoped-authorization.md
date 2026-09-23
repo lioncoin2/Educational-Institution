@@ -11,7 +11,8 @@ in the use case) is unchanged, and **its rejection of per-resource ACLs
 stands**: standing inside a community lives in the module that owns
 communities, and identity's `POLICY_RULES` becomes empty. **Revises the
 provisional answer of [Q1]** (decision 11). **Supersedes** the host-only
-paragraph of authorization.md §5 (`authorization.md:182-190`) once P6 lands.
+paragraph of [authorization.md §5](../authorization.md#5-resource-scoped-rules)
+("Provisional rule in force: host-only moderation") once P6 lands.
 Builds on [0014](0014-academic-core-v1.md), whose rule was "eligibility is a
 permission; access is a relationship", and on
 [0016](0016-communities-module.md). The design in full is
@@ -45,8 +46,9 @@ instruction to inspect the existing authorization system before choosing.
   relationship the module owns (`academic-access.ts:68-84`;
   `conversation-access.ts:58-72`).
 
-The brief's names cannot be identity permissions: three segments fail the
-CHECK, and they would still be role-wide, not "in community C".
+Most of the brief's names cannot be identity permissions: three segments
+(`group.members.invite`, …) fail the CHECK. `group.lock` would pass it, but it
+would still be role-wide, not "in community C".
 
 ## Decision
 
@@ -273,10 +275,11 @@ If accepted:
   invariant `create ⇒ moderate` keeps every creator eligible.
 - **`communities.create` also for SUPERVISOR and TEACHER**, mirroring
   `messaging.create_group`. Rejected as the provisional default for spaces of
-  up to 30,000 minors ([Q41]). Teachers run communities by delegation, which
-  is the brief's model: an administrator creates the community and grants
+  up to 30,000 minors ([Q41]). Teachers run communities by delegation: under
+  Q41's PROVISIONAL default an OWNER or ADMIN creates the community and grants
   `members.invite`, `lock`, `live.start` and `live.moderate`, or transfers
-  ownership to an eligible teacher.
+  ownership to an eligible teacher. The brief asks only that an owner can
+  delegate without handing over ownership (§3).
 - **Oversight limited to roster view and ownership recovery.** Rejected for
   the wider provisional reach in decision 4, which follows messaging's
   precedent that `messaging.manage` removes but never adds ([Q23], [Q43]).

@@ -450,6 +450,17 @@ identity and notifications through their contracts only, and stores no
 notification — and that no module but this one's infrastructure imports a
 WebSocket library.
 
+> **Proposed change:** see
+> [communities-live-attendance.md §3](communities-live-attendance.md#3-dependency-graph)
+> and [§16](communities-live-attendance.md#16-realtime-transport-matrix)
+> (design only,
+> [ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md)
+> Proposed). Realtime would gain `CommunitiesRealtimeRelay` (P5) and
+> `LiveRealtimeRelay` (P7), and so also depend on `communities/contracts`
+> (`COMMUNITY_MEMBERSHIP.members`, `CommunityEvents`) and `live/contracts`
+> (`LIVE_AUDIENCE`, `LiveEvents`). It would still export nothing and be
+> imported only by the composition root.
+
 ---
 
 ## automation

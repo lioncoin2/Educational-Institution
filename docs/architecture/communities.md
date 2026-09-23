@@ -44,7 +44,7 @@ only.
 | Standing | `OWNER` \| `MEMBER` on the stint | Belonging, and the one ownership mark. Not a role, not a capability |
 | Owner | the stint whose standing is `OWNER` | Exactly one per community |
 | Ceiling | an identity permission (`communities.*`, `live.*`, `messaging.*`) | Role-wide. Required on every path to an act; never sufficient alone |
-| Act | `CommunityAct` (`community.*`) | Something one may do in one community: a delegable **capability**, a **participation** act, or the **derived** act `community.live.host` |
+| Act | `CommunityAct` (`community.*`) | Something one may do in one community: a delegable **capability**, a **participation** act, or a **derived** act (`community.live.host`, `community.live.remain`) |
 | Grant (P3) | a `communities_capability_grants` row | One capability given by the owner to one member's stint |
 | Basis | `membership` \| `owner` \| `grant` \| `oversight` | Why a permit was given |
 | Oversight | `communities.manage` | Institutional reach into a community one does not belong to |
@@ -247,7 +247,7 @@ the evaluation outcome when the holder no longer has the ceiling
 | Unit | Consistency boundary | Serialized by | Never |
 | --- | --- | --- | --- |
 | Community (the `communities` row) | status, `lifecycle_version`, `membership_version`, `member_count` | the row itself, through conditional `UPDATE`s | holds or loads its members |
-| Stint (per community and user) | one ACTIVE stint; standing | per-pair advisory lock `pg_advisory_xact_lock(hashtext('communities.member:<community>:<user>'))`; the partial unique index | is loaded as a collection |
+| Stint (per community and user) | one ACTIVE stint; standing | per-pair advisory lock in the two-key form, `pg_advisory_xact_lock(<communities lock class>, hashtext('<community>:<user>'))`, a key space academic's single-key locks never share; the partial unique index | is loaded as a collection |
 | Invitation | `uses ≤ max_uses`; one-way revocation | the invitation row, through one conditional `UPDATE` | stores a derived state |
 | Grant (P3) | one ACTIVE grant per (stint, capability) | the partial unique index; the owner's and grantee's stint rows `FOR SHARE` | locks the community row |
 | Ownership (P3) | exactly one ACTIVE owner | the one-owner index and the owner-is-active CHECK; the two stint rows `FOR UPDATE` | a column on `communities` |
@@ -272,7 +272,9 @@ transfer never touch the community row.
 Every Communities transaction acquires locks in this order, and only in this
 order:
 
-1. **per-pair advisory locks**, sorted by user id;
+1. **per-pair advisory locks**, sorted by the computed lock key and
+   deduplicated (not by user id: two pairs whose 32-bit hashes collide would
+   otherwise be taken in opposite orders by two batch adds, and deadlock);
 2. **the invitation row**;
 3. **existing stint rows**, in ascending id;
 4. **grant rows**;
@@ -286,11 +288,18 @@ takes no locks. A deadlock victim retries once, then answers 409
 `communities.conflict`; the concurrency suite runs under a `statement_timeout`,
 so a deadlock fails a test instead of hanging it.
 
+Before step 1, and before it checks out a pool connection, every transaction
+that reaches step 5 takes an in-process async mutex keyed by the community id
+([§9](#9-membership-at-30000-and-beyond), hot rows). It is admission, not
+correctness: it is taken while no database lock is held, a transaction takes
+only one, so it closes no cycle with the order above, and the database still
+decides every invariant.
+
 | Transaction | 1 pair | 2 invitation | 3 stints | 4 grants | 5 community | 6 insert |
 | --- | --- | --- | --- | --- | --- | --- |
 | Create community | | | | | (inserted) | community, owner stint |
-| Add members (≤ 200) | each (C,u), sorted | | actor `SHARE` | actor's grant `SHARE` | `UPDATE` +n, n versions | stints |
-| Redeem a link | (C,U) | `UPDATE` uses | creator `SHARE` (P3) | creator's grant `SHARE` (P3) | `UPDATE` +1, 1 version | stint |
+| Add members (≤ 200) | each (C,u), sorted by key | | actor `SHARE` | actor's grant `SHARE` | `UPDATE` +n, n versions | stints |
+| Redeem a link | (C,U) | `UPDATE` uses | creator `SHARE` | creator's grant `SHARE` (P3) | `UPDATE` +1, 1 version | stint |
 | Remove a member | (C,target) | | actor `SHARE`, target `UPDATE` | actor's grant `SHARE`; target's grants `UPDATE` | `UPDATE` −1, 1 version | |
 | Leave | (C,self) | | own `UPDATE` | own grants `UPDATE` | `UPDATE` −1, 1 version | |
 | Lock / unlock | | | actor `SHARE` (not on oversight) | actor's grant `SHARE` | `UPDATE` status | |
@@ -429,7 +438,7 @@ technique as messaging's `conversations.last_sequence`.
 | UNIQUE `community_members_stint_key (id, community_id, user_id)` | target of the grants' composite foreign key |
 | `community_members_roster_idx (community_id, joined_at, user_id) WHERE status = 'ACTIVE'` | roster pages |
 | `community_members_user_idx (user_id, joined_at, community_id) WHERE status = 'ACTIVE'` | "my communities", newest first |
-| `community_members_history_idx (community_id, user_id, joined_at)` | `statesOf` (latest stint per user); the rejoin rule |
+| `community_members_history_idx (community_id, user_id, version DESC)` | `statesOf` (latest stint per user); the rejoin rule |
 | `community_members_invitation_idx (invitation_id) WHERE invitation_id IS NOT NULL` | who joined through a given (possibly leaked) link |
 | `community_invitations_token_hash_unique` | redemption lookup |
 | `community_invitations_community_idx (community_id, created_at, id)` | a community's links, keyset |
@@ -445,10 +454,18 @@ The query shapes:
 | The "me" block | The same, with `array_agg` over the stint's ACTIVE grants (at most one per capability) |
 | Roster page | `WHERE community_id = $c AND status = 'ACTIVE' AND (joined_at, user_id) > ($a, $b) ORDER BY joined_at, user_id LIMIT n + 1` |
 | `members()` | `… AND user_id > $cursor [AND user_id = ANY($only)] [AND user_id <> $exclude] ORDER BY user_id LIMIT n + 1` |
-| `statesOf` | `SELECT DISTINCT ON (user_id) … WHERE community_id = $c AND user_id = ANY($ids) ORDER BY user_id, joined_at DESC` |
+| `statesOf` | `SELECT DISTINCT ON (user_id) … WHERE community_id = $c AND user_id = ANY($ids) ORDER BY user_id, version DESC` |
+| Which of these users may do A in C? (`permittedAmong`, P6) | One statement: `communities` by id, the ids' ACTIVE stints through `community_members_current_unique`, their ACTIVE grants for A; then one `ACCOUNT_DIRECTORY.withPermission` per ceiling permission, and `statePermits` |
 | `changesSince` | One statement: the community's head plus `WHERE community_id = $c AND version > $v ORDER BY version LIMIT n + 1`, collapsed to the highest version per user |
 | My communities | `community_members` (user index) joined once to `communities` for title, status and count. No N+1 |
 | Holders (P3) | Keyset union by user id of the owner row and ACTIVE grants for the capability, then one `ACCOUNT_DIRECTORY.withPermission` call per ceiling permission per page |
+
+**"Latest stint" means the highest `version`, never the latest `joined_at`.**
+The injected clock may step back (hence the `greatest(…)` guards on writes);
+versions never do, and a stint ends before its successor starts, so its
+version is always lower. Ordering by `joined_at` would, after a clock step
+back, report an ACTIVE member as inactive and send a repeat redemption into
+the partial unique index (500 instead of 200).
 
 No list uses `OFFSET`. Cursors are opaque base64url strings, as in
 `academic/application/cursors.ts`. Display names come from one
@@ -546,6 +563,7 @@ Owned by Communities, closed, in `communities/contracts/capabilities.ts`:
 | `community.live.host` | derived, backed by `community.live.start` | — | Live |
 | `community.live.moderate` | capability | `group.live.moderate` | Live |
 | `community.live.join` | participation | — | Live |
+| `community.live.remain` | derived (P6): the ceiling and basis of `community.live.join`, gated by `runningLiveContinues` | — | Live (reconciler, through `permittedAmong`) |
 | `community.live.raise_hand` | participation | — | Live |
 | `community.attendance.record`, `community.attendance.view` | **reserved**; added in P9 by a CHECK migration | `group.attendance.*` | Attendance ([attendance.md](attendance.md)) |
 | `community.messages.moderate` | **reserved** until Q51/Q23 | `group.messages.moderate` | — |
@@ -556,7 +574,7 @@ community acts ([live.md](live.md)).
 
 **The two vocabularies are disjoint, and a verification note.** The integrated
 design states that every act has three segments and so can never pass
-identity's shape CHECK. That holds for ten acts but **not** for
+identity's shape CHECK. That holds for eleven acts but **not** for
 `community.view` and `community.lock`, which have two segments and match
 `^[a-z]+[.][a-z_]+$`. Disjointness therefore rests on three guards, each
 tested: `isPermission(act)` is false for every act (no act is catalogued, and
@@ -584,6 +602,7 @@ required.
 | `live.host` | as `live.start` | as `live.start` | none | while `runningLiveContinues` |
 | `live.moderate` | `communities.moderate` + `live.moderate` | yes | none | yes |
 | `live.join` | `communities.read` + `live.join` | as a member | none | yes |
+| `live.remain` (P6) | as `live.join` | as a member | none | while `runningLiveContinues` |
 | `live.raise_hand` | `communities.read` + `live.raise_hand` | as a member | none | yes |
 
 (`community.` prefixes omitted.) Decided by
@@ -780,7 +799,9 @@ and [attendance.md](attendance.md)
 | Attendance, record / view (P9, HELD) | per [attendance.md](attendance.md) | `community.attendance.record` / `.view` | Ceilings use no `attendance.*` permission ([Q69](open-questions.md#q69--who-records-and-who-views-snapshots)) |
 
 No consumer reads a community's raw status. Principal-less consumers (sync,
-reconcilers, relays) read `CommunityHead.effects`.
+reconcilers, relays) read `CommunityHead.effects`; one that must know which
+of several users may do an act asks `COMMUNITY_AUTHORIZATION.permittedAmong`
+(P6), never `COMMUNITY_MEMBERSHIP`, and keeps no copy of the act rules.
 
 ### 6.13 Why identity gets no per-resource ACL
 
@@ -803,9 +824,12 @@ exactly as academic and messaging already do. Rejected alternatives:
 ### 6.14 Not every teacher can lock every community
 
 The TEACHER role supplies **ceilings only** (`communities.read`,
-`communities.moderate`, and the existing `live.*`). "Teacher of C" means C's
-owner, or a member holding grants in C; "teacher of a session" means its host.
-A TEACHER without standing in C:
+`communities.moderate`, and the existing `live.*`). PROVISIONAL reading of the
+brief's "teacher" ([Q44](open-questions.md#q44--who-may-hold-delegated-capabilities),
+[Q50](open-questions.md#q50--communities-and-the-academic-structure)): the
+teacher of C is C's owner or a member holding grants in C; the teacher of a
+session is its host. The alternative, teaching assignments conferring
+capabilities, is Q50. A TEACHER without standing in C:
 
 | Tries to, in C | Answer |
 | --- | --- |
@@ -851,8 +875,9 @@ the community, so there is no mismatch case and no enumeration surface.
 Before the transaction: the per-user rate limit; the shape check (exactly 43
 base64url characters; anything else is answered like an unknown token);
 `h := sha256(token)`; one indexed lookup by `token_hash` returning the
-invitation id, its community and its creator; and (P3) the creator's ceiling,
-`withPermission([createdBy], communities.moderate)`.
+invitation id, its community and its creator; and the creator's ceiling,
+`withPermission([createdBy], communities.moderate)`, from P2 (it is the
+ceiling of `community.members.invite` on the owner and grant bases alike).
 
 ### 7.3 Redemption
 
@@ -861,11 +886,11 @@ One READ COMMITTED transaction, in the global lock order:
 ```
 BEGIN
   -- 1  pair lock: serializes everything that changes (C, U)
-  SELECT pg_advisory_xact_lock(hashtext('communities.member:' || $c || ':' || $u));
+  SELECT pg_advisory_xact_lock($communities_lock_class, hashtext($c || ':' || $u));
 
   -- the redeemer's latest stint (stable under the pair lock)
   SELECT status FROM community_members
-   WHERE community_id = $c AND user_id = $u ORDER BY joined_at DESC LIMIT 1;
+   WHERE community_id = $c AND user_id = $u ORDER BY version DESC LIMIT 1;
      ACTIVE  -> COMMIT  -> already_member   (200; no use consumed; nothing recorded)
      REMOVED -> ROLLBACK -> removed         (403 communities.rejoin_requires_manager)
 
@@ -876,13 +901,14 @@ BEGIN
   RETURNING uses;
      0 rows  -> ROLLBACK; re-read $l with the same $at -> revoked | expired | exhausted
 
-  -- 3, 4  (P3) the creator still holds community.members.invite, under lock
+  -- 3, 4  the creator still holds community.members.invite, under lock
   SELECT id, standing FROM community_members
    WHERE community_id = $c AND user_id = $k AND status = 'ACTIVE' FOR SHARE;
-  SELECT id FROM communities_capability_grants            -- only when standing <> 'OWNER'
+  SELECT id FROM communities_capability_grants            -- (P3) only when standing <> 'OWNER'
    WHERE membership_id = $k_stint AND capability = 'community.members.invite'
      AND ended_at IS NULL FOR SHARE;
      neither -> ROLLBACK -> creator_lost   (404 communities.invitation_invalid)
+     -- P2: the creator's stint must be the ACTIVE OWNER; P3 adds the grant lookup
 
   -- 5  the community row: lifecycle gate, counter and version in one statement
   UPDATE communities
@@ -921,7 +947,7 @@ that and from the lock order.
 | **Revoke** during redemption | Both write the invitation row. Revoke first: the redeem's `WHERE revoked_at IS NULL` is false → 412 `communities.invitation_revoked`, nothing consumed. Redeem first: U stays a member; revocation stops future use only, and removing U is a separate audited act |
 | **Expiry** during redemption | `expires_at > $at` uses the clock instant taken at the start of the use case: the request either joins or gets 412 `communities.invitation_expired`, never both |
 | **Lock** during redemption | Both write the community row. Lock first: the redeem's `status = ANY($accepting)` is false → 412 `communities.community_locked`; the tentative use rolls back. Redeem first: U joined before the lock. Never a stint created after the lock committed ([S5](#13-sequences)) |
-| **Creator lost authority** (P3) | Checked at redemption, fail closed ([Q48](open-questions.md#q48--invitation-links)): the creator's ceiling before the transaction, standing under lock. The link fails as 404 `communities.invitation_invalid`, so the holder learns nothing about a third person's standing. A removal of the creator serializes on the creator's stint. The re-check ships in P3 with the grant basis (phase plan); in P2 only owners create links, and a link outlives its creator's demotion until it expires or is revoked |
+| **Creator lost authority** | Checked at redemption, fail closed ([Q48](open-questions.md#q48--invitation-links)): the creator's ceiling before the transaction, standing under lock. The link fails as 404 `communities.invitation_invalid`, so the holder learns nothing about a third person's standing. A removal of the creator serializes on the creator's stint. The ceiling and owner checks ship in P2, where only owners create links: a demoted or suspended owner's links stop admitting at once. Only the grant lookup waits for P3, which adds the grant basis |
 | **Double click** (same user twice) | The second request waits on the pair lock, then finds an ACTIVE stint: 200, no use consumed, no audit, no event |
 | **Remove** racing redeem, same user | Pair lock. Removal first: the redeem sees REMOVED → 403 `communities.rejoin_requires_manager`. Redeem first: U joins, then is removed |
 
@@ -979,7 +1005,7 @@ The brief's six questions, answered provisionally by one Communities-owned table
 | Can invitation links be used? | **Suspended**: neither consumed nor revoked; no new links; they work again after unlock unless expired or revoked | the same conditional `UPDATE`; the tentative use rolls back | `acceptsMembers: false` |
 | Can messages be sent? | **No posting**, by anyone; reading continues | `statePermits(chat.post)`; Messaging asks per send ([community-chat.md](community-chat.md)) | `chatPostingOpen: false`, `chatReadable: true` |
 | Can a new live session start? | **No** | `statePermits(live.start)` | `liveStartOpen: false` |
-| Can an existing live session continue? | **Yes**: join, rejoin, raise hand, hosting and moderation continue | `live.join`, `live.raise_hand`, `live.moderate` allowed; `live.host` while `runningLiveContinues` ([live.md](live.md)) | `liveJoinOpen: true`, `runningLiveContinues: true` |
+| Can an existing live session continue? | **Yes**: join, rejoin, raise hand, hosting and moderation continue | `live.join`, `live.raise_hand`, `live.moderate` allowed; `live.host` and `live.remain` while `runningLiveContinues` ([live.md](live.md)) | `liveJoinOpen: true`, `runningLiveContinues: true` |
 | Can managers still manage? | **Yes**: unlock, view members, list and revoke links, remove members. No adding, no new links | `view`, `members.view`, `members.remove`, `lock` and the link-management override allowed | — |
 
 Who may lock: the owner, a holder of a delegated `community.lock`, or a
@@ -1002,7 +1028,7 @@ table. `statePermits(status, act)` is used inside `COMMUNITY_AUTHORIZATION`;
 | `members.invite` (add members, create a link), `chat.post`, `live.start` | yes | no | no |
 | `chat.read`, `live.join`, `live.raise_hand` | yes | yes | no |
 | `live.moderate` | yes | yes | yes (nobody is ejected) |
-| `live.host` | yes | yes | yes (`runningLiveContinues`) |
+| `live.host`, `live.remain` | yes | yes | yes (`runningLiveContinues`) |
 
 | Status | `acceptsMembers` | `chatReadable` | `chatPostingOpen` | `liveStartOpen` | `liveJoinOpen` | `runningLiveContinues` |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -1070,7 +1096,7 @@ whole community:
 
 | Shape | Operations | Cost |
 | --- | --- | --- |
-| Point lookup | `authorize`, `authorizeEach` (≤ 1,000), `statesOf` (≤ 1,000) | two unique-index probes per id, whatever the size |
+| Point lookup | `authorize`, `authorizeEach` (≤ 1,000), `statesOf` (≤ 1,000), `permittedAmong` (≤ 1,000, P6) | two unique-index probes per id, whatever the size (`permittedAmong` adds one `withPermission` call per ceiling permission) |
 | Keyset page | roster (≤ 200), `members()` (≤ 1,000), holders (≤ 1,000), my communities | O(page), on partial indexes that hold only ACTIVE rows, so churn history never slows them |
 | Counter | `memberCount` in HTTP views | O(1) |
 | Ordered feed | `changesSince` on `UNIQUE (community_id, version)` | one statement per page |
@@ -1085,6 +1111,19 @@ link on the target topology. If it proves too slow, the remedy is inside the
 adapter and must keep the contract's guarantee — versions unique and in commit
 order. Manager adds are capped at 200 per request to keep the row lock short.
 
+**Waiting must not hold pool connections.** The pool has 10 connections per
+process with a 5 s acquire timeout (`platform/database/database.ts:28-30`); a
+storm of redemptions queued on one invitation row, or of adds, leaves and
+removals on one community row, would otherwise hold all ten and fail
+unrelated routes (messaging reads, live joins, every consumer's `authorize`).
+So every transaction that updates the community row first takes an
+in-process async mutex keyed by the community id, before it checks out a
+connection ([§4](#the-global-lock-order)), as Live does per session: the storm
+queues in memory and holds at most one connection per community per process
+(one API instance until P11). It pairs with the per-user and per-IP limits of
+[§7.5](#75-brute-force-and-enumeration), and load profile 4 asserts that pool
+wait and the p95 of an unrelated request mix stay bounded during the storm.
+
 **Roster visibility — the Q22 question for communities.** Publishing a
 30,000-member roster of minors to every member is a privacy decision
 ([Q22](open-questions.md#q22--who-may-see-who-is-in-a-conversation), which also
@@ -1093,7 +1132,10 @@ member count and themselves; listing members requires `community.members.view`
 (the owner, a grant, or `communities.manage`); the list shows display names
 only, never emails; `source` and `addedBy` are not exposed. Messaging refuses
 to list a community chat's participants (`messaging.members_hidden`), so the
-roster cannot leak through the chat.
+roster cannot leak through the chat. Live sessions are the exception: under
+Q59's PROVISIONAL default every participant sees the names of everyone in the
+room, so a member sees part of the roster by joining a session
+([Q59](open-questions.md#q59--visibility-inside-a-live-session)).
 
 **Multiple instances.** Every invariant is enforced by the database, so a
 second API instance changes no correctness property. The in-process event bus
@@ -1124,8 +1166,10 @@ export type CommunityCapability = (typeof COMMUNITY_CAPABILITIES)[number];
 export const COMMUNITY_PARTICIPATION = ['community.view', 'community.chat.read',
   'community.live.join', 'community.live.raise_hand'] as const;
 
-/** Backed by community.live.start: the session host's moderation of their own session. */
-export const COMMUNITY_DERIVED_ACTS = ['community.live.host'] as const;
+/** community.live.host: backed by community.live.start, the session host's moderation of their own session.
+ *  community.live.remain (P6): staying in a running session; the ceiling and basis of community.live.join,
+ *  allowed while runningLiveContinues instead of liveJoinOpen. */
+export const COMMUNITY_DERIVED_ACTS = ['community.live.host', 'community.live.remain'] as const;
 
 export type CommunityAct = CommunityCapability
   | (typeof COMMUNITY_PARTICIPATION)[number] | (typeof COMMUNITY_DERIVED_ACTS)[number];
@@ -1155,12 +1199,18 @@ export interface CommunityAuthorization {
   /** At most MAX_AUTHORIZE_BATCH ids (RangeError above), O(1) statements. Unknown ids -> not_found. */
   authorizeEach(principal: Principal, communityIds: readonly string[], act: CommunityAct):
     Promise<ReadonlyMap<string, Result<CommunityPermit>>>;
+  /** P6. Trusted in-process, no principal, never the oversight basis: of userIds (<= MAX_AUTHORIZE_BATCH,
+   *  RangeError above), those the act's ceiling (ACCOUNT_DIRECTORY.withPermission), owner, grant or
+   *  membership basis and statePermits accept. For Live's reconciler and LIVE_AUDIENCE. */
+  permittedAmong(communityId: string, userIds: readonly string[], act: CommunityAct): Promise<readonly string[]>;
 }
 ```
 
-Evaluation as in [§6.5](#65-the-evaluator). A store failure rejects the
-promise; callers fail closed with 503. `membership` lets Messaging repair its
-projection on access; `version` orders that repair.
+Evaluation as in [§6.5](#65-the-evaluator); `permittedAmong` runs the same
+`decideCommunityAct` per user, with the ceiling taken from `withPermission`
+instead of a Principal, so consumers keep no copy of the act rules. A store
+failure rejects the promise; callers fail closed with 503. `membership` lets
+Messaging repair its projection on access; `version` orders that repair.
 
 ### `COMMUNITY_MEMBERSHIP` (`membership.ts`)
 
@@ -1255,7 +1305,7 @@ overseers. Trusted in-process, no principal.
 | Consumer | Uses |
 | --- | --- |
 | Messaging (P4, application layer only) | `COMMUNITY_AUTHORIZATION` (`chat.read`, `chat.post`); `COMMUNITY_MEMBERSHIP` (`heads`, `listHeads`, `statesOf`, `changesSince`, `members`); `COMMUNITY_DIRECTORY`; `member.*` events as wake-ups |
-| Live (P6) | `COMMUNITY_AUTHORIZATION` (`live.start`, `live.host`, `live.moderate`, `live.join`, `live.raise_hand`); `COMMUNITY_MEMBERSHIP` (`heads` for effects; `statesOf` in batches of 1,000 for the reconciler); `COMMUNITY_CAPABILITY_HOLDERS` (moderators); `member.removed`, `capability.revoked`, `community.locked/unlocked` as accelerators |
+| Live (P6) | `COMMUNITY_AUTHORIZATION` (`live.start`, `live.host`, `live.moderate`, `live.join`, `live.raise_hand` per request; `permittedAmong` for `live.join`, `live.remain`, `live.moderate` and `live.host` in batches of 1,000 for the reconciler and `LIVE_AUDIENCE`); `COMMUNITY_MEMBERSHIP` (`heads` for session-wide effects); `COMMUNITY_CAPABILITY_HOLDERS` (moderators); `member.removed`, `capability.revoked`, `community.locked/unlocked` as accelerators |
 | Realtime (P5) | `COMMUNITY_MEMBERSHIP.members` (OnlineAudience); `CommunityEvents` |
 | Attendance (P9, HELD) | `COMMUNITY_AUTHORIZATION` (attendance acts) |
 | Notifications (P10, after Q67/Q28) | `COMMUNITY_MEMBERSHIP` or `COMMUNITY_CAPABILITY_HOLDERS` for recipients |
@@ -1288,11 +1338,11 @@ with a reconciler backstop).
 | `communities.member.removed` | `{communityId, userId, membershipId, reason: 'LEFT' \| 'REMOVED', removedBy, membershipVersion}` — implies every grant of that stint ended in the same transaction | **S** | Live (ejection; backstop: the 60 s participant sweep); Messaging (wake-up; access is already refused at commit); realtime relay | frame to that user only |
 | `communities.invitation.created` / `.revoked` | `{communityId, invitationId, createdBy \| revokedBy: string \| null}` | R | none; revocation takes effect inside redemption, not through delivery | never on any wire |
 | `communities.capability.granted` / `.revoked` (P3) | `{communityId, grantId, membershipId, userId, capability, grantedBy \| revokedBy}`; `revoked` only for owner revocations | R | realtime relay; Live re-evaluates an affected holder in a running session | `community.access.changed {communityId}` to that user only |
-| `communities.ownership.transferred` (P3) | `{communityId, fromUserId, toUserId, transferredBy, basis: 'owner' \| 'oversight', endedGrantIds: string[] (at most 8)}` | R | realtime relay | `community.access.changed` to `fromUserId` and `toUserId` only |
+| `communities.ownership.transferred` (P3) | `{communityId, fromUserId, toUserId, transferredBy, basis: 'owner' \| 'oversight', endedGrantIds: string[] (at most one per delegable capability: 7 in P3, 9 after P9)}` | R | realtime relay | `community.access.changed` to `fromUserId` and `toUserId` only |
 
-`endedGrantIds` is bounded by the delegable vocabulary (seven capabilities in
-P3, nine after P9); the integrated design's "at most 8" predates that count and
-should be read as "at most one per capability". Frames are realtime's
+`endedGrantIds` holds at most one id per delegable capability, because a stint
+has at most one ACTIVE grant per capability: seven in P3, nine after P9.
+Frames are realtime's
 ([communities-live-attendance.md](communities-live-attendance.md)); a frame is
 a refresh hint, never a grant.
 
@@ -1494,7 +1544,9 @@ event bus).
 - 13: the event carries `{communityId, invitationId, createdBy}` only.
 - 14: the token exists only in this response and in the creator's hands.
 
-### S3 — Redeem a link (P2; step 7 in P3)
+<a id="s3--redeem-a-link-p2-step-7-in-p3"></a>
+
+### S3 — Redeem a link (P2)
 
 ```
  App           API           UseCase       Identity      Store         Journal
@@ -1510,7 +1562,7 @@ event bus).
  |             |             |-------------------------->|             |
  |             |             | 6 {L, C, createdBy K} or none           |
  |             |             |<--------------------------|             |
- |             |             | 7 (P3) withPermission([K], moderate)    |
+ |             |             | 7 withPermission([K], moderate)         |
  |             |             |------------>|             |             |
  |             |             | 8 redeem(L, C, U, K, at)  |             |
  |             |             |-------------------------->|             |
@@ -1627,7 +1679,7 @@ Example: `capabilities: ['community.live.moderate', 'community.lock']`.
  |                                   latest stint: none
  |                                 4 UPDATE L SET uses+1 ...
  |                                   -> 1 row (tentative)
- |                                 5 (P3) creator's stint
+ |                                 5 creator's stint
  |                                   FOR SHARE
  |                                 6 UPDATE communities ...
  |                                   WHERE status = ANY(OPEN)
@@ -1677,7 +1729,7 @@ stint are compatible even when M is the creator.
 | Concurrent redemptions exceed `maxUses` | Exactly the remaining uses are admitted; the rest 412 `invitation_exhausted`; CHECK backstop |
 | Link revoked while being redeemed | Serialized on the invitation row; whichever commits first wins ([§7.4](#74-race-semantics)) |
 | Link expires during redemption | One clock instant per request: joins or 412 `invitation_expired`, never both |
-| Link creator lost authority (P3) | 404 `invitation_invalid`, fail closed (Q48) |
+| Link creator lost authority | 404 `invitation_invalid`, fail closed (Q48); the ceiling and owner checks from P2, the grant lookup from P3 |
 | Community locked while joins or adds are in flight | Serialized on the community row; later joins roll back with 412 `community_locked`, consuming nothing |
 | Two principals lock at once; lock racing unlock | One real change; the other 200 `unchanged`; last commit wins; each change audited with its version |
 | Lock while a chat send or a live session is in flight | Messaging's millisecond window, documented; the live session continues ([§8.4](#84-lock-concurrency-and-idempotency)) |
@@ -1768,9 +1820,13 @@ stint are compatible even when M is the creator.
 - Journal: audit before event; nothing on no-ops; payload keys allow-listed.
 - Contracts: `members()` returns each member exactly once across pages, honours
   `onlyUserIds` and `excludeUserId`, and throws `RangeError` on a bad cursor,
-  limit 0 or > 1,000, or an oversized list; `statesOf` returns the latest stint;
-  `heads` omits unknown ids; holders exclude dormant grantees, ended stints and
-  overseers.
+  limit 0 or > 1,000, or an oversized list; `statesOf` returns the latest stint,
+  also when a rejoin's `joined_at` precedes the ended stint's (a clock step
+  back); `heads` omits unknown ids; holders exclude dormant grantees, ended
+  stints and overseers; `permittedAmong` agrees with `authorize` for every act
+  and basis except oversight, which it never admits.
+- Creator re-check (P2): a link whose owner-creator lost `communities.moderate`
+  or was suspended answers 404 `invitation_invalid` and consumes no use.
 - Rate limits answer `rate_limited` with `retryAfterSeconds`.
 
 **Postgres** (P2 exit, then P3).
@@ -1822,7 +1878,9 @@ persists the token; buttons follow `me.capabilities` only.
 **Load** (P8, measured, never guessed): profile 4 — the 30,000-member community,
 a join storm through one link, full roster paging, `authorize` at join-storm
 rates — on the target topology, reporting p50/p99 and throughput before any
-capacity is stated.
+capacity is stated, and asserting that pool wait, acquire timeouts and the p95
+of an unrelated request mix stay bounded during the storm
+([§9](#9-membership-at-30000-and-beyond)).
 
 ---
 

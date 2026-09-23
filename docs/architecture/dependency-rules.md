@@ -105,8 +105,10 @@ the application layer.
 > those two confine `ws` and the push SDKs. `domain-is-dependency-free`
 > covers `domain/`. Three module-specific specs forbid LiveKit: messaging's
 > for the whole module, and notifications' and academic's for their domain
-> and application layers. Any other `api/`, `infrastructure/` or
-> `platform/` file could import it without failing the build.
+> and application layers. Any other `api/`, `application/`,
+> `infrastructure/` or `platform/` file (for example `live/application`,
+> `identity/application`, `files/application`, `realtime/application`)
+> could import it without failing the build.
 > Today the only importer is `live/infrastructure/livekit-rtc-provider.ts`,
 > by search. The fix is Phase 0 of the proposed design: a corrected
 > pattern, a `livekit-sdk-only-in-the-live-adapter` rule, and a spec proving

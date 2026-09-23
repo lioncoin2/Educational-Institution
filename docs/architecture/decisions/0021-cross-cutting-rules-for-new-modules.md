@@ -50,8 +50,12 @@ reported, and which rules keep all of it honest.
   `application-has-no-vendor-sdks` is anchored at the package name, but
   resolved paths start with `node_modules/`, so it can never fire
   (`.dependency-cruiser.cjs:79-90`). And no rule confines `livekit-server-sdk`
-  to live's adapter outside the domain and application layers, although
-  `realtime.md:573` states it.
+  to live's adapter: `domain-is-dependency-free` covers `domain/` only, and
+  three module-specific specs forbid it (messaging's for the whole module,
+  notifications' and academic's for their domain and application layers;
+  `messaging-boundaries.spec.ts:14`, `notifications-boundaries.spec.ts:24`,
+  `academic-boundaries.spec.ts:18`), although
+  [realtime.md §5](../realtime.md#5-what-is-proven-and-what-is-not) states it.
 - Architecture specs hard-code today's module lists, and the academic upgrade
   test asserts an exact grant delta against the latest migration
   (`academic-postgres.spec.ts:580`), so any new identity migration breaks it.
@@ -63,7 +67,8 @@ Everything below is proposed. None of it exists today.
 1. **Events live in contracts.** Every event's name and payload type is in the
    publisher's `contracts/events.ts`; domain factories import from
    `../contracts/events`. In P0, Live's events move there with identical names
-   and payloads, and `live.speaker.requested` joins the events.md catalogue.
+   and payloads. `live.speaker.requested` is already listed in
+   [events.md](../events.md) (added as a correction with this package).
    Identity's events move when they get their first subscriber in another
    module. A test forbids a `DomainEvent<'literal'>` outside `*/contracts/`,
    except an allow-list of identity's current events.
@@ -122,12 +127,16 @@ Everything below is proposed. None of it exists today.
    in `realtime/application` (`CommunitiesRealtimeRelay`,
    `LiveRealtimeRelay`); no attendance relay. Each asks the source module's
    contracts, never keeps a copy, and uses one internal resolver,
-   `OnlineAudience`: 0 queries when nobody is connected; 1 when the audience
-   fits one page of 1,000; otherwise at most 1 + ⌈A/1000⌉, where A ≤ 10,000
-   is the number of accounts connected to this instance. `ConnectionManager`
-   gains `onlineUserIds()`, and the messaging relay moves onto the resolver
-   (gate G1 of [0018](0018-community-chat-projection.md)) with no contract
-   change, because `MESSAGE_RECIPIENTS` already has `onlyUserIds`.
+   `OnlineAudience`: 0 contract calls when nobody is connected; 1 when the
+   audience fits one page of 1,000; otherwise at most 1 + ⌈A/1000⌉, where
+   A ≤ 10,000 is the number of accounts connected to this instance. Each call
+   runs a fixed number k of statements that depends on the source (a
+   community chat's `MESSAGE_RECIPIENTS` page adds `heads`, and `statesOf`
+   while lagging), so the statement bound is k × (1 + ⌈A/1000⌉).
+   `ConnectionManager` gains `onlineUserIds()`, and the messaging relay moves
+   onto the resolver (gate G1 of [0018](0018-community-chat-projection.md))
+   with no contract change, because `MESSAGE_RECIPIENTS` already has
+   `onlyUserIds`.
 
 8. **Protocol v1 grows only by additive server frames**, and the version is
    never bumped. New frames: `community.member.added`,
@@ -188,8 +197,10 @@ If accepted:
   constraint, not an accident.
 - Installed apps keep working: they ignore frames they do not know, and every
   new frame has an HTTP read behind it.
-- Fan-out per event per instance is bounded (≤ 11 queries) whatever the
-  community's size.
+- Fan-out per event per instance is bounded by the accounts connected to it,
+  whatever the community's size: at most 11 contract calls (21 for
+  `live.session.started` and `.ended`, which also probe
+  `LIVE_AUDIENCE.participantsAmong`), each of k statements (Decision 7).
 - Phase 0 changes production code in two places only: the Live event move
   (names and payloads identical) and the new failure kind. The Flutter error
   parser must tolerate `'unavailable'`.

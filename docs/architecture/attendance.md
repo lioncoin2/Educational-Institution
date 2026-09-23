@@ -3,20 +3,22 @@
 **State: PROPOSED — design only. Nothing here is implemented; no table, endpoint, event publisher or screen exists.**
 
 > **HELD.** Implementing this module is held, and nothing in this document
-> lifts the hold. Four things stand in the way, and all four must clear before
-> phase **P9** starts ([§23](#23-before-p9-can-start)):
+> lifts the hold. Three things stand in the way, and all three must clear
+> before phase **P9** starts ([§23](#23-before-p9-can-start)):
 >
-> 1. **The user's Attendance hold.** "Assignments, Attendance, Progress and
->    Promotion do not start until this reconciliation has been reviewed"
->    (`academic-reconciliation.md:19-21`; `academic.md:28-30`).
-> 2. **[Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules).**
->    Does that hold, and §13's "before any new module" step
->    (`academic-reconciliation.md:483-493`), cover live-presence snapshots? The
->    provisional default is that both do.
-> 3. **[Q69](open-questions.md#q69--who-records-and-who-views-snapshots).**
+> 1. **[Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules),
+>    which covers the user's Attendance hold.** "Assignments, Attendance,
+>    Progress and Promotion do not start until this reconciliation has been
+>    reviewed" (`academic-reconciliation.md:19-21`; `academic.md:28-30`). Q40
+>    asks whether that hold, with what §13 says Attendance needs first
+>    (`academic-reconciliation.md:504`), and §13's "before any new module" step
+>    (`academic-reconciliation.md:483-493`) cover live-presence snapshots. The
+>    provisional default is that they do.
+> 2. **[Q69](open-questions.md#q69--who-records-and-who-views-snapshots).**
 >    Reviewers must accept community standing, not `ACADEMIC_RELATIONSHIPS`,
->    as the scoping relationship §13 asks for (`academic-reconciliation.md:504`).
-> 4. **Phase P6.** There is nothing to observe until community-scoped, persisted
+>    as the scoping relationship §13 asks for (`academic-reconciliation.md:504`),
+>    and the user must confirm or replace its record and view defaults.
+> 3. **Phase P6.** There is nothing to observe until community-scoped, persisted
 >    live sessions exist ([live.md](live.md)).
 
 This is the design of the `attendance` module: attendance snapshots taken
@@ -45,6 +47,9 @@ which is unanswered. The brief's `group.attendance.record` and
 - **What exists today** means the repository at commit `9670c47`. It is
   described in [§1](#1-what-exists-today), and every such statement says so and
   cites `file:line` (the file name, or a short path when the name is ambiguous).
+  Every `file:line` in this document is at `9670c47`, documents included: the
+  notes this package added have since moved lines in `module-boundaries.md`,
+  `events.md` and `open-questions.md`.
 - **Everything else is a proposal.** Every default that is institutional policy
   is labelled PROVISIONAL and names its open question. Engineering bounds that
   must be measured are PROVISIONAL too.
@@ -115,7 +120,10 @@ of the session.
 Two documents and one ADR say that operations derives attendance from
 `live.session.ended`. The corrections are P0 item 11 in the hub
 ([§25.1](communities-live-attendance.md#251-phase-0-corrections)). **This
-package does not make them.** It proposes exactly this text:
+package only annotates them:** it added labelled Correction and Proposed-change
+notes to `events.md` §2 and to `module-boundaries.md`'s operations and live
+sections. The replacement text below lands in P0. Its line numbers are at
+`9670c47`, so each row for a changed document also names its section.
 
 | Where | Says today | Becomes |
 | --- | --- | --- |
@@ -171,6 +179,7 @@ Live → Attendance, so the graph stays a DAG with no `forwardRef` (the hub's
 | any module except attendance → `live/contracts/presence.ts` | **no** | an importer allow-list test |
 | attendance → `livekit-server-sdk`, `@livekit/*`, or live and communities internals | **no** | `livekit-sdk-only-in-the-live-adapter` (P0); `attendance-boundaries.spec` |
 | attendance → `operations/contracts`, academic, realtime, notifications | **no**: a vocabulary firewall; no halaqa ids | `attendance-boundaries.spec` |
+| attendance → `COMMUNITY_MEMBERSHIP`, `COMMUNITY_CAPABILITY_HOLDERS` | **no**: it asks only `COMMUNITY_AUTHORIZATION`, and a snapshot never enumerates members ([§6.4](#64-size)) | `attendance-boundaries.spec` |
 | the strings `attendance.read` / `attendance.manage` under `src/modules/attendance/` | **no** | a grep test |
 | operations → `attendance/contracts` | only if Q70 says so | — |
 | notifications → `attendance/contracts` | P10, only after Q67 | — |
@@ -189,7 +198,7 @@ attendance relies on.
 ```ts
 // live/contracts/live-sessions.ts (P6)
 export const LIVE_SESSIONS = Symbol('LIVE_SESSIONS');
-export interface LiveSessionScope { readonly liveSessionId: string; readonly communityId: string; readonly active: boolean }
+export interface LiveSessionScope { readonly liveSessionId: string; readonly communityId: string; readonly hostUserId: string; readonly active: boolean }
 export interface LiveSessions { describe(liveSessionId: string): Promise<LiveSessionScope | null> }
 // Live's own record only; never calls the provider; no principal (the trusted caller authorizes itself).
 
@@ -302,6 +311,7 @@ export interface AttendanceSnapshot {
   readonly id: Id<'AttendanceSnapshot'>;
   readonly communityId: string;        // the community the permit was issued for
   readonly liveSessionId: string;      // Live's LiveSession id; never a LiveKit room name, sid or identity
+  readonly hostUserId: string;         // Live's hostUserId at the press: the host's view basis (§11.3)
   readonly recordedBy: string;         // principal.userId, never from the client
   readonly clientRequestId: string;    // ^[A-Za-z0-9_-]{8,64}$
   readonly observationRule: 'provider_registry_v1';
@@ -358,7 +368,7 @@ snapshot never enumerates members, computes absentees or checks membership.
 | Room size | Why this size | Entries | Storage (rough; measure it) |
 | --- | --- | --- | --- |
 | 310 | the PROVISIONAL cap proposed for P6, 300 plus a reserve of 10 ([Q57](open-questions.md#q57--live-session-size-and-concurrency)) | ≤ 310 | about 60 KB |
-| about 3,000 | the design sizing figure. A self-hosted LiveKit room lives on one node; about 3,000 per room is a published figure, unverified here, and must be benchmarked before any cap is raised | ≤ 3,000; three insert statements | about 0.6 MB |
+| about 3,000 | an illustrative upper bound for storage estimates only; not a design target or capacity. A self-hosted LiveKit room lives on one node; about 3,000 per room is a published figure, unverified here, and must be benchmarked before any cap is raised | ≤ 3,000; three insert statements | about 0.6 MB |
 | 10,000 | the defensive ceiling ([§5.4](#54-bounds)) | never stored: `unavailable` | — |
 
 The estimate is about 110 B of heap plus about 90 B of primary-key index per
@@ -381,6 +391,7 @@ attendance_snapshots
   id                      text PRIMARY KEY
   community_id            text NOT NULL          -- plain id, no FK
   live_session_id         text NOT NULL          -- plain id, no FK
+  host_user_id            text NOT NULL          -- plain id, no FK; Live's hostUserId at the press
   recorded_by             text NOT NULL          -- plain id, no FK
   client_request_id       text NOT NULL
   observation_rule        text NOT NULL
@@ -477,12 +488,16 @@ merge and no grace of our own; LiveKit's own lag is recorded as it is.
 
 | Participant Z | Recorded as | Why (SRV) |
 | --- | --- | --- |
-| Z's provider session closed before the read | absent | the registry entry is deleted on close (`pkg/service/roommanager.go:616`) |
+| Z's provider session closed before the read | no entry (not in the registry at the read) | the registry entry is deleted on close (`pkg/service/roommanager.go:616`) |
 | Z closes after the read | included | the listing already held Z |
 | Z's transport failed moments before; LiveKit waits for a resume | included, in the state LiveKit last stored (usually `CONNECTED`) | the participant is closed only after `disconnectCleanupDuration`, 5 s (`pkg/rtc/participant.go:77`, `:2741-2754`); the store is updated asynchronously and not for disconnected participants (`pkg/service/roommanager.go:718-722`) |
 | Z is rejoining (a new connection) | `CONNECTING` | the new participant is `JOINING` or `JOINED` (PGO `livekit/livekit_models.pb.go:939-945`) |
 | The session ends during the read | nothing stored: **412** `attendance.session_not_live` | Live saves `ended` before `endRoom`, and its re-read sees it ([§5.3](#53-the-observation-bracket-and-the-re-check)) |
 | The session ends after Live's re-read | the snapshot is stored | the observation preceded the end |
+
+An account with no entry is not thereby absent; what absence means is
+[Q68](open-questions.md#q68--what-counts-as-present-in-a-snapshot) and
+[Q70](open-questions.md#q70--is-a-snapshot-the-attendance-record).
 
 Whether a `CONNECTING` entry, or a participant inside LiveKit's resume window,
 counts as present is [Q68](open-questions.md#q68--what-counts-as-present-in-a-snapshot).
@@ -523,41 +538,53 @@ community concerned. `community.attendance.record` and
 `capabilities.ts` (a comment beside `COMMUNITY_CAPABILITIES`) and are added in
 P9, with a CHECK migration, by Communities
 ([communities.md §6.3](communities.md#63-the-act-vocabulary)); neither exists
-today. Like every act they have three segments, so they can never pass
-identity's permission shape CHECK (`identity/infrastructure/schema.ts:36`).
+today. Both have three segments, so neither can pass identity's permission
+shape CHECK (`identity/infrastructure/schema.ts:36`). Disjointness for all
+acts, including the two-segment `community.view` and `community.lock`, rests on
+the three guards of [communities.md §6.3](communities.md#63-the-act-vocabulary).
 
 PROVISIONAL defaults ([Q69](open-questions.md#q69--who-records-and-who-views-snapshots)):
 
 | Question | Default |
 | --- | --- |
-| Who may record? | The community's owner implicitly, or a member holding an explicit `community.attendance.record` grant (P3) |
-| Who may view? | The owner implicitly, or a member holding `community.attendance.view` |
+| Who may record? | The community's owner; the session's host while `community.live.host` holds; any moderator of that session ([live.md §7.2](live.md#72-liveaccess-host-and-moderators)); and a member holding an explicit `community.attendance.record` grant (P3). Brief §9/§13/§15 default; needs institutional confirmation (Q69) |
+| Who may view? | The owner; the host or a recorder, for the snapshots of sessions they hosted or recorded in; and a member holding `community.attendance.view`. Brief §9/§13/§15 default; needs institutional confirmation (Q69) |
 | Identity ceilings for the two acts | Chosen in P9 **without** any `attendance.*` permission, as a row of Communities' act table and its pinning test ([communities.md §6.4](communities.md#64-act-rules--provisional)) |
 | Institutional oversight | None until [Q43](open-questions.md#q43--institutional-oversight-of-communities) says otherwise ([§11.2](#112-institutional-oversight-without-attendanceread)) |
-| Does recording imply viewing? | No. The POST answers with counts only |
-| Must the recorder be the host, or connected? | No: the capability and a live session are enough |
+| Does recording imply viewing? | For the sessions one recorded in, yes (brief §13: "teacher can view"); beyond them, only with `community.attendance.view`. The POST still answers with counts only. Brief §9/§13/§15 default; needs institutional confirmation (Q69) |
+| Must the recorder be the host, or connected? | No. The owner, a moderator or a grantee records too, and nobody needs to be connected: a record basis and a live session are enough. Brief §9/§13/§15 default; needs institutional confirmation (Q69) |
 | May a student or parent see their own entries? | No view exists |
 | While the community is LOCKED | Attendance applies no lock rule of its own; Communities' answer governs ([Q46](open-questions.md#q46--what-does-locked-mean-and-who-may-lock), [Q72](open-questions.md#q72--when-and-how-often-snapshots-are-taken)) |
 
-**Where each id comes from.** Recording takes `communityId` from
-`LIVE_SESSIONS.describe`, Live's record. A single snapshot takes it from the
-stored header. The community list authorizes the path's `communityId` as the
-scope being asked about, and trusts nothing else. The client never supplies
+These follow the brief: the teacher triggers attendance (§9), presses Record
+and can view (§13), and is among those the record is available to (§15). An
+alternative the institution may choose instead (Q69) is narrower: the owner or
+an explicit grant only, with recording not implying viewing.
+
+**Where each id comes from.** Recording takes `communityId` and `hostUserId`
+from `LIVE_SESSIONS.describe`, Live's record, and stores both in the header. A
+single snapshot takes them from the stored header. The community list
+authorizes the path's `communityId` as the scope being asked about, and trusts
+nothing else. The client never supplies
 `recordedBy`, participants, or the community of a recording.
 
 **At the edge**, every route is `@Authenticated()` only, because only the use
 case can decide (the precedent at `conversations.controller.ts:336-342`). There
 is no `@RequirePermission(attendance.*)`.
 
-**System principals** never hold a stint, and the attendance acts have no
-oversight path, so a system principal is always refused. There is no
+**System principals** never hold a stint, and none of the bases in
+[§11.3](#113-attendanceaccess-how-refusals-map) admits oversight, so a system
+principal is always refused. There is no
 system-initiated snapshot (Q72).
 
 ### 11.2 Institutional oversight, without `attendance.read`
 
-Brief §15 says the owner and "explicitly authorized management principals" may
-view. Which owner, the community's or the institution's `OWNER` role, is Q69.
-The community's owner is covered, PROVISIONALLY: ownership implies the view act
+Brief §15 makes the record available to "the teacher who owns/teaches the
+relevant group/session; owner; explicitly authorized management principals".
+The teacher of the session is covered, PROVISIONALLY, by the host and recorder
+bases of [§11.1](#111-the-two-acts). Which owner, the community's or the
+institution's `OWNER` role, is Q69. The community's owner is covered,
+PROVISIONALLY: ownership implies the view act
 ([Q42](open-questions.md#q42--community-ownership)). The
 institution's `OWNER` and `ADMIN` get **no attendance view by role** in this
 design: Q43's provisional reach for `communities.manage` never includes
@@ -589,6 +616,25 @@ into one consumer module, so every future consumer would grow its own.
 communityId, act)` and maps its answer, as `ConversationAccess` and Live's
 `LiveAccess` do ([communities.md §6.12](communities.md#612-how-live-messaging-and-attendance-ask)).
 Views re-check on every request; nothing is cached.
+
+It asks for the bases of [§11.1](#111-the-two-acts) in a fixed order. It moves
+to the next act only on a `forbidden` answer, and stops at a permit,
+`not_found`, `precondition_failed` or a rejected promise:
+
+- **Record:** `community.attendance.record`; then `community.live.moderate`;
+  then, if the principal is the session's `hostUserId`, `community.live.host`.
+  The last two are Live's own moderator bases
+  ([live.md §7.2](live.md#72-liveaccess-host-and-moderators)), asked of
+  Communities, never of Live.
+- **One snapshot, or its participants:** `community.attendance.view`; then, if
+  the principal is the header's `hostUserId` or recorded a snapshot of the same
+  session (a prefix read on the idempotency index), `community.view` with the
+  membership basis, so a former member sees nothing.
+- **The community list:** `community.attendance.view`; without it, only with a
+  `liveSessionId` the caller hosted or recorded in, checked as for one snapshot.
+
+The permit that wins, its act included, goes into the audit metadata. If none
+permits, the table below maps the answer to the attendance act.
 
 | Communities' answer | Record (POST) | Community list | One snapshot, or its participants |
 | --- | --- | --- | --- |
@@ -696,7 +742,7 @@ that event, for a later need; none is built.
 **The audit entry.** Only created snapshots are audited (brief §26): action
 `attendance.snapshot.recorded`, resource type `attendance.snapshot`, resource id
 the snapshot id, actor the recorder, metadata `{communityId, liveSessionId,
-connectedCount, connectingCount, observationRule, authority: {basis,
+connectedCount, connectingCount, observationRule, authority: {act, basis,
 membershipId, grantId, ceiling}}`, the permit copied as ADR 0017 requires. No
 participant id is audited. Failures are logged with ids and codes, and metered;
 they are not audited. Views are not audited in v1; if oversight is ever added
@@ -718,8 +764,9 @@ or exceptions only) is Q67, with
 [Q28](open-questions.md#q28--what-deserves-a-notification-and-how-loudly) and
 [Q24](open-questions.md#q24--notifications-push-provider-lock-screen-previews-quiet-hours-mute).
 If delivery must be guaranteed, the transactional outbox comes first
-(trigger T2, ADR 0021). Participants in the room are not told that a snapshot
-was taken (Q67).
+(trigger T2, ADR 0021). PROVISIONAL
+([Q67](open-questions.md#q67--notifications-for-community-live-and-attendance-facts)):
+participants in the room are not told that a snapshot was taken.
 
 ---
 
@@ -736,9 +783,9 @@ routes.
 
 | Route | Declared | Use-case authorization | Success |
 | --- | --- | --- | --- |
-| `POST /attendance/live-sessions/:liveSessionId/snapshots` body `{clientRequestId}` | `@Authenticated()` | `LIVE_SESSIONS.describe` → `community.attendance.record` on its `communityId`; `recordedBy` = the principal | **201** `SnapshotView` (counts only); **200** the stored snapshot for a replayed key |
-| `GET /attendance/communities/:communityId/snapshots?liveSessionId&cursor&limit` | `@Authenticated()` | `community.attendance.view` on the path's community | 200 `{items: SnapshotView[], nextCursor}`, newest first, limit ≤ 200. A `liveSessionId` of another community yields an empty page. Never calls Live |
-| `GET /attendance/snapshots/:snapshotId` | `@Authenticated()` | load the header, then `community.attendance.view` on its `communityId` | 200 `SnapshotView` |
+| `POST /attendance/live-sessions/:liveSessionId/snapshots` body `{clientRequestId}` | `@Authenticated()` | `LIVE_SESSIONS.describe` → the record bases of [§11.3](#113-attendanceaccess-how-refusals-map) on its `communityId`; `recordedBy` = the principal | **201** `SnapshotView` (counts only); **200** the stored snapshot for a replayed key |
+| `GET /attendance/communities/:communityId/snapshots?liveSessionId&cursor&limit` | `@Authenticated()` | `community.attendance.view` on the path's community; without it, only a `liveSessionId` the caller hosted or recorded in (§11.3) | 200 `{items: SnapshotView[], nextCursor}`, newest first, limit ≤ 200. A `liveSessionId` of another community yields an empty page. Never calls Live |
+| `GET /attendance/snapshots/:snapshotId` | `@Authenticated()` | load the header, then the view bases of §11.3 on its `communityId` | 200 `SnapshotView` |
 | `GET /attendance/snapshots/:snapshotId/participants?connection&cursor&limit` | `@Authenticated()` | as above | 200 `{items: [{userId, displayName \| null, connection}], nextCursor}`, keyset on `user_id`, limit ≤ 200, one `ACCOUNT_DIRECTORY.describe` per page |
 
 ### 15.2 Refusal codes
@@ -773,7 +820,7 @@ SnapshotView = {
   observationStartedAt, observedAt, recordedAt, // ISO 8601
   observationRule,                              // 'provider_registry_v1'
   connectedCount, connectingCount,
-}                                               // no participant list: recording does not imply viewing
+}                                               // no participant list: entries are paged through /participants
 
 SnapshotParticipant = { userId, displayName: string | null, connection: 'CONNECTED' | 'CONNECTING' }
                                                 // no "present" or state field; no email, ever
@@ -824,7 +871,9 @@ enum SnapshotConnection { connected, connecting, unknown }   // unknown wire val
 - **The Record button** is shown only when the server says so:
   `CommunityView.me.capabilities` contains `attendanceRecord` (the
   `CommunityCapability` enum gains `attendanceRecord` and `attendanceView` in
-  P9) **and** `LiveRepository.currentSession(communityId)` is live. Live's view
+  P9) or the live session's `me.canModerate` is true (the host and moderators,
+  [§11.1](#111-the-two-acts)), **and** `LiveRepository.currentSession(communityId)`
+  is live. Live's view
   carries no attendance flag: Live does not know attendance. The screen never
   reads roles or `CurrentUser.permissions`.
 - **Copy** says "connected" and "connecting" (in the app's language), never a
@@ -856,11 +905,11 @@ shows the same flow across modules; these show the use case's inside.
   │                 │ 2 K matches ^[A-Za-z0-9_-]{8,64}$, else 422 attendance.client_request_id_invalid          │
   │                 │ 3 LIVE_SESSIONS.describe(S)         │                 │                 │                 │
   │                 │──────────────────▶│                 │                 │                 │                 │
-  │                 │ 4 {liveSessionId: S, communityId: C, active: true}   (null → 404 attendance.session_not_found)
+  │                 │ 4 {S, communityId: C, hostUserId: H, active: true}   (null → 404 attendance.session_not_found)
   │                 │◀──────────────────│                 │                 │                 │                 │
-  │                 │ 5 authorize(principal, C, community.attendance.record)│                 │                 │
+  │                 │ 5 authorize(principal, C, act): record bases, §11.3   │                 │                 │
   │                 │────────────────────────────────────▶│                 │                 │                 │
-  │                 │ 6 permit {basis, membershipId, grantId, ceiling}   (refusals mapped: §11.3)               │
+  │                 │ 6 permit {act, basis, membershipId, grantId, ceiling}   (refusals mapped: §11.3)          │
   │                 │◀────────────────────────────────────│                 │                 │                 │
   │                 │ 7 findByKey(S, principal.userId, K) → none   (found → 200 with the stored snapshot; stop) │
   │                 │────────────────────────────────────────────────────────────────────────▶│                 │
@@ -980,11 +1029,11 @@ token issuance: each is a weaker, different observation.
 | **The session ends after Live's re-read** | The snapshot is stored: the observation came first |
 | **Duplicate press, same key** | 200 with the stored snapshot; no second observation, audit or event. Concurrent same key: the UNIQUE constraint decides; every response carries one id ([§8](#8-idempotency-the-double-press)) |
 | **Duplicate press, different keys** | Two true snapshots, bounded by the per-recorder limit. Nothing merged, nothing partial |
-| **A participant leaves during the observation** | Decided by LiveKit's registry read inside the bracket: closed before → absent; after → included ([§9](#9-the-observation-instant-someone-leaving-mid-press)) |
+| **A participant leaves during the observation** | Decided by LiveKit's registry read inside the bracket: closed before → no entry; after → included ([§9](#9-the-observation-instant-someone-leaving-mid-press)) |
 | **A participant's network dropped moments before** | Inside LiveKit's 5 s resume window the participant may be recorded `CONNECTED`: the provider's semantics, recorded as is and measured, not corrected by policy (Q68) |
 | **Joining or reconnecting during a join storm** | A resumed session stays ACTIVE → `CONNECTED`; a full rejoin is `JOINING`/`JOINED` → `CONNECTING` |
 | **The provider has no room while Live's record says live** | The store answers an empty list (SRV `pkg/service/localstore.go:177-181`; `redisstore.go:337-338`), so the snapshot has zero entries: recorded truthfully. With psrpc listing enabled (`roomservice.go:178-179`) the behaviour is unverified; the adapter contract suite pins it, and any error is `unavailable` |
-| **The recorder lost their media connection, or their device crashed** | Recording needs the capability and a live session, not the recorder's presence in the room. A client crash mid-request does not matter: the server completes, and a same-key retry returns the result |
+| **The recorder lost their media connection, or their device crashed** | Recording needs a record basis ([§11.1](#111-the-two-acts)) and a live session, not the recorder's presence in the room. A client crash mid-request does not matter: the server completes, and a same-key retry returns the result |
 | **Backend restart mid-request** | Before commit: nothing exists; a same-key retry observes again. After commit, before the response: the retry returns the stored snapshot. After commit, before the audit or the event: the snapshot exists without them, the existing audit-after-change risk with no outbox (ADR 0006); the row keeps `recorded_by` and `recorded_at`, and consumers read the table |
 | **Database unavailable** | The key lookup fails first, before any provider call → 500. A failure during the insert rolls the one transaction back; a header is never visible without its entries |
 | **Communities store unavailable** | `authorize` rejects → 503 `unavailable`, fail closed, never a role-only answer |
@@ -1011,7 +1060,7 @@ token issuance: each is a weaker, different observation.
 | Probing session, community or snapshot ids | Random UUIDs; identical 404 bodies ([§11.3](#113-attendanceaccess-how-refusals-map)); an unauthorized caller never reaches LiveKit | A member without the act learns a session exists in their own community (403). Timing is not addressed, as in existing modules |
 | Denial of service by spamming the button | The per-recorder limit, charged after authorization, the key lookup and the active check; Live's concurrency limit, deadline and ceiling. A replay costs one indexed read | The in-memory limiter multiplies by the number of instances (`rate-limit.ts:1-9`); acceptable with one instance until P11 |
 | Replaying a key to read someone else's snapshot | The key is scoped by recorder, and a replay passes the record check first | None |
-| Presence data about minors leaking | The event, audit and logs carry ids, a timestamp and counts, never the list. Lists go only to view holders, paged, names per page, no emails. The POST returns counts only. The app never labels anyone present | Who may see presence at all is policy (Q69; the Q22/Q25 reasoning); retention is Q3/Q71 |
+| Presence data about minors leaking | The event, audit and logs carry ids, a timestamp and counts, never the list. Lists go only to those with a view basis ([§11.3](#113-attendanceaccess-how-refusals-map)), paged, names per page, no emails. The POST returns counts only. The app never labels anyone present | Who may see presence at all is policy (Q69; the Q22/Q25 reasoning); retention is Q3/Q71 |
 | Tampering after the fact | Immutable; creation audited, so `audit_log` is a cross-check | A database superuser can still edit rows |
 | Another module surveilling presence through `LIVE_PRESENCE` | The importer allow-list test | Code review of the allow-list |
 | LiveKit admin credentials exposed by the new call | The per-call `roomAdmin` token is minted inside the one adapter (SDK `src/RoomServiceClient.ts:207`). The app never receives admin tokens or provider details, and join tokens never carry `roomAdmin` | As for the existing adapter |
@@ -1077,33 +1126,35 @@ One use case per act and no `AttendanceService`. The repository port is
 | --- | --- |
 | Domain (pure) | `takeSnapshot`: one entry per account, connected wins; counts equal entries; zero entries valid; time order; a malformed key → `attendance.client_request_id_invalid`; no mutator exported; the vocabulary has no present, absent, late or excused |
 | Live's side (in [live.md §22](live.md#22-tests)) | `normalizePresence` keeps STANDARD, account-shaped, not-disconnected entries, **keeps hidden**, maps states, collapses per account, sorts; `LivePresenceService` refuses unknown and ended sessions without calling the provider, returns `not_active` when the fake flips the session to ended mid-listing, `unavailable` on error, deadline and oversize, caps concurrency; `describe` never calls the provider |
-| Use case, with fakes | unknown session → 404 and `observe` not called; no standing → the same 404 body; a member without the act → 403, no `observe`, no rate-limit charge; not live → 412 before any provider call or charge; limit → 429 with `retryAfterSeconds`; `unavailable` → 503 with nothing stored, audited or published; `not_active` → 412, nothing stored; community mismatch → fault, nothing stored |
+| Use case, with fakes | unknown session → 404 and `observe` not called; no standing → the same 404 body; a member with none of the record bases → 403, no `observe`, no rate-limit charge; a moderator and the session's host record without the grant, and the permit's act is audited; a host or recorder without `community.attendance.view` sees only their sessions' snapshots, and nothing once no longer a member; not live → 412 before any provider call or charge; limit → 429 with `retryAfterSeconds`; `unavailable` → 503 with nothing stored, audited or published; `not_active` → 412, nothing stored; community mismatch → fault, nothing stored |
 | Idempotency | same key twice → one snapshot, 200 the second time, `observe` once, one audit, one event; a replay after the session ended → 200; different keys → two; the same key from another recorder or for another session → independent |
 | Participant churn | a fake provider whose roster changes between `describe` and the listing → the snapshot equals exactly the list returned; a joining user → `CONNECTING` |
 | Audit and event | audit, then event, after commit, once per created snapshot; none for replays, lost races or failures; payload keys exactly `{snapshotId, communityId, liveSessionId, recordedBy, observedAt, connectedCount, connectingCount}`; `aggregateId = liveSessionId`; no participant id, name or provider identity in the event, audit metadata or log lines |
 | Postgres (`describeWithPostgres`) | **20 concurrent same-key presses → one header, one set of entries, one audit entry, one id in every response**; a 3,000-entry snapshot commits in one transaction of three chunks; a failure injected mid-entries leaves nothing; every named constraint and index exists; each CHECK refuses its bad value; the PK refuses a duplicate account; no FK reaches another module (`pg_constraint`); `EXPLAIN` shows index range scans for the three reads at 1M entries; the adapter has no update or delete |
 | In-memory twin | the same idempotency and PK suite |
 | API (supertest through `configureApp`) | no key → 400; a body with `participants`, `communityId` or `recordedBy` → 400; malformed key → 422; 201 then 200 on replay; the 404, 403, 412, 429 and 503 bodies carry their stable codes; the POST has counts and no list; pages capped at 200 with opaque cursors; a forbidden snapshot → 404 identical to unknown; no email in any response |
-| Architecture | `attendance-boundaries.spec`: layers exist; the domain reaches only itself and shared; no `drizzle-orm` or `pg` outside infrastructure; no LiveKit package or `ws` anywhere; never `operations/contracts`, academic, notifications, realtime, a LiveKit package, or live or communities internals; nothing but `app.module` reaches attendance; only attendance imports `live/contracts/presence.ts`; no `attendance.read` / `attendance.manage` string. `AttendanceController` joins the controller list (`authorization.spec.ts:80-92`) with every route `@Authenticated()`; the schema joins `OTHER_SCHEMAS` (`academic-boundaries.spec.ts:20-25`); the P0-derived module lists pick attendance up; no `forwardRef`; `CommunitiesModule` imports neither `LiveModule` nor `AttendanceModule` |
+| Architecture | `attendance-boundaries.spec`: layers exist; the domain reaches only itself and shared; no `drizzle-orm` or `pg` outside infrastructure; no LiveKit package or `ws` anywhere; never `operations/contracts`, academic, notifications, realtime, a LiveKit package, or live or communities internals; nothing but `app.module` reaches attendance; only attendance imports `live/contracts/presence.ts`; attendance never injects `COMMUNITY_MEMBERSHIP` or `COMMUNITY_CAPABILITY_HOLDERS` (a token grep, and no import of `communities/contracts/membership.ts` or `capability-holders.ts`); no `attendance.read` / `attendance.manage` string. `AttendanceController` joins the controller list (`authorization.spec.ts:80-92`) with every route `@Authenticated()`; the schema joins `OTHER_SCHEMAS` (`academic-boundaries.spec.ts:20-25`); the P0-derived module lists pick attendance up; no `forwardRef`; `CommunitiesModule` imports neither `LiveModule` nor `AttendanceModule` |
 | Adapter contract (Live's, opt-in CI job against a real LiveKit, ADR 0003 `0003-rtc-provider-abstraction.md:82-85`) | `listParticipants` maps state and kind; a hidden participant appears; a missing room → `[]`, and psrpc-mode behaviour is pinned; a timeout surfaces as an error |
-| Flutter | `HttpAttendanceRepository` parses views and pages defensively (unknown `connection` → `unknown`); one key per press, reused on retry; the button disabled in flight; shown only with the server capability and a live session; mock data flagged `DataOrigin.mock`; screens import no `http`, `api_client` or LiveKit; copy never says present; snapshots never fill the halaqa or progress ratios |
+| Flutter | `HttpAttendanceRepository` parses views and pages defensively (unknown `connection` → `unknown`); one key per press, reused on retry; the button disabled in flight; shown only with the server capability or `canModerate`, and a live session; mock data flagged `DataOrigin.mock`; screens import no `http`, `api_client` or LiveKit; copy never says present; snapshots never fill the halaqa or progress ratios |
 | Load (before production use) | [§21](#21-scale) |
 
 ---
 
 ## 23. Before P9 can start
 
-P9's entry condition is exactly three things: the user's ruling on Q40, the
-reviewers' acceptance of Q69, and P6 done (hub
+P9's entry condition is exactly three things: Q40 settled by the user, with
+§13's Attendance row (rows 1 and 2); Q69 settled by the reviewers and the user
+(rows 3a and 3b); and P6 done (hub
 [§25](communities-live-attendance.md#25-implementation-phases)).
 
 **Must be answered.** Nothing else moves the module out of HELD.
 
 | # | Question | Answered by | Recorded in |
 | --- | --- | --- | --- |
-| 1 | [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules)(b): an explicit ruling that live-presence snapshots are outside the Attendance hold, **or** the hold is lifted after the reconciliation review (`academic-reconciliation.md:19-21`). The case for "outside" is [§13](#13-snapshots-and-operations-attendancerecord)'s table; this document does not decide it | the user | ADR 0020 |
+| 1 | [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules)(b): an explicit ruling that live-presence snapshots are outside the Attendance hold and §13's Attendance row, **or** the hold is lifted after the reconciliation review (`academic-reconciliation.md:19-21`) **and** §13's Attendance row (`academic-reconciliation.md:504`) is met: scoping through row 3a, and [Q8](open-questions.md#q8--who-may-amend-attendance-and-is-a-reason-mandatory) and [Q12](open-questions.md#q12--timezone-and-academic-calendar) answered or ruled by the user not to apply to snapshots. The case for "outside" is [§13](#13-snapshots-and-operations-attendancerecord)'s table; this document does not decide it | the user | ADR 0020 |
 | 2 | Q40(a): §13's "before any new module" step (Q35 and Q36 answered, ADR 0015 landed; `academic-reconciliation.md:483-493`) completed, **or** ruled not to apply to attendance | the user | ADR 0020 |
-| 3 | [Q69](open-questions.md#q69--who-records-and-who-views-snapshots): community standing (`community.attendance.record` / `.view`) accepted as the scoping relationship instead of `ACADEMIC_RELATIONSHIPS` (`academic-reconciliation.md:504`; `open-questions.md:824-826`), together with its defaults: owner implicitly plus explicit grants, no oversight, recording does not imply viewing, no student or parent view | reviewers | ADR 0020; open-questions.md |
+| 3a | [Q69](open-questions.md#q69--who-records-and-who-views-snapshots): community standing (`community.attendance.record` / `.view`) accepted as the scoping relationship instead of `ACADEMIC_RELATIONSHIPS` (`academic-reconciliation.md:504`; `open-questions.md:824-826`) | reviewers | ADR 0020; open-questions.md |
+| 3b | Q69's record and view defaults ([§11.1](#111-the-two-acts), the brief §9/§13/§15 default) confirmed or replaced | the user (the institution) | ADR 0020; open-questions.md (Q69) |
 
 **Must be done.**
 
@@ -1111,7 +1162,7 @@ reviewers' acceptance of Q69, and P6 done (hub
 | --- | --- | --- |
 | 4 | `FailureKind 'unavailable'` → 503; the corrected vendor-SDK rule; `livekit-sdk-only-in-the-live-adapter`; rules-match; derived module lists; Live's events in `live/contracts`; the document and comment corrections of [§3](#3-the-smallest-change-to-existing-documents) | P0 |
 | 5 | `COMMUNITY_AUTHORIZATION` with the owner and grant bases, and `communities_capability_grants`, whose CHECK P9 widens | P2, P3 |
-| 6 | A persisted, community-scoped `LiveSession` with start and end; `ended` saved before `endRoom`; `LIVE_SESSIONS`; `RtcParticipantObserver.listParticipants`, with the adapter contract suite green against a pinned LiveKit in CI | P6 |
+| 6 | A persisted, community-scoped `LiveSession` with start and end; `ended` saved before `endRoom`; `LIVE_SESSIONS`, including `hostUserId`; `RtcParticipantObserver.listParticipants`, with the adapter contract suite green against a pinned LiveKit in CI | P6 |
 
 **Must be on record, not answered.** The provisional defaults of Q43, Q67, Q68,
 Q70, Q71 and Q72 ([§24](#24-open-questions)) are written into
@@ -1134,7 +1185,7 @@ measurements of [§21](#21-scale), which calibrate the PROVISIONAL bounds.
 | Question | Default here (PROVISIONAL) | Blocks P9? |
 | --- | --- | --- |
 | [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules) Governance: which gates apply to the new modules? | Both the hold and §13's step apply | **yes** |
-| [Q69](open-questions.md#q69--who-records-and-who-views-snapshots) Who records and who views snapshots? | Owner or grant; no `attendance.*`; recording does not imply viewing | **yes** |
+| [Q69](open-questions.md#q69--who-records-and-who-views-snapshots) Who records and who views snapshots? | The brief's default: the owner, the session's host and moderators, and grantees record; the owner, the session's host and recorders, and grantees view; no `attendance.*` | **yes** |
 | [Q68](open-questions.md#q68--what-counts-as-present-in-a-snapshot) What counts as present in a snapshot? | Nobody is labelled; `CONNECTED` and `CONNECTING` stored, counted apart | no |
 | [Q70](open-questions.md#q70--is-a-snapshot-the-attendance-record) Is a snapshot the attendance record? | Observation only; nothing derived | no |
 | [Q71](open-questions.md#q71--correcting-retaining-and-erasing-snapshots) Correcting, retaining and erasing snapshots | Immutable; kept like the audit log; no erasure path | no |
@@ -1145,7 +1196,8 @@ measurements of [§21](#21-scale), which calibrate the PROVISIONAL bounds.
 | [Q57](open-questions.md#q57--live-session-size-and-concurrency) Live session size and concurrency | 300 + 10 per session, so snapshots of at most 310 entries until measured | no |
 | [Q60](open-questions.md#q60--one-account-on-several-devices-in-a-session) One account on several devices in a session | Newest device wins; one entry per account | no |
 | [Q63](open-questions.md#q63--losing-standing-during-a-running-session) Losing standing during a running session | Still recorded if connected; ejection is Live's | no |
-| [Q8](open-questions.md#q8--who-may-amend-attendance-and-is-a-reason-mandatory), [Q3](open-questions.md#q3--what-is-the-retention-policy-for-files-messages-audit-entries-and-session-history), [Q12](open-questions.md#q12--timezone-and-academic-calendar), [Q31](open-questions.md#q31--teaching-scope-and-what-staff-may-see) (existing) | Not exercised: no amendment, nothing deleted, no calendar, `attendance.*` unexercised | no |
+| [Q8](open-questions.md#q8--who-may-amend-attendance-and-is-a-reason-mandatory), [Q12](open-questions.md#q12--timezone-and-academic-calendar) (existing) | Not exercised: no amendment, no calendar | **yes**, unless the user rules ([Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules)(b)) that §13's Attendance row does not apply to snapshots |
+| [Q3](open-questions.md#q3--what-is-the-retention-policy-for-files-messages-audit-entries-and-session-history), [Q31](open-questions.md#q31--teaching-scope-and-what-staff-may-see) (existing) | Not exercised: nothing deleted, `attendance.*` unexercised | no |
 
 ---
 

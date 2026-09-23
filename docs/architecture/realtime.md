@@ -552,7 +552,7 @@ listener — no ability to publish anything.
 >   `livekit-server-sdk` 2.19.1, `dist/RoomServiceClient.d.ts:131`.
 >   LiveKit's documentation site could not be read from this environment.
 > - **Listeners can publish data.** A listener token carries
->   `canPublishData: true` (`live/domain/rtc-provider.ts:18-22`;
+>   `canPublishData: true` (`live/domain/rtc-provider.ts:19-23`;
 >   `livekit-rtc-provider.ts:59`), so a listener can send data messages to
 >   the whole room. It cannot publish audio.
 
@@ -587,13 +587,16 @@ never talks to the SFU about permission.
 > **Correction (2026-09-23):** the diagram's "local dev without credentials"
 > holds only when `LIVEKIT_API_SECRET` is unset or equals
 > `development-only-secret` (`live.module.ts:47-49`; the default is at
-> `platform/config/app-config.ts:194`). Any other value selects
-> `LiveKitRtcProvider`. That includes the placeholder `change-me` in
-> `backend/.env.example:48`, which the backend's setup copies
-> (`backend/README.md:16`). With it, local development runs the real
-> adapter against `wss://livekit.example.com` (`backend/.env.example:46`). The
-> comment at `live.module.ts:44-46` says the choice is obvious in logs, but
-> no log line reports it.
+> `platform/config/app-config.ts:194`). Nothing in the backend loads `.env`
+> (no dotenv, `ConfigModule` or `--env-file`; `start:dev` is `ts-node-dev`
+> on `src/main.ts`, `backend/package.json:10`), so `cp .env.example .env`
+> (`backend/README.md:16`) has no effect and the fake is used. The real
+> adapter is selected whenever any other value, including the `change-me`
+> placeholder from `backend/.env.example:48`, is exported into the process
+> environment; it then connects to whatever `LIVEKIT_URL` says
+> (`wss://livekit.example.com` in `backend/.env.example:46`). The comment at
+> `live.module.ts:44-46` says the choice is obvious in logs, but no log line
+> reports it.
 
 ---
 
@@ -617,9 +620,13 @@ truth lives only in Redis.
 > live table, migration, Postgres adapter or Redis adapter. Nothing creates
 > a room or a session either. So in the running application every join and
 > raise-hand returns `404 live.session_not_found`, and the use cases run
-> only in unit tests that seed the in-memory repositories. The one durable
-> trace is the audit entry for a grant or revoke, and only when a database
-> is configured (`platform/platform.module.ts:43-48`).
+> only in unit tests that seed the in-memory repositories. Nothing durable
+> is written at runtime: grant and revoke never get past
+> `404 live.request_not_found`, because no request can exist
+> (`moderate-speaker.use-case.ts:153-157`). The only write that would be
+> durable is the audit entry for a grant or revoke
+> (`platform/platform.module.ts:43-48`, with a database configured), and it
+> cannot occur today.
 
 ---
 

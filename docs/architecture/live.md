@@ -25,9 +25,10 @@ and it is used for Tahajji's «مجموعة» in
 [Q36](open-questions.md#q36--tahajji-دورة-التهجي-وإعداد-المعلمات-مدينة-التهجي-and-the-40-groups),
 which is unanswered. "Group" stays the brief's product word only.
 
-**Gates.** P1 changes an existing module and is not gated
-([Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules),
-provisional default). P6 needs the Communities core and delegation (P2, P3),
+**Gates.** P1 changes an existing module and is not gated by
+[Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules)
+(provisional default); it waits for acceptance of this design and approval of
+its visible changes (§2). P6 needs the Communities core and delegation (P2, P3),
 which wait for the user's ruling on Q40. The observation side (P9) is HELD by
 Q40 and [Q69](open-questions.md#q69--who-records-and-who-views-snapshots).
 
@@ -35,6 +36,8 @@ Q40 and [Q69](open-questions.md#q69--who-records-and-who-views-snapshots).
 
 - **What exists today** means the repository at commit `9670c47`. Paths are
   relative to `backend/src/modules/live/` unless another directory is named.
+  Line numbers cited in other documents of `docs/architecture/` are at that
+  commit too, before this package's correction notes shifted them.
 - **Every default that is policy is PROVISIONAL** and names its open question.
   Engineering bounds that must be measured are PROVISIONAL too.
 - **LiveKit facts come from source, not documentation.** LiveKit's
@@ -69,7 +72,7 @@ Q40 and [Q69](open-questions.md#q69--who-records-and-who-views-snapshots).
 | Concurrency | Raise and the speaker cap are check-then-save, so concurrent requests can open two hands or pass the cap. Every join, raise and grant loads every request of the session; the in-memory `findBySession` scans every request of every session | `request-speaker.use-case.ts:70-89`; `moderate-speaker.use-case.ts:79-98`; `infrastructure/in-memory-live-repositories.ts:52-54` |
 | After the end | Grant and revoke never check that the session is live | `moderate-speaker.use-case.ts:149-171` |
 | Audit | Every moderation type other than `grant_speaker` is audited as `live.speaker.revoked` (latent; only grant and revoke are recorded today) | `moderate-speaker.use-case.ts:193` |
-| Provider choice | The fake is chosen only when the secret equals `development-only-secret`. `backend/.env.example` sets `change-me`, which selects the real adapter pointed at `wss://livekit.example.com`. The log line the comment promises does not exist | `live.module.ts:40-50`; `backend/.env.example:46-48` |
+| Provider choice | The fake is chosen only when the secret equals `development-only-secret`, the default when `LIVEKIT_API_SECRET` is unset. Any other value selects the real adapter. That includes `change-me` from `backend/.env.example:48`, but only when it is exported into the process environment: nothing in the backend loads `.env` (`backend/package.json:10`, `backend/src/main.ts`), so the documented setup actually runs the fake. The log line the comment promises does not exist | `live.module.ts:40-50`; `platform/config/app-config.ts:194`; `backend/.env.example:46-48`; `backend/package.json:10` |
 | Module | Imports `IdentityModule` only; exports nothing | `live.module.ts:36-62` |
 | The LiveKit rule | **Vacuous.** `application-has-no-vendor-sdks` anchors its `to.path` at the package name (`^(livekit-server-sdk\|…)`), but dependency-cruiser resolves the adapter's import to `node_modules/livekit-server-sdk/dist/index.js` (checked for this document by running `depcruise` on the adapter), so the rule can never fire. No rule confines the SDK to `live/infrastructure/`; only the domain rules bite | `.dependency-cruiser.cjs:79-90` (`:88`); `:26-47` |
 | Tests | 32 unit tests in 3 suites pass (`npx jest src/modules/live`, run for this document). None covers `RequestSpeakerUseCase` directly, the adapter, the provider factory or the routes. The listener test asserts `canPublishAudio` and `canSubscribe`, not `canPublishData` | `application/join-live-session.spec.ts:95-110` |
@@ -78,7 +81,9 @@ Q40 and [Q69](open-questions.md#q69--who-records-and-who-views-snapshots).
 ### 1.2 Corrections to realtime.md Part A
 
 [realtime.md Part A](realtime.md#part-a--live-audio-the-2500-participant-design)
-is the current live design document. Where it is wrong today:
+is the current live design document. Where it is wrong today (line numbers at
+`9670c47`, before this package's correction notes; the same holds for the
+other documents cited in this section):
 
 | realtime.md says | What is true today | Evidence |
 | --- | --- | --- |
@@ -91,7 +96,7 @@ is the current live design document. Where it is wrong today:
 | "2500 people raising their hands is 2500 rows" (`:448-449`) | 2500 rows, but every raise, join and grant reads all of them | `join-live-session.use-case.ts:92`; `request-speaker.use-case.ts:70`; `moderate-speaker.use-case.ts:79` |
 | "A user may hold only one open hand per session" (`:496`) | Only without concurrency: a check-then-save. The speaker cap likewise | `request-speaker.use-case.ts:70-89`; `moderate-speaker.use-case.ts:79-98` |
 | A 600 s token; a leaked token "is worth one room, one identity, ten minutes" (`:505-510`) | LiveKit sends a connected participant a refreshed token at join and every 5 minutes, each valid for at least 10 minutes, and a rejoin earns another. `removeParticipant` does not stop a rejoin, because the open-source server ignores `revoke_token_ts`. The TTL bounds only the first connection | SRV `pkg/service/roommanager.go:61-64, 767-778, 1149-1181`; SDK `dist/RoomServiceClient.d.ts:128-136` |
-| The fake serves "local dev without credentials" (`:529-531`; ADR 0003 `:39-41`) | Only the exact dev secret selects it; `.env.example` selects the real adapter | `live.module.ts:40-50`; `.env.example:46-48` |
+| The fake serves "local dev without credentials" (`:529-531`; ADR 0003 `:39-41`) | Only the exact dev secret selects it; any secret other than the dev default selects the real adapter, `change-me` included when exported into the environment (the backend never loads `.env`) | `live.module.ts:40-50`; `.env.example:46-48`; `backend/package.json:10` |
 | The persistence plan: Postgres records, a Redis queue, Redis presence (`:542-554`) | Nothing is persisted. The plan is superseded: Postgres only; presence is observed, never stored (§10.5) | `live.module.ts:51-57` |
 | "Moderation is scoped to the room" (`:568-569`) | Scoped to the host. Join has no scope at all | §1.1 Join |
 | "Nothing outside `livekit-rtc-provider.ts` imports LiveKit" (`:573`); ADR 0003 `:46-48` and overview.md `:146-148` say a rule checks it | True by search today; not enforced outside the domain, because the named application rule is vacuous. P0 adds `livekit-sdk-only-in-the-live-adapter` | §1.1 The LiveKit rule |
@@ -126,13 +131,13 @@ The existing design has the right skeleton, and none of it is thrown away:
 | --- | --- | --- | --- |
 | **P0** | `LiveEvents` and payload types move to `live/contracts/events.ts` byte-identically; the domain factories import them. The `livekit-sdk-only-in-the-live-adapter` rule and a `live-boundaries.spec` that proves it non-vacuous; the corrected vendor-SDK regex; `FailureKind 'unavailable'` → 503; the Flutter guard (no `livekit_client`) | — | nothing |
 | **P1** | Hardening in place, still halaqa-bound and in memory: `LiveParticipantRole`; total `RtcCapabilities` (listener data off); the narrow ports; adapter hardening; names from `ACCOUNT_DIRECTORY` (DTO field removed); an explicit audit action per act; application views; idempotent raise, withdraw, yield, decline; indexed repository methods. **No start or end route** | P0 | approval of the visible changes: listener data channel off; raise 409 → 201/200 (and 202 → 201); TTL 600 → 120 s |
-| **P6** | `LiveSession` replaces `LiveRoom`; Postgres adapters **in the same phase** as start and end; `LiveAccess` through `COMMUNITY_AUTHORIZATION`; `host-only-moderation` retired in the same change; presenter slot; reconciler; `ProtectLiveSessions`; caps; `LIVE_AUDIENCE`, `LIVE_SESSIONS`; `AppConfig.live`; the pinned LiveKit config and the adapter contract suite in CI | P1; P2 and P3 (Communities); a LiveKit dev server in CI | Q40 (through P2) |
+| **P6** | `LiveSession` replaces `LiveRoom`; Postgres adapters **in the same phase** as start and end; `LiveAccess` through `COMMUNITY_AUTHORIZATION`; `host-only-moderation` retired in the same change; presenter slot; reconciler, with the automatic media-room reset on a repeated violation (§11.4); `ProtectLiveSessions`; caps; `LIVE_AUDIENCE`, `LIVE_SESSIONS`; `AppConfig.live`; the pinned LiveKit config and the adapter contract suite in CI | P1; P2 and P3 (Communities); a LiveKit dev server in CI | Q40 (through P2) |
 | **P7** | Realtime `LiveRealtimeRelay` (in realtime); Flutter `LiveRepository`, `LiveEvent` frames, `LiveSessionController`, `LiveMediaClient` bound to Unavailable | P5, P6 | — |
 | **P7b** | `LiveKitLiveMediaClient`, the only file importing `livekit_client`; Android foreground service, iOS broadcast extension | an ADR; devices or CI for Android, iOS and web | a device-capable environment |
 | **P8** | Load profiles 1, 2, 3 and 5 (§21) | the target topology | hardware |
 | **P9** | `LIVE_PRESENCE` for attendance (HELD) | P6 | Q40, Q69 |
 | **P11** | A reconciler lease | evidence that one API instance is not enough | P8 |
-| **P12** | Media-room reset by epoch; kick and re-entry; delegated or audio screen share; hidden listeners; webhook accelerators | policy answers | Q64, Q56, Q59 |
+| **P12** | A moderator-initiated media-room reset; kick and re-entry; delegated or audio screen share; hidden listeners; webhook accelerators | policy answers | Q64, Q56, Q59 |
 
 ---
 
@@ -167,12 +172,17 @@ The existing design has the right skeleton, and none of it is thrown away:
 | `endReason` | `'moderator' \| 'idle' \| 'community_closed'` \| null | null while live |
 | `participantCap` | integer > 0 | An engineering bound copied from configuration at start; never the community's size (§12) |
 | `moderatorReserve` | integer ≥ 0 | Seats above the cap for moderators and speakers |
-| `mediaRoomEpoch` | integer ≥ 0 | Only increases; 0 until the media reset (P12) |
+| `mediaRoomEpoch` | integer ≥ 0 | Only increases; 0 until the first media reset (§11.4) |
 
 `mediaRoomName(session) = config.live.roomNamePrefix + id`, plus `'.' + epoch`
 when the epoch is above 0. One pure domain function; the name is never stored
-as an identity. The prefix (default `live-`) confines the orphan sweep to this
-deployment on a LiveKit server that other environments share.
+as an identity. The prefix confines the orphan sweep to this deployment on a
+LiveKit server that other environments share, so it must be unique to the
+deployment: with the real adapter `LIVE_ROOM_NAME_PREFIX` has no default (for
+example `live-<deployment>-`), boot is refused without it, and the startup log
+names it; only the fake defaults to `live-`. The sweep touches only names of
+the exact form prefix + uuid [+ `.` + epoch], so it never deletes the rooms of
+a deployment whose prefix merely starts with this one.
 
 **Why `LiveRoom` goes.** It is a second durable "place" competing with the
 Community; its single host contradicts delegation; a `halaqaId` would
@@ -215,8 +225,9 @@ per session. In v1 `grantedBy = userId` (a moderator claims it for themself,
 `{id, sessionId, actorUserId? (null = system), targetUserId?, type, at,
 reasonCode?}`. The reason is a code, never free text. Types: `start_session`,
 `end_session`, `grant_speaker`, `decline_speaker`, `revoke_speaker`,
-`grant_presenter`, `revoke_presenter`, and the seams `mute_participant`,
-`remove_participant`, `reset_media`
+`grant_presenter`, `revoke_presenter`, `reset_media` (the reconciler's reset,
+§11.4, with a null actor), and the seams `mute_participant` and
+`remove_participant`
 ([Q64](open-questions.md#q64--removing-a-participant-from-a-session)). The
 standalone `MODERATION_LOG` port is folded into the transactional repository
 methods, so the row and the change cannot drift apart.
@@ -229,11 +240,11 @@ rows; never stored, never cached across requests.
 | Standing | Definition |
 | --- | --- |
 | `moderator` | `COMMUNITY_AUTHORIZATION` answers `community.live.moderate`; or the principal is `hostUserId` and it answers `community.live.host` (§7) |
-| `publishesByRight` | `moderator` and identity `live.speak` (the existing host rule, `join-live-session.use-case.ts:83-91`, without `ownerUserId`) |
+| `publishesByRight` | `moderator` and identity `live.speak`. PROVISIONAL ([Q54](open-questions.md#q54--who-starts-ends-and-moderates-a-live-session)): this extends today's host-only rule (`join-live-session.use-case.ts:83-91`) to every session moderator |
 | `speakerGrant` | holds a `granted` request in this session |
 | `presenter` | holds the open `PresenterGrant` |
 | `eligible` (to join) | a `community.live.join` permit, or `moderator` |
-| `eligible` (to stay) | `moderator`, or (ACTIVE member and identity `live.join` and `effects.runningLiveContinues`) |
+| `eligible` (to stay) | `moderator`, or `COMMUNITY_AUTHORIZATION.permittedAmong(communityId, ids, 'community.live.remain')` accepts them: the ceiling (`communities.read` + `live.join`) and basis of `community.live.join`, gated by `runningLiveContinues` instead of `liveJoinOpen` (§7.3). Communities evaluates it; Live keeps no copy of the rule |
 
 `capabilitiesFor(standing)` is **total** — every field, every time:
 
@@ -275,7 +286,7 @@ plus `AppConfig.live`. They are measured in P8 before anything is raised.
 
 | Constant | Value | Question |
 | --- | --- | --- |
-| `MAX_CONCURRENT_SPEAKERS` | 4 (unchanged; moderators publishing by right and the presenter do not use a slot) | Q4 |
+| `MAX_CONCURRENT_SPEAKERS` | 4 (unchanged; PROVISIONAL [Q54](open-questions.md#q54--who-starts-ends-and-moderates-a-live-session): moderators publishing by right and the presenter do not use a slot) | Q4 |
 | `MAX_CONCURRENT_PRESENTERS` | 1 | Q56 |
 | `JOIN_TOKEN_TTL_SECONDS` | 120 (was 600) | [Q63](open-questions.md#q63--losing-standing-during-a-running-session) |
 | `ROOM_SWEEP_SECONDS` / `PARTICIPANT_SWEEP_SECONDS` / `WATCH_TICK_SECONDS` | 30 / 60 / 10 | Q63 |
@@ -286,7 +297,7 @@ plus `AppConfig.live`. They are measured in P8 before anything is raised.
 | `OBSERVATION_CACHE_SECONDS` | 2 (the soft-cap sample) | Q57 |
 | `PROVIDER_CALL_TIMEOUT_SECONDS` | 10 (the SDK's default request timeout) | engineering |
 | `config.live.maxParticipantsPerSession` / `moderatorReserve` | 300 / 10 (env `LIVE_MAX_PARTICIPANTS_PER_SESSION`, `LIVE_MODERATOR_RESERVE`) | Q57 |
-| `config.live.roomNamePrefix` | `live-` (env `LIVE_ROOM_NAME_PREFIX`) | — |
+| `config.live.roomNamePrefix` | env `LIVE_ROOM_NAME_PREFIX`: required with the real adapter, unique per deployment, boot refused without it (§3.1); `live-` with the fake | — |
 | Rate limits | start 10/min per user; join 10/min and raise 6/min per (session, user) | [Q26](open-questions.md#q26--realtime-limits) |
 | Moderator frame coalescing (in realtime) | ≤ 1 per 250 ms per session | Q26 |
 
@@ -310,7 +321,9 @@ plus `AppConfig.live`. They are measured in P8 before anything is raised.
 2. `authorize(P, C, 'community.live.start')`. Refusals are remapped:
    `not_found` → 404 `live.community_not_found`; `forbidden` → 403
    `live.start_not_permitted`; `precondition_failed` (the lifecycle gate,
-   `liveStartOpen` false) → 412 `live.community_not_open`.
+   `liveStartOpen` false, reached only by a principal with a basis for the
+   act) → if the community has a live session, **200 with it** (a retried
+   start after a lock), otherwise 412 `live.community_not_open`.
 3. The community's live session exists → **200 with it**; nothing else happens.
 4. New id; `participantCap` and `moderatorReserve` from `AppConfig.live`.
 5. `ensureRoom({roomName, maxParticipants: cap + reserve,
@@ -383,8 +396,9 @@ carried by every `live.speaker.*` and `live.screen_share.*` payload, by
 `LiveSessionView`, and by the `live.session.changed` frame. A client applies
 only a newer version; for two frames about one session, the larger version is
 the later committed state. Every transition therefore takes a short lock on
-the session row, raises included; that cost is accepted and measured in load
-profile 1.
+the session row, raises included, serialized first by a per-session mutex in
+process so that waiting never holds a pool connection (§10.2); that cost is
+accepted and measured in load profile 1.
 
 ---
 
@@ -551,11 +565,20 @@ override (`communities.manage` never acts in a session). The permit — `act`,
 `basis`, `membershipId`, `grantId` — is copied into the audit metadata of
 every moderation act.
 
-### 7.3 The lifecycle, through effects only
+### 7.3 The lifecycle, through Communities' answers only
 
-Live never sees `OPEN` or `LOCKED`. It reads permit refusals, and in
-principal-less code (reconciler, audience) `CommunityHead.effects`. The table
-is Communities' ([communities.md §8.3](communities.md#83-statepermits-and-communityheadeffects),
+Live never sees `OPEN` or `LOCKED`, and never evaluates an act rule itself.
+For a principal it reads permit refusals. In principal-less code (the
+reconciler, `LIVE_AUDIENCE`) it asks a trusted batch,
+`COMMUNITY_AUTHORIZATION.permittedAmong(communityId, userIds ≤ 1,000, act) →
+userIds`, which applies the act's ceiling (through
+`ACCOUNT_DIRECTORY.withPermission`), the owner, grant or membership basis
+(never oversight) and `statePermits`. Staying in a running session is the
+derived participation act `community.live.remain`: the ceiling and basis of
+`community.live.join`, allowed while `runningLiveContinues`. Both are
+additions to Communities that this design needs (P6). Only the session as a
+whole reads `CommunityHead.effects` (§11.3, step 2). The table is
+Communities' ([communities.md §8.3](communities.md#83-statepermits-and-communityheadeffects),
 PROVISIONAL, [Q46](open-questions.md#q46--what-does-locked-mean-and-who-may-lock));
 its consequences for Live:
 
@@ -719,10 +742,10 @@ scriptable observations for the reconciler's tests.
 
 | Concern | LiveKit behaviour (source) | Today | Design |
 | --- | --- | --- | --- |
-| **Room auto-creation** | `room.auto_create` defaults to true (SRV `pkg/config/config.go:563`); with it false, joining a room that does not exist needs a token carrying `roomCreate` (`pkg/service/roomallocator.go:175-184`) | No LiveKit configuration is in the repository; rooms are auto-created on first join | `room.auto_create=false` in a pinned LiveKit config kept in the repository (P6), with `enable_remote_unmute=false`, the timeouts as a backstop, `prometheus_port`, no webhooks and a TURN placeholder ([Q65](open-questions.md#q65--media-hosting-and-operations)). No token ever carries `roomCreate`, so a still-valid token cannot re-create an ended room. The adapter contract suite proves it against a real server |
+| **Room auto-creation** | `room.auto_create` defaults to true (SRV `pkg/config/config.go:563`); with it false, joining a room that does not exist needs a token carrying `roomCreate` (`pkg/service/roomallocator.go:175-184`) | No LiveKit configuration is in the repository; rooms are auto-created on first join | `room.auto_create=false` in a pinned LiveKit config kept in the repository (P6), with `enable_remote_unmute=false`, the timeouts as a backstop, `prometheus_port`, no webhooks and a TURN placeholder ([Q65](open-questions.md#q65--media-hosting-and-operations)). No token ever carries `roomCreate`, so a still-valid token cannot re-create an ended room. The adapter contract suite proves it against a real server. The adapter also self-checks it at boot and on every room sweep: it signs a `roomJoin`-only token for a random name of this deployment's form that no room has, and calls LiveKit's `/rtc/validate`, which runs the same allocator check without creating anything (SRV `pkg/service/rtcservice.go:102`; `pkg/service/utils.go:389-396`). 404 means `auto_create` is off; a success logs an alert and refuses Start (503 `live.media_unavailable`) until a probe answers 404 again |
 | **Rooms created by us** | `createRoom` is create-or-update | `ensureRoom` is never called | Start creates the room with `maxParticipants = cap + reserve`; ensure-then-recheck (§4.4); the orphan sweep by prefix (§11.2) |
 | **Token lifetime** | The server refreshes a connected participant's token once at join and then every 5 minutes; each refreshed token is valid for max(10 minutes, time left) and carries the participant's current grants (SRV `pkg/service/roommanager.go:61-64, 767-778, 1149-1181`) | 600 s | 120 s. **This bounds only the first connection.** A client holding a refreshed token can reconnect without `/join` for up to about 10 minutes |
-| **Revocation** | The protocol defines `revoke_token_ts`, but the open-source server never reads it (no reference in the SRV source); the SDK says "Even after being removed, the participant can still re-join the room" (SDK `dist/RoomServiceClient.d.ts:128-136`) | — | Removal and demotion are **not final on the media plane**: a removed member can rejoin with a refreshed token, and each rejoin earns a fresh token of at least 10 minutes. **Ending is final**: the room is deleted and cannot come back (`auto_create=false`). The level-triggered reconciler (§11) bounds each rejoin to about 10–60 s and counts violations for moderators; the epoch reset (P12) ends a loop, because every old token names a deleted room. `revokeTokensIssuedBefore` is passed anyway, for providers that honour it |
+| **Revocation** | The protocol defines `revoke_token_ts`, but the open-source server never reads it (no reference in the SRV source); the SDK says "Even after being removed, the participant can still re-join the room" (SDK `dist/RoomServiceClient.d.ts:128-136`) | — | Removal and demotion alone are **not final on the media plane**: a removed member can rejoin with a refreshed token, and each rejoin earns a fresh token of at least 10 minutes. **Ending is final**: the room is deleted and cannot come back (`auto_create=false`). The level-triggered reconciler (§11) removes or demotes within 10–60 s and counts violations; at the second violation inside the enforcement window it resets the media room by epoch (§11.4, P6), which ends the loop, because every old token names a deleted room. `revokeTokensIssuedBefore` is passed anyway, for providers that honour it |
 | **One identity per account** | A join with an identity already in the room evicts the earlier connection with `DUPLICATE_IDENTITY` (SRV `pkg/service/roommanager.go:326-327, 398-400`) | identity = user id | Kept: the newest device wins; the client does not auto-rejoin on that reason ([Q60](open-questions.md#q60--one-account-on-several-devices-in-a-session)). One account never counts twice in capacity or observation |
 | **Display names** | A participant may not change its own name or metadata unless `canUpdateOwnMetadata` (SRV `pkg/rtc/participant.go:722-727`) | from the client body | From `ACCOUNT_DIRECTORY.describe` (never an email); the DTO field is removed (P1); `canUpdateOwnMetadata` stays false |
 | **Data channel** | Unset `canPublishData` equals `canPublish` on the server (PGO `auth/grants.go:355-360`), while the SDK comment says "defaults to true" (SDK `dist/grants.d.ts:35-38`); no server-side data rate limiter was found | listeners `true` | `false` for everyone, always explicit (P1). Raise hand is HTTP |
@@ -780,8 +803,10 @@ reconciler bookkeeping `empty_since` NULL, `enforcement_violations` DEFAULT 0,
 `session_ended`, `ineligible`).
 
 - CHECK `(ended_at IS NULL) = (end_reason IS NULL)`
-- UNIQUE INDEX `(session_id) WHERE ended_at IS NULL` (P1); a violation is
-  detected with `isUniqueViolation` (`platform/database/postgres-errors.ts:5`)
+- UNIQUE INDEX `(session_id) WHERE ended_at IS NULL` (P1), a backstop: the
+  claim reads the open grant under the session lock first (§10.2); a
+  violation is detected with `isUniqueViolation`
+  (`platform/database/postgres-errors.ts:5`) and answered 409
 - INDEX `(session_id, ended_at)` — the targeted watch
 
 **`live_moderation_actions`** — `id` PK; `session_id` REFERENCES
@@ -793,7 +818,12 @@ free text). INDEX `(session_id, at, id)`.
 
 Provider calls happen **after commit**; no transaction spans one. Every
 transition locks the session row first, so the order is always session row,
-then child rows.
+then child rows. Before it checks out a pool connection, every transition
+also takes an in-process async mutex keyed by `sessionId` (one API instance
+until P11), so a hand storm queues in memory and holds at most one of the
+process's 10 connections (`platform/database/database.ts:28-30`) instead of
+starving unrelated routes; the unlocked fast-path read for a repeat raise
+stays outside it.
 
 | Operation | Statements, in one transaction |
 | --- | --- |
@@ -801,9 +831,10 @@ then child rows.
 | Raise | (fast path: an unlocked read of the caller's open request returns it) session `FOR UPDATE`, must be `live`; `INSERT … ON CONFLICT (session_id, user_id) WHERE state IN ('pending','granted') DO NOTHING RETURNING`; if inserted, `state_version + 1` |
 | Grant | session `FOR UPDATE`, `live`; count `granted` < cap; `UPDATE … SET state = 'granted' … WHERE id = $r AND state = 'pending' RETURNING`; `state_version + 1`; moderation row |
 | Decline, revoke, withdraw, yield | session `FOR UPDATE`, `live`; `UPDATE … WHERE id = $r AND state = ANY($from) RETURNING` (compare-and-set); `state_version + 1`; a moderation row for moderator acts |
-| Presenter claim | session `FOR UPDATE`, `live`; `INSERT` (the partial unique index decides); `state_version + 1`; moderation row |
+| Presenter claim | session `FOR UPDATE`, `live`; read the open grant: the same user → `held` (200), another user → `occupied` (409); none → `INSERT`; `state_version + 1`; moderation row. The partial unique index is only a backstop, because a unique violation aborts the transaction and cannot tell a repeat from a rival |
 | Presenter close | session `FOR UPDATE`; `UPDATE … WHERE session_id = $s AND ended_at IS NULL RETURNING`; `state_version + 1`; a moderation row when revoked |
 | Ineligible expiry | session `FOR UPDATE`; expire that user's open request; close their presenter grant; `state_version + 1` |
+| Media reset (§11.4) | session `FOR UPDATE`, `live`; `UPDATE … SET media_room_epoch = $e + 1 WHERE media_room_epoch = $e` (compare-and-set); the `reset_media` moderation row (null actor) |
 | End | §4.2 |
 | Reconciler bookkeeping | `markEmpty`, `noteViolation`: single-row `UPDATE … WHERE state = 'live'` |
 
@@ -821,7 +852,7 @@ interface LiveSessionRepository {
   listLive(after: string | null, limit: number): Promise<readonly LiveSession[]>;
   markEmpty(id, emptySince: Date | null): Promise<void>;
   noteViolation(id, at): Promise<number>;
-  bumpEpoch(id, expected: number): Promise<LiveSession | null>;               // P12
+  bumpEpoch(id, expected: number, moderation): Promise<LiveSession | null>;   // P6: the reset (§11.4)
 }
 interface SpeakerRequestRepository {
   raise(r): Promise<{ created: boolean; request: SpeakerRequest; stateVersion: number } | 'session_not_live'>;
@@ -886,10 +917,11 @@ overlapping. It runs at boot and then on each period.
 2. A live session whose current room is missing → ensure-then-recheck (§4.4).
 3. A room observed with 0 participants → set `empty_since` if null; with more
    → clear it. `empty_since` older than 900 s → `endBySystem('idle')` (Q61).
-4. A prefixed room that is not the current room of any live session and is
-   older than 60 s → `endRoom`. This covers a lost start race, a crash between
-   `ensureRoom` and the INSERT, a failed `endRoom`, and old epochs. The grace
-   stops it deleting the room of a start still in flight.
+4. A room named prefix + uuid [+ `.` + epoch] (§3.1) that is not the current
+   room of any live session and is older than 60 s → `endRoom`. This covers
+   a lost start race, a crash between `ensureRoom` and the INSERT, a failed
+   `endRoom`, and old epochs. The grace stops it deleting the room of a start
+   still in flight.
 
 ### 11.3 Participant sweep — every 60 s per live session, staggered
 
@@ -897,23 +929,27 @@ overlapping. It runs at boot and then on each period.
 2. `COMMUNITY_MEMBERSHIP.heads([communityId])`: absent, or
    `runningLiveContinues` false → `endBySystem('community_closed')`.
 3. For the connected identities, in chunks of 1,000:
-   `COMMUNITY_MEMBERSHIP.statesOf` (ACTIVE?);
-   `ACCOUNT_DIRECTORY.withPermission` for `live.join`, `live.moderate` and
-   `live.speak` (it also drops suspended accounts); the moderator set as
-   `LIVE_AUDIENCE.moderators` computes it (§13); from Postgres, the granted
-   requests (≤ 4 rows) and the open presenter grant (≤ 1 row).
+   `COMMUNITY_AUTHORIZATION.permittedAmong` for `community.live.remain`
+   (eligible to stay, §3.6), for `community.live.moderate`, and for the host
+   alone `community.live.host` (together, the moderator set);
+   `ACCOUNT_DIRECTORY.withPermission` for `live.speak` (it also drops
+   suspended accounts); from Postgres, the granted requests (≤ 4 rows) and
+   the open presenter grant (≤ 1 row). Live applies no ceiling, membership or
+   lifecycle rule of its own.
 4. For each identity (non-standard kinds — egress, ingress, SIP, agent — are
    ignored; unmappable identities are logged and metered):
    - **not eligible to stay** (§3.6) → one transaction expires the open
      request and closes the presenter grant (`ineligible`); events; then
      `removeParticipant(room, id, {revokeTokensIssuedBefore: now})`; the
-     identity joins the watch set;
+     identity joins the watch set (already there: `noteViolation` and the
+     media reset, §11.4);
    - **eligible, but no longer a moderator while holding the presenter
      grant** → the grant closes (`ineligible`) in one transaction, with its
      event, before the capability step below;
    - **eligible, but observed capabilities ≠ `capabilitiesFor(desired)`** →
      `updateCapabilities(desired)` (the full set); the identity joins the
-     watch set; if it was already there, `noteViolation`.
+     watch set; if it was already there, `noteViolation`, and the media reset
+     when it holds a source it is not entitled to (§11.4).
 5. Communities, identity, Postgres or LiveKit unreachable → this session's
    tick is skipped. **The sweep never ejects on unknown state.**
 
@@ -930,6 +966,24 @@ plus identities the sweep corrected (in memory). Each gets the same step as
 speaker demoted 12 minutes ago who rejoins with a refreshed speaker token is
 still demoted — the regression test for the fixed-window design this replaces.
 
+**Automatic media reset (P6).** Removal and demotion alone do not stop a
+client that reconnects at once, because each rejoin earns a fresh token of at
+least 10 minutes carrying the grants of the token it joined with (§9). So when
+the reconciler has already removed or demoted an identity inside its
+enforcement window and observes it again not eligible to stay, or holding a
+source it is not entitled to publish (its second violation), it resets the
+room: a compare-and-set `bumpEpoch` with the `reset_media` moderation row,
+then `ensureRoom` of the new name, then `endRoom` of the old; the audit
+`live.session.media_reset` has a null actor. Every token the violator holds
+names the deleted room, which `auto_create=false` keeps deleted; eligible
+clients follow `ROOM_DELETED` → refetch → `/join` (§17) and receive tokens for
+the new room computed from Postgres. If LiveKit fails midway, the room sweep
+ensures the new room and deletes the old as an orphan. A capability observed
+below its desired set (a grant not yet applied) is never a violation. The
+cost is a brief reconnect for everyone in the room (measured in §21). This
+enforces decisions already taken (Q63); a reset or kick that a moderator
+chooses stays with Q64 (P12).
+
 ### 11.5 After a restart or a LiveKit outage
 
 | Situation | What happens |
@@ -942,12 +996,14 @@ still demoted — the regression test for the fixed-window design this replaces.
 ### 11.6 `ProtectLiveSessions` — accelerators, not correctness
 
 Subscribes to `communities.member.removed` (the one class-S event),
-`communities.capability.revoked`, and `communities.community.locked` /
-`.unlocked`. Handling is detached and chained per community id (the
-`messaging-relay.ts:96-113` pattern). It finds the community's live session
-and runs the sweep's per-identity step (removal, revocation) or per-session
-step (lifecycle) at once. Grants ended by an ownership transfer are caught by
-the sweep. A lost event costs at most one sweep period.
+`communities.capability.revoked`, `communities.ownership.transferred`, and
+`communities.community.locked` / `.unlocked`. Handling is detached and chained
+per community id (the `messaging-relay.ts:96-113` pattern). It finds the
+community's live session and runs the sweep's per-identity step (removal,
+revocation; for a transfer, `fromUserId`, who loses the owner's implicit
+moderation, start and presenter eligibility, and `toUserId`, the holder of
+`endedGrantIds`) or per-session step (lifecycle) at once. A lost event costs
+at most one sweep period.
 
 ### 11.7 Several API instances
 
@@ -1041,7 +1097,7 @@ any of them.
 | `LiveEvents` + payload types (`contracts/events.ts`) | P0 move, byte-identical; P6 payloads | the event vocabulary (§14) | the domain factories import it | realtime relay; attendance (optional); notifications later (Q67) |
 | `LiveParticipantRole` (`contracts/participant-role.ts`) | P1 | `'moderator' \| 'speaker' \| 'listener'`, replacing `'host' \| 'speaker' \| 'listener'` with no alias (only `app.module` imports live; it also ends the name clash with messaging's `ParticipantRole`) | — | views; Flutter |
 | `LIVE_SESSIONS.describe(id)` (`contracts/live-sessions.ts`) | P6 | `{liveSessionId, communityId, active}` or null. Live's own record only; never calls the provider; no principal — the caller authorizes its own act | `LiveSessionsReader` | attendance; any future reader of session scope |
-| `LIVE_AUDIENCE` (`contracts/live-audience.ts`) | P6 | `participantsAmong(sessionId, ≤ 1,000 ids)`: those who may take part now, ignoring session state (ACTIVE member with `live.join` and `effects.liveJoinOpen`, or a moderator); unknown session → `[]`. `moderators(sessionId, page ≤ 1,000)`: holders of `community.live.moderate` ∩ `withPermission(live.moderate)`, plus the host while `community.live.host` holds (the host is among the holders of `community.live.start` ∩ `live.moderate`, and `effects.runningLiveContinues`); `[]` once ended | `LiveAudienceService` over `COMMUNITY_MEMBERSHIP`, `COMMUNITY_CAPABILITY_HOLDERS`, `ACCOUNT_DIRECTORY` | realtime `LiveRealtimeRelay` |
+| `LIVE_AUDIENCE` (`contracts/live-audience.ts`) | P6 | `participantsAmong(sessionId, ≤ 1,000 ids)`: those who may take part now, ignoring session state (`COMMUNITY_AUTHORIZATION.permittedAmong(C, ids, 'community.live.join')`, or a moderator); unknown session → `[]`. `moderators(sessionId, page ≤ 1,000)`: holders of `community.live.moderate` (`COMMUNITY_CAPABILITY_HOLDERS`, which applies the act's ceiling), plus the host while `permittedAmong(C, [hostUserId], 'community.live.host')` accepts them; `[]` once ended | `LiveAudienceService` over `COMMUNITY_AUTHORIZATION.permittedAmong` and `COMMUNITY_CAPABILITY_HOLDERS` | realtime `LiveRealtimeRelay` |
 | `LIVE_PRESENCE.observe(id)` (`contracts/presence.ts`) | P9 (HELD) | exactly one provider read, normalized under `provider_registry_v1` → `observed {…participants}` \| `not_found` \| `not_active` \| `unavailable` | `LivePresenceService` over `RTC_OBSERVER` | **attendance only** — an allow-list test fails any other importer |
 
 **`LivePresenceService`** (P9): refuse unless the record is `live`; record
@@ -1101,7 +1157,8 @@ hub's [§14.3](communities-live-attendance.md#143-catalogue).
 
 **Not events:** token issuance, joins and leaves, track publications,
 provider-only corrections by the reconciler (`updateCapabilities`,
-`removeParticipant`), occupancy samples, authorization evaluations. They go to
+`removeParticipant`), its media reset (audited only; clients learn of it from
+`ROOM_DELETED`), occupancy samples, authorization evaluations. They go to
 logs and metrics only; a violation increments the session's counter. Durability
 class R for all: the fact is in Live's tables, and every consumer re-asks
 (ADR 0021).
@@ -1138,10 +1195,10 @@ composed by the client through `GET /live/communities/:id/sessions/current`.
 `not_connected` — the person is not in the room, and the next `/join` carries
 it; `pending` — LiveKit was unreachable, and the sweep converges it (Q5).
 
-Not added: a media-room reset (P12), a moderator "remove participant" route
-(Q64), any LiveKit webhook route, any load-test or debug route. The public
-route list is unchanged; `authorization.spec.ts`'s controller list is updated
-in P1 and P6.
+Not added: a moderator media-room reset (P12), a moderator "remove
+participant" route (Q64), any LiveKit webhook route, any load-test or debug
+route. The public route list is unchanged; `authorization.spec.ts`'s
+controller list is updated in P1 and P6.
 
 ### 15.2 Refusal codes
 
@@ -1277,7 +1334,7 @@ abstract interface class LiveMediaClient {           // lib/data/live/live_media
 - **Client rules** (UX; server correctness does not depend on them): on
   `DUPLICATE_IDENTITY`, say "joined from another device" and do not rejoin
   (Q60); on `ROOM_DELETED`, refetch the session — still live (an epoch reset,
-  P12) → `/join` after a jittered delay, otherwise show "ended"; on
+  §11.4) → `/join` after a jittered delay, otherwise show "ended"; on
   `PARTICIPANT_REMOVED`, stop and refetch; any other failure after the SDK's
   own retries → `/join` with jittered backoff.
 - **Until P7b** the member and moderator screens work over HTTP and realtime
@@ -1316,7 +1373,7 @@ these show Live's inside.
   │                  │────────────────────▶│                      │                          │                     │
   │                  │ 4 permit {basis, membershipId, grantId}    │                          │                     │
   │                  │◀────────────────────│  (404 live.community_not_found · 403 live.start_not_permitted ·      │
-  │                  │                     │   412 live.community_not_open)                   │                     │
+  │                  │                     │   412 live.community_not_open, or 200 if live)   │                     │
   │                  │ 5 findLiveByCommunity(C)                   │                          │                     │
   │                  │───────────────────────────────────────────▶│ found → 200 with it; nothing else happens      │
   │                  │ 6 id := new; cap, reserve := AppConfig.live; room := prefix + id      │                     │
@@ -1420,9 +1477,9 @@ Nothing is stored on join, audited or published: a join is transport noise.
   │ 1 POST /live/sessions/S/screen-share (no body)     │                          │                       │                        │
   │────────────────────▶│ 2 gate live.moderate; moderator of S? can(T, live.speak)? (else 403 live.presenter_not_permitted)     │
   │                     │─────────────────────────────▶│                          │                       │                        │
-  │                     │ 3 BEGIN; session FOR UPDATE (live); INSERT presenter grant (S, T, grantedBy T);                        │
-  │                     │   state_version+1; moderation grant_presenter; COMMIT   │                       │                        │
-  │                     │────────────────────────────────────────────────────────▶│ unique violation → 409 live.presenter_slot_taken │
+  │                     │ 3 BEGIN; session FOR UPDATE (live); open grant? T's → 200; another's → 409 live.presenter_slot_taken   │
+  │                     │   none → INSERT (S, T, grantedBy T); state_version+1; moderation grant_presenter; COMMIT               │
+  │                     │────────────────────────────────────────────────────────▶│                       │                        │
   │                     │ 4 updateCapabilities(room, T, {audio: by right, screen: true, screenAudio: false, data: false, hidden: false})
   │                     │─────────────────────────────────────────────────────────────────────────────────▶│                        │
   │                     │ 5 audit + publish live.screen_share.started → live.session.changed (moderators)  │                        │
@@ -1497,16 +1554,16 @@ session is still live, and the moderator retries (End is idempotent).
 | **Teacher device crashes** | The teacher rejoins from any device; LiveKit evicts the stale connection (`DUPLICATE_IDENTITY`). A presenter grant stays until stopped or the session ends; a delegated moderator cannot revoke the host's grant (Q54, §6). If everyone leaves, the session ends as `idle` after 900 s observed empty; LiveKit's 1,200 s timeouts are a backstop |
 | **Community locked while a session is active** | PROVISIONAL (Q46): no new session (412 `live.community_not_open`); the running session continues; join, rejoin, raise hand and moderation continue; the host keeps `community.live.host`. Every decision reads the permit or `effects` when it is made; the lock event only accelerates the per-session step |
 | **Session ended twice** (double tap, two moderators, system racing a moderator) | The session row `FOR UPDATE` serializes them. The second sees `ended`: 200 with the same view, no audit, no event, no provider call. A repeated `endRoom` treats NotFound as success |
-| **Speaker revoked while publishing** | The compare-and-set commits `revoked`; `updateCapabilities` sends the full set without the microphone, and LiveKit removes the track at once. If the call fails, the sweep converges within 60 s. A rejoin with an earlier refreshed speaker token is demoted by the targeted watch within 10 s, and the window extends on each violation |
+| **Speaker revoked while publishing** | The compare-and-set commits `revoked`; `updateCapabilities` sends the full set without the microphone, and LiveKit removes the track at once. If the call fails, the sweep converges within 60 s. A rejoin with an earlier refreshed speaker token is demoted by the targeted watch within 10 s, and the window extends on each violation; a further rejoin inside it resets the media room (§11.4) |
 | **Backend restart** | §11.5. Nothing to replay; frames and events in flight are lost (no outbox); clients reconnect and refetch over HTTP; the reconciler re-converges at boot. A restart is never relied on to eject anyone |
-| Session started twice | Step 3 of §4.1 returns the running session with no provider call. Racing starts: the partial unique index keeps one row; the loser ends its own room and returns the winner (200). An orphan from a crashed start goes after the 60 s grace |
+| Session started twice | Step 3 of §4.1 returns the running session with no provider call, and so does step 2 when a lock came in between. Racing starts: the partial unique index keeps one row; the loser ends its own room and returns the winner (200). An orphan from a crashed start goes after the 60 s grace |
 | Join racing end | A token minted before the end is useless after `endRoom` (`auto_create=false`). A join that re-created a missing room re-reads `ended`, deletes it and answers 412 |
 | Grant to someone not connected | The adapter maps NotFound to `not_connected`; the grant is recorded, audited and published; the next `/join` carries the microphone. (Today the throw after save skips audit and event, `moderate-speaker.use-case.ts:98-109`) |
 | Concurrent grants past the cap; two presenter claims | Exactly 4 speakers (412 for the rest); exactly one presenter (409 for the other) |
-| Duplicate raise; hand storm | The open request is returned (200); only created rows publish; moderator frames are coalesced; raises serialize briefly on the session row (measured in profile 1) |
+| Duplicate raise; hand storm | The open request is returned (200); only created rows publish; moderator frames are coalesced; raises serialize briefly on the session row, queued in memory behind the per-session mutex so they do not hold pool connections (§10.2; measured in profile 1) |
 | Member removed, suspended, or losing `live.join` or a delegated capability mid-session | The event path, or at worst the 60 s sweep: the hand or floor expires (`ineligible`), the presenter grant closes, then `removeParticipant` or a demotion. Only their client sees `PARTICIPANT_REMOVED` (Q63) |
 | Host loses `community.live.start` or leaves mid-session | The host loses moderation; the session continues for the others (Q63); a presenter grant closes as `ineligible` |
-| Removed participant rejoins in a loop with refreshed tokens | Removed each time within 10–60 s, with no fixed end; violations counted and shown to moderators. The complete remedy is the epoch reset (P12, Q64). Residual: about 10–60 s of listening per cycle |
+| Removed participant rejoins in a loop with refreshed tokens | Removed within 10–60 s; the rejoin inside the enforcement window is the second violation, and the reconciler resets the media room by epoch (§11.4), so no token the client holds opens a room any more; violations counted and shown to moderators. Residual: media until the second violation (the first removal, plus at most one 10 s watch tick), and a brief reconnect for everyone else |
 | Media room vanished while live (LiveKit restart, a timeout) | The room sweep ensures it within 30 s; `/join` at once. Hands, floors and the presenter grant survive in the record |
 | Communities, identity or Postgres unavailable | Start, join, hand and moderation fail closed with 503 `unavailable` and never fall back to a role-only answer. Sweeps skip the tick and never eject. Media already flowing continues |
 | Room full | The hard cap refuses at the SFU; listeners over the soft cap get 412 `live.session_full`; moderators and speakers skip it. Residual: a storm inside one 2 s sample can take reserve seats |
@@ -1529,7 +1586,7 @@ Live's rows:
 | Threat | Mitigation | Residual risk |
 | --- | --- | --- |
 | Unauthorized LiveKit token (a non-member knows or guesses a session id) | Tokens only from `/join`, after the identity ceiling, the `community.live.join` permit on the stored `communityId`, and the lifecycle gate. Non-members get the same 404 as an unknown session. A token holds `roomJoin` for one room; never `roomCreate`, `roomAdmin` or `roomList`. `auto_create=false` | Depends on the correctness of Communities' membership |
-| Token leak or reuse after removal | 120 s initial TTL; the 60 s sweep of everyone connected; the 10 s watch extended on every violation; violations shown to moderators; the epoch reset (P12); `revokeTokensIssuedBefore` for providers that honour it; tokens never logged, audited, published or framed | About 10–60 s of media per rejoin cycle for a determined holder until a moderator resets the room — inherent to self-hosted LiveKit (Q65) |
+| Token leak or reuse after removal | 120 s initial TTL; the 60 s sweep of everyone connected; the 10 s watch extended on every violation; the automatic epoch reset at the second violation (§11.4); violations shown to moderators; `revokeTokensIssuedBefore` for providers that honour it; tokens never logged, audited, published or framed | Media until the second violation: the first removal (10–60 s) plus at most one 10 s watch tick; the reset then reconnects everyone else briefly. Removal alone is not final on self-hosted LiveKit (Q65) |
 | Speaker escalation (keeping the floor; gaining camera, screen or data) | The total set always lists explicit sources; `canPublish` is never true with an empty list; data and metadata updates false for everyone; `CAMERA` never granted; screen share needs a presenter grant; the cap is enforced by the database; a grant confers no community act; adapter contract tests assert every mapping | The convergence window after a rejoin with an old token |
 | Teacher or delegate escalation (moderating another community's session; OWNER stepping in) | Moderation needs identity `live.moderate` AND a community permit for that session's community, re-checked on every request and every sweep; no institution-wide override; the host rule is replaced, not bypassed (§7.4) | Who may delegate `community.live.moderate` is Q44's |
 | The identity veto becoming a hole during migration | Live stops passing `ownerUserId` and the rule is retired in the same change as `LiveAccess`; a test asserts a `live.moderate` holder without standing is refused | None once they ship together |
@@ -1537,7 +1594,7 @@ Live's rows:
 | Listener publish or data storm | Listeners have no sources, `canPublish` false and `canPublishData` false; at most 4 speakers and 1 presenter; raise hand is rate-limited HTTP with one open hand per user | API floods bounded by the per-process rate limiter |
 | Join or rejoin storm | Rate limit per (session, user); a join is a handful of indexed reads and a local signature; jittered client backoff; the hard cap | Unmeasured on the shared VPS until P8 |
 | Session id enumeration | uuid v4; 404 for non-members on every route; the coarse gate before any load; the hands page for moderators only | Timing differences, as in existing modules |
-| A room re-created after its end; name collisions | `auto_create=false` pinned and tested; ensure-then-recheck; a prefix per deployment; names from id and epoch | A deployment misconfiguration a self-check cannot see: a staging contract test and a runbook item |
+| A room re-created after its end; name collisions | `auto_create=false` pinned and tested, and self-checked by the adapter through `/rtc/validate` at boot and every room sweep (§9); ensure-then-recheck; a required prefix per deployment; names from id and epoch | A misconfiguration during the 30 s between two probes; the probe's behaviour is pinned by the contract suite at the pinned server version, so a LiveKit upgrade re-runs it |
 | Presence surveillance through `LIVE_PRESENCE` | Allow-listed to attendance; ids and connection states only | Code review of the allow-list |
 | Minors' privacy in large rooms | The hands queue for moderators only; frames carry ids only; `hidden` carried in every set as the seam | The roster stays visible to all participants until Q59 |
 | API secret exposure | Read only by platform config and the adapter; placeholders refused in production; the SDK confined by the P0 rule; errors scrubbed; a test asserts no JWT pattern in logs | None identified |
@@ -1553,11 +1610,11 @@ numbers. Runs never use production keys, rooms or hosts (Q65).
 
 | Profile | Live's part | Live measures |
 | --- | --- | --- |
-| 1. 300 members in one session, audio only | `lk load-test` 1 audio publisher + 299 subscribers, ramped and as a storm; API: 300 joins in the storm window, 50 hands in 10 s, 10 grant/revoke cycles | join p50/p95/p99 and token-mint time; the raise row-lock wait; grant → `updateCapabilities` latency; moderator frame latency; statements per command; SFU CPU, memory, egress, loss |
+| 1. 300 members in one session, audio only | `lk load-test` 1 audio publisher + 299 subscribers, ramped and as a storm; API: 300 joins in the storm window, 50 hands in 10 s, 10 grant/revoke cycles | join p50/p95/p99 and token-mint time; the raise row-lock and mutex wait; pool wait and the p95 of unrelated routes during the storm; grant → `updateCapabilities` latency; moderator frame latency; statements per command; SFU CPU, memory, egress, loss |
 | 2. 1 teacher + 300 listeners + screen share | 1 audio + 1 video publisher (the screen-share approximation, labelled as such), with and without simulcast | egress split audio/video; video loss; decoding and battery on a low-end Android device, by hand |
 | 3. Many simultaneous communities | K rooms stepped up; K concurrent starts (`ensureRoom`); K active moderators | node CPU and egress against total subscribed tracks; API p95 while the SFU shares the host; the room sweep's cost at K rooms |
 | 5. Future large event | one room, subscribers stepped 500 → 1,000 → 2,000 → 3,000 → the knee | the knee on the target node class; `listParticipants` latency and size at each step (it feeds the sweep and the snapshot). **No 30,000-listener room test** |
-| Live extras | inside profiles 1 and 5 | a hand storm of the cap in 10 s; the participant sweep's cost at the cap; promotion latency under load; the rejoin storm after an epoch reset (P12) |
+| Live extras | inside profiles 1 and 5 | a hand storm of the cap in 10 s; the participant sweep's cost at the cap; promotion latency under load; the rejoin storm after an epoch reset (§11.4) |
 
 Correctness under load: no listener track is ever published; every grant,
 revoke, start and end has its audit row; `stateVersion` strictly increases
@@ -1571,14 +1628,14 @@ and nothing is missing after the final refetch; never more than 4 speakers or
 | Layer | What | Phase |
 | --- | --- | --- |
 | Domain | `ALLOWED_TRANSITIONS` over every (from, to) pair; `capabilitiesFor` total over every standing (listener publishes nothing; a grant adds the microphone only; a moderator without `live.speak` has no microphone; a presenter gets the screen; no standing maps to the camera; data, screen audio and hidden always false); `mediaRoomName` for epochs 0 and n | P1, P6 |
-| Use cases (fakes; the real `PolicyAuthorizationService` with `principalWith()`; a fake `COMMUNITY_AUTHORIZATION`) | Idempotent start (one session, one audit, one event; a conflict ends the stray room; a provider failure → 503 and nothing stored); start refusals (404, 403, 412); join: a non-member gets 404 like an unknown session, an ended session 412, the name from the directory, the role matrix (a delegated moderator who did not start is a moderator; a moderator of another community is a listener; OWNER without standing is a listener; a revoked grant gives no microphone; a grant survives a reconnect); ensure-then-recheck with End in between → 412; the soft cap (tokens since the sample count; moderators and speakers exempt; observer failure fails open); raise 201 then 200 with one event; withdraw and yield; grant, revoke and decline repeats; `target_is_host`; end expires everything with no per-hand events; the presenter rules | P1, P6 |
+| Use cases (fakes; the real `PolicyAuthorizationService` with `principalWith()`; a fake `COMMUNITY_AUTHORIZATION`) | Idempotent start (one session, one audit, one event; a conflict ends the stray room; a provider failure → 503 and nothing stored); start refusals (404, 403, 412); start, lock, retry → 200 with the running session; join: a non-member gets 404 like an unknown session, an ended session 412, the name from the directory, the role matrix (a delegated moderator who did not start is a moderator; a moderator of another community is a listener; OWNER without standing is a listener; a revoked grant gives no microphone; a grant survives a reconnect); ensure-then-recheck with End in between → 412; the soft cap (tokens since the sample count; moderators and speakers exempt; observer failure fails open); raise 201 then 200 with one event; withdraw and yield; grant, revoke and decline repeats; `target_is_host`; end expires everything with no per-hand events; the presenter rules | P1, P6 |
 | Authorization migration | An all-permission principal without standing cannot moderate, end or present, and nothing changes; no live use case passes `ownerUserId` (a spy on the context); `PROVISIONAL_POLICY_RULES` is `[]`; a speaker grant confers no community act | P6 |
 | Audit | An explicit audit action per moderation act (the regression for `moderate-speaker.use-case.ts:193`); joins, raises, withdrawals, self-stops and provider-only corrections write no audit; a system end is audited with a null actor | P1, P6 |
-| Reconciler (fake provider with scripted observations) | A missing room is re-created, then re-checked; `empty_since` set and cleared, `idle` after the bound; an orphan deleted only after the grace, never during a start in flight; a non-member or suspended account removed with its hand expired and presenter grant closed; a member of a LOCKED community not removed; an unmapped status ejects nobody; a wrong permission corrected with the full set; the 12-minute refreshed-token regression; violations counted and the window extended; a lost Communities event covered within one sweep; an unreachable dependency skips the tick with no ejection | P6 |
+| Reconciler (fake provider with scripted observations) | A missing room is re-created, then re-checked; `empty_since` set and cleared, `idle` after the bound; an orphan deleted only after the grace, never during a start in flight; a non-member or suspended account removed with its hand expired and presenter grant closed; a member who loses `communities.read` mid-session removed (eligibility comes from `permittedAmong`, never from a copy of the rule in Live); a member of a LOCKED community not removed; an unmapped status ejects nobody; a wrong permission corrected with the full set; the 12-minute refreshed-token regression; violations counted and the window extended; an identity the reconciler already removed or demoted, observed again inside its window → exactly one reset (epoch + 1 by compare-and-set, the new room ensured, the old ended, `reset_media` and the audit with a null actor), while a capability below its desired set never triggers one; a lost Communities event covered within one sweep; an unreachable dependency skips the tick with no ejection | P6 |
 | Restart | Module A starts a session and grants a speaker, then is discarded; module B on the same database reconciles, and its `/join` issues the microphone with no in-memory state | P6 |
 | Postgres concurrency (`describeWithPostgres`) | 20 concurrent starts → one live row and the same id for every caller; 20 raises by one user → one open request; 10 concurrent grants → exactly 4 granted; 2 presenter claims → one; grant, raise or claim racing End → nothing open in an ended session; `state_version` +1 per change; End of 3,000 pending hands in one statement within a time budget; the queue page uses its partial index (EXPLAIN); every CHECK rejects its violation | P6 |
 | No N+1 | A query counter shows O(1) statements per join, raise, grant and end, whatever the number of hands; no port returns every request of a session | P1, P6 |
-| **LiveKit adapter contract suite** (`test/integration/livekit-adapter.spec.ts`; a real, pinned `livekit-server` in CI with `room.auto_create=false`; skipped without credentials) | Decoded tokens carry exactly the expected grants (listener: no sources, `canPublish` false, data false; speaker: `MICROPHONE`; presenter: `SCREEN_SHARE`, no camera, no screen audio; identity = user id; name from the directory; TTL); an update always sends the full set and keeps `hidden` false; an update without the microphone unpublishes a live microphone track; update and remove for an absent identity → `not_connected`; `ensureRoom` surfaces authentication errors and enforces `maxParticipants`; a valid token cannot join a deleted room; `DUPLICATE_IDENTITY` evicts the earlier connection; a rejoin gets a refreshed token of at least 10 minutes (documenting the gap the sweep exists for); `listParticipants` state mapping and kind filtering, with latency at 300, 1,000 and 3,000. The behavioural checks need a real client SDK in CI, chosen in P6 | P1 (token shapes), P6 |
+| **LiveKit adapter contract suite** (`test/integration/livekit-adapter.spec.ts`; a real, pinned `livekit-server` in CI with `room.auto_create=false`; skipped without credentials) | Decoded tokens carry exactly the expected grants (listener: no sources, `canPublish` false, data false; speaker: `MICROPHONE`; presenter: `SCREEN_SHARE`, no camera, no screen audio; identity = user id; name from the directory; TTL); an update always sends the full set and keeps `hidden` false; an update without the microphone unpublishes a live microphone track; update and remove for an absent identity → `not_connected`; `ensureRoom` surfaces authentication errors and enforces `maxParticipants`; a valid token cannot join a deleted room; the `/rtc/validate` self-check answers 404 for an absent room with `auto_create=false` and succeeds with it on; two deployments with different prefixes on one server never sweep each other's rooms; `DUPLICATE_IDENTITY` evicts the earlier connection; a rejoin gets a refreshed token of at least 10 minutes (documenting the gap the sweep exists for); `listParticipants` state mapping and kind filtering, with latency at 300, 1,000 and 3,000. The behavioural checks need a real client SDK in CI, chosen in P6 | P1 (token shapes), P6 |
 | Adapter unit | NotFound → `not_connected`, `null` or success; network, timeout, 5xx → `RtcUnavailableError`; authentication → misconfiguration fault; `createRoom` errors not swallowed; no JWT or secret in any logged error | P1 |
 | Presence (P9) | Non-standard kinds and unmappable identities dropped and metered; `joining` → connecting; one entry per account; `not_active` when the record ends before or after the read; `unavailable` on error, deadline or oversize | P9 |
 | Realtime relay (P7) | Frames built field by field, ids only; `live.session.changed` to the affected user at once and to moderators coalesced (3,000 events → ≤ 4 frames/s per moderator); start and end frames to eligible online accounts only, with ⌈online/1000⌉ probes; nothing when nobody is connected; order kept per session | P7 |
@@ -1600,7 +1657,7 @@ is PROVISIONAL.
 | [Q5](open-questions.md#q5--what-happens-when-the-media-provider-and-our-record-disagree) | provider vs record | the record wins; the reconciler converges; `media` reported per call |
 | [Q12](open-questions.md#q12--timezone-and-academic-calendar) | scheduled sessions | none in Live; a schedule calls Start |
 | [Q26](open-questions.md#q26--realtime-limits) | rate limits, frame coalescing | §3.8 |
-| [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules) | P6 (through Communities) and P9 | P0 and P1 proceed; the rest waits |
+| [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules) | P6 (through Communities) and P9 | P0 and P1 are not gated by Q40 (acceptance and approval still apply); the rest waits |
 | [Q46](open-questions.md#q46--what-does-locked-mean-and-who-may-lock) | LOCKED during a session | §7.3 |
 | [Q54](open-questions.md#q54--who-starts-ends-and-moderates-a-live-session) | start, host, moderators, acting on the host | §7.2 |
 | [Q55](open-questions.md#q55--parallel-live-sessions-in-one-community) | parallel sessions | one per community |
@@ -1611,8 +1668,8 @@ is PROVISIONAL.
 | [Q60](open-questions.md#q60--one-account-on-several-devices-in-a-session) | several devices | newest wins; no auto-rejoin |
 | [Q61](open-questions.md#q61--ending-abandoned-live-sessions) | abandoned sessions | `idle` after 900 s observed empty |
 | [Q62](open-questions.md#q62--floor-rules-beyond-first-come-first-served) | invitations to speak, yield, timeouts | hand only; yield allowed; no timeouts |
-| [Q63](open-questions.md#q63--losing-standing-during-a-running-session) | losing standing mid-session | event path, ≤ 60 s by the sweep |
-| [Q64](open-questions.md#q64--removing-a-participant-from-a-session) | kick, re-entry, media reset | seams only; reset in P12 |
+| [Q63](open-questions.md#q63--losing-standing-during-a-running-session) | losing standing mid-session | event path, ≤ 60 s by the sweep; a media reset at a second violation (§11.4) |
+| [Q64](open-questions.md#q64--removing-a-participant-from-a-session) | kick, re-entry, media reset | seams only; the automatic reset at a second violation is enforcement (§11.4); a moderator's reset or kick waits (P12) |
 | [Q65](open-questions.md#q65--media-hosting-and-operations) | hosting, TURN, load-test safety | self-hosted, `auto_create=false`; TURN before the first class |
 | [Q66](open-questions.md#q66--realtime-without-messagingread) | frames without `messaging.read` | the gate stays; a coupling test |
 | [Q67](open-questions.md#q67--notifications-for-community-live-and-attendance-facts) | notifying session starts, grants | none; events published for later |
@@ -1622,15 +1679,17 @@ is PROVISIONAL.
 
 ## 24. Deferred
 
-- **P12, policy-gated:** the media-room reset by epoch (a compare-and-set
-  bump, `ensureRoom` of the new name, `endRoom` of the old; audited
-  `live.session.media_reset`); a moderator kick and re-entry rules (Q64);
+- **P12, policy-gated:** a media-room reset that a moderator chooses (the
+  same mechanism as the reconciler's automatic reset in P6, §11.4, behind a
+  route); a moderator kick and re-entry rules (Q64);
   delegated or audio screen share (Q56); hidden listeners (Q59); webhook
   accelerators with a signature check.
 - **Not in this design:** recording, transcription and breakout rooms
   (realtime.md `:610`); scheduled sessions (Q12); a large-event broadcast (Q58);
   notifications for live facts (Q67); a waitlist or overflow (Q57).
-- **Documents to correct when the phases land** (not edited by this package):
+- **Documents to correct when the phases land** (this package added only
+  labelled correction notes and proposed-change pointers; the rewrites land
+  with the phases):
   realtime.md Part A (§1.2 above), module-boundaries.md's live section,
   events.md's live catalogue, ADR 0003's consequences (superseded in part by
   ADR 0019, never edited), and the comments in `live/domain/events.ts:3-7` and

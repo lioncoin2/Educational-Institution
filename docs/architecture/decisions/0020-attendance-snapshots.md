@@ -10,7 +10,7 @@
 ("`operations` records attendance when a live session ends",
 `0006-event-architecture.md:9-10`) and module-boundaries.md's statement that
 operations derives attendance from `live.session.ended`
-(`module-boundaries.md:146-149`, `:241-243`). The rest of 0006 stands.
+(`module-boundaries.md:175-178`, `:288-290`). The rest of 0006 stands.
 Operations' contract types (`AttendanceState`, `SessionRef`,
 `AttendanceAmendment`) are unchanged. Builds on
 [0016](0016-communities-module.md), [0017](0017-community-scoped-authorization.md)
@@ -41,7 +41,7 @@ metadata is defined; no notification is delivered.
 - Identity grants `attendance.read` and `attendance.manage` role-wide. The
   precondition recorded under [Q31] is that a module must scope them through
   `ACADEMIC_RELATIONSHIPS` or leave them unexercised
-  (`open-questions.md:821-826`).
+  (`open-questions.md:870-876`).
 - **The hold**: "Assignments, Attendance, Progress and Promotion do not start
   until this reconciliation has been reviewed"
   (`academic-reconciliation.md:19-21`), and §13's "before any new module" step
@@ -63,12 +63,13 @@ Everything below is proposed. None of it exists today.
    depends on `attendance/contracts`, never the reverse.
 
 2. **A snapshot is one provider read.** Live's `LIVE_PRESENCE.observe` makes
-   exactly one read of one live session's participant registry when a
-   capability holder presses Record. The header holds `communityId`,
-   `liveSessionId`, `recordedBy`, `clientRequestId`, `observationRule`,
-   `observationStartedAt`, `observedAt`, `recordedAt`, `connectedCount` and
-   `connectingCount`. Entries are `(snapshot_id, user_id)` with a connection of
-   `CONNECTED` or `CONNECTING`: one per account, every role treated alike.
+   exactly one read of one live session's participant registry when someone
+   allowed to record presses Record. The header holds `communityId`,
+   `liveSessionId`, `hostUserId`, `recordedBy`, `clientRequestId`,
+   `observationRule`, `observationStartedAt`, `observedAt`, `recordedAt`,
+   `connectedCount` and `connectingCount`. Entries are
+   `(snapshot_id, user_id)` with a connection of `CONNECTED` or
+   `CONNECTING`: one per account, every role treated alike.
    Zero entries is a valid snapshot.
 
 3. **It labels nobody present.** It stores no "present" flag, no role, no
@@ -114,14 +115,18 @@ Everything below is proposed. None of it exists today.
    `community.attendance.view`, acts reserved in
    [0017](0017-community-scoped-authorization.md) and added in P9 by a CHECK
    migration, with ceilings that use no `attendance.*` permission. The
-   community comes from `LIVE_SESSIONS.describe` when recording and from the
-   stored header when reading; the client never supplies `recordedBy`, the
-   participants or the recording community. PROVISIONAL ([Q69]): the owner
-   implicitly or an explicit grant may record or view; recording does not
-   imply viewing; there is no institution-wide oversight until [Q43] says
-   otherwise; students and parents have no view; the recorder need not be the
-   host. `attendance.read`, `attendance.manage` and `AttendanceState` are
-   never used, and a test enforces it.
+   community and the host come from `LIVE_SESSIONS.describe` when recording
+   and from the stored header when reading; the client never supplies
+   `recordedBy`, the participants or the recording community. Brief
+   §9/§13/§15 default, PROVISIONAL ([Q69]): the owner, the session's host
+   (while `community.live.host` holds), its moderators
+   ([live.md §7.2](../live.md#72-liveaccess-host-and-moderators)) and a
+   `community.attendance.record` grantee may record; the owner, the host or a
+   recorder of the session (for its snapshots, while still a member) and a
+   `community.attendance.view` grantee may view; the recorder need not be the
+   host; there is no institution-wide oversight until [Q43] says otherwise;
+   students and parents have no view. `attendance.read`, `attendance.manage`
+   and `AttendanceState` are never used, and a test enforces it.
 
 9. **One event.** `attendance.snapshot.recorded {snapshotId, communityId,
    liveSessionId, recordedBy, observedAt, connectedCount, connectingCount}`,
@@ -136,11 +141,17 @@ Everything below is proposed. None of it exists today.
     (PROVISIONAL, [Q70]).
 
 11. **Implementation is HELD.** It waits for three things: the user's ruling
-    that live-presence snapshots are outside the Attendance hold, or that the
-    hold is lifted ([Q40]; the PROVISIONAL default is that the hold applies);
-    reviewers accepting community standing, instead of
+    on [Q40], (a) that §13's "before any new module" step
+    (`academic-reconciliation.md:483-493`) is complete or does not apply to
+    attendance, and (b) that live-presence snapshots are outside the
+    Attendance hold, or that the hold is lifted (the PROVISIONAL default is
+    that both apply); reviewers accepting community standing, instead of
     `ACADEMIC_RELATIONSHIPS`, as the scoping relationship §13 requires
-    ([Q69]); and community-scoped, persisted live sessions (P6).
+    ([Q69]); and community-scoped, persisted live sessions (P6). If the hold
+    is lifted by the review rather than by a ruling that snapshots are outside
+    it, P9 also waits for §13's Attendance row
+    (`academic-reconciliation.md:504`): [Q8] and [Q12] answered, or ruled by
+    the user not to apply to snapshots.
 
 ## Consequences
 
@@ -165,7 +176,7 @@ If accepted:
 ## Alternatives considered
 
 - **Operations owns snapshots.** Rejected: operations' charter is
-  delivery-agnostic (`module-boundaries.md:146-149`); its `SessionRef` is
+  delivery-agnostic (`module-boundaries.md:175-178`); its `SessionRef` is
   keyed on a halaqa and a schedule; it would start the held work; and the
   event would not be the brief's `attendance.snapshot.recorded`.
 - **Live owns and stores snapshots.** Rejected: the brief says Live does not
@@ -190,6 +201,8 @@ If accepted:
 - **A per-session cap on snapshots.** Rejected: a lifetime cap is policy on how
   often attendance may be taken ([Q72]). A per-recorder rate limit bounds abuse
   without that meaning.
+- **Owner or grant only; recording does not imply viewing.** Not the default,
+  because it departs from brief §13/§15; left to [Q69].
 - **Identity ceilings `attendance.manage` / `attendance.read`, plus a new
   `attendance.oversee`.** Rejected: it exercises the unscoped grants against
   the Q31 precondition, needs a migration that breaks the exact grant-delta
@@ -243,6 +256,8 @@ If accepted:
 
 [Q5]: ../open-questions.md#q5--what-happens-when-the-media-provider-and-our-record-disagree
 [Q3]: ../open-questions.md#q3--what-is-the-retention-policy-for-files-messages-audit-entries-and-session-history
+[Q8]: ../open-questions.md#q8--who-may-amend-attendance-and-is-a-reason-mandatory
+[Q12]: ../open-questions.md#q12--timezone-and-academic-calendar
 [Q31]: ../open-questions.md#q31--teaching-scope-and-what-staff-may-see
 [Q40]: ../open-questions.md#q40--governance-which-gates-apply-to-the-new-modules
 [Q43]: ../open-questions.md#q43--institutional-oversight-of-communities

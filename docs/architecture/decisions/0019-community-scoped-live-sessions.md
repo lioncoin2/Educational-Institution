@@ -11,8 +11,10 @@ anticipated), `listParticipants` is added, and one adapter file stays the only
 LiveKit importer. **Supersedes** the halaqa-bound `LiveRoom` design in
 [module-boundaries.md](../module-boundaries.md) and
 [realtime.md](../realtime.md), the claim "no camera, no screen share, by
-construction" (`realtime.md:420-428`), and the Redis queue and presence plan
-(`realtime.md:542-553`). Builds on [0016](0016-communities-module.md),
+construction" ([realtime.md §2.1](../realtime.md#21-listeners-receive-tokens-that-cannot-publish)),
+and the Redis queue and presence plan
+([realtime.md §4](../realtime.md#4-persistence-plan-not-yet-implemented)).
+Builds on [0016](0016-communities-module.md),
 [0017](0017-community-scoped-authorization.md) and
 [0021](0021-cross-cutting-rules-for-new-modules.md). The design in full is
 [live.md](../live.md).
@@ -60,7 +62,7 @@ comes only from second-hand quotes is marked as such.
 | L4 | `revoke_token_ts` is defined but never read by the open-source server; the SDK says a removed participant "can still re-join the room" | protocol `livekit_room.proto:161`; no reference in the server; SDK `RoomServiceClient.d.ts:131` | Removal alone does not keep someone out; enforcement needs a backstop |
 | L5 | `room.auto_create` defaults to true | server `pkg/config/config.go:563` | A still-valid token can re-create an ended room unless it is turned off |
 | L6 | A permission update **replaces the whole set**, `hidden` included, and unpublishes disallowed tracks at once. An empty source list means **all** sources; an unset `canPublishData` equals `canPublish` | protocol `auth/grants.go:429-441`, `:326-340`, `:355-360` | Always send the full, explicit set |
-| L7 | Joining with an identity already in the room evicts the earlier session (`DUPLICATE_IDENTITY`) | server `pkg/service/roommanager.go:398-400` | One account, one device in a session ([Q60]) |
+| L7 | Joining with an identity already in the room evicts the earlier session (`DUPLICATE_IDENTITY`) | server `pkg/service/roommanager.go:398-400` | With identity = account id, a second device evicts the first; whether one account may join from several devices is [Q60] (PROVISIONAL: no) |
 | L8 | `ListParticipants` is unpaginated and returns every stored participant, including those still joining and hidden ones | server `pkg/service/roomservice.go:170-195` | One bounded read per observation ([0020](0020-attendance-snapshots.md)) |
 | L9 | Webhooks go through one in-memory queue per room, at most 200 deep and 30 s old; excess is dropped | protocol `webhook/resource_url_notifier.go:54-55` | Webhooks are never a source of truth |
 | L10 | `max_participants` counts every non-dependent participant; `CreateRoom` is create-or-update | server `pkg/rtc/room.go:458-467`, `pkg/service/roomallocator.go:60-127` | A hard cap is enforceable at the SFU; `ensureRoom` is idempotent |
@@ -116,7 +118,14 @@ Everything below is proposed. None of it exists today.
    - **participant sweep, every 60 s per session**: an ineligible participant
      loses their hand, floor and presenter grant and is removed; a divergent
      permission set is re-applied;
-   - **targeted watch, every 10 s**, for recent demotions.
+   - **targeted watch, every 10 s**, for recent demotions;
+   - **automatic media reset (P6)**: an identity's second violation inside its
+     enforcement window (back while not eligible, or holding a source it is
+     not entitled to) bumps `mediaRoomEpoch` by compare-and-set, with a
+     `reset_media` row and a null actor, and moves the session to a new room.
+     Every token the violator holds names the deleted room, which
+     `auto_create=false` keeps deleted; eligible clients rejoin through
+     `/join`.
 
    A tick is skipped when a dependency cannot be reached: the reconciler
    never ejects on unknown state. Because of L3 and L4, **the reconciler is the
@@ -140,10 +149,15 @@ Everything below is proposed. None of it exists today.
 
 9. **Screen share is one presenter slot per session** (PROVISIONAL bound,
    [Q56]). A `PresenterGrant` is claimed through the API by a moderator who
-   holds `live.speak`, for themself; any moderator may revoke it. There is no
-   screen audio and no delegation, and the stream is never stored. Opening and
-   closing the grant are the `live.screen_share.started` and `.stopped` events,
-   and are audited.
+   holds `live.speak`, for themself. Another session moderator may revoke it,
+   except that a moderator whose authority is not the host's own may not
+   revoke the host's grant (403 `live.target_is_host`, PROVISIONAL, [Q54]).
+   There is no screen audio and no delegation, and the stream is never stored.
+   Opening the grant publishes `live.screen_share.started` and is audited.
+   Closing it publishes `live.screen_share.stopped` (reason `stopped`,
+   `revoked` or `ineligible`) and is audited only when `revoked`
+   (PROVISIONAL, [Q56]). A close caused by the end of the session publishes
+   nothing of its own; `live.session.ended` implies it.
 
 10. **Narrow RTC ports.** `RTC_PROVIDER` is split into `RtcRoomProvider`,
     `RtcTokenIssuer`, `RtcParticipantControl` and `RtcParticipantObserver`,
@@ -172,7 +186,8 @@ Everything below is proposed. None of it exists today.
     adapter error mapping, names from the directory, idempotent raise, withdraw
     and decline, explicit audit actions and indexed repository reads come
     before any Communities dependency. The visible changes (listener data off,
-    raise 409 → 200, token TTL 600 → 120 s) need approval.
+    raise 202 → 201 for a new hand and 409 → 200 for an open one, token TTL
+    600 → 120 s) need approval.
 
 ## Consequences
 
@@ -180,9 +195,11 @@ If accepted:
 
 - A removed member, or a demoted speaker, loses the room when the event is
   delivered, and within 60 s at worst through the participant sweep
-  ([Q63]). A rejoin loop with refreshed tokens is detected, counted and shown
-  to moderators. The complete remedy, a media-room reset by epoch, is P12
-  ([Q64]).
+  ([Q63]). Removal alone does not keep a determined client out (L3, L4): each
+  rejoin earns a fresh token. Violations are counted and shown to moderators,
+  and the second one inside the enforcement window resets the media room,
+  which ends the loop at the cost of a brief reconnect for everyone else. A
+  reset that a moderator chooses stays with P12 ([Q64]).
 - A LiveKit outage at start stores nothing. During a session it defers
   repairs; the reconciler catches up when LiveKit returns.
 - There is no Redis. The queue is bounded by the speaker cap and lives in
@@ -259,7 +276,8 @@ If accepted:
 - **A moderator "remove participant" route now.** Rejected: whether and how is
   policy ([Q64]); the port method and the action type stay as seams.
 - **Webhooks as the source of presence or reconciliation.** Rejected: L9.
-- **Redis for the hand queue and presence** (`realtime.md:542-553`). Rejected
+- **Redis for the hand queue and presence**
+  ([realtime.md §4](../realtime.md#4-persistence-plan-not-yet-implemented)). Rejected
   for now: the queue is bounded, presence is observed, and there is one
   instance.
 - **Raise hand over the LiveKit data channel.** Rejected: it couples
@@ -280,6 +298,7 @@ If accepted:
 
 [Q5]: ../open-questions.md#q5--what-happens-when-the-media-provider-and-our-record-disagree
 [Q12]: ../open-questions.md#q12--timezone-and-academic-calendar
+[Q54]: ../open-questions.md#q54--who-starts-ends-and-moderates-a-live-session
 [Q55]: ../open-questions.md#q55--parallel-live-sessions-in-one-community
 [Q56]: ../open-questions.md#q56--screen-sharing
 [Q57]: ../open-questions.md#q57--live-session-size-and-concurrency

@@ -105,11 +105,11 @@ Everything below is proposed. None of it exists today.
    `conversations.last_sequence` ([0011](0011-messaging-v1.md)).
    `COMMUNITY_MEMBERSHIP.changesSince` reads the feed. No request path runs
    `count(*)` or loads a whole community: every read is a point lookup, a
-   keyset page, the counter or the feed. **No member limit is policy**:
-   `member_count` has no upper CHECK, and a limit, if one is ever decided, is
-   nullable Communities configuration enforced in the same conditional UPDATE
-   ([Q20]). The only bounds are technical: 200 ids per add request, 200 per API
-   page, 1,000 per contract page.
+   keyset page, the counter or the feed. **No member limit is set**
+   (PROVISIONAL, [Q20]): `member_count` has no upper CHECK, and a limit, if one
+   is ever decided, is nullable Communities configuration enforced in the same
+   conditional UPDATE. The only bounds are technical: 200 ids per add request,
+   200 per API page, 1,000 per contract page.
 
 6. **Invitation links.** The token is 32 random bytes, base64url, shown once in
    the 201 response. Only its SHA-256 is stored, under a unique index. Its
@@ -133,7 +133,8 @@ Everything below is proposed. None of it exists today.
    set an absolute state and answer 200. A repeat writes no audit entry and
    publishes nothing. `lifecycle_version` rises by one per real change, only so
    consumers can discard stale events. ARCHIVED is deferred ([Q47]). A
-   community is never deleted: there is no delete route, and foreign keys are
+   community is never deleted (PROVISIONAL, [Q47]; deleting anything is a
+   retention decision, [Q3]): there is no delete route, and foreign keys are
    `RESTRICT`.
 
 8. **What LOCKED means is one table, owned here.** `statePermits(status, act)`
@@ -162,7 +163,7 @@ Everything below is proposed. None of it exists today.
    4. grant rows;
    5. the community row, last of the existing rows: its UPDATE allocates
       versions and moves `member_count`;
-   6. new stint inserts.
+   6. new rows: stint, invitation or grant inserts.
 
    Grant, revoke and transfer never touch the community row. No transaction
    takes `FOR SHARE` on a row and then updates it.
@@ -184,7 +185,9 @@ Everything below is proposed. None of it exists today.
 12. **The governance gate applies (PROVISIONAL, [Q40]).** Implementing this
     module (P2 onwards) waits until the §13 step is complete or the user rules
     explicitly. Phase 0 corrections and the hardening of the existing live
-    module (P1) change only existing modules and go ahead. Meanwhile, the name
+    module (P1) change only existing modules and are not held by that gate;
+    they start only after this design is accepted and, for P1, after its
+    visible behaviour changes are approved. Meanwhile, the name
     (decision 1) and the absence of a halaqa link (decision 11) keep this design
     from answering Q36. ADR 0015 stays reserved for the academic structure
     change (`academic-reconciliation.md:410`, `:490`, `:506`), which is why
@@ -215,7 +218,8 @@ If accepted:
   ([0017](0017-community-scoped-authorization.md)).
 - Mock mode keeps working: an in-memory adapter is chosen when no database is
   configured, as academic does.
-- Nothing is implemented until the user rules on Q40.
+- This module is not implemented until the §13 step is complete or the user
+  rules on Q40.
 
 ## Alternatives considered
 
@@ -295,6 +299,7 @@ If accepted:
   that is waiting on the owner; renumbering would edit it.
 
 [Q2]: ../open-questions.md#q2--who-is-the-first-owner-and-how-are-accounts-created-after-that
+[Q3]: ../open-questions.md#q3--what-is-the-retention-policy-for-files-messages-audit-entries-and-session-history
 [Q20]: ../open-questions.md#q20--messaging-limits
 [Q36]: ../open-questions.md#q36--tahajji-دورة-التهجي-وإعداد-المعلمات-مدينة-التهجي-and-the-40-groups
 [Q40]: ../open-questions.md#q40--governance-which-gates-apply-to-the-new-modules

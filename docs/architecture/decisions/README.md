@@ -7,10 +7,8 @@ last section is the one that matters in two years: it is the record of what was
 already thought about, so a decision is only reopened with new information
 rather than with an argument that was already had.
 
-**Status** is one of `Proposed`, `Accepted`, `Superseded by NNNN`, or
-`Deprecated`. `Proposed` means a design under review; nothing implemented;
-becomes `Accepted` when implementation starts, or is withdrawn. An ADR is
-never edited to change its decision — a new one supersedes it. The record is
+**Status** is one of `Accepted`, `Superseded by NNNN`, or `Deprecated`. An ADR
+is never edited to change its decision — a new one supersedes it. The record is
 the history, not the current state.
 
 | # | Decision | Status |
@@ -36,6 +34,14 @@ the history, not the current state.
 | [0019](0019-community-scoped-live-sessions.md) | Community-scoped live sessions: Postgres truth, level-triggered LiveKit convergence, a presenter slot, narrow RTC ports | Proposed |
 | [0020](0020-attendance-snapshots.md) | Attendance snapshots are observations owned by a new attendance module (implementation held) | Proposed |
 | [0021](0021-cross-cutting-rules-for-new-modules.md) | Cross-cutting rules for the new modules: events in contracts, journals, durability classes, the realtime transport matrix, protocol v1 growth, `FailureKind 'unavailable'`, executable guards | Proposed |
+
+> **Proposed change (2026-09-23):** adds the status `Proposed`: a design under
+> review, with nothing implemented. It becomes `Accepted` when the user accepts
+> it (dated in the ADR), which must happen before implementation starts, or it
+> is withdrawn. Acceptance alone does not start 0016 or 0020: their
+> implementation also waits on
+> [Q40](../open-questions.md#q40--governance-which-gates-apply-to-the-new-modules),
+> and 0020's on [Q69](../open-questions.md#q69--who-records-and-who-views-snapshots).
 
 **0015 is reserved.** The academic reconciliation names ADR 0015 for its
 structure change (`academic-reconciliation.md:410`, `:490`, `:506`), which

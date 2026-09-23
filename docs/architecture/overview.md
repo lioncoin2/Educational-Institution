@@ -163,13 +163,17 @@ every other vendor SDK. This is checked by
 `application-has-no-vendor-sdks` and `domain-is-dependency-free`.
 
 > **Correction (2026-09-23):** the first sentence is true today by search
-> (`live/infrastructure/livekit-rtc-provider.ts:2`). The claim that it is
-> checked is not. `domain-is-dependency-free` covers `domain/` only.
+> (`live/infrastructure/livekit-rtc-provider.ts:2`). The second is false:
+> other SDKs that `application-has-no-vendor-sdks` lists are imported by
+> several files (`drizzle-orm` 18, `express` 7, `nestjs-pino` 3, `pg` 2).
+> The claim that it is checked is not true either.
+> `domain-is-dependency-free` covers `domain/` only.
 > `application-has-no-vendor-sdks` never fires, because its pattern is
 > anchored at the package name while dependency-cruiser matches
 > `node_modules/…` paths (`backend/.dependency-cruiser.cjs:88`). Apart
 > from three module-specific specs, nothing stops an `api/`,
-> `infrastructure/` or `platform/` file from importing LiveKit; see
+> `application/`, `infrastructure/` or `platform/` file from importing
+> LiveKit; see
 > [dependency-rules.md](dependency-rules.md#application-has-no-vendor-sdks).
 > The fix is Phase 0 of the proposed design
 > ([communities-live-attendance.md §25.1](communities-live-attendance.md#251-phase-0-corrections)).

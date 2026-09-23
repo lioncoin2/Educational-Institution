@@ -27,7 +27,9 @@ covers it is
 The provisional default is that it does. Nothing here lifts that gate.
 
 **How to read it.** "Today" means the repository at commit `9670c47`; every
-such statement says so and cites `file:line`. Everything else is a proposal.
+such statement says so and cites `file:line`. Line numbers into other
+documents refer to them as they stand with this package, which added notes to
+several. Everything else is a proposal.
 Every institutional default is labelled PROVISIONAL and names its open
 question. Every engineering bound that must be measured is labelled
 PROVISIONAL too.
@@ -42,7 +44,7 @@ PROVISIONAL too.
 | Community chat | a `conversations` row whose `community_id` is set | A community's one conversation. At most one per community ([Q51](open-questions.md#q51--the-community-chat-who-may-post)) |
 | Authority | Communities' `community_members` | The only record of who belongs |
 | Projection | community-chat rows of `conversation_participants`, plus `conversations.projected_membership_version` | Messaging's named, derived copy of a community's ACTIVE members. Never an access answer on its own |
-| Stint | a `community_members` row | One stay in a community. A rejoin is a new stint with a new `joinedAt` |
+| Stint | a `community_members` row | One stay in a community. A rejoin is a new stint with a new `membershipId` and `joinedAt` |
 | Version | `MemberState.version`, `CommunityHead.membershipVersion` | Per community, unique, in commit order ([communities.md §5.2](communities.md#52-counters-and-version-allocation)) |
 | Permit | `CommunityPermit` | `COMMUNITY_AUTHORIZATION`'s positive answer. It carries the caller's stint `{membershipId, joinedAt, version}` |
 | Head | `CommunityHead` | A community's current `membershipVersion`, `lifecycleVersion` and `effects` |
@@ -59,7 +61,7 @@ Messaging V1 owns membership outright. All of the following is today's code:
 
 | Today | Evidence |
 | --- | --- |
-| One `conversation_participants` row per (conversation, user) holds the role, join and leave times, `addedBy`, the read watermark and the history window | `participant.ts:20-30`; `schema.ts:71-110`; `module-boundaries.md:176-182` |
+| One `conversation_participants` row per (conversation, user) holds the role, join and leave times, `addedBy`, the read watermark and the history window | `participant.ts:20-30`; `schema.ts:71-110`; `module-boundaries.md:214-220` |
 | Membership is checked in four places: the `ConversationAccess.member` chokepoint; the summary query, scoped to `left_at is null`; a re-check under the conversation row lock in `appendMessage`; and the `markRead` UPDATE, which takes no conversation lock | `conversation-access.ts:58-72`; `drizzle-messaging-read-model.ts:47,69`; `drizzle-messaging-repository.ts:121-124,307-318` |
 | One row lock (`SELECT … FOR UPDATE` on `conversations`) serializes the sends, adds and removes of a conversation | `drizzle-messaging-repository.ts:113-117,195-199` |
 | Three closed conversation types. Posting follows type and role; the history window follows type | `vocabulary.ts:11`; `schema.ts:53`; `participant.ts:64-67`; `messaging-policy.ts:43-45` |
@@ -69,7 +71,7 @@ Messaging V1 owns membership outright. All of the following is today's code:
 | `MessagingModule` imports identity and files, and exports exactly `MESSAGE_RECIPIENTS` and `MESSAGE_DELIVERY`. It subscribes to no event | `messaging.module.ts:62,108`; no `EVENT_SUBSCRIBER` under `src/modules/messaging/` |
 | `MESSAGE_RECIPIENTS` pages members by user id, at most 1,000, with `visibleSequence`, `readersOnly` and `onlyUserIds`. Its comment forbids delivery modules to keep a copy of membership | `message-recipients.ts:11-49` |
 | For every `message.sent`, the realtime relay walks every recipient page on every instance with a connection. The notifications translator walks every reader and stores one row per reader | `messaging-relay.ts:97-99,207-219`; `messaging-notification.translator.ts:182-205`; `notification-dispatcher.ts:141-161` |
-| The event bus is in-process and awaits each handler. An event is lost if the process dies between commit and publish | `event-bus.ts:43-56`; `events.md:141` |
+| The event bus is in-process and awaits each handler. An event is lost if the process dies between commit and publish | `event-bus.ts:43-56`; `events.md:154` |
 | Member pages scan the primary key and filter on `left_at`. No index covers a conversation's current members | `drizzle-messaging-read-model.ts:174-180`; `schema.ts:88-94` |
 | Fan-out is tested at 250 members. No load test exists | `messaging-persistence.spec.ts:522-551` |
 
@@ -95,7 +97,7 @@ branch for conversations linked to a community.
 | Which conversation is C's chat? | messaging | `conversations.community_id` |
 | Messages, order, idempotency, attachments | messaging | unchanged |
 | P's read watermark and history window | messaging | the projection row's `last_read_sequence` and `hidden_through_sequence` |
-| Who receives a `message.sent`? | messaging, narrowed by Communities while the projection lags | `MESSAGE_RECIPIENTS` |
+| Who receives a `message.sent`? | messaging, narrowed by Communities while the projection lags, and always by the `community.chat.read` ceiling (§7.3) | `MESSAGE_RECIPIENTS` |
 
 ### 3.2 Why messaging keeps rows at all
 
@@ -121,7 +123,8 @@ is messaging's own, and six rules keep it honest:
    for that user. The conversation carries the version up to which the
    projection is complete.
 4. **Never an access answer on its own.** Every request asks the authority.
-   Fan-out is narrowed through the authority while the projection lags.
+   Fan-out is narrowed through the authority while the projection lags, and
+   by the read ceiling on every page (§7.3).
 5. **Repairable.** A sync, a sweeper, repair on access and a reconciler
    (§7.5).
 6. **Silent.** Applying it publishes no event and writes no audit entry.
@@ -161,7 +164,8 @@ is messaging's own, and six rules keep it honest:
 - What messaging uses: `COMMUNITY_AUTHORIZATION` (`authorize`,
   `authorizeEach`; acts `community.chat.read` and `community.chat.post`),
   `COMMUNITY_MEMBERSHIP` (`heads`, `listHeads`, `statesOf`, `changesSince`,
-  `members`), `COMMUNITY_DIRECTORY.describe`, and the events
+  `members`), `COMMUNITY_DIRECTORY.describe`, the constant
+  `COMMUNITY_CHAT_READ_CEILING` (§7.3), and the events
   `communities.member.added` and `communities.member.removed` as wake-ups.
   Their shapes are in [communities.md §10](communities.md#10-public-contracts).
 - Communities' API never carries chat data (no last message, no unread
@@ -191,12 +195,12 @@ is messaging's own, and six rules keep it honest:
 | **A provisioning port**: Communities pushes membership into a messaging contract (`provision`, `apply`) | Needs Communities → messaging. Messaging must still ask Communities about posting and readability, so the two edges close a cycle. The port would take no principal and would be injectable into realtime and notifications (`realtime.module.ts:34`; `notifications.module.ts:64`), guarded only by a test on who imports it. Posting rights, lock state and the title would each become a copy. Removal would fail open until the apply ran, and the removal response would wait on a busy conversation's lock |
 | **Dependency inversion**: a membership port declared in `messaging/contracts` and implemented by communities | Today no token is provided outside the module that declares it (`messaging.module.ts:105-106`; `identity.module.ts:150-152`). It becomes a Nest cycle the first time Communities needs anything from messaging. Its answer arrives outside messaging's transaction, so the re-check under the lock is lost, or a second pool connection is taken while holding the lock (the pool has 10, `database.ts:28`). Watermarks still need rows |
 | **A new conversation kind with no rows**: access and recipients asked of Communities each time | Watermarks and windows are per member (`participant.ts:20-30`). The conversation list and unread counts are SQL over those rows (`drizzle-messaging-read-model.ts:206-244`). `visibleSequence` cannot be served without `hidden_through_sequence` (`:156-159`). It rebuilds a projection without its guarantees, gives up atomicity under the lock, and needs keyset streams merged across modules |
-| **Pure event sync**: messaging applies `communities.member.*` deltas | The bus is in-process with no outbox; a crash between commit and publish loses the event (`event-bus.ts:43-56`; `events.md:141`). Without versions, drift cannot be detected. Events are kept only as wake-ups; the truth is pulled |
+| **Pure event sync**: messaging applies `communities.member.*` deltas | The bus is in-process with no outbox; a crash between commit and publish loses the event (`event-bus.ts:43-56`; `events.md:154`). Without versions, drift cannot be detected. Events are kept only as wake-ups; the truth is pulled |
 | **A new `ConversationType` `'COMMUNITY'`** | Widens a closed vocabulary shared by the DB CHECK (`schema.ts:53`), the event payloads, the notification copy (`notification_copy.dart:69-74`) and the Flutter enum; current apps would show the chat as `unknown` (`messaging.dart:11-23`). The behaviour branches are needed either way, and key on `community_id` instead |
 | **One transaction across both modules**, or in-process two-phase commit | No unit of work exists; each repository opens its own transaction. It would hold the community row and the conversation row together, inviting deadlocks under join storms |
 | **A shared table or a cross-module SQL view** | Forbidden: messaging's tables are private (`messaging-boundaries.spec.ts:72-77`), no module imports another's internals (`.dependency-cruiser.cjs:140-161`), and no foreign key crosses modules (`schema.ts:17-23`) |
 | **Messaging stays the authority** with raised caps, or Communities calls messaging's use cases as a system principal | Two authorities for one fact. Use cases are not exported (`messaging.module.ts:108`), take at most 200 people per request, and emit one audit row, event, notification and frame per person (`membership.use-cases.ts:143-158`) |
-| **Filter every recipient page through Communities**, not only while lagging | Doubles fan-out reads in steady state. The version comparison gives the same safety for one head lookup per page |
+| **Filter every recipient page through Communities**, not only while lagging | Doubles fan-out reads in steady state. The version comparison gives the same membership safety for one head lookup per page; the read ceiling is applied on every page anyway, through identity (§7.3) |
 | **Publish `participant.added` / `removed` for applies**, so existing relays and translators announce them | One fact would have two sources, and an import of 30,000 would create 30,000 `ADDED_TO_CONVERSATION` rows and frames. Announcing membership is Q22, [Q49](open-questions.md#q49--leaving-removal-and-rejoining) and [Q67](open-questions.md#q67--notifications-for-community-live-and-attendance-facts) |
 
 ---
@@ -238,7 +242,7 @@ Conversations whose `community_id` is NULL behave exactly as today.
 ### 5.3 Materialization
 
 Messaging creates the conversation itself, idempotently, with the pattern the
-DM pair already uses (`messaging.md:31-35`):
+DM pair already uses (`messaging.md:41-45`):
 
 ```sql
 INSERT INTO conversations (id, type, title, created_by, community_id, projected_membership_version)
@@ -271,7 +275,8 @@ Twenty concurrent materializations produce one row (§17).
 ### 6.1 Shape and invariants
 
 The projection is the community-chat rows of `conversation_participants`,
-with two new columns (`source_version`, `source_joined_at`), plus
+with three new columns (`source_version`, `source_membership_id`,
+`source_joined_at`), plus
 `conversations.projected_membership_version`. Each row still holds
 messaging's own state for that member: `last_read_sequence` and
 `hidden_through_sequence`.
@@ -290,28 +295,31 @@ messaging's own state for that member: `last_read_sequence` and
 ### 6.2 `projectMember`: a last-writer-wins register per member
 
 `projectMember(row | null, state, conversation, at)` is a pure function in
-`messaging/domain`. `state` is `{userId, active, joinedAt J, version v}`,
-mapped from Communities' latest stint for that user. Each row is a register
+`messaging/domain`. `state` is `{userId, membershipId m, active, joinedAt J,
+version v}`, mapped from Communities' latest stint for that user. Each row is a register
 keyed by the authority's version. **Every transition requires `v >
 row.source_version`; anything else is `ignored`.**
 
 | Row | Incoming | Result | Transition | Δ `member_count` | Written |
 | --- | --- | --- | --- | --- | --- |
-| absent | ACTIVE (J, v) | ACTIVE | `joined` | +1 | MEMBER, `added_by` NULL, `joined_at` now, `last_read` = last sequence, `hidden` per `COMMUNITY_HISTORY` (§9), source (v, J) |
-| absent | LEFT (J, v) | LEFT | `tombstoned` | 0 | `joined_at` = `left_at` = now, `last_read` = `hidden` = 0, source (v, J) |
-| ACTIVE (J) | ACTIVE (J, v) | ACTIVE | `bumped` | 0 | `source_version` only; watermark and window kept |
-| ACTIVE (J) | ACTIVE (J′ ≠ J, v) | ACTIVE | `rejoined`: a leave was missed | 0 | watermark and window reset as for `joined`; source (v, J′) |
-| ACTIVE | LEFT (v) | LEFT | `left` | −1 | `left_at` = greatest(now, `joined_at`); source (v, J) |
-| LEFT | ACTIVE (J′, v) | ACTIVE | `rejoined` | +1 | as `joined` |
+| absent | ACTIVE (m, J, v) | ACTIVE | `joined` | +1 | MEMBER, `added_by` NULL, `joined_at` now, `last_read` = last sequence, `hidden` per `COMMUNITY_HISTORY` (§9), source (v, m, J) |
+| absent | LEFT (m, J, v) | LEFT | `tombstoned` | 0 | `joined_at` = `left_at` = now, `last_read` = `hidden` = 0, source (v, m, J) |
+| ACTIVE (m) | ACTIVE (m, v) | ACTIVE | `bumped` | 0 | `source_version` only; watermark and window kept |
+| ACTIVE (m) | ACTIVE (m′ ≠ m, J′, v) | ACTIVE | `rejoined`: a leave was missed | 0 | watermark and window reset as for `joined`; source (v, m′, J′) |
+| ACTIVE | LEFT (m, J, v) | LEFT | `left` | −1 | `left_at` = greatest(now, `joined_at`); source (v, m, J) |
+| LEFT | ACTIVE (m′, J′, v) | ACTIVE | `rejoined` | +1 | as `joined` |
 | LEFT | LEFT (v) | LEFT | `bumped` | 0 | `source_version` only |
 | any | version ≤ `source_version` | unchanged | `ignored` | 0 | nothing |
 
 - A rejoin resets the window and watermark, exactly as messaging's own rejoin
   does today (`drizzle-messaging-repository.ts:240-251`).
 - Rejoin detection works whether or not the leave was seen: LEFT → ACTIVE, or
-  an ACTIVE whose `joinedAt` differs from `source_joined_at`. Communities
-  gives every stint its own `joinedAt`
-  ([communities.md §3.2](communities.md#32-membership-stints)).
+  an ACTIVE whose `membershipId` differs from `source_membership_id`.
+  Communities gives every stint its own id
+  ([communities.md §3.2](communities.md#32-membership-stints)). Timestamps
+  are never compared, so a clock step back or two stints within one
+  millisecond cannot make a new stint look like the old one;
+  `source_joined_at` is provenance only.
 - The tombstone is what makes the register safe. Without it, an older ACTIVE
   applied after a newer LEFT would create an active row.
 - The properties: **idempotent** (a replay is ignored), **commutative per
@@ -382,7 +390,7 @@ ConversationAccess.member(principal, conversationId, permission)
          promise rejected  → 503 unavailable; never a role-only answer
     b. row := findParticipant(id, principal.userId)
          active, and source_version ≥ permit.membership.version → allowed
-         otherwise → repair on access: apply [{userId, active, joinedAt, version}] alone,
+         otherwise → repair on access: apply [{userId, membershipId, active, joinedAt, version}] alone,
                      advance null, under the lock; read the row again
          still not active → 404 (only after an authority restore, §7.6)
 ```
@@ -420,7 +428,10 @@ its membership step becomes:
 2. `authorize(principal, communityId, 'community.chat.post')`. Any refusal
    other than `not_found` (no capability, a missing identity ceiling, or the
    lifecycle gate while LOCKED) returns the existing 403
-   `messaging.posting_not_allowed`.
+   `messaging.posting_not_allowed`;
+3. the capacity switch of §11.2: if the conversation's `member_count` is above
+   `communityChatMaxServedMembers`, 412
+   `messaging.community_chat_over_capacity`.
 
 `canPost(type, role)` (`participant.ts:64-67`) is not consulted for community
 chats. The re-check under the lock in `appendMessage`
@@ -436,7 +447,7 @@ grant, with the ceiling `communities.moderate` + `messaging.send`, and is
 refused while LOCKED. Grants arrive in P3, so before P3 only the owner posts.
 
 Sends to one conversation serialize on its row lock, as channels do today.
-That is adequate for a few posters (`messaging.md:444-447`). If Q51 lets
+That is adequate for a few posters (`messaging.md:463-466`). If Q51 lets
 thousands post, allocating sequences without the row lock is a later
 redesign.
 
@@ -451,14 +462,33 @@ redesign.
 | community chat; `projected_membership_version = head.membershipVersion` | the projection page, as today; `visibleSequence`, `readersOnly` and `onlyUserIds` apply unchanged |
 | community chat; the versions differ | the projection page narrowed to the users `statesOf` reports ACTIVE; a sync is scheduled |
 
-- **Cost.** For a community chat, one `heads([C])` per page, and one
-  `statesOf` per page only while lagging. For a conversation messaging owns,
-  the only addition is learning that its `community_id` is NULL (a column of
-  the conversation row).
+**The ceiling, on every page.** For a community chat, lagging or not and
+whatever `readersOnly` says, each non-empty page is then narrowed to the
+accounts that hold every permission of the `community.chat.read` ceiling
+(`communities.read` and `messaging.read`, PROVISIONAL,
+[communities.md §6.4](communities.md#64-act-rules--provisional)): one
+`ACCOUNT_DIRECTORY.withPermission` call per permission, which also drops
+accounts that cannot authenticate. Messaging keeps no copy of that list:
+Communities exports it from `communities/contracts/capabilities.ts` as
+`COMMUNITY_CHAT_READ_CEILING`, and its own act table uses the same constant,
+so the permit path and this principal-less path cannot drift. This is the one
+addition to Communities' contracts that P4 needs. Without it, a member whose
+role lost `communities.read` would be refused every HTTP read, yet still get
+`message.sent` frames carrying the message body: the relay passes no
+`readersOnly` (`messaging-relay.ts:207-219`), and its connection gate checks
+`messaging.read` only (§12.5). They would get notification rows too, because
+the `readersOnly` the translator passes checks only `messaging.read`
+(`message-recipients.service.ts:62,69`).
+
+- **Cost.** For a community chat, one `heads([C])` per page, one `statesOf`
+  per page only while lagging, and two `withPermission` calls per non-empty
+  page. For a conversation messaging owns, the only addition is learning that
+  its `community_id` is NULL (a column of the conversation row).
 - **The filter only narrows.** A member removed in the authority but still
-  projected receives nothing. A member who joined but is not yet projected is
-  missed for that message: no frame and no notification. That fails closed;
-  they read the message over HTTP.
+  projected receives nothing, and neither does a member whose role lost part
+  of the ceiling. A member who joined but is not yet projected is missed for
+  that message: no frame and no notification. That fails closed; they read
+  the message over HTTP.
 - `MESSAGE_DELIVERY` is unchanged.
 
 ### 7.4 List views
@@ -496,7 +526,9 @@ their row at once.
 - **Correctness never depends on the in-process bus.** The per-access check,
   the lag filter and the sweeper close every window a lost wake-up leaves.
   That is why `communities.member.removed`, the only S-class event, needs no
-  outbox here: trigger T1 is satisfied by the reconciler
+  outbox here: trigger T1 (a projection used for authorization with no
+  reconciler) does not fire, because the projection has a reconciler, a
+  sweeper and repair on access
   ([ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md)).
 
 ### 7.6 Drift: detection and repair
@@ -530,7 +562,7 @@ requests.
 | A send already in flight | it may still land, if both permits were read before the commit | the conversation lock orders it (S2 below) |
 | Frames whose recipients were resolved before the commit | they may still arrive | existing at-most-once delivery |
 | Notification rows already stored | kept; they carry no message text, and opening one runs the checkpoint (404) | existing behaviour |
-| The projection row | on the wake-up, usually milliseconds; at worst the next sweep, 60 s (PROVISIONAL, Q26) | sync, sweeper. It affects only list views and the displayed member count |
+| The projection row | on the wake-up, usually milliseconds; at worst the next sweep, 60 s (PROVISIONAL, Q26) | sync, sweeper. It affects only list views, the displayed member count and the capacity switch (§11.2) |
 | The removed person's app | the `community.member.removed` frame (P5), or the next 404 | realtime relay; HTTP |
 | The messages they wrote | kept | [Q3](open-questions.md#q3--what-is-the-retention-policy-for-files-messages-audit-entries-and-session-history), Q49 |
 
@@ -601,6 +633,7 @@ Engineering bounds, all PROVISIONAL
 | Sweep interval | 60 s | the worst-case lag after a lost wake-up |
 | Background concurrency (sync plus sweeper) | 2 | the pool has 10 connections per process |
 | Per-user rate limit on the new route | set in P4 | guards against probing community ids |
+| `communityChatMaxServedMembers` | 250 | the switch for gates G1–G4 (§11.2): the largest fan-out any test exercises |
 | Conversations per list page | 100 (existing) | `messaging-settings.ts:18` |
 
 ---
@@ -622,7 +655,7 @@ community chat touches no LiveKit at all.
 | Messaging storage | O(1): the row lock, one append, the sender's watermark | unchanged | — |
 | Access | — | one Communities statement per request; two for a send | — |
 | Realtime relay | ⌈30,000 / 1,000⌉ = 30 recipient queries per message, on every instance with a connection (`messaging-relay.ts:207-219`) | at most 1 + ⌈A / 1,000⌉ ≤ 11 with `OnlineAudience`, where A is the accounts online on that instance (≤ 10,000) | G1 |
-| Lag filter | — | one `heads` per page; one `statesOf` per page while lagging | — |
+| Lag filter and ceiling | — | one `heads` per page; one `statesOf` per page while lagging; two `withPermission` per non-empty page | — |
 | Notifications | 30 pages, each `listMemberIds`, `withPermission`, `describe`, preferences and `insertMany`: about 150 statements. Up to 29,999 rows and 29,999 `notification.created` events, each awaited through realtime and push; rows kept forever | unchanged | G4 |
 | Member pages | primary-key scan filtered on `left_at`; slower as churn and tombstones grow | the partial index on current participants | G2 |
 
@@ -651,7 +684,7 @@ Membership churn:
 
 Community chats stay **disabled above the load-tested size** until all four
 gates hold. No size is load-tested today; even the 10,000-member `CHANNEL`
-figure is untested (`messaging.md:444-447`; `messaging-persistence.spec.ts:522-551`).
+figure is untested (`messaging.md:463-466`; `messaging-persistence.spec.ts:522-551`).
 
 | Gate | What | Where | Phase |
 | --- | --- | --- | --- |
@@ -664,10 +697,20 @@ Notifications about community facts themselves (added, removed) are
 [Q67](open-questions.md#q67--notifications-for-community-live-and-attendance-facts);
 none is built, so they add no cost in v1.
 
-The integrated design fixes the gate, not the switch that enforces it. The
-smallest switch consistent with it is a messaging deployment setting, the
-largest `member_count` for which a community chat is served, read by the new
-route and the sweeper. This is left for the P4 review; it is not decided.
+**The switch.** A messaging deployment setting,
+`communityChatMaxServedMembers` (PROVISIONAL,
+[Q26](open-questions.md#q26--realtime-limits)). Its default is 250, the
+largest fan-out any test exercises (`messaging-persistence.spec.ts:522-551`).
+It is compared with messaging's own `conversations.member_count`, the
+projection's count. Communities' count cannot be used, because
+`COMMUNITY_MEMBERSHIP` exposes none. Above the setting, a send to the
+community chat returns 412 `messaging.community_chat_over_capacity` (§7.2,
+§13), and `canPost` is false. Reading, marking read and the projection are
+unaffected. With no new post there is no `message.sent`, so the relay and
+the notification translator have nothing to fan out, and neither changes.
+The count may lag the authority until the next sync or sweep, which is
+acceptable for an engineering bound. The value is raised only when G1–G4 hold for the new
+size.
 
 ---
 
@@ -692,7 +735,9 @@ exports: [MESSAGE_RECIPIENTS, MESSAGE_DELIVERY]                    // UNCHANGED;
  * means messaging's NAMED PROJECTION of Communities' ACTIVE members: derived,
  * versioned, written only by the projection applier. While its version
  * differs from the community's head, each page is narrowed to the members
- * Communities reports ACTIVE. An unknown or unreadable community yields an
+ * Communities reports ACTIVE. Every page, whatever readersOnly says, is then
+ * narrowed to the accounts holding every permission of
+ * COMMUNITY_CHAT_READ_CEILING. An unknown or unreadable community yields an
  * empty page. Delivery modules still never keep a copy.
  */
 ```
@@ -705,10 +750,10 @@ ignore it). For a community chat:
 | `type` | `'CHANNEL'` (PROVISIONAL, Q51) |
 | `communityId` | the community's id |
 | `title` | from `COMMUNITY_DIRECTORY` |
-| `canPost` | whether the `community.chat.post` permit is granted |
+| `canPost` | whether the `community.chat.post` permit is granted and `member_count` is within `communityChatMaxServedMembers` (§11.2) |
 | `canManageMembers` | `false` |
 | `myRole` | `'MEMBER'` |
-| `memberCount` | the projection's count (display only; it may lag) |
+| `memberCount` | the projection's count (display, and the capacity switch of §11.2; never an access answer; it may lag) |
 
 New route:
 
@@ -731,8 +776,8 @@ Existing routes gain the refusals of §13. Event semantics:
 ```ts
 // messaging/domain: pure; imports nothing from communities
 interface Conversation { /* … */ readonly communityId: string | null; readonly projectedMembershipVersion: number | null }
-interface Participant  { /* … */ readonly sourceVersion: number | null; readonly sourceJoinedAt: Date | null }
-interface CommunityMemberState { readonly userId: string; readonly active: boolean; readonly joinedAt: Date; readonly version: number }
+interface Participant  { /* … */ readonly sourceVersion: number | null; readonly sourceMembershipId: string | null; readonly sourceJoinedAt: Date | null }
+interface CommunityMemberState { readonly userId: string; readonly membershipId: string; readonly active: boolean; readonly joinedAt: Date; readonly version: number }
 export const COMMUNITY_HISTORY: 'FULL' | 'FROM_JOIN' = 'FULL';   // PROVISIONAL (Q52)
 function isCommunityChat(c: Conversation): boolean;
 function projectMember(row: Participant | null, s: CommunityMemberState,
@@ -779,9 +824,11 @@ CREATE UNIQUE INDEX conversations_community_unique
 
 -- conversation_participants
 ALTER TABLE conversation_participants ADD COLUMN source_version bigint NULL;
-ALTER TABLE conversation_participants ADD COLUMN source_joined_at timestamptz NULL;
+ALTER TABLE conversation_participants ADD COLUMN source_membership_id text NULL;   -- the stint id; decides rejoins
+ALTER TABLE conversation_participants ADD COLUMN source_joined_at timestamptz NULL;  -- provenance only
 ALTER TABLE conversation_participants ADD CONSTRAINT conversation_participants_source_shape CHECK (
-      (source_version IS NULL) = (source_joined_at IS NULL)
+      (source_version IS NULL) = (source_membership_id IS NULL)
+  AND (source_version IS NULL) = (source_joined_at IS NULL)
   AND (source_version IS NULL OR source_version > 0)
   AND (source_version IS NULL OR (role = 'MEMBER' AND added_by IS NULL)));
 CREATE INDEX conversation_participants_current_idx                        -- gate G2
@@ -794,8 +841,9 @@ and `left_after_joined` accepts `left_at = joined_at` (`schema.ts:101-108`).
 ### 12.4 Notifications
 
 - **No change in P4.** `MessagingNotificationTranslator` is unchanged. It
-  receives lag-filtered pages from `MESSAGE_RECIPIENTS`, so a removed member
-  is not notified, and `readersOnly` still applies the identity check.
+  receives lag-filtered pages from `MESSAGE_RECIPIENTS`, already narrowed by
+  the `community.chat.read` ceiling (§7.3), so neither a removed member nor
+  one whose role lost `communities.read` is notified.
 - Because messaging raises no participant events for community chats, no
   `ADDED_TO_CONVERSATION` or `CONVERSATION_CREATED` notification is ever
   created for them.
@@ -804,7 +852,7 @@ and `left_after_joined` accepts `left_at = joined_at` (`schema.ts:101-108`).
   and [Q27](open-questions.md#q27--how-long-are-notifications-kept).
 - **Later (P10, only after Q28).** The collapse seam Q28 already documents: a
   translator key, one unread notification per conversation updated in place
-  (`open-questions.md:651-655`). An additive `memberCount` on `message.sent`
+  (`open-questions.md:697-701`). An additive `memberCount` on `message.sent`
   only if Q28's answer depends on audience size. Notifications about
   community facts themselves (added, removed) are
   [Q67](open-questions.md#q67--notifications-for-community-live-and-attendance-facts);
@@ -828,15 +876,19 @@ and `left_after_joined` accepts `left_at = joined_at` (`schema.ts:101-108`).
 - **The connection gate stays `messaging.read`** (`realtime-sessions.ts:442-444`;
   [Q66](open-questions.md#q66--realtime-without-messagingread)). The
   `community.chat.read` ceiling includes `messaging.read`, so no reader of a
-  community chat is shut out by it.
+  community chat is shut out by it. The gate checks only `messaging.read`, so
+  the rest of the ceiling is applied to each recipient page (§7.3), not left
+  to the connection.
 - **LiveKit carries nothing of the chat.** No data channel is used.
 
 ### 12.6 What Communities provides
 
 Messaging consumes, and does not change, `COMMUNITY_AUTHORIZATION`,
 `COMMUNITY_MEMBERSHIP`, `COMMUNITY_DIRECTORY` and `CommunityEvents`
-([communities.md §10](communities.md#10-public-contracts)). Two properties
-it relies on:
+([communities.md §10](communities.md#10-public-contracts)). It needs one
+addition: `COMMUNITY_CHAT_READ_CEILING` in `capabilities.ts`, the permission
+list of the `community.chat.read` ceiling, which Communities' act table also
+uses (§7.3). Two properties it relies on:
 
 - `changesSince` is **one statement**, so the states and the head come from
   one snapshot. It returns the latest state per user, in ascending version
@@ -865,6 +917,7 @@ it relies on:
 | Add, remove (the owner route and the `messaging.manage` route) or leave on a community chat | `precondition_failed` | 412 | `messaging.membership_managed_by_community` | evaluated after the membership check, so a non-member still gets 404. Refused even for the OWNER role holding every permission |
 | List a community chat's participants | `forbidden` | 403 | `messaging.members_hidden` (existing) | after the membership check |
 | Send without the `community.chat.post` permit (no capability, no ceiling, or LOCKED) | `forbidden` | 403 | `messaging.posting_not_allowed` (existing) | after the read check |
+| Send to a community chat whose `member_count` is above `communityChatMaxServedMembers` | `precondition_failed` | 412 | `messaging.community_chat_over_capacity` | after the post permit, so only a poster learns the chat is over the switch (§11.2) |
 | A Communities call rejects (store failure, timeout) | `unavailable` (P0) | 503 | `unavailable` | fail closed; never a role-only answer |
 | The same, on realtime `subscribe` | — | — | frame `SERVER_ERROR` | the default branch of `realtime-sessions.ts:339-340` |
 | Too many requests to the new route | `rate_limited` | 429 | set in P4 | PROVISIONAL limit, Q26 |
@@ -897,11 +950,11 @@ and [A5](communities-live-attendance.md#a5-a-removed-member-loses-chat-and-live-
     │◀────────────────│               │                 │                       │                       │
     │                 │               │ 5 wake-up: schedule(C), returns at once │                       │
     │                 │               │────────────────▶│                       │                       │
-    │                 │ 6 changesSince(C, p, 1000) → [U ACTIVE J v], through v  │                       │
+    │                 │ 6 changesSince(C, p, 1000) → [U ACTIVE m v], through v  │                       │
     │                 │◀────────────────────────────────│                       │                       │
-    │                 │               │                 │ 7 apply [U ACTIVE J v]: BEGIN; conversation K FOR UPDATE;
+    │                 │               │                 │ 7 apply [U ACTIVE m v]: BEGIN; conversation K FOR UPDATE;
     │                 │               │                 │   insert U (MEMBER, lastRead = K.lastSequence, hidden 0
-    │                 │               │                 │   [FULL, Q52], source v/J); member_count+1; projected v; COMMIT
+    │                 │               │                 │   [FULL, Q52], source v/m/J); member_count+1; projected v; COMMIT
     │                 │               │                 │──────────────────────────────────────────────▶│
     │ 8 GET /messaging/communities/C/conversation       │                       │                       │
     │──────────────────────────────────────────────────────────────────────────▶│                       │
@@ -912,7 +965,7 @@ and [A5](communities-live-attendance.md#a5-a-removed-member-loses-chat-and-live-
     │                 │               │                 │                       │──────────────────────▶│
     │                 │               │                 │                       │ 11 U's row active, source ≥ v?
     │                 │               │                 │                       │    yes → 13. No (7 has not run):
-    │                 │               │                 │                       │ 12 repair: apply [U ACTIVE J v]
+    │                 │               │                 │                       │ 12 repair: apply [U ACTIVE m v]
     │                 │               │                 │                       │    alone, under K's row lock
     │                 │               │                 │                       │──────────────────────▶│
     │                 │ 13 authorize(U, C, community.chat.post) → canPost;      │                       │
@@ -1033,11 +1086,11 @@ and [A5](communities-live-attendance.md#a5-a-removed-member-loses-chat-and-live-
 | **Concurrent appliers** (loop, sweeper, repair, a second instance) | All serialize on the conversation row lock. Tombstones stop an older ACTIVE from bringing back a LEFT member. `member_count` moves only on real transitions, computed from rows read under the lock |
 | **A removal races a send** | S2. Only a send whose permits were read before the commit can land, ordered before the projected removal |
 | **A join races a message** | The joiner's window and watermark are computed under the lock at the apply (§9) |
-| **A leave is missed, then the person rejoins** | The new `joinedAt` differs from `source_joined_at`, so it is a rejoin: window and watermark reset |
+| **A leave is missed, then the person rejoins** | The new stint's `membershipId` differs from `source_membership_id`, so it is a rejoin: window and watermark reset, even if the clock stepped back or both stints share a `joinedAt` |
 | **The community is locked, or a grant is revoked, during a send** | The permit is asked on each send. A send whose permit was read before the change committed may land, a window of milliseconds ([communities.md §8.4](communities.md#84-lock-concurrency-and-idempotency)). Reading continues while LOCKED (Q46) |
 | **An unrecognised community status** (`chatReadable` false) | Every access returns 404 and recipient pages are empty. Messages are kept (Q3). The sweeper counts orphans |
 | **A bulk apply competes with sends in a busy chat** | The lock is held for one batch of at most 1,000 rows, so a send waits at most one batch. Profile 4 measures the hold time |
-| **An account is suspended, or loses `messaging.read`** | Identity refuses at authentication and authorization; `readersOnly` drops it from notifications; an open realtime connection is re-checked within 60 s (`realtime-policy.ts:34`). The projection is unaffected: membership is not identity's concern ([Q13](open-questions.md#q13--what-do-suspended-and-disabled-mean-and-who-may-move-an-account-between-them)) |
+| **An account is suspended, or loses `messaging.read` or `communities.read`** | Identity refuses at authentication and authorization, and without `communities.read` the permit is refused (404); the ceiling narrowing of §7.3 drops it from every recipient page, so it gets no frame and no notification row; an open realtime connection is re-checked within 60 s (`realtime-policy.ts:34`). The projection is unaffected: membership is not identity's concern ([Q13](open-questions.md#q13--what-do-suspended-and-disabled-mean-and-who-may-move-an-account-between-them)) |
 | **No database is configured** (mock mode) | Communities provides in-memory adapters for its contracts; `InMemoryMessagingStore` implements materialization, the apply and `communityChatsFor` with the same register semantics. The same contract suites run against both adapters |
 
 ---
@@ -1052,7 +1105,7 @@ and [A5](communities-live-attendance.md#a5-a-removed-member-loses-chat-and-live-
 | Disclosure of a large roster of minors through messaging | `ListParticipants` refuses community chats. Events and frames never carry member lists. `MESSAGE_RECIPIENTS` is in-process only | Depends on Communities' roster policy (Q22) |
 | Posting privilege escalation (a client claims a role) | `canPost` is decided per request by Communities from the server-built `Principal`. The projected role is always MEMBER and ignored. `ConversationResponse.canPost` is display only | None in messaging |
 | A leaked invitation link exposes the archive | Link expiry, revocation and use limits are Communities' (Q48). Removal takes effect at the commit. History for joiners is one constant (Q52) | Under the provisional `'FULL'`, a joiner through a leaked link sees history until removed |
-| Notifications or realtime becoming an authorization bypass | No new delivery path. Recipients are resolved at delivery time from the projection, narrowed through the authority while lagging. Notifications carry no message text, and opening one runs the checkpoint | A removed member keeps notification rows already stored (no content). Realtime frames rely on projected membership plus the `messaging.read` connection gate; they do not re-check the `communities.read` ceiling. Under the proposed provisional grants every role that holds `messaging.read` would also hold `communities.read` ([Q41](open-questions.md#q41--what-is-a-community-and-who-may-create-one)), so this is latent. It is a review item if Q41 or Q66 changes that |
+| Notifications or realtime becoming an authorization bypass | No new delivery path. Recipients are resolved at delivery time from the projection, narrowed through the authority while lagging, and on every page by the full `community.chat.read` ceiling from `COMMUNITY_CHAT_READ_CEILING`, whatever `readersOnly` says (§7.3). So a member refused on HTTP for a lost ceiling gets no frame and no notification either. Notifications carry no message text, and opening one runs the checkpoint | A removed member keeps notification rows already stored (no content). Frames whose recipients were resolved before a role change may still arrive |
 | Abuse of the system label | `system:messaging-community-chat` only fills `created_by`. It is never passed to `AuthorizationService`, never exposed, and authorizes nothing | None |
 | Membership races (concurrent join and leave, duplicate joins, out-of-order sync) | Per-community versions in commit order; the per-row guard, repeated in the database; tombstones; the contiguous, monotonic advance | Covered by the tests in §17 |
 | Title disclosure | `COMMUNITY_DIRECTORY` is asked only for rows the viewer may read | None |
@@ -1067,7 +1120,7 @@ and [A5](communities-live-attendance.md#a5-a-removed-member-loses-chat-and-live-
 | Architecture | `messaging-boundaries.spec.ts`, extended: messaging reaches communities only through `contracts/` and `communities.module.ts`; `messaging/domain` reaches no communities file (`:27-41` unchanged); messaging still never reaches live, with `communities/contracts` in the graph (`:43-50` unchanged); `MessagingModule` exports exactly `[MESSAGE_RECIPIENTS, MESSAGE_DELIVERY]` | P4 |
 | Architecture | `no-circular` and the no-`forwardRef` test stay green. `authorization.spec.ts:79-94` lists `CommunityChatController`, and its route declares exactly one access level | P4 |
 | Wiring | A Nest smoke test: `AppModule` compiles; `COMMUNITY_AUTHORIZATION` resolves inside `MessagingModule`; `CommunitiesModule`'s imports contain no messaging module | P4 |
-| Unit (pure) | The `projectMember` truth table: {absent, ACTIVE, LEFT} × {ACTIVE same `joinedAt`, ACTIVE new `joinedAt`, LEFT} × {older, equal, newer version} gives the next state, transition and Δ. A missed-leave rejoin resets window and watermark; a tombstone keeps its version; `'FULL'` gives hidden 0 and `'FROM_JOIN'` gives the last sequence | P4 |
+| Unit (pure) | The `projectMember` truth table: {absent, ACTIVE, LEFT} × {ACTIVE same `membershipId`, ACTIVE new `membershipId` (including one with an equal or earlier `joinedAt`), LEFT} × {older, equal, newer version} gives the next state, transition and Δ. A missed-leave rejoin resets window and watermark; a tombstone keeps its version; `'FULL'` gives hidden 0 and `'FROM_JOIN'` gives the last sequence | P4 |
 | Property | Any permutation, duplication, or loss-then-resend of a member's state log, applied by 1–3 concurrent appliers, converges to the highest-version state, and `member_count` equals the active rows | P4 |
 | Postgres | 20 concurrent materializations for one community produce exactly 1 conversation | P4 |
 | Postgres (regression) | An apply with `advance {from: 10, to: 20}` after the projected version reached 50 leaves it at 50. Across 1,000 random interleavings it never decreases, and `member_count` stays exact when the contiguity check fails | P4 |
@@ -1075,6 +1128,8 @@ and [A5](communities-live-attendance.md#a5-a-removed-member-loses-chat-and-live-
 | Postgres (race) | 50 rounds of a concurrent send and removal (the authority commit, then the sync): every stored message from U has either permits read before the commit or a sequence below the projected removal; no request whose permit was read after the commit is accepted. Extends `messaging-persistence.spec.ts:250-260` | P4 |
 | Postgres (drift) | Wake-ups duplicated, reordered or dropped still leave the projection equal to the authority. 100 wake-ups during one run cause at most 2 loop executions. The sweeper materializes a community whose first wake-up was dropped, and converges a lag after a simulated restart | P4 |
 | Postgres (lag filter) | A member removed in the authority but not yet projected receives no frame and no notification row for a new message. `chatReadable` false yields empty pages | P4 |
+| Application (ceiling) | An ACTIVE, projected member whose role loses `communities.read` gets 404 on HTTP and receives no `message.sent` frame and no notification row, with projection versions equal and with `readersOnly` absent or true. Communities' act table and `MESSAGE_RECIPIENTS` read the same `COMMUNITY_CHAT_READ_CEILING` | P4 |
+| Application (capacity switch) | With `communityChatMaxServedMembers` = 3 and 4 projected members, the post-permit holder gets 412 `messaging.community_chat_over_capacity` and `canPost` false; reading and marking read still succeed; no `message.sent` is published. At 3 members the send succeeds | P4 |
 | Postgres (reconciler) | Authority restored behind the projection: merge-join rebuild, projected version reset to the head, warning and metric logged, no audit row | P4 |
 | Postgres (scale) | 30,000 members in 30 batches: the lock hold per batch is recorded; sends from other members succeed between batches; the `MESSAGE_RECIPIENTS` walk returns every member exactly once (extends `messaging-persistence.spec.ts:522-551` from 250); `EXPLAIN` shows `conversation_participants_current_idx` for member pages under 50% churn | P4 |
 | Application | With the real authorization service and in-memory adapters: a member removed in the authority but still projected gets 404 and a sync is scheduled; a member joined but not yet projected gets 200 after the inline repair; an unknown community and a real one the caller is not in give byte-identical 404s; a refused `chat.post` gives 403 | P4 |
@@ -1105,7 +1160,7 @@ act rule when a question is answered.
 | [Q48](open-questions.md#q48--invitation-links) | Link risk that reaches the archive | Communities' link rules; see Q52 |
 | [Q66](open-questions.md#q66--realtime-without-messagingread) | The realtime connection gate | Stays `messaging.read` |
 | [Q67](open-questions.md#q67--notifications-for-community-live-and-attendance-facts) | Notifications for community facts | None in v1 |
-| [Q20](open-questions.md#q20--messaging-limits), [Q26](open-questions.md#q26--realtime-limits) (existing) | Community size; operational bounds | No member limit; messaging's caps do not apply; engineering bounds from profile 4 |
+| [Q20](open-questions.md#q20--messaging-limits), [Q26](open-questions.md#q26--realtime-limits) (existing) | Community size; operational bounds | No member limit; messaging's caps do not apply; posting closed above `communityChatMaxServedMembers` (250) until G1–G4 hold (§11.2); engineering bounds from profile 4 |
 | [Q22](open-questions.md#q22--who-may-see-who-is-in-a-conversation) (existing) | Who sees the roster | Messaging never lists it (`members_hidden`) |
 | [Q27](open-questions.md#q27--how-long-are-notifications-kept), [Q28](open-questions.md#q28--what-deserves-a-notification-and-how-loudly) (existing) | Notification cost per post | Today's behaviour; gate G4 |
 | [Q3](open-questions.md#q3--what-is-the-retention-policy-for-files-messages-audit-entries-and-session-history), [Q23](open-questions.md#q23--moderation-deletion-and-review) (existing) | Retention; moderation of messages | Nothing deleted; `community.messages.moderate` reserved |
@@ -1125,11 +1180,15 @@ Deliberately later:
 - **Sequence allocation without the row lock**, if Q51 lets many people post.
 - **The broker and the outbox** (P11), only when their triggers hold (ADR 0021).
 
-Documents to change when P4 lands (not changed by this pass): `messaging.md`
-(community chats, the 412 refusal, `members_hidden`, no messaging cap, the lag
-filter, G1–G4, the new route); the `MESSAGE_RECIPIENTS` comment
-(`message-recipients.ts:13-20`); the `MessagingModule` header, which says it
-depends "on nothing else" (`messaging.module.ts:50-60`); and the messaging
-section of `module-boundaries.md`. ADR 0018 supersedes ADR 0011 §4–5 in part,
-because messaging no longer owns membership for conversations linked to a
-community (`0011-messaging-v1.md:41-52`). ADRs are never edited.
+Documents and code comments to change when P4 lands: `messaging.md`
+(community chats, the 412 refusals, `members_hidden`, no messaging cap, the
+lag filter, the ceiling narrowing, G1–G4, the new route); the
+`MESSAGE_RECIPIENTS` comment (`message-recipients.ts:13-20`); the
+`MessagingModule` header, which says it depends "on nothing else"
+(`messaging.module.ts:50-60`); and the messaging section of
+`module-boundaries.md`. This pass added only a Proposed-change pointer to
+`messaging.md` and to that section, plus a correction note in `messaging.md`
+§11; the rewrites land with P4. If accepted, ADR 0018 would supersede ADR 0011
+§4–5 in part, because messaging would no longer own membership for
+conversations linked to a community (`0011-messaging-v1.md:41-52`). ADRs are
+never edited.
