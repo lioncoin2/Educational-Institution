@@ -8,9 +8,9 @@ A module is a unit of ownership, not a folder. If two modules need the same
 table, one of them is wrong.
 
 **Implementation state** is marked on every module. Of the twelve business
-modules, six are implemented (identity, live, files, messaging, realtime,
-notifications); the other six are deliberately empty: contracts and a Nest
-module, no implementation. Deciding the boundary before the code
+modules, seven are implemented (identity, live, files, messaging, realtime,
+notifications, academic); the other five are deliberately empty: contracts
+and a Nest module, no implementation. Deciding the boundary before the code
 arrives is cheap; retrofitting one is not.
 
 ---
@@ -87,19 +87,38 @@ make both cases awkward.
 
 ## academic
 
-**State:** contract only.
+**State:** implemented — Academic Core V1 ([academic.md](academic.md),
+[ADR 0014](decisions/0014-academic-core-v1.md)).
 
-**Responsibility.** The catalogue of what is taught: departments, programs,
-levels, halaqat as structural entities.
+**Responsibility.** The institution's academic structure and who is in it:
+sections, programs and halaqat; which students are enrolled in a halaqa, and
+which teachers teach it — with history.
 
-**Owned entities.** `Program`, `Level`, `Curriculum`, `Halaqa`.
+**Owned entities.** `Section`, `Program`, `Halaqa`, `Enrollment`,
+`TeacherAssignment` (tables `academic_*`).
 
-**Public contract.** `ProgramRef`, `LevelRef`, `HalaqaRef`.
+**Use cases.** Read the catalogue; create, edit, activate and deactivate
+structure; enroll a student and end the enrollment; assign a teacher and end
+the assignment; read a halaqa's students and teachers (resource-scoped);
+read someone's history (administrators); read one's own record; seed the
+structure from the institution profile.
 
-**Depends on.** `shared`.
+**Public contract.** `ACADEMIC_RELATIONSHIPS` — `isEnrolled`, `isTeaching`,
+`activeStudentIds` — plus the vocabulary (`SectionKind`, statuses, roles) and
+the `academic.*` event types.
 
-**Must not know.** Schedules, attendance, who turned up. A halaqa *exists* in
-academic; a halaqa *meets* in operations.
+**Events.** `academic.section|program|halaqa.created|updated|activated|deactivated`,
+`academic.student.enrolled`, `academic.student.enrollment_ended`,
+`academic.teacher.assigned`, `academic.teacher.assignment_ended` — ids and
+codes only.
+
+**Depends on.** `identity/contracts` (authorization, the account directory),
+`shared`. Nothing else.
+
+**Must not know.** Passwords, sessions, roles as names, account status,
+emails; identity's, messaging's, notifications' or files' tables (an
+architecture test); schedules, attendance, lessons, grades. A halaqa
+*exists* — and has its people — in academic; a halaqa *meets* in operations.
 
 ---
 
@@ -107,10 +126,12 @@ academic; a halaqa *meets* in operations.
 
 **State:** contract only.
 
-**Responsibility.** The institution in motion: scheduling, enrolment, sessions,
-attendance.
+**Responsibility.** The institution in motion: scheduling, sessions,
+attendance. Who is enrolled in a halaqa is academic's
+([ADR 0014](decisions/0014-academic-core-v1.md)); operations will ask
+`ACADEMIC_RELATIONSHIPS` rather than keep its own copy.
 
-**Owned entities.** `Enrolment`, `ScheduledSession`, `AttendanceRecord`.
+**Owned entities.** `ScheduledSession`, `AttendanceRecord`.
 
 **Public contract.** `AttendanceState`, `SessionRef`, `AttendanceAmendment` —
 the last of which requires a reason and an amender for every after-the-fact

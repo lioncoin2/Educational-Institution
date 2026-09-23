@@ -26,3 +26,4 @@ the history, not the current state.
 | [0011](0011-messaging-v1.md) | Messaging V1: server-ordered, idempotent, membership-first | Accepted |
 | [0012](0012-realtime-messaging-transport.md) | Realtime messaging: plain WebSocket, membership decided per event | Accepted |
 | [0013](0013-notifications-v1.md) | Notifications V1: a stored inbox, idempotent by the database, delivered by subscribers | Accepted |
+| [0014](0014-academic-core-v1.md) | Academic Core V1: academic owns the structure and who is in it | Accepted |

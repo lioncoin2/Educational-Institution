@@ -226,7 +226,11 @@ table that holds a human-readable string.
 
 **Built instead.** `NotificationRequest` carries a `template` key plus
 parameters rather than a rendered string, so localization can happen at
-delivery. Nothing else assumes a language.
+delivery. Academic names — sections, programs, halaqat — are one `name`
+column each, Arabic as the profile states them; what identifies them is a
+language-neutral `code` (`dep-literacy`), so a second language would add
+columns or a table without touching any reference. Nothing else assumes a
+language.
 
 **When answered.** Possibly a schema change for content tables. This is the
 question on this list with the largest cost of being answered late, which is
@@ -619,7 +623,9 @@ preferences, and a read never notifies anyone. The five reserved types
 (assignments, announcements, certificates, halaqas) have no source and are
 refused. The model is ready: every notification has a type and a category, a
 type is activated by one catalog line, and each push already carries a thread
-key that groups a conversation's pushes on the device.
+key that groups a conversation's pushes on the device. Academic now publishes
+`academic.student.enrolled` and `academic.teacher.assigned` (and their
+endings); none notifies anyone until this question says which should.
 
 **When answered.** Defaults are one constant (`DEFAULT_CHANNEL_PREFERENCES`),
 or per-role defaults read where `preferencesFor` fills in missing rows.
@@ -628,6 +634,185 @@ conversation, updated in place) — no change to the dispatcher or the
 clients. Priority is a request field the dispatcher weighs against
 preferences, plus a permission for who may set it. New categories arrive with
 their types.
+
+---
+
+## Q29 — How do the sections relate, and what moves a student on?
+
+**Question.**
+
+- Are the five graded sections of page 6 (محو الأمية → تلقين الحروف → تجويد
+  مبتدئ → متوسط → متقدم) **strictly sequential**? Must a student finish one
+  before joining the next, and may they skip one?
+- Are التهجي، البراعم and اللغات **parallel** to that ladder, alternatives to
+  it, or entry points into it? Are the accompanying programs taken alongside
+  a section, or on their own?
+- What **promotes** a student to another halaqa or section — a teacher's
+  decision, an examination, a count of completed halaqat? Who decides?
+- Are a section's halaqat **levels** (taken in order) or **parallel groups**
+  (the same level, different times or teachers)?
+
+**Why not guessed.** Each answer is a promotion rule, a prerequisite or a
+completion rule — academic policy the profile does not state. A ladder drawn
+with locks and ticks, or an enrollment refused for a missing prerequisite,
+would be a rule nobody agreed to.
+
+**Built instead.** Section `kind` (`PROGRESSIVE`, `SPECIAL`, `ACCOMPANYING`)
+and `order` — a **display position, never a prerequisite**. Enrollment checks
+only that the halaqa, its program and its section are ACTIVE and that the
+account may study. Against the server, مساري marks where the learner is
+enrolled and claims nothing about any other rung (neither done, nor open,
+nor locked). Nothing promotes anyone.
+
+**When answered.** Prerequisites become a check in `EnrollStudentUseCase`
+(reading the student's history through the read model, already indexed);
+promotion becomes an explicit operation — end one enrollment, create the
+next — in one transaction. The app's ladder would then show real completed
+and locked rungs from the same records.
+
+---
+
+## Q30 — Enrollment policy
+
+**Question.**
+
+- May a student **enrol themselves**, or request enrollment, or is it always
+  done by staff? Who among staff: admins only, or supervisors, or teachers
+  for their own halaqat?
+- May a student be in **several halaqat at once** — in one section, across
+  sections, in an accompanying program alongside a section?
+- What **completes** a halaqa: a date, an examination, a teacher's word? Who
+  records it? Is "withdrawn" the only other ending?
+- May an enrollment be **transferred** directly to another halaqa, keeping
+  one continuous record?
+- May an owner or an administrator be enrolled as a student?
+
+**Why not guessed.** Self-enrollment is a registration workflow (forms,
+approval, capacity) the profile does not describe; a one-halaqa limit or a
+completion rule decides who may study what.
+
+**Built instead.** Staff-only enrollment (`academic.manage`, OWNER and ADMIN
+provisionally); **no limit** on concurrent halaqat, beyond one ACTIVE
+enrollment per student per halaqa; an enrollment ends only when staff end it,
+choosing `COMPLETED` or `WITHDRAWN` — no rule decides for them; a "transfer"
+is an explicit end followed by a new enrollment. Only an ACTIVE account
+holding `academic.study` can be enrolled — STUDENT provisionally, and OWNER
+and ADMIN, because the no-escalation rule makes them hold what they grant
+([authorization.md §4](authorization.md)). The app enrols nobody and shows a
+student with no enrollment exactly that — not a "pending" state that does
+not exist.
+
+**When answered.** Self-enrollment: a permission, a use case and a route (and
+probably a request/approval state — a migration adding a status). Limits: a
+check in the enroll use case, with the count indexed already. Transfer: one
+use case ending and creating in a transaction. Who may enrol: the role matrix
+(Q1).
+
+---
+
+## Q31 — Teaching scope, and what staff may see
+
+**Question.**
+
+- May a teacher teach **several halaqat**? May a halaqa have **several
+  teachers**, and what does an assistant teacher do that a teacher does not?
+- What may a teacher see **outside** the halaqat they teach — other halaqat
+  in their section? Their former students?
+- What may a **supervisor** see: every roster, a section's, none?
+
+**Why not guessed.** These are privacy boundaries for children's records.
+Widening them later is a decision; narrowing them after data has been seen
+cannot be undone.
+
+**Built instead.** Assignments are many-to-many with a role
+(`TEACHER` / `ASSISTANT_TEACHER`), no limit either way. A teacher reads a
+halaqa's students and teachers **only through an ACTIVE assignment to that
+halaqa** — and only while their account holds `academic.teach`; nothing
+outside it. Supervisors see no roster. Students see their own record and
+their own halaqa's teachers by display name. Administrators (`academic.manage`)
+see all.
+
+**When answered.** A resource rule in `AcademicAccess.halaqaMembers` (e.g.
+"supervisors of section S"), or a grant in the role matrix. Assistant
+teachers' distinct duties would be permissions checked in the future
+modules that act per halaqa.
+
+---
+
+## Q32 — Closing structure: who may, and what happens to its people?
+
+**Question.** Who may deactivate (or archive) a section, program or halaqa?
+When a halaqa closes, what happens to its teachers' assignments — end with
+it, or stay for the record? Should a program or section closing end its
+enrollments, or only stop new ones? Is there an "archived" state beyond
+inactive?
+
+**Why not guessed.** Ending a student's enrollment chooses an outcome
+(completed or withdrawn) for them; ending a teacher's assignment ends their
+access to the roster.
+
+**Built instead.** `academic.manage` (OWNER, ADMIN) activates and
+deactivates; nothing is ever deleted. Deactivating a section or program
+closes it to **new** enrollment only. A halaqa **cannot be deactivated while
+it has ACTIVE enrollments** — staff end them first, with the outcome they
+choose. Teacher assignments are left as they are.
+
+**When answered.** Ending assignments on closure is a few lines in
+`ChangeHalaqaStatusUseCase` inside the same transaction; an `ARCHIVED` state
+is a vocabulary value and a check-constraint migration.
+
+---
+
+## Q33 — How is each section organised inside, and what are its halaqat called?
+
+**Question.** The profile names five graded sections with their halaqat
+counts, but **no program inside any section**, and no halaqa by name. Is each
+section one program? Are there tracks, levels or cohorts inside it? What does
+the institution call its halaqat? Do البراعم's three levels, علوم النحو's
+five levels, قسم اللغات's five languages and التهجي's "استيعاب 40 مجموعة"
+correspond to programs or halaqat?
+
+**Why not guessed.** Inventing programs, level names or halaqa names would
+put words in the institution's mouth in every screen and report.
+
+**Built instead.** Each graded section has **one provisional program named
+after the section** (its code `<section>-program`); the special sections have
+no programs; the four accompanying programs sit under one section named by
+page 10's heading, with no halaqat. The 45 halaqat are named by number
+(`الحلقة 1`…), coded `<section>-h<n>`. Levels, languages and capacities are
+**not** turned into programs or halaqat. The six study fields (page 5) are
+linked to nothing. All of it is in one file,
+`backend/src/modules/academic/application/institution-structure.json`, which
+the app's profile data is tested against.
+
+**When answered.** Rename or add programs and halaqat through the API — no
+schema change; update the structure file so a fresh environment seeds the
+real shape. The provisional program keeps its code; nothing refers to it by
+name.
+
+---
+
+## Q34 — Page 8: «القيم الإيرانية»
+
+**Question.** Page 8 describes قسم البراعم as instilling «محبة القرآن
+والسنة والقيم **الإيرانية**». This is almost certainly a typing error for
+«الإيمانية», but it is what the profile says
+([pdf-content-extract.md](../pdf-content-extract.md), page 8). Which wording
+does the institution want shown?
+
+**Why not guessed.** Correcting source text silently is inventing it; showing
+a likely typo to every parent is not neutral either. The decision belongs to
+the institution.
+
+**Built instead.** Academic seeds **no descriptions** at all, so the
+server carries neither word. The app's existing transcription in
+`ProfileData` (from an earlier milestone) omits the word, reading «…والقيم في
+نفوسهم»; this milestone neither restores nor replaces it, and records it
+here.
+
+**When answered.** One string in `app/lib/data/sources/profile_data.dart`,
+or — if the institution writes its own description — a `PATCH` to the
+section, which the app then shows instead of the profile's text.
 
 ---
 

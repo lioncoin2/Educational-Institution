@@ -38,8 +38,8 @@ backend/src/
   modules/       the business modules
     identity/      users, roles, permissions, policies, authentication
     people/        students, teachers, guardians, staff profiles
-    academic/      programs, levels, curricula
-    operations/    halaqat, schedules, enrolment, attendance
+    academic/      sections, programs, halaqat; who is enrolled, who teaches
+    operations/    schedules, sessions, attendance
     assignments/   tasks, submissions, grading
     messaging/     direct, group and channel conversations
     live/          realtime audio rooms, raise-hand queue, moderation
@@ -60,7 +60,8 @@ Depth of implementation varies deliberately:
 | `messaging` | **Messaging V1**: DMs, groups, channels; server-ordered, idempotent sends; read state; keyset pages; membership-first authorization. On Postgres, tested |
 | `notifications` | **Notifications V1**: a persistent inbox fed by messaging's facts; idempotent by a database constraint; read state, capped unread count, keyset pages; per-channel preferences; device registration; push behind a provider port (logging adapter — no provider chosen, Q24). On Postgres, tested |
 | `realtime` | **Realtime Messaging V1**: authenticated WebSocket at `/realtime`; messaging events to current members' connections, per event; each person's new notifications and reads to their own connections; multi-device; heartbeat; limits. Single instance, tested on Postgres |
-| the other six | Contracts and a Nest module only — deliberately empty |
+| `academic` | **Academic Core V1**: sections → programs → halaqat, seeded from the institution profile; dated enrollments and teacher assignments with history; one-active invariants in the database; resource-level access (a teacher's roster through their assignment); `ACADEMIC_RELATIONSHIPS` for later modules ([academic.md](academic.md)). On Postgres, tested |
+| the other five | Contracts and a Nest module only — deliberately empty |
 
 The near-empty modules exist so that the boundary is decided before the
 code arrives, not after. An empty `contracts/index.ts` is a cheap commitment; a

@@ -7,11 +7,13 @@
 
 | المكوّن | الحالة |
 |---|---|
-| **Prototype الواجهات** (`app/`) | ✅ مُنفَّذ — واجهات تعمل ببيانات Mock داخل الذاكرة |
+| **تطبيق Flutter** (`app/`) | ✅ يعمل تجريبياً بلا خادم (بيانات معلَّمة)، أو مع الخادم عبر `API_BASE_URL`: الدخول والرسائل والإشعارات والبيانات الأكاديمية حقيقية |
 | **أساس المعمارية** (`backend/`) | ✅ Foundation V1 — الأساس والحدود والوحدات الأولى |
 | **الهوية والصلاحيات** (Identity & Access V1) | ✅ تسجيل الدخول، رموز تحديث دوّارة، جلسات لكل جهاز، إدارة الحسابات من قِبل الموظفين، سجلّ تدقيق في PostgreSQL |
-| الوحدات المكتملة في الـ Backend | `identity` · `live` (الغرف الصوتية) · `files` (جزئياً) |
-| الوحدات المُعرَّفة كحدود فقط | `people` · `academic` · `operations` · `assignments` · `messaging` · `notifications` · `automation` · `reporting` |
+| **المراسلة والاتصال المباشر والإشعارات** | ✅ Messaging V1 · Realtime Messaging V1 · Notifications V1 |
+| **النواة الأكاديمية** (Academic Core V1) | ✅ الأقسام والبرامج والحلقات من الملف التعريفي، التسجيل وتكليف المعلّمات مع السجلّ التاريخي، صلاحيات على مستوى الحلقة |
+| الوحدات المكتملة في الـ Backend | `identity` · `live` (الغرف الصوتية) · `files` · `messaging` · `realtime` · `notifications` · `academic` |
+| الوحدات المُعرَّفة كحدود فقط | `people` · `operations` · `assignments` · `automation` · `reporting` |
 
 > **الأساس ليس منتجاً جاهزاً للإنتاج.** ما لم يُنفَّذ ويُختبر فعلياً موثَّق صراحةً
 > في مستندات المعمارية تحت عنوان *Deferred* — ولم يُجرَ بعد أي اختبار حِمل
@@ -32,6 +34,8 @@
 | [`docs/architecture/realtime.md`](docs/architecture/realtime.md) | تصميم الغرف الصوتية (‏2500 مشارك)، وما ثبت منه وما لم يثبت |
 | [`docs/architecture/events.md`](docs/architecture/events.md) | الأحداث بين الوحدات |
 | [`docs/architecture/messaging.md`](docs/architecture/messaging.md) | حدود وحدة المراسلة |
+| [`docs/architecture/notifications.md`](docs/architecture/notifications.md) | الإشعارات: الصندوق المحفوظ، التفضيلات، الأجهزة |
+| [`docs/architecture/academic.md`](docs/architecture/academic.md) | النواة الأكاديمية: الأقسام والبرامج والحلقات، التسجيل، التكليف، الصلاحيات، التهيئة من الملف التعريفي |
 | [`docs/architecture/storage.md`](docs/architecture/storage.md) | الملفات والتخزين |
 | [`docs/architecture/persistence.md`](docs/architecture/persistence.md) | قاعدة البيانات واستراتيجية الترحيل |
 | [`docs/architecture/observability.md`](docs/architecture/observability.md) | السجلّات، سجلّ التدقيق، الفحوص الصحّية |
@@ -67,9 +71,10 @@ cd backend && npm run verify
 
 ## ⚠️ حدود المرحلة الحالية
 
-- واجهات `app/` ما زالت تعمل على **Mock Data**؛ لم تُربط بالـ Backend بعد.
-  نقطة الربط جاهزة في `app/lib/data/repositories/repositories.dart`.
-- لا واجهة مستخدم للمحادثات ولا لغرفة الـ 2500 مشارك (خارج نطاق هذه المرحلة عمداً).
+- بلا خادم تعمل واجهات `app/` على **Mock Data** معلَّمة. مع الخادم: الدخول والرسائل والإشعارات
+  والبيانات الأكاديمية حقيقية؛ الدروس والحضور والتقدّم والشهادات والإعلانات ما زالت تجريبية،
+  ولا يُعرض تقدّم غير مسجَّل.
+- لا واجهة لغرفة الـ 2500 مشارك، ولا لوحة للمعلّمة أو للإدارة (خارج نطاق هذه المرحلة عمداً).
 - كل بيان غير موجود في الملف التعريفي **مُعلَّم صراحةً كـ Mock Data**.
 
 ## 📌 الخطوة التالية

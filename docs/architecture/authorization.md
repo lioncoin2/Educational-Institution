@@ -44,7 +44,7 @@ The namespaces the brief named, plus identity's own:
 | `audit` | `read` |
 | `settings` | `manage` |
 | `people` | `read`, `manage` |
-| `academic` | `read`, `manage` |
+| `academic` | `read`, `manage`, `teach`, `study` |
 | `attendance` | `read`, `manage` |
 | `assignments` | `read`, `submit`, `manage` |
 | `messaging` | `read`, `send`, `start_direct`, `create_group`, `create_channel`, `manage` |
@@ -52,8 +52,17 @@ The namespaces the brief named, plus identity's own:
 | `files` | `read`, `upload` |
 | `reports` | `read` |
 
-28 permissions. The catalogue says what **can** be granted. It says nothing
+30 permissions. The catalogue says what **can** be granted. It says nothing
 about who holds what; that is the role matrix below.
+
+**Academic permissions separate eligibility from access.** `academic.read`
+is the catalogue and one's own record; `academic.manage` is structure,
+enrollment and assignment. `academic.teach` and `academic.study` grant nothing
+by themselves: they say which ACTIVE accounts may be *assigned* to teach or
+*enrolled* — so academic asks identity ("does this account hold
+`academic.study`?") instead of checking a role name. What a teacher may see
+comes from an ACTIVE assignment to that halaqa, never from the permission
+([academic.md §5](academic.md)).
 
 **Messaging permissions are always membership-scoped.** `messaging.read` means
 "may read the conversations you are a current member of", never "may read
@@ -116,12 +125,12 @@ testable meanwhile, and it is kept in one file so nobody mistakes it for policy.
 
 | Role | Provisional grants |
 | --- | --- |
-| OWNER | all 28 |
-| ADMIN | all except `settings.manage` and `messaging.manage` (26) |
+| OWNER | all 30 |
+| ADMIN | all except `settings.manage` and `messaging.manage` (28) |
 | SUPERVISOR | read access: `users`, `people`, `academic`, `attendance`, `assignments`, `reports`, `messaging.read/send/start_direct/create_group`, `live.join`, `files.read` |
-| TEACHER | `people.read`, `academic.read`, `attendance.*`, `assignments.read/manage`, `messaging.read/send/start_direct/create_group`, `live.join/speak/moderate`, `files.*` |
-| ASSISTANT_TEACHER | `academic.read`, `attendance.read`, `assignments.read`, `messaging.read/send`, `live.join`, `files.read` |
-| STUDENT | `academic.read`, `assignments.read/submit`, `messaging.read/send`, `live.join/raise_hand`, `files.*` |
+| TEACHER | `people.read`, `academic.read/teach`, `attendance.*`, `assignments.read/manage`, `messaging.read/send/start_direct/create_group`, `live.join/speak/moderate`, `files.*` |
+| ASSISTANT_TEACHER | `academic.read/teach`, `attendance.read`, `assignments.read`, `messaging.read/send`, `live.join`, `files.read` |
+| STUDENT | `academic.read/study`, `assignments.read/submit`, `messaging.read/send`, `live.join/raise_hand`, `files.*` |
 
 Two **technical** constraints shaped it. These are not policy choices:
 
@@ -294,6 +303,7 @@ which is asserted by test.
 | Guard fails closed; public skips tokens; 401 vs 403 | `access.guard.spec.ts` |
 | Every discovered route declares exactly one access level; public set fixed; admin routes need a permission | `test/architecture/authorization.spec.ts` |
 | Every notification route is `@Authenticated()`; another person's notification or device is `404`; a notification's target is refused after removal | `test/architecture/authorization.spec.ts`, `test/api/notifications.api.spec.ts` |
+| Every academic route holds `academic.read` or `academic.manage`; a teacher reaches a halaqa's roster only through an ACTIVE assignment to it, a student only their own record | `test/architecture/authorization.spec.ts`, `academic/application/access.spec.ts`, `test/api/academic.api.spec.ts` |
 | 401 / 403 / validation / error shape over real HTTP | `test/api/identity.api.spec.ts` |
 
 *Correction to the Foundation document:* it listed catalogue and deny-override
@@ -307,7 +317,10 @@ properties have the tests above.
 ## 10. Deferred
 
 - Runtime editing of the role → permission matrix (audit action reserved).
-- Scoping by halaqa, class or guardianship: policy rules the mechanism supports
-  but the institution has not defined.
+- Scoping by guardianship, and scoping attendance and assignments by halaqa:
+  policy rules the mechanism supports but the institution has not defined.
+  Academic's own reads are already scoped by halaqa — through teaching
+  assignments, in academic's use cases.
+- What supervisors may see of academic records (Q31).
 - Field-level authorization.
 - Delegation and time-boxed grants ("acting supervisor until Friday").

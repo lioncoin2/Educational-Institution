@@ -18,10 +18,14 @@ modules that have no code yet:
   for what each constraint guarantees;
 - notifications (Notifications V1): `notifications`,
   `notification_preferences`, `notification_devices` — see §3 below and
-  [notifications.md](notifications.md).
+  [notifications.md](notifications.md);
+- academic (Academic Core V1): `academic_sections`, `academic_programs`,
+  `academic_halaqat`, `academic_enrollments`, `academic_teacher_assignments`
+  — see §3 below and [academic.md](academic.md) §4 and §10.
 
 No table references another module's table: account and file ids are plain
-columns, never cross-module foreign keys (a test asserts it).
+columns, never cross-module foreign keys (a test asserts it). Inside a
+module, foreign keys are `RESTRICT` where history refers to a row.
 
 ---
 
@@ -126,6 +130,20 @@ transcribed, and a test asserts the database and the constants agree.
 | --- | --- | --- |
 | `0006_notifications` | generated, **additive only** (plus a header comment) | the three notification tables, with their uniques, CHECKs and partial indexes; no foreign keys |
 
+### Academic Core V1 — two steps
+
+| Migration | Kind | Does |
+| --- | --- | --- |
+| `0007_academic_core` | generated, **additive only** (plus a header comment) | the five academic tables, with their uniques, CHECKs, `RESTRICT` foreign keys inside the module and the two partial unique "one ACTIVE" indexes; no foreign key to another module |
+| `0008_seed_academic_permissions` | **custom data**, generated from constants | `academic.teach`, `academic.study`, and their provisional grants |
+
+**The institution's structure is not in a migration.** Sections, programs and
+halaqat are institutional data that administrators change; they are seeded
+by an explicit, idempotent command (`npm run academic:seed-structure`) that
+creates what is missing by code and never overwrites — see
+[academic.md §11](academic.md). Reference data a migration may carry is the
+kind code depends on (permissions); data people edit is not.
+
 `drizzle-kit generate` against the committed schema reports no changes — the
 migrations and the schema files agree.
 
@@ -223,6 +241,27 @@ Owned by **notifications**. What each guarantee is for:
 Account ids are plain columns: suspending or disabling an account leaves its
 notification history alone.
 
+### `academic_sections`, `academic_programs`, `academic_halaqat`, `academic_enrollments`, `academic_teacher_assignments`
+
+Owned by **academic**. What each guarantee is for:
+
+| Constraint / index | Guarantees |
+| --- | --- |
+| `academic_*_code_unique`, `*_code_shape` | one row per stable code; codes are lower-case slugs, 2–64 characters — the identifiers routes and seeds share (names are never keys) |
+| `academic_enrollments_active_unique (student_user_id, halaqa_id) WHERE status = 'ACTIVE'` | one current enrollment per student and halaqa, while history accumulates; enrolling is `INSERT … ON CONFLICT DO NOTHING`, so the index, not a prior read, decides |
+| `academic_teacher_assignments_active_unique (halaqa_id, teacher_user_id) WHERE status = 'ACTIVE'` | the same for teaching |
+| `…_section_id_…_fk`, `…_program_id_…_fk`, `…_halaqa_id_…_fk` — all `ON DELETE RESTRICT` | nothing history refers to can be deleted, even by hand |
+| CHECKs: kind, status, role vocabularies; `(status = 'ACTIVE') = (ended_at IS NULL)`; `ended_at ≥ enrolled_at / started_at`; name, description and position ranges | the database refuses what the domain refuses, whoever writes |
+| `academic_enrollments_halaqa_idx (halaqa_id, status, enrolled_at, id)` | a halaqa's roster by status, keyset-paged |
+| `academic_enrollments_student_idx (student_user_id, enrolled_at, id)` | a student's history and current enrollments |
+| `academic_teacher_assignments_halaqa_idx (halaqa_id, status, started_at, id)` · `…_teacher_idx (teacher_user_id, started_at, id)` | a halaqa's teachers; a teacher's assignments |
+| `academic_programs_section_idx`, `academic_halaqat_program_idx (parent, sort_order, code)` | a section's programs and a program's halaqat, in order |
+
+Enrollment locks its halaqa, program and section rows `FOR SHARE`;
+deactivating a halaqa locks it `FOR UPDATE` — so no enrollment slips into a
+halaqa as it closes. Account ids are plain columns: suspending an account
+leaves its enrollments alone.
+
 ### `audit_log`
 
 Owned by **platform**. Now written by `DrizzleAuditLog` whenever a database is
@@ -249,6 +288,8 @@ in-memory twin for unit tests and database-less development:
 | `NotificationRepository` | `DrizzleNotificationRepository` | `InMemoryNotificationRepository` |
 | `PreferenceRepository` | `DrizzlePreferenceRepository` | `InMemoryPreferenceRepository` |
 | `DeviceRepository` | `DrizzleDeviceRepository` | `InMemoryDeviceRepository` |
+| `AcademicRepository` (writes) | `DrizzleAcademicRepository` | `InMemoryAcademicStore` |
+| `AcademicReadModel` (lists) | `DrizzleAcademicReadModel` | `InMemoryAcademicStore` (the same instance) |
 
 Selected once per module, keyed on whether `DATABASE_URL` was supplied.
 
@@ -311,6 +352,19 @@ and say so on stderr; CI always sets it.
   once; devices register, refresh, move between accounts and are disabled,
   and one token registered concurrently from two accounts is one row; a
   connected, disconnected and reconnected recipient on a real WebSocket.
+- **Academic:** every constraint and index by name; foreign keys only inside
+  the module, all `RESTRICT`, none to an account; the checks refuse what the
+  domain never writes; history cannot be deleted from under its references;
+  twenty simultaneous enrollments of one student in one halaqa make one row
+  and one audit entry; simultaneous assignments make one ACTIVE row; two
+  administrators ending one enrollment at once end it once; enrollment racing
+  a halaqa's deactivation never leaves an ACTIVE enrollment in an INACTIVE
+  halaqa (25 rounds); a cap and a code hold under contention; forty-six
+  enrollments of one student page newest first, each once; `EXPLAIN` shows
+  the roster, history and teacher lookups on their indexes; the seed writes
+  the structure once, keeps an administrator's change and runs concurrently
+  without duplicates; migrations 0007–0008 on a database already in use add
+  their tables and grants and touch nothing else.
 
 ---
 

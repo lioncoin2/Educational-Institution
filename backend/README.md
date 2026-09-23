@@ -43,8 +43,19 @@ With Postgres:
 ```bash
 export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/institution
 npm run db:migrate
+npm run build && npm run academic:seed-structure   # the institution's sections, programs and 45 halaqat
 npm run start:dev
 ```
+
+**The academic structure is seeded by an explicit step, not a migration.**
+`academic:seed-structure` creates the sections, programs and halaqat the
+institution profile states (from
+`src/modules/academic/application/institution-structure.json`) — by code, only
+what is missing, never overwriting what an administrator has changed since —
+and prints what it created and found. Run it once after migrating, and again
+safely at any time. It creates no student, teacher, enrollment or progress.
+Without a database the in-memory store is seeded at boot. See
+[academic.md §11](../docs/architecture/academic.md).
 
 There is **no seeded account and no default password.** The system starts with
 zero users, on purpose. Create the first owner on the server — the password is
@@ -91,14 +102,21 @@ through `/admin/users`. See
 | Mark read | `POST /notifications/:id/read`, `POST /notifications/read-all` | authenticated · your own only |
 | Notification settings | `GET` / `PATCH /notifications/preferences` | authenticated · your own only |
 | Push devices | `POST /notifications/devices`, `DELETE /notifications/devices/:id` | authenticated · rate-limited · your own only · the token is never returned |
+| Academic catalogue | `GET /academic/sections`, `GET /academic/sections/:id` · `/programs/:id` · `/halaqat/:id` | `academic.read` |
+| Academic structure | `POST /academic/sections` · `/programs` · `/halaqat`, `PATCH …/:id`, `POST …/:id/activate` · `/deactivate` | `academic.manage` |
+| Enrollment | `POST /academic/halaqat/:id/enrollments`, `POST /academic/enrollments/:id/end`, `GET /academic/students/:userId/enrollments` | `academic.manage` |
+| Teaching | `POST /academic/halaqat/:id/teachers`, `POST /academic/teacher-assignments/:id/end`, `GET /academic/teachers/:userId/assignments` | `academic.manage` |
+| A halaqa's people | `GET /academic/halaqat/:id/students` · `/teachers` | `academic.read` + `academic.manage`, or an ACTIVE assignment to that halaqa |
+| My academic record | `GET /academic/me`, `GET /academic/me/enrollments` · `/teaching` | `academic.read` · your own only |
 | Health | `GET /health/live`, `GET /health/ready` | public |
 | Realtime | WebSocket `/realtime` — `auth`, `subscribe`, `ping` in; `message.sent`, `message.read`, `conversation.created`, `participant.added` / `.removed`, `notification.created`, `notification.read`, `notification.read_all` out | access token in the first frame · `messaging.read` · events only for conversations you are in, and only your own notifications |
 
 Messaging and files are described in
 [messaging.md](../docs/architecture/messaging.md) and
 [storage.md](../docs/architecture/storage.md); notifications in
-[notifications.md](../docs/architecture/notifications.md); the realtime
-protocol in [realtime.md, Part M](../docs/architecture/realtime.md).
+[notifications.md](../docs/architecture/notifications.md); the academic core
+in [academic.md](../docs/architecture/academic.md); the realtime protocol in
+[realtime.md, Part M](../docs/architecture/realtime.md).
 
 Errors always have one shape:
 `{ "error": { "kind"?, "code", "message", "details"? }, "requestId" }`.
@@ -114,6 +132,7 @@ Errors always have one shape:
 | `npm run test:arch` | Just the architecture rules |
 | `npm run test:integration` | Just the Postgres suites (needs `TEST_DATABASE_URL`) |
 | `npm run identity:bootstrap-owner` | Create the first owner (after `npm run build`; password on stdin) |
+| `npm run academic:seed-structure` | Seed the institution's academic structure from its profile — idempotent, never overwrites (after `npm run build` and `npm run db:migrate`) |
 | `npm run arch:graph` | dependency-cruiser directly |
 | `npm run db:generate` | Diff schema files → a new SQL migration |
 | `npm run db:migrate` | Apply pending migrations |

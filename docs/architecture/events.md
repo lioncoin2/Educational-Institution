@@ -192,9 +192,12 @@ by a real broker and subscribers become consumers. Again the port is unchanged.
 | `notifications.notification.created` | notifications — once per notification actually stored | **realtime — subscribed** (the recipient's connections), **notifications' push delivery — subscribed** |
 | `notifications.notification.read` | notifications — once, when one goes from unread to read | **realtime — subscribed** (the recipient's other devices) |
 | `notifications.notification.all_read` | notifications — "mark all read" changed something | **realtime — subscribed** (the recipient's other devices) |
+| `academic.section\|program\|halaqa.created` · `.updated` · `.activated` · `.deactivated` | academic — only when something changed | reporting; none subscribed |
+| `academic.student.enrolled` · `academic.student.enrollment_ended` | academic — a new ACTIVE enrollment; one ended (COMPLETED / WITHDRAWN) | attendance, notifications (Q28), reporting; none subscribed |
+| `academic.teacher.assigned` · `academic.teacher.assignment_ended` | academic | a teacher's workspace, notifications (Q28); none subscribed |
 
-The `live.speaker.*`, `identity.*`, `messaging.*` and `notifications.*` events
-are raised by implemented code today; messaging's have two real subscribers,
+The `live.speaker.*`, `identity.*`, `messaging.*`, `notifications.*` and
+`academic.*` events are raised by implemented code today; messaging's have two real subscribers,
 notifications and realtime, and notifications' have realtime and its own push
 delivery. The rest are declared so the vocabulary is settled before the
 modules arrive. Notifications' events carry ids, codes and channel flags — a
@@ -207,6 +210,11 @@ subscriber, some log it, and an outbox will store it. A subscriber that needs
 more asks the publishing module's contract, which applies that module's rules
 (notifications asks messaging for the members who may read the message, a
 page at a time; realtime also asks for the message as a member sees it).
+Academic's payloads carry ids, codes, statuses and the names of changed
+fields — never a person's or a halaqa's name — and its enrollment and
+teaching events use the **halaqa** as `aggregateId`, so one roster's changes
+stay ordered ([academic.md §8](academic.md)). A no-op (a repeated enrollment,
+an unchanged edit) publishes nothing.
 Identity's payloads carry ids and codes only. The Foundation's
 `userCreated` carried the email address, which would have copied personal data
 into every subscriber's storage.
