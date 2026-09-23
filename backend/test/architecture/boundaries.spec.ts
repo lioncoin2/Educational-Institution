@@ -12,6 +12,10 @@ interface CruiseOutput {
     readonly violations: readonly Violation[];
     readonly totalCruised: number;
   };
+  readonly modules: readonly {
+    readonly source: string;
+    readonly dependencies: readonly { readonly resolved: string }[];
+  }[];
 }
 
 /**
@@ -64,5 +68,40 @@ describe('module boundaries', () => {
       .join('\n');
 
     expect(detail).toBe('');
+  });
+
+  // The rule set already forbids this; stating it as its own test makes the
+  // property the brief asked for — "no module directly imports identity
+  // internals" — visible, and names the offender if it ever breaks.
+  it('lets other modules reach identity only through its contracts', () => {
+    const identity = 'src/modules/identity/';
+    const intrusions = output.modules
+      .filter((module) => !module.source.startsWith(identity))
+      .flatMap((module) =>
+        module.dependencies
+          .filter((dependency) => dependency.resolved.startsWith(identity))
+          .filter(
+            (dependency) =>
+              !dependency.resolved.startsWith(`${identity}contracts/`) &&
+              dependency.resolved !== `${identity}identity.module.ts`,
+          )
+          .map((dependency) => `${module.source} -> ${dependency.resolved}`),
+      )
+      // Composition roots assemble the application; they are not modules.
+      .filter((edge) => !/^src\/(app\.module|main|cli\/)/.test(edge));
+
+    expect(intrusions).toEqual([]);
+  });
+
+  it("keeps identity's tables private to identity", () => {
+    const readers = output.modules
+      .filter((module) =>
+        module.dependencies.some(
+          (d) => d.resolved === 'src/modules/identity/infrastructure/schema.ts',
+        ),
+      )
+      .map((module) => module.source)
+      .filter((source) => !source.startsWith('src/modules/identity/'));
+    expect(readers).toEqual([]);
   });
 });

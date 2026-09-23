@@ -1,12 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import {
+  AUDIT_LOG,
   CLOCK,
   EVENT_PUBLISHER,
   ID_GENERATOR,
   err,
   failure,
   ok,
+  type AuditLog,
   type Clock,
   type EventPublisher,
   type IdGenerator,
@@ -20,9 +22,14 @@ import {
 } from '../../identity/contracts';
 import { speakerPermissionGranted, speakerPermissionRevoked } from '../domain/events';
 import type { ModerationAction, ModerationActionType } from '../domain/moderation';
+import type { LiveSessionId } from '../domain/live-room';
 import {
+  LIVE_ROOM_REPOSITORY,
+  LIVE_SESSION_REPOSITORY,
   MODERATION_LOG,
   SPEAKER_REQUEST_REPOSITORY,
+  type LiveRoomRepository,
+  type LiveSessionRepository,
   type ModerationLog,
   type SpeakerRequestRepository,
 } from '../domain/ports';
@@ -37,6 +44,13 @@ export interface ModerateSpeakerCommand {
 /**
  * The host granting or withdrawing the floor.
  *
+ * Authorization is asked of identity twice, deliberately. First coarsely —
+ * "may this principal moderate at all?" — before anything is loaded, so a
+ * caller without the permission cannot learn which requests exist. Then with
+ * the room's host in context — "may they moderate THIS room?" — which is the
+ * question that matters, and which identity's policy answers. Live never
+ * decides access itself.
+ *
  * Both directions follow the same shape, and the order is deliberate:
  * change our own state first, then the provider, then record the action. If the
  * provider call fails the use case fails loudly rather than leaving the room and
@@ -47,21 +61,20 @@ export class ModerateSpeakerUseCase {
   constructor(
     @Inject(AUTHORIZATION_SERVICE) private readonly authorization: AuthorizationService,
     @Inject(SPEAKER_REQUEST_REPOSITORY) private readonly requests: SpeakerRequestRepository,
+    @Inject(LIVE_SESSION_REPOSITORY) private readonly liveSessions: LiveSessionRepository,
+    @Inject(LIVE_ROOM_REPOSITORY) private readonly rooms: LiveRoomRepository,
     @Inject(RTC_PROVIDER) private readonly rtc: RtcProvider,
     @Inject(MODERATION_LOG) private readonly moderation: ModerationLog,
+    @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
   ) {}
 
   async grant(command: ModerateSpeakerCommand): Promise<Result<SpeakerRequest>> {
-    const allowed = this.authorization.authorize(command.principal, Permissions.live.grantSpeaker);
-    if (!allowed.ok) return allowed;
-
-    const request = await this.requests.findById(command.requestId);
-    if (request === null) {
-      return err(failure('not_found', 'live.request_not_found', 'No such speaker request.'));
-    }
+    const loaded = await this.loadAuthorized(command);
+    if (!loaded.ok) return loaded;
+    const request = loaded.value;
 
     const siblings = await this.requests.findBySession(request.sessionId);
     if (!speakerSlotsAvailable(siblings)) {
@@ -99,13 +112,9 @@ export class ModerateSpeakerUseCase {
   }
 
   async revoke(command: ModerateSpeakerCommand): Promise<Result<SpeakerRequest>> {
-    const allowed = this.authorization.authorize(command.principal, Permissions.live.revokeSpeaker);
-    if (!allowed.ok) return allowed;
-
-    const request = await this.requests.findById(command.requestId);
-    if (request === null) {
-      return err(failure('not_found', 'live.request_not_found', 'No such speaker request.'));
-    }
+    const loaded = await this.loadAuthorized(command);
+    if (!loaded.ok) return loaded;
+    const request = loaded.value;
 
     const now = this.clock.now();
     const revoked = transition(request, 'revoked', now, command.principal.userId);
@@ -132,6 +141,35 @@ export class ModerateSpeakerUseCase {
     return ok(revoked);
   }
 
+  /**
+   * Coarse check, load, then the room-scoped check. A request whose session or
+   * room cannot be found is reported as not found — never "forbidden", which
+   * would confirm it exists.
+   */
+  private async loadAuthorized(command: ModerateSpeakerCommand): Promise<Result<SpeakerRequest>> {
+    const allowed = this.authorization.authorize(command.principal, Permissions.live.moderate);
+    if (!allowed.ok) return allowed;
+
+    const notFound = err(
+      failure('not_found', 'live.request_not_found', 'No such speaker request.'),
+    );
+    const request = await this.requests.findById(command.requestId);
+    if (request === null) return notFound;
+    const session = await this.liveSessions.findById(request.sessionId as LiveSessionId);
+    if (session === null) return notFound;
+    const room = await this.rooms.findById(session.roomId);
+    if (room === null) return notFound;
+
+    const inThisRoom = this.authorization.authorize(command.principal, Permissions.live.moderate, {
+      resourceType: 'live.session',
+      resourceId: session.id,
+      ownerUserId: room.hostUserId,
+    });
+    if (!inThisRoom.ok) return inThisRoom;
+
+    return ok(request);
+  }
+
   private async record(
     sessionId: string,
     actorUserId: string,
@@ -147,6 +185,16 @@ export class ModerateSpeakerUseCase {
       type,
       at,
     };
+    // Live's own record of what happened in the room…
     await this.moderation.record(action);
+    // …and the institution's audit trail, which outlives any one module's.
+    await this.audit.record({
+      actorUserId,
+      action: type === 'grant_speaker' ? 'live.speaker.granted' : 'live.speaker.revoked',
+      resourceType: 'live.session',
+      resourceId: sessionId,
+      at,
+      metadata: { targetUserId },
+    });
   }
 }

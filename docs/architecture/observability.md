@@ -27,25 +27,26 @@ proxy or a future service boundary.
 
 ### Secret redaction
 
-```ts
-redact: {
-  paths: [
-    'req.headers.authorization',
-    'req.headers.cookie',
-    'req.body.password',
-    '*.jwtSecret',
-    '*.apiSecret',
-    '*.password',
-    '*.token',
-  ],
-  censor: '[redacted]',
-}
-```
+Thirteen sensitive field names are censored at **every depth from zero to
+three**: `password`, `currentPassword`, `newPassword`, `initialPassword`,
+`passwordHash`, `refreshToken`, `refreshTokenHash`, `previousRefreshTokenHash`,
+`accessToken`, `token`, `secret`, `jwtSecret`, `apiSecret`. The `authorization`
+and `cookie` request headers are censored too. Request bodies are not logged at
+all.
 
-The wildcard paths are the important half. Explicit paths only protect the
-shapes someone thought of; `*.apiSecret` catches the LiveKit secret wherever it
-appears in a logged object — including inside a config dump added by someone
-debugging, which is exactly how credentials reach log aggregators.
+**Correction to the Foundation.** It configured `*.password`, `*.apiSecret`
+and so on, and claimed these caught a secret "wherever it appears in a logged
+object, including inside a config dump". That was false. pino's `*` matches
+*exactly one* level, so `logger.info({ password })` at the top level, and
+`{ config: { auth: { jwtSecret } } }` two levels down, were both logged in
+clear. It was found during Identity & Access V1 by testing the claim rather
+than trusting it. Paths are now generated for each depth. A test logs every
+secret at every depth, and a dump of the real application config, and fails if
+any value survives.
+
+An inbound `x-request-id` is adopted only if it looks like an id
+(`[A-Za-z0-9._-]{1,128}`), so a client cannot inject text into every log line
+of its own request.
 
 Redaction is a safety net, not a policy. The policy is that secrets are read
 only by `platform/config` and passed only to the adapter that needs them.
@@ -88,15 +89,44 @@ without importing another module.
 type, resource id, time) — the two questions an audit log exists to answer.
 Append-only by convention: no update or delete path exists in code.
 
-### State: honest version
+### State
 
-The table and its migration exist. The **adapter is still `LoggingAuditLog`**,
-which writes to the structured log rather than to the table.
+**With a database, entries go to Postgres** through `DrizzleAuditLog`. It is
+append-only, with no update or delete path, and it is tested against real
+Postgres. Without a database (local development), `LoggingAuditLog` writes them
+to the structured log instead.
 
-That is the most significant gap in this milestone. A structured log is
-queryable and retained, so this is not nothing — but it is not an append-only
-record with referential integrity either. `DrizzleAuditLog` is a small, known
-piece of work, and it is listed as technical debt rather than described as done.
+Identity records these actions (`identity/application/audit-actions.ts`):
+
+| Action | Actor | Notes |
+| --- | --- | --- |
+| `identity.login.succeeded` | the user | platform; client IP |
+| `identity.login.failed` | — | reason; user id if known, else `unknown`; client IP. **Never** the attempted identifier: people type passwords into the username field |
+| `identity.logout` | the user | |
+| `identity.session.refreshed` | the user | generation; client IP |
+| `identity.session.refresh_rejected` | — | a well-formed token that is not the session's |
+| `identity.session.refresh_reuse_detected` | — | replayed vs concurrent; the session is ended |
+| `identity.session.revoked` | user or admin | reason |
+| `identity.password.changed` | the user | how many other sessions ended |
+| `identity.password.reset` | the admin | how many sessions ended |
+| `identity.user.created` | the admin | identifier *kind* only |
+| `identity.account.activated` / `.suspended` / `.disabled` | the admin | from, to, sessions ended |
+| `identity.role.assigned` / `.revoked` | the admin | role code |
+| `identity.owner.bootstrapped` | — | |
+| `identity.role_permissions.changed` | — | **reserved**; the use case is deferred |
+
+Live now records `live.speaker.granted` / `live.speaker.revoked` in this same
+trail as well as in its own moderation log. The Foundation document claimed it
+already did; it did not.
+
+**What never appears:** passwords, tokens, hashes, attempted identifiers.
+Tests search the recorded entries for each of these.
+
+**The gap that remains:** an entry is written *after* the change it describes,
+by the use case that made the change. If that write fails, the change has
+already been persisted and its record is missing. The failure surfaces as an
+error, not silently. Closing the gap needs a unit of work spanning both writes;
+it is deferred.
 
 ### What must eventually be audited
 
@@ -105,9 +135,9 @@ modifications (which is why `AttendanceAmendment` requires a reason and an
 amender in the contract); live-room moderation; administrative actions on
 another person's record.
 
-`ModerateSpeakerUseCase` already writes one, in the deliberate order: own state
-→ provider → **audit** → event. Audit before event, because the record of the
-act matters more than the reaction to it.
+`ModerateSpeakerUseCase` writes one, in the deliberate order: own state →
+provider → **audit** → event. Audit comes before the event because the record
+of the act matters more than the reaction to it.
 
 ---
 
@@ -161,9 +191,16 @@ role matrix or an attack), login failure rate, event-subscriber failures.
 One shape, from `AllExceptionsFilter`:
 
 ```json
-{ "error": { "code": "identity.permission_denied", "message": "...", "details": {} },
+{ "error": { "kind": "forbidden", "code": "identity.permission_denied",
+             "message": "...", "details": {} },
   "requestId": "..." }
 ```
+
+`kind` is present whenever the failure is classified: always for use-case
+failures, and for framework errors whose status maps to a kind (401, 403, 404,
+409, 412, 422, 429). A 400 has no kind: it means the request was malformed, not
+that anything failed. Clients branch on `kind` and `code`; `message` is for
+people. A 429 also carries a `Retry-After` header.
 
 Expected failures arrive already mapped: a use case returns `Result`, the
 controller calls `unwrap()`, `FailureException` maps `FailureKind` → status via
@@ -181,7 +218,8 @@ invariably discovered in production rather than in review.
 
 ## 6. Deliberately deferred
 
-- `DrizzleAuditLog` (above) — the gap that matters most.
+- A unit of work so an audit entry commits with the change it records.
+- A Redis `RateLimiter` for more than one instance.
 - Metrics backend and dashboards.
 - Distributed tracing. Correlation ids are in place; spans are not needed while
   this is one process.

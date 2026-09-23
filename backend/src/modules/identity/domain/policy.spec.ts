@@ -1,6 +1,11 @@
 import type { Principal } from '../../../shared';
 import type { Permission } from '../contracts';
-import { evaluateAccess, ownerOfResourceRule, type PolicyRule } from './policy';
+import {
+  evaluateAccess,
+  ownerOfResourceRule,
+  restrictToResourceOwner,
+  type PolicyRule,
+} from './policy';
 
 const principal = (permissions: string[], userId = 'user-1'): Principal => ({
   userId,
@@ -8,7 +13,7 @@ const principal = (permissions: string[], userId = 'user-1'): Principal => ({
   permissions: new Set(permissions),
 });
 
-const GRANT = 'live.speaker.grant' as Permission;
+const GRANT: Permission = 'live.moderate';
 
 describe('evaluateAccess', () => {
   it('permits when the role-based permission is held', () => {
@@ -77,6 +82,34 @@ describe('ownerOfResourceRule', () => {
   });
 
   it('does not apply to permissions outside its scope', () => {
-    expect(rule.appliesTo('files.asset.upload', { ownerUserId: 'u' })).toBe(false);
+    expect(rule.appliesTo('files.upload', { ownerUserId: 'u' })).toBe(false);
+  });
+});
+
+describe('restrictToResourceOwner', () => {
+  const rule = restrictToResourceOwner('host-only', [GRANT]);
+
+  it('lets the owner through when their role grants the permission', () => {
+    expect(evaluateAccess(principal([GRANT], 'host'), GRANT, { ownerUserId: 'host' }, [rule])).toBe(
+      true,
+    );
+  });
+
+  // The rule scopes a permission; it never grants one.
+  it('does not grant the permission to an owner who lacks it', () => {
+    expect(evaluateAccess(principal([], 'host'), GRANT, { ownerUserId: 'host' }, [rule])).toBe(
+      false,
+    );
+  });
+
+  it('denies a non-owner even when their role grants the permission', () => {
+    expect(
+      evaluateAccess(principal([GRANT], 'other'), GRANT, { ownerUserId: 'host' }, [rule]),
+    ).toBe(false);
+  });
+
+  // So a use case can ask "may they moderate at all?" before loading the room.
+  it('does not apply when no owner is supplied', () => {
+    expect(evaluateAccess(principal([GRANT], 'other'), GRANT, undefined, [rule])).toBe(true);
   });
 });

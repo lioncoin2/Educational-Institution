@@ -1,3 +1,4 @@
+import '../models/auth.dart';
 import '../models/certificate.dart';
 import '../models/feed.dart';
 import '../models/institution.dart';
@@ -57,4 +58,39 @@ abstract interface class CertificateRepository {
 abstract interface class FeedRepository {
   Future<List<Announcement>> getAnnouncements();
   Future<List<AppNotification>> getNotifications();
+}
+
+/// Authentication — the only way the app signs a person in or out.
+///
+/// Screens depend on this contract, never on HTTP, tokens or storage. A
+/// network-backed implementation (next milestone) must:
+///
+///  * keep the access and refresh tokens in platform secure storage
+///    (Keychain / Keystore), never in plain preferences, and never log them;
+///  * refresh with ONE request at a time. The server rotates refresh tokens
+///    and treats a token presented twice as stolen — two concurrent refreshes
+///    will sign the user out on purpose;
+///  * on a refresh that fails, discard both tokens and return to sign-in;
+///  * hold no secret of its own. The app has no API key, and never sees the
+///    LiveKit secret — live rooms are joined with a short-lived token the
+///    server issues per session.
+///
+/// There is deliberately no `register`: accounts are created by staff.
+abstract interface class AuthRepository {
+  /// Throws [AuthException] with the server's code on refusal.
+  Future<CurrentUser> signIn({
+    required String identifier,
+    required String password,
+  });
+
+  /// Ends this device's session on the server, then forgets its tokens.
+  Future<void> signOut();
+
+  /// The signed-in account, or null when nobody is signed in on this device.
+  Future<CurrentUser?> currentUser();
+
+  Future<List<DeviceSession>> sessions();
+
+  /// Signs one of the user's devices out.
+  Future<void> endSession(String sessionId);
 }

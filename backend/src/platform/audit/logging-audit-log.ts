@@ -3,12 +3,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { AuditEntry, AuditLog } from '../../shared';
 
 /**
- * Foundation adapter: audit entries go to the structured log stream, where they
- * are already shipped and retained.
- *
- * A Postgres-backed adapter (queryable, tamper-evident, retained on its own
- * schedule) implements the same port next — see open-questions.md (Q6) on the
- * retention period, which is a policy decision.
+ * Audit entries to the structured log stream — used only when no database is
+ * configured (local development). With a database, `DrizzleAuditLog` is used.
+ * Retention of either is a policy decision: open-questions.md, Q3.
  */
 @Injectable()
 export class LoggingAuditLog implements AuditLog {

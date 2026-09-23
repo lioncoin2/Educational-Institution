@@ -96,7 +96,17 @@ This is what keeps failure mode 3 closed: 2500 people raising their hands is
 2500 rows, not 2500 media-plane events fanned out to 2500 subscribers.
 
 Promotion is the only thing that reaches the provider, and only for the one
-participant being promoted:
+participant being promoted.
+
+**Who may promote is asked of identity, with the room in context.** Holding
+`live.moderate` means "may moderate rooms you host", not "any room". The use
+case asks identity twice: coarsely before loading anything, then with the
+room's host in context. The Foundation version checked the permission without
+the room, so any teacher could moderate any room. That was fixed in Identity &
+Access V1 and is tested against the real authorization service.
+Whether anyone other than the host may moderate is open (Q1).
+
+The flow:
 
 ```
 grant:  own state → provider.updateCapabilities(SPEAKER) → audit → event
@@ -202,7 +212,11 @@ truth lives only in Redis.
 - No token is minted for a non-live session, or for an unauthorized caller.
 - The speaker-request state machine rejects every transition outside the table.
 - The concurrent-speaker cap is enforced before a grant is issued.
-- Moderation writes an audit entry and raises a domain event.
+- Moderation is scoped to the room: a teacher cannot moderate a room they do
+  not host.
+- Moderation writes the institution's audit trail (`live.speaker.granted` /
+  `revoked`) and raises a domain event.
+- A host publishes only while also holding `live.speak`.
 - Nothing outside `livekit-rtc-provider.ts` imports LiveKit.
 
 **Not proven — no load test has been run:**

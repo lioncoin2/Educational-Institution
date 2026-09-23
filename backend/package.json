@@ -18,7 +18,8 @@
     "db:generate": "drizzle-kit generate",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run arch:graph && npm test",
     "db:migrate": "drizzle-kit migrate",
-    "test:integration": "jest --testPathPatterns=drizzle"
+    "test:integration": "jest --testPathPatterns=drizzle",
+    "identity:bootstrap-owner": "node dist/cli/bootstrap-owner.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

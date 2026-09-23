@@ -54,10 +54,7 @@ export class RequestSpeakerUseCase {
   ) {}
 
   async execute(command: RequestSpeakerCommand): Promise<Result<SpeakerRequest>> {
-    const allowed = this.authorization.authorize(
-      command.principal,
-      Permissions.live.requestSpeaker,
-    );
+    const allowed = this.authorization.authorize(command.principal, Permissions.live.raiseHand);
     if (!allowed.ok) return allowed;
 
     const session = await this.sessions.findById(command.sessionId as never);

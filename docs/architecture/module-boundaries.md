@@ -15,40 +15,42 @@ boundary before the code arrives is cheap; retrofitting one is not.
 
 ## identity
 
-**State:** implemented — domain, use cases, adapters, HTTP, guards, tests.
+**State:** implemented — Identity & Access V1. Domain, use cases, Postgres and
+in-memory adapters, HTTP, the access guard, a CLI, and tests on real Postgres.
+See [authentication.md](authentication.md),
+[session-management.md](session-management.md), and
+[authorization.md](authorization.md).
 
-**Responsibility.** Who may sign in, and what they are allowed to do. It is the
-only module that answers an authorization question.
+**Responsibility.** Who may sign in, on which devices, and what they may do. It
+is the only module that answers an authorization question.
 
-**Owned entities.** `User`, `Role`, `Permission`, `PolicyRule`, `Principal`
-(resolved, not stored).
+**Owned entities.** `User` (an account), `LoginIdentifier`, `RoleAssignment`,
+`AuthSession`, role and permission catalogues, `PolicyRule`. `Principal` is
+resolved per request, never stored.
 
-**Use cases.**
-- `AuthenticateUseCase` — verify credentials. Returns one indistinguishable
-  failure for unknown-user and wrong-password, and equalizes timing against a
-  dummy hash so response time does not reveal whether an account exists.
-- `LoginUseCase` — authenticate, then mint an access token.
-- `PolicyAuthorizationService` — evaluate a permission against roles and
-  policies.
+**Use cases.** Sign-in, refresh with rotation, logout; list and end your own
+sessions; current user; change your password; provisioning (create, assign and
+revoke roles, change status, reset password, end someone's sessions, list and
+read accounts); owner bootstrap; per-request principal resolution.
 
-**Public contract** (`identity/contracts/`).
-- `Permissions` — the permission catalog, as a nested const object. `Permission`
-  is a union type derived from it, so a typo is a compile error rather than a
-  silent `false`.
-- `AuthorizationService` — `can()`, `authorize()`, `principalFor()`.
-- `RequirePermission(...)` — the route decorator.
-- `PublicRoute()` — re-exported from platform.
+**Public contract** (`identity/contracts/`): `AuthorizationService`
+(`can`, `authorize`), the permission catalogue, the route declarations
+(`RequirePermission`, `Authenticated`, `PublicRoute`), `Principal`, and
+`systemPrincipal`. The module exports exactly one provider:
+`AUTHORIZATION_SERVICE`.
 
-**Events.** `identity.user.registered`, `identity.role.granted`,
-`identity.role.revoked`. (Declared; not yet raised, as registration is not
-implemented.)
+**Events.** `identity.user.created`, `identity.role.assigned`,
+`identity.role.revoked`, `identity.account.status_changed`. Payloads carry ids
+and codes only, never an email or a name.
 
-**Depends on.** `shared`, `platform` (config, audit).
+**Depends on.** `shared`, `platform` (config, database, audit, rate limiter,
+HTTP plumbing).
 
-**Must not know.** Anything about programs, halaqat, attendance, messages or
-live rooms. A permission string is an opaque token to identity — it does not
-know that `live.moderate` concerns audio. That ignorance is what lets any module
-define permissions without identity changing.
+**Must not know.** Programs, halaqat, attendance, messages, rooms. A permission
+string is opaque to identity: it does not know that `live.moderate` concerns
+audio, which is why any module can define permissions without identity changing.
+And no other module may read identity's tables. A test asserts that nothing
+outside identity imports its schema.
 
 ---
 

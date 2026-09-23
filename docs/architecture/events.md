@@ -134,14 +134,18 @@ by a real broker and subscribers become consumers. Again the port is unchanged.
 | `live.speaker.revoked` | live | reporting, audit |
 | `live.session.started` | live | operations, notifications |
 | `live.session.ended` | live | operations (attendance), reporting |
-| `identity.user.registered` | identity | people, notifications |
-| `identity.role.granted` | identity | audit, notifications |
-| `identity.role.revoked` | identity | audit |
+| `identity.user.created` | identity | people, notifications |
+| `identity.role.assigned` | identity | notifications, reporting |
+| `identity.role.revoked` | identity | reporting |
+| `identity.account.status_changed` | identity | people, notifications |
 | `operations.attendance.recorded` | operations | reporting, notifications |
 | `messaging.message.sent` | messaging | notifications |
 
-Only the `live.speaker.*` events are raised by implemented code today. The rest
-are declared so that the vocabulary is settled before the modules arrive.
+The `live.speaker.*` and `identity.*` events are raised by implemented code
+today. The rest are declared so the vocabulary is settled before the modules
+arrive. Identity's payloads carry ids and codes only. The Foundation's
+`userCreated` carried the email address, which would have copied personal data
+into every subscriber's storage.
 
 ---
 

@@ -1,23 +1,28 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 
 import { DATABASE, type Database } from '../../../platform/database';
-import type { UserRepository } from '../domain/ports';
-import type { User, UserId } from '../domain/user';
-import { userRoles, users } from './schema';
+import type { Page, PageRequest } from '../../../shared';
+import { AccountStatuses } from '../domain/account-status';
+import type { LoginIdentifier } from '../domain/login-identifier';
+import type { CreateUserOutcome, UserRepository } from '../domain/ports';
+import type { RoleCode } from '../domain/role';
+import type { RoleAssignment, User, UserId } from '../domain/user';
+import { isUniqueViolation } from './postgres-errors';
+import { userIdentifiers, userRoles, users } from './schema';
 
-/** Emails are compared case-insensitively, so they are stored normalized. */
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
+type UserRow = typeof users.$inferSelect;
+
+/** The identifier PK is what makes an identifier belong to at most one account. */
+const IDENTIFIER_UNIQUE = 'user_identifiers_kind_value_pk';
 
 /**
- * Postgres-backed users, via Drizzle.
+ * Accounts in Postgres.
  *
- * It implements exactly the same `UserRepository` port as
- * `InMemoryUserRepository`, which is what lets every use-case test run without
- * a database while production runs against one. Neither the domain nor any use
- * case can tell the difference.
+ * Implements the same port as the in-memory repository, which is what lets
+ * every use-case test run without a database. `save` writes role and
+ * identifier changes as diffs, so an unrelated update (a password change)
+ * never rewrites when and by whom a role was granted.
  */
 @Injectable()
 export class DrizzleUserRepository implements UserRepository {
@@ -25,72 +30,213 @@ export class DrizzleUserRepository implements UserRepository {
 
   async findById(id: UserId): Promise<User | null> {
     const rows = await this.db.select().from(users).where(eq(users.id, id)).limit(1);
-    return this.hydrate(rows[0]);
+    const row = rows[0];
+    return row === undefined ? null : ((await this.hydrate([row]))[0] ?? null);
   }
 
-  async findByEmail(email: string): Promise<User | null> {
+  async findByIdentifier(identifier: LoginIdentifier): Promise<User | null> {
     const rows = await this.db
-      .select()
-      .from(users)
-      .where(eq(users.email, normalizeEmail(email)))
+      .select({ user: users })
+      .from(userIdentifiers)
+      .innerJoin(users, eq(users.id, userIdentifiers.userId))
+      .where(
+        and(eq(userIdentifiers.kind, identifier.kind), eq(userIdentifiers.value, identifier.value)),
+      )
       .limit(1);
-    return this.hydrate(rows[0]);
+    const row = rows[0];
+    return row === undefined ? null : ((await this.hydrate([row.user]))[0] ?? null);
   }
 
-  /**
-   * Upsert of the user row plus a full replacement of its roles, in one
-   * transaction. Roles are replaced rather than diffed because `User.roles` is
-   * the complete intended set — a partial write would leave a user holding a
-   * role the caller believed it had removed.
-   */
-  async save(user: User): Promise<void> {
-    const email = normalizeEmail(user.email);
-
-    await this.db.transaction(async (tx) => {
-      await tx
-        .insert(users)
-        .values({
+  async create(user: User): Promise<CreateUserOutcome> {
+    try {
+      await this.db.transaction(async (tx) => {
+        await tx.insert(users).values({
           id: user.id,
-          email,
           displayName: user.displayName,
           status: user.status,
           passwordHash: user.passwordHash,
+          passwordChangedAt: user.passwordChangedAt,
           createdAt: user.createdAt,
-        })
-        .onConflictDoUpdate({
-          target: users.id,
-          set: {
-            email,
-            displayName: user.displayName,
-            status: user.status,
-            passwordHash: user.passwordHash,
-            updatedAt: new Date(),
-          },
+          updatedAt: user.updatedAt,
         });
+        await tx.insert(userIdentifiers).values(
+          user.identifiers.map((identifier) => ({
+            userId: user.id,
+            kind: identifier.kind,
+            value: identifier.value,
+            createdAt: user.createdAt,
+          })),
+        );
+        if (user.roles.length > 0) {
+          await tx
+            .insert(userRoles)
+            .values(user.roles.map((assignment) => toRoleRow(user.id, assignment)));
+        }
+      });
+      return 'created';
+    } catch (error) {
+      if (isUniqueViolation(error, IDENTIFIER_UNIQUE)) return 'identifier_taken';
+      throw error;
+    }
+  }
 
-      await tx.delete(userRoles).where(eq(userRoles.userId, user.id));
-      if (user.roles.length > 0) {
-        await tx.insert(userRoles).values(user.roles.map((role) => ({ userId: user.id, role })));
+  async save(user: User): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({
+          displayName: user.displayName,
+          status: user.status,
+          passwordHash: user.passwordHash,
+          passwordChangedAt: user.passwordChangedAt,
+          updatedAt: user.updatedAt,
+        })
+        .where(eq(users.id, user.id));
+
+      const heldRoles = await tx
+        .select({ role: userRoles.role })
+        .from(userRoles)
+        .where(eq(userRoles.userId, user.id));
+      const held = new Set(heldRoles.map((row) => row.role));
+      const wanted = new Set(user.roles.map((assignment) => assignment.role));
+
+      const removed = [...held].filter((role) => !wanted.has(role));
+      if (removed.length > 0) {
+        await tx
+          .delete(userRoles)
+          .where(and(eq(userRoles.userId, user.id), inArray(userRoles.role, removed)));
+      }
+      const added = user.roles.filter((assignment) => !held.has(assignment.role));
+      if (added.length > 0) {
+        await tx
+          .insert(userRoles)
+          .values(added.map((assignment) => toRoleRow(user.id, assignment)));
+      }
+
+      const heldIdentifiers = await tx
+        .select({ kind: userIdentifiers.kind, value: userIdentifiers.value })
+        .from(userIdentifiers)
+        .where(eq(userIdentifiers.userId, user.id));
+      const key = (i: { kind: string; value: string }) => `${i.kind}\u0000${i.value}`;
+      const wantedIdentifiers = new Set(user.identifiers.map(key));
+      const heldKeys = new Set(heldIdentifiers.map(key));
+
+      for (const stale of heldIdentifiers.filter((i) => !wantedIdentifiers.has(key(i)))) {
+        await tx
+          .delete(userIdentifiers)
+          .where(and(eq(userIdentifiers.kind, stale.kind), eq(userIdentifiers.value, stale.value)));
+      }
+      const fresh = user.identifiers.filter((i) => !heldKeys.has(key(i)));
+      if (fresh.length > 0) {
+        await tx.insert(userIdentifiers).values(
+          fresh.map((identifier) => ({
+            userId: user.id,
+            kind: identifier.kind,
+            value: identifier.value,
+            createdAt: user.updatedAt,
+          })),
+        );
       }
     });
   }
 
-  private async hydrate(row: typeof users.$inferSelect | undefined): Promise<User | null> {
-    if (row === undefined) return null;
+  /**
+   * Keyset pagination by (created_at, id): stable under concurrent inserts and
+   * constant-cost at any depth, unlike OFFSET.
+   */
+  async list(page: PageRequest): Promise<Page<User>> {
+    const cursor = decodeCursor(page.cursor);
+    const rows = await this.db
+      .select()
+      .from(users)
+      .where(
+        cursor === null
+          ? undefined
+          : or(
+              gt(users.createdAt, cursor.createdAt),
+              and(eq(users.createdAt, cursor.createdAt), gt(users.id, cursor.id)),
+            ),
+      )
+      .orderBy(asc(users.createdAt), asc(users.id))
+      .limit(page.limit + 1);
 
-    const assigned = await this.db
-      .select({ role: userRoles.role })
-      .from(userRoles)
-      .where(eq(userRoles.userId, row.id));
-
+    const pageRows = rows.slice(0, page.limit);
+    const last = pageRows[pageRows.length - 1];
     return {
+      items: await this.hydrate(pageRows),
+      nextCursor:
+        rows.length > page.limit && last !== undefined
+          ? encodeCursor(last.createdAt, last.id)
+          : undefined,
+    };
+  }
+
+  async anyActiveWithRole(role: RoleCode): Promise<boolean> {
+    const rows = await this.db
+      .select({ one: sql<number>`1` })
+      .from(userRoles)
+      .innerJoin(users, eq(users.id, userRoles.userId))
+      .where(and(eq(userRoles.role, role), eq(users.status, AccountStatuses.active)))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /** Loads identifiers and roles for many users in two queries, not 2 × N. */
+  private async hydrate(rows: readonly UserRow[]): Promise<User[]> {
+    if (rows.length === 0) return [];
+    const ids = rows.map((row) => row.id);
+
+    const [identifierRows, roleRows] = await Promise.all([
+      this.db.select().from(userIdentifiers).where(inArray(userIdentifiers.userId, ids)),
+      this.db
+        .select()
+        .from(userRoles)
+        .where(inArray(userRoles.userId, ids))
+        .orderBy(asc(userRoles.grantedAt), asc(userRoles.role)),
+    ]);
+
+    return rows.map((row) => ({
       id: row.id as UserId,
-      email: row.email,
       displayName: row.displayName,
       status: row.status,
-      roles: assigned.map((entry) => entry.role),
+      identifiers: identifierRows
+        .filter((identifier) => identifier.userId === row.id)
+        .map(({ kind, value }) => ({ kind, value })),
+      roles: roleRows
+        .filter((assignment) => assignment.userId === row.id)
+        .map(({ role, grantedAt, grantedBy }) => ({ role, grantedAt, grantedBy })),
       passwordHash: row.passwordHash,
+      passwordChangedAt: row.passwordChangedAt,
       createdAt: row.createdAt,
-    };
+      updatedAt: row.updatedAt,
+    }));
+  }
+}
+
+function toRoleRow(userId: string, assignment: RoleAssignment) {
+  return {
+    userId,
+    role: assignment.role,
+    grantedAt: assignment.grantedAt,
+    grantedBy: assignment.grantedBy,
+  };
+}
+
+function encodeCursor(createdAt: Date, id: string): string {
+  return Buffer.from(JSON.stringify([createdAt.toISOString(), id])).toString('base64url');
+}
+
+/** A malformed cursor reads as "from the start" rather than an error. */
+function decodeCursor(cursor: string | undefined): { createdAt: Date; id: string } | null {
+  if (cursor === undefined) return null;
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    if (!Array.isArray(parsed) || typeof parsed[0] !== 'string' || typeof parsed[1] !== 'string') {
+      return null;
+    }
+    const createdAt = new Date(parsed[0]);
+    return Number.isNaN(createdAt.getTime()) ? null : { createdAt, id: parsed[1] };
+  } catch {
+    return null;
   }
 }

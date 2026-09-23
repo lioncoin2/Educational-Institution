@@ -1,14 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import { err, failure, ok, type Result } from '../../../shared';
-import type {
-  AuthorizationContext,
-  AuthorizationService,
-  Permission,
-  Principal,
-} from '../contracts';
+import type { AuthorizationContext, AuthorizationService } from '../contracts/authorization';
+import { isPermission, type Permission } from '../contracts/permissions';
+import type { Principal } from '../contracts/principal';
 import { evaluateAccess, type PolicyRule } from '../domain/policy';
-import { permissionsForRoles } from '../domain/role';
 
 /** DI token for the registered policy rules. */
 export const POLICY_RULES = Symbol('POLICY_RULES');
@@ -16,15 +12,19 @@ export const POLICY_RULES = Symbol('POLICY_RULES');
 /**
  * The institution's single authorization decision point.
  *
- * Roles resolve to permissions; permissions plus policy rules resolve to a
- * yes/no. Callers get either a boolean (`can`, for guards) or a Result
- * (`authorize`, for use cases) — the same decision either way.
+ * A principal arrives with its permissions already resolved from its roles;
+ * this adds the resource-scoped policy rules and returns yes or no. Guards get
+ * `can`; use cases get `authorize`, which returns the same decision as a
+ * Result. Nothing else in the system decides access.
  */
 @Injectable()
 export class PolicyAuthorizationService implements AuthorizationService {
   constructor(@Inject(POLICY_RULES) private readonly rules: readonly PolicyRule[]) {}
 
   can(principal: Principal, permission: Permission, context?: AuthorizationContext): boolean {
+    // A permission outside the catalogue is not a permission. Refusing it here
+    // means no rule — however it is written — can ever grant one.
+    if (!isPermission(permission)) return false;
     return evaluateAccess(principal, permission, context, this.rules);
   }
 
@@ -39,9 +39,5 @@ export class PolicyAuthorizationService implements AuthorizationService {
         permission,
       }),
     );
-  }
-
-  principalFor(userId: string, roles: readonly string[]): Principal {
-    return { userId, roles, permissions: permissionsForRoles(roles) };
   }
 }

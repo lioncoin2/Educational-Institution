@@ -8,6 +8,7 @@ import '../data/models/learning.dart';
 import '../data/models/progress.dart';
 import '../data/models/program.dart';
 import '../data/models/student.dart';
+import '../data/repositories/mock/mock_auth_repository.dart';
 import '../data/repositories/mock/mock_repositories.dart';
 import '../data/repositories/repositories.dart';
 
@@ -31,6 +32,11 @@ final certificateRepositoryProvider = Provider<CertificateRepository>(
 );
 final feedRepositoryProvider = Provider<FeedRepository>(
   (ref) => const MockFeedRepository(),
+);
+
+/// Not yet read by any screen: the seam the sign-in flow will build on.
+final authRepositoryProvider = Provider<AuthRepository>(
+  (ref) => MockAuthRepository(),
 );
 
 // ── Institution & learner ──────────────────────────────────────────────────

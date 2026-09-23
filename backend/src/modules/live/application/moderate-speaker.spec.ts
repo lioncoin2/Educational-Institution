@@ -10,10 +10,21 @@ import {
   type IdGenerator,
   type Principal,
 } from '../../../shared';
+import { RecordingAuditLog } from '../../../../test/support/identity-harness';
 import type { AuthorizationService } from '../../identity/contracts';
+// The real decision point, to test room scoping end to end. Test-only reach
+// into identity's internals; production code sees only its contracts.
+import { PolicyAuthorizationService } from '../../identity/application/authorization.service';
+import {
+  PROVISIONAL_POLICY_RULES,
+  PROVISIONAL_ROLE_PERMISSIONS,
+} from '../../identity/domain/provisional-policy';
+import type { LiveRoom, LiveSession } from '../domain/live-room';
 import { MAX_CONCURRENT_SPEAKERS, type SpeakerRequest } from '../domain/speaker-request';
 import { FakeRtcProvider } from '../infrastructure/fake-rtc-provider';
 import {
+  InMemoryLiveRoomRepository,
+  InMemoryLiveSessionRepository,
   InMemoryModerationLog,
   InMemorySpeakerRequestRepository,
 } from '../infrastructure/in-memory-live-repositories';
@@ -22,14 +33,10 @@ import { ModerateSpeakerUseCase } from './moderate-speaker.use-case';
 const allowAll: AuthorizationService = {
   can: () => true,
   authorize: () => ok(undefined),
-  // The use case never resolves principals itself; the HTTP edge does.
-  principalFor: (userId, roles) => ({ userId, roles, permissions: new Set<string>() }),
 };
 const denyAll: AuthorizationService = {
   can: () => false,
   authorize: () => err(failure('forbidden', 'denied', 'no')),
-  // The use case never resolves principals itself; the HTTP edge does.
-  principalFor: (userId, roles) => ({ userId, roles, permissions: new Set<string>() }),
 };
 
 class CountingIdGenerator implements IdGenerator {
@@ -50,6 +57,24 @@ class RecordingPublisher implements EventPublisher {
 const NOW = new Date(1_700_000_000_000);
 const HOST = 'teacher-1';
 const SESSION = 'session-1';
+const ROOM = asId<'LiveRoom'>('room-1');
+
+const room: LiveRoom = {
+  id: ROOM,
+  halaqaId: 'halaqa-1',
+  title: 'Tajweed',
+  hostUserId: HOST,
+  maxParticipants: 2500,
+  createdAt: new Date(0),
+};
+
+const liveSession: LiveSession = {
+  id: asId<'LiveSession'>(SESSION),
+  roomId: ROOM,
+  state: 'live',
+  startedAt: new Date(0),
+  endedAt: null,
+};
 
 const pending = (id: string, userId: string): SpeakerRequest => ({
   id: asId<'SpeakerRequest'>(id),
@@ -67,16 +92,20 @@ function build(authorization: AuthorizationService = allowAll) {
   const rtc = new FakeRtcProvider();
   const moderation = new InMemoryModerationLog();
   const events = new RecordingPublisher();
+  const audit = new RecordingAuditLog();
   const useCase = new ModerateSpeakerUseCase(
     authorization,
     requests,
+    new InMemoryLiveSessionRepository([liveSession]),
+    new InMemoryLiveRoomRepository([room]),
     rtc,
     moderation,
+    audit,
     new FixedClock(NOW),
     new CountingIdGenerator(),
     events,
   );
-  return { useCase, requests, rtc, moderation, events };
+  return { useCase, requests, rtc, moderation, events, audit };
 }
 
 const host: Principal = { userId: HOST, roles: [], permissions: new Set<string>() };
@@ -196,5 +225,68 @@ describe('revoking the floor', () => {
     const result = await useCase.grant({ principal: host, requestId: 'req-next' });
 
     expect(result.ok).toBe(true);
+  });
+});
+
+/**
+ * "Is this user allowed to moderate THIS room?" — asked of identity's real
+ * authorization service with its provisional rules, not a permissive stub.
+ */
+describe('moderation is scoped to the room', () => {
+  const identity = new PolicyAuthorizationService(PROVISIONAL_POLICY_RULES);
+  const teacher = (userId: string) => ({
+    userId,
+    roles: ['TEACHER'],
+    permissions: new Set<string>(PROVISIONAL_ROLE_PERMISSIONS.TEACHER),
+  });
+
+  it('lets the host moderate their own room', async () => {
+    const { useCase, requests } = build(identity);
+    await requests.save(pending('req-1', 'student-1'));
+    expect((await useCase.grant({ principal: teacher(HOST), requestId: 'req-1' })).ok).toBe(true);
+  });
+
+  it('refuses a teacher who does not host this room, and changes nothing', async () => {
+    const { useCase, requests, rtc, audit } = build(identity);
+    await requests.save(pending('req-1', 'student-1'));
+
+    const result = await useCase.grant({
+      principal: teacher('another-teacher'),
+      requestId: 'req-1',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('identity.permission_denied');
+    expect((await requests.findById('req-1'))?.state).toBe('pending');
+    expect(rtc.capabilityChanges).toHaveLength(0);
+    expect(audit.entries).toHaveLength(0);
+  });
+
+  it('refuses a student outright, before looking the request up', async () => {
+    const { useCase, requests } = build(identity);
+    const lookup = jest.spyOn(requests, 'findById');
+    const student = {
+      userId: 'student-1',
+      roles: ['STUDENT'],
+      permissions: new Set<string>(PROVISIONAL_ROLE_PERMISSIONS.STUDENT),
+    };
+    const result = await useCase.grant({ principal: student, requestId: 'req-1' });
+    expect(result.ok).toBe(false);
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it("writes the institution's audit trail, not only live's own log", async () => {
+    const { useCase, requests, audit } = build(identity);
+    await requests.save(pending('req-1', 'student-1'));
+    await useCase.grant({ principal: teacher(HOST), requestId: 'req-1' });
+    expect(audit.entries).toEqual([
+      expect.objectContaining({
+        action: 'live.speaker.granted',
+        actorUserId: HOST,
+        resourceType: 'live.session',
+        resourceId: SESSION,
+        metadata: { targetUserId: 'student-1' },
+      }),
+    ]);
   });
 });

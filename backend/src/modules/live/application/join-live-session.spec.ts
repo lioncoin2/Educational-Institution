@@ -13,15 +13,18 @@ import { JoinLiveSessionUseCase } from './join-live-session.use-case';
 const allowAll: AuthorizationService = {
   can: () => true,
   authorize: () => ok(undefined),
-  // The use case never resolves principals itself; the HTTP edge does.
-  principalFor: (userId, roles) => ({ userId, roles, permissions: new Set<string>() }),
 };
 
 const denyAll: AuthorizationService = {
   can: () => false,
   authorize: () => err(failure('forbidden', 'denied', 'no')),
-  // The use case never resolves principals itself; the HTTP edge does.
-  principalFor: (userId, roles) => ({ userId, roles, permissions: new Set<string>() }),
+};
+
+/** May join, may not speak — e.g. a host whose role lacks live.speak. */
+const joinOnly: AuthorizationService = {
+  can: (_principal, permission) => permission === 'live.join',
+  authorize: (_principal, permission) =>
+    permission === 'live.join' ? ok(undefined) : err(failure('forbidden', 'denied', 'no')),
 };
 
 const HOST = 'teacher-1';
@@ -104,6 +107,18 @@ describe('JoinLiveSessionUseCase', () => {
     expect(rtc.issued[0]?.capabilities.canPublishAudio).toBe(false);
     expect(rtc.issued[0]?.capabilities.canSubscribe).toBe(true);
     expect(token.token).toContain('sub');
+  });
+
+  it('does not let a host publish without live.speak', async () => {
+    const { useCase, rtc } = build({ authorization: joinOnly });
+
+    await useCase.execute({
+      principal: principal(HOST),
+      sessionId: SESSION_ID,
+      displayName: 'Teacher',
+    });
+
+    expect(rtc.issued[0]?.capabilities.canPublishAudio).toBe(false);
   });
 
   it('issues a publishing token to the host', async () => {

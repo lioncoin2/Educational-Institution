@@ -1,235 +1,290 @@
 # Authorization
 
-The requirement that drove this design:
+**State: implemented and tested** — Identity & Access V1. Every institutional
+choice in it is **provisional** and lives in one file:
+`backend/src/modules/identity/domain/provisional-policy.ts`.
 
 > Avoid scattered checks such as `if user.role == admin`. Instead centralize
 > authorization.
 
-So there is exactly **one** decision point in the system:
-`PolicyAuthorizationService`. Nothing else decides whether an action is
-permitted. Guards ask it. Use cases ask it. The dashboard asks it to decide
-which widgets to show. No module — including identity's own HTTP layer —
-reimplements the decision.
+There is exactly **one** decision point, `PolicyAuthorizationService`, behind
+the `AuthorizationService` port — the only thing identity exports to other
+modules. Guards ask it. Use cases ask it. Nothing branches on a role name.
 
 ---
 
 ## 1. The model
 
-Four concepts, in the order a request meets them:
+**Principal** — who is acting: a user id, their role codes, their effective
+permissions, and the session they act through. It is built fresh on every
+request from storage (see [authentication.md §5](authentication.md)), so it is
+never stale.
 
-**Principal** — the authenticated actor: a `userId`, the role names they hold,
-and their already-resolved effective permissions.
+**Permission** — `<namespace>.<action>`, from one catalogue in
+`identity/contracts/permissions.ts`. `Permission` is a union type derived from
+it, so a mistyped permission is a compile error, not a silent "no".
 
-```ts
-interface Principal {
-  readonly userId: string;
-  readonly roles: readonly string[];      // for audit and policy rules — not for `if` checks
-  readonly permissions: ReadonlySet<string>;
-}
-```
+**Role** — a named bundle of permissions, stored in `roles` and
+`role_permissions`.
 
-The comment on `roles` is load-bearing. Roles are carried so that policy rules
-and audit entries can refer to them. They are not there to be branched on.
-
-**Permission** — a leaf in a catalog, e.g. `live.speaker.grant`,
-`operations.attendance.amend`, `identity.role.assign`.
-
-The catalog is a nested const object, and the `Permission` type is the union of
-its leaves:
-
-```ts
-export const Permissions = {
-  identity: { user: { read: 'identity.user.read', ... }, ... },
-  live:     { speaker: { grant: 'live.speaker.grant', ... }, ... },
-  ...
-} as const;
-
-export type Permission = Leaves<typeof Permissions>;
-```
-
-That indirection buys one specific thing: **a mistyped permission is a compile
-error, not a silent `false`.** `@RequirePermission('live.speaker.gant')` does not
-build. Without it, a typo produces a route that nobody can ever access, and
-which no test would necessarily catch.
-
-**Role** — a named bundle of permissions. Ten exist:
-Owner, Administrator, Supervisor, Teacher, Assistant Teacher, Student, Parent,
-Content Manager, Support, Auditor.
-
-**Policy rule** — a resource-scoped decision that roles cannot express.
+**Policy rule** — a resource-scoped decision roles cannot express: "a teacher
+may moderate, *but only rooms they host*".
 
 ---
 
-## 2. Why roles alone are not enough
+## 2. The permission catalogue
 
-A Teacher holds `live.speaker.grant`. But only for a room *they actually run*.
-Role-based permissions answer the first half of that sentence and are silent on
-the second.
+The namespaces the brief named, plus identity's own:
 
-So permissions are evaluated against an optional `AuthorizationContext` —
-resource id, owner, halaqa — by a set of `PolicyRule`s:
+| Namespace | Permissions |
+| --- | --- |
+| `users` | `read`, `manage` |
+| `roles` | `assign` |
+| `sessions` | `manage` — *other people's* sessions |
+| `audit` | `read` |
+| `settings` | `manage` |
+| `people` | `read`, `manage` |
+| `academic` | `read`, `manage` |
+| `attendance` | `read`, `manage` |
+| `assignments` | `read`, `submit`, `manage` |
+| `messaging` | `read`, `send`, `manage` |
+| `live` | `join`, `raise_hand`, `speak`, `moderate` |
+| `files` | `read`, `upload` |
+| `reports` | `read` |
+
+25 permissions. The catalogue says what **can** be granted. It says nothing
+about who holds what; that is the role matrix below.
+
+A permission exists in three places, and they cannot drift apart silently:
+the TypeScript catalogue, the `permissions` table (seeded by migration), and
+every route declaration. A test compares the table to the catalogue, and the
+architecture test refuses any route requiring a permission that is not in the
+catalogue.
+
+`isPermission()` guards every permission read from storage or a request.
+`PolicyAuthorizationService.can()` returns `false` for an uncatalogued
+permission **before any rule runs**, so no rule, however it is written, can
+grant a permission that does not exist. Tested.
+
+---
+
+## 3. Roles — six active
+
+`OWNER`, `ADMIN`, `SUPERVISOR`, `TEACHER`, `ASSISTANT_TEACHER`, `STUDENT`.
+
+Parent, Auditor, Content Manager and Support are **not active**. The brief
+names them as future roles. Activating one means deciding what it may see, and
+that has not been decided. The Foundation defined all ten; the migration
+removes assignments of the four inactive ones.
+
+**Adding a role is a migration, not a code change.** Assignment is validated
+against the `roles` table, and a role's permissions come from
+`role_permissions`, so a role inserted by migration is assignable and effective
+without a deploy. Nothing in code enumerates roles to make a decision.
+
+**OWNER is not ADMIN.** They are separate roles. Nothing may assume one implies
+the other, and the institution may separate them further.
+
+---
+
+## 4. The role matrix — PROVISIONAL
+
+Not confirmed by the institution (Q1). It exists so the system is usable and
+testable meanwhile, and it is kept in one file so nobody mistakes it for policy.
+
+| Role | Provisional grants |
+| --- | --- |
+| OWNER | all 25 |
+| ADMIN | all except `settings.manage` and `messaging.manage` (23) |
+| SUPERVISOR | read access: `users`, `people`, `academic`, `attendance`, `assignments`, `reports`, `messaging.read/send`, `live.join`, `files.read` |
+| TEACHER | `people.read`, `academic.read`, `attendance.*`, `assignments.read/manage`, `messaging.read/send`, `live.join/speak/moderate`, `files.*` |
+| ASSISTANT_TEACHER | `academic.read`, `attendance.read`, `assignments.read`, `messaging.read/send`, `live.join`, `files.read` |
+| STUDENT | `academic.read`, `assignments.read/submit`, `messaging.read/send`, `live.join/raise_hand`, `files.*` |
+
+Two **technical** constraints shaped it. These are not policy choices:
+
+1. **ADMIN must hold what the roles it onboards hold.** The no-escalation rule
+   (§7) lets you grant only permissions you already have. An ADMIN lacking
+   `live.moderate` could not create a TEACHER.
+2. **OWNER must differ from ADMIN by at least one permission.** If the two were
+   equal, no-escalation would let any admin reset an owner's password and sign
+   in as them. `settings.manage` is that difference, as the one permission in
+   the brief's list about governing the system itself.
+
+`messaging.manage` is also withheld from ADMIN: it is power over other people's
+private conversations, and it should not be granted by default beyond the
+owner (Q6).
+
+Students may **ask** for the floor (`live.raise_hand`) but never **take** it
+(`live.speak`) or **give** it (`live.moderate`). Tested, because a
+2500-listener room depends on it.
+
+The matrix is seeded into `role_permissions` by migration, and the **table is
+what runs**. A test fails if the constant and the seeded rows disagree. When the
+institution confirms its matrix, it becomes a reviewed migration. Changing it
+at runtime through an admin API is deferred; its audit action,
+`identity.role_permissions.changed`, is already reserved.
+
+---
+
+## 5. Resource-scoped rules
 
 ```ts
 interface PolicyRule {
-  readonly id: string;
-  appliesTo(permission, context): boolean;   // cheap pre-filter
+  appliesTo(permission, context): boolean;          // cheap pre-filter
   evaluate(principal, permission, context): 'permit' | 'deny' | 'abstain';
 }
 ```
 
-The three-valued return matters. `abstain` is not `deny`: a rule that has no
-opinion must not veto a permission granted elsewhere. Collapsing it to a boolean
-is the usual way these systems become impossible to extend.
+Three-valued on purpose: `abstain` is not `deny`. A rule with no opinion must not
+veto a permission granted elsewhere.
 
----
-
-## 3. Combination: deny-overrides
+**Combination — deny-overrides:**
 
 ```ts
-export function evaluateAccess(principal, permission, context, rules): boolean {
-  const applicable = rules.filter((r) => r.appliesTo(permission, context));
-  const decisions  = applicable.map((r) => r.evaluate(principal, permission, context));
-
-  if (decisions.includes('deny')) return false;          // 1. explicit deny always wins
-  if (principal.permissions.has(permission)) return true; // 2. role baseline
-  return decisions.includes('permit');                    // 3. a rule may still grant
-}
+if (!isPermission(permission)) return false;             // not a permission at all
+if (decisions.includes('deny')) return false;             // an explicit deny always wins
+if (principal.permissions.has(permission)) return true;   // role baseline
+return decisions.includes('permit');                      // a rule may still grant
 ```
 
-Three properties, each chosen rather than inherited:
+**Provisional rule in force: host-only moderation.** Holding `live.moderate`
+means "may moderate rooms you host", not "may moderate any room". Given the
+room's host in context, the rule *abstains* for the host (the role baseline
+decides) and *denies* everyone else, **including OWNER**. Whether a supervisor,
+admin or owner may step into someone else's room is Q1.
 
-1. **An explicit deny always wins**, including over the Owner role. This is what
-   makes suspension, safeguarding restrictions and legal holds expressible
-   later without re-architecting.
-2. **Roles are the baseline**, so the common case needs no rules at all.
-3. **A rule may grant what roles do not** — that is how ownership works: a
-   student may read *their own* submission without holding a blanket
-   `assignments.submission.read`.
-
-And the default: **anything unproven is denied.** There is no fall-through that
-permits.
-
-`POLICY_RULES` is currently registered as an empty array. That is deliberate,
-not unfinished: ownership scoping, halaqa scoping and supervisor scoping are all
-*institutional* rules, and inventing them was explicitly out of bounds. The
-mechanism is built and tested with `ownerOfResourceRule` as a worked example;
-the institution's actual rules are [open question Q1](open-questions.md).
+When no owner is supplied, the rule does not apply. That is what lets a use
+case ask the coarse question, "may this principal moderate at all?", before it
+loads the room.
 
 ---
 
-## 4. Enforcement at the HTTP edge
+## 6. Enforcement — at the edge, and again in the use case
 
-Two global guards, registered via `APP_GUARD`:
+### At the HTTP edge: one guard, three declarations
 
-**`AuthenticationGuard`** verifies the bearer token, then resolves a
-`Principal` — by calling `authorization.principalFor(...)`, *not* by importing
-identity's domain. (The architecture test caught that exact violation during
-development; the fix was to widen the contract, not weaken the rule.)
+Every route declares **exactly one**:
 
-**`PermissionGuard`** reads the route's declared requirement and asks the
-authorization service.
+| Declaration | Means |
+| --- | --- |
+| `@PublicRoute()` | No authentication; the token is not even looked at |
+| `@Authenticated()` | A live principal is required; no particular permission |
+| `@RequirePermission(p)` | A live principal holding `p` is required |
+| *nothing* | **403 to everyone**: fail closed |
+
+`AccessGuard` does authentication and authorization in one place, in a fixed
+order. The Foundation used two guards whose order depended on provider
+registration order. The guard contains no rules; it reads the declaration and
+asks.
+
+`@Authenticated()` is for acts inherent to having an account: who am I, sign me
+out, my devices, my password. Making those grantable would allow a role that
+cannot log out.
+
+Only four routes are public: login, refresh, and the two health probes. The
+architecture test fixes that list; adding to it is an argued change.
+
+### In the use case: always
+
+A guard sees a route and a principal, not the resource. And a use case may be
+called by a job, an event handler or an automation rule, none of which pass
+through a guard. So **every sensitive use case authorizes itself**, with the
+resource in context:
 
 ```ts
-@Post('sessions/:sessionId/speakers')
-@RequirePermission(Permissions.live.speaker.grant)
-async grantSpeaker(...) { ... }
+// live/application/moderate-speaker.use-case.ts
+const allowed   = authorize(principal, Permissions.live.moderate);           // coarse, before loading
+// … load request → session → room …
+const inThisRoom = authorize(principal, Permissions.live.moderate, {
+  resourceType: 'live.session', resourceId: session.id, ownerUserId: room.hostUserId,
+});
 ```
 
-The guard contains no rules of its own. It reads an annotation and delegates.
-That is the whole mechanism by which `if (role === 'admin')` is kept from
-reappearing at the edges.
+The coarse check runs **before** anything is loaded, so a caller without the
+permission cannot use error messages to learn which resources exist. Tested
+across the admin use cases: a denied caller's error is identical for a real
+account and a missing one.
 
-### Unannotated routes are refused
+**This was a real gap in the Foundation.** `ModerateSpeakerUseCase` checked the
+permission without the room, so any teacher could moderate any room. It now
+asks identity with the host in context, and the test uses the *real*
+authorization service, not a permissive stub.
+
+### System principals
+
+Work nobody is logged in to do, such as a scheduled job or an automation rule,
+acts as a **system principal**:
 
 ```ts
-if (required === undefined) {
-  throw new ForbiddenException('This route declares no permission requirement.');
-}
+const importer = systemPrincipal('student-import', [Permissions.users.manage]);
 ```
 
-This is the most important line in the guard, and it is worth being explicit
-about why.
-
-The usual arrangement fails **open**: a developer adds a controller method,
-forgets the decorator, and ships an unprotected endpoint. Nothing breaks, no
-test fails, and the hole is found by someone else.
-
-Here it fails **closed**. A route with no declared permission returns 403 to
-everyone, including in development, on the first request. The mistake is
-immediate, obvious, and impossible to ship past a smoke test.
-
-Genuinely public routes say so explicitly — `@PublicRoute()` on login and on the
-health endpoints. Public is a decision that must be written down.
+It holds exactly the permissions it is given. A use case authorizes it with the
+same call it uses for a person. Tested: an importer that may create accounts
+cannot assign roles.
 
 ---
 
-## 5. Use-case-level authorization
+## 7. Administration invariants — security, not policy
 
-Guards are necessary and not sufficient. They see a route and a principal; they
-do not see the resource. `live.speaker.grant` on a room you do not host passes
-the guard and must still be refused.
+These hold whatever the institution decides roles may do:
 
-So use cases authorize again, with context:
+| Invariant | Prevents |
+| --- | --- |
+| **No escalation** — administer only accounts whose permissions ⊆ yours; grant only roles whose permissions ⊆ yours | an admin resetting an owner's password; granting OWNER to an account you control |
+| **No self-administration** — status, roles and password reset cannot target your own account | locking yourself, possibly the last owner, out |
 
-```ts
-const allowed = this.authorization.authorize(
-  command.principal,
-  Permissions.live.speaker.grant,
-  { resourceType: 'LiveSession', resourceId: command.sessionId, ownerUserId: room.hostUserId },
-);
-if (!allowed.ok) return allowed;
-```
-
-`authorize()` returns a `Result` rather than throwing, because to a use case a
-refusal is an expected outcome, not an exception. The controller turns it into a
-403 via `unwrap()`. Guards get `can()` — the same decision, boolean-shaped.
-
-Every implemented use case authorizes **before** any side effect. The live tests
-assert this directly: a denied caller results in zero tokens minted, checked by
-inspecting the fake provider rather than by trusting the ordering of the code.
+Together: the API can never lose its last fully-privileged account. To act on
+such an account you must hold everything it holds, and you cannot act on
+yourself, so another equally privileged account always remains. Each is
+tested.
 
 ---
 
-## 6. Authentication
+## 8. What other modules may use
 
-- Passwords: `scrypt` (N=16384, r=8, p=1), Node built-in, no native build.
-  Format `$scrypt$N$r$p$salt$hash`, verified with `timingSafeEqual`. A malformed
-  stored hash verifies as `false` rather than throwing.
-- `AuthenticateUseCase` returns **one indistinguishable failure** for
-  unknown-user and wrong-password, and hashes against a dummy value on the
-  unknown-user path so response timing does not reveal whether an account
-  exists.
-- Tokens are short-lived and minted server-side. The Flutter client holds no
-  secrets of any kind.
+From `identity/contracts/` only (enforced by dependency-cruiser and a dedicated
+test):
 
-There is **no seeded account and no default credential** anywhere in this
-repository. Shipping a known owner login would be both a security hole and an
-invented institutional rule. How the first owner is provisioned is
-[open question Q2](open-questions.md).
+- `AUTHORIZATION_SERVICE` / `AuthorizationService` — `can()` and `authorize()`
+- `Permissions`, `Permission`, `isPermission`
+- `RequirePermission`, `Authenticated`, `PublicRoute`
+- `Principal`, `systemPrincipal`
+
+Identity's tables are private. No file outside identity imports its schema,
+which is asserted by test.
 
 ---
 
-## 7. What is tested
+## 9. What is tested
 
-`test/architecture/authorization.spec.ts` asserts properties of the scheme
-itself, not of one endpoint:
+| Property | Where |
+| --- | --- |
+| Granted / denied / unknown permission / empty principal | `authorization.service.spec.ts` |
+| Deny-overrides, abstain does not veto, rules scope but never grant | `policy.spec.ts` |
+| Host-only moderation — including against an all-permission principal | `authorization.service.spec.ts`, `moderate-speaker.spec.ts` |
+| Catalogue: unique, well-formed, covers the brief's namespaces | `permissions.spec.ts` |
+| Matrix: only catalogued permissions; OWNER ⊋ ADMIN; ADMIN ⊇ roles below; student cannot speak | `role.spec.ts` |
+| DB catalogue, roles and matrix equal the code | `test/integration/identity-persistence.spec.ts` |
+| No escalation; no self-administration; existence not leaked | `provisioning.spec.ts` |
+| System principals held to their grants | `authorization.service.spec.ts`, `provisioning.spec.ts` |
+| Guard fails closed; public skips tokens; 401 vs 403 | `access.guard.spec.ts` |
+| Every discovered route declares exactly one access level; public set fixed; admin routes need a permission | `test/architecture/authorization.spec.ts` |
+| 401 / 403 / validation / error shape over real HTTP | `test/api/identity.api.spec.ts` |
 
-- Every permission in the catalog is reachable by at least one role — an
-  unreachable permission is a bug in the matrix.
-- Deny beats permit, including against the Owner role.
-- `abstain` does not veto.
-- An unknown role contributes nothing rather than throwing.
-- The catalog contains no duplicate permission strings.
-
-Plus unit tests for `evaluateAccess`, the role resolver, and the scrypt hasher.
+*Correction to the Foundation document:* it listed catalogue and deny-override
+properties as tested by `test/architecture/authorization.spec.ts`. That file
+tested route annotations only, and did so from a hand-maintained list of
+controllers. It now discovers controllers from the source tree, and the other
+properties have the tests above.
 
 ---
 
-## 8. Deliberately deferred
+## 10. Deferred
 
-- Refresh tokens and session revocation.
-- Permission caching (the resolution is a set union over ten roles; measure
-  before optimizing).
-- Delegation and time-boxed grants ("acting supervisor until Friday").
+- Runtime editing of the role → permission matrix (audit action reserved).
+- Scoping by halaqa, class or guardianship: policy rules the mechanism supports
+  but the institution has not defined.
 - Field-level authorization.
-- The institution's real role→permission matrix and its real policy rules — Q1.
+- Delegation and time-boxed grants ("acting supervisor until Friday").

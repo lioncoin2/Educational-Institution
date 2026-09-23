@@ -8,10 +8,15 @@
  */
 export interface Principal {
   readonly userId: string;
-  /** Role names, carried for auditing and policy rules — not for `if` checks. */
+  /** Role codes, carried for auditing and policy rules — never for `if` checks. */
   readonly roles: readonly string[];
-  /** Effective permissions, already resolved from roles. */
+  /** Effective permissions, resolved from the principal's roles at request time. */
   readonly permissions: ReadonlySet<string>;
+  /**
+   * The authenticated session this principal acts through, when there is one.
+   * Absent for system principals (jobs, automation), which have no session.
+   */
+  readonly sessionId?: string;
 }
 
 export function principalHas(principal: Principal, permission: string): boolean {

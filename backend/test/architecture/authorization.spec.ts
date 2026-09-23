@@ -1,82 +1,132 @@
+import { readdirSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
+
+import { PATH_METADATA } from '@nestjs/common/constants';
+
 import { PUBLIC_ROUTE } from '../../src/platform/http/public-route.decorator';
-import { HealthController } from '../../src/platform/health/health.controller';
-import { AuthController } from '../../src/modules/identity/api/auth.controller';
-import { REQUIRE_PERMISSION } from '../../src/modules/identity/contracts';
-import { LiveController } from '../../src/modules/live/api/live.controller';
+import {
+  REQUIRE_AUTHENTICATION,
+  REQUIRE_PERMISSION,
+  isPermission,
+} from '../../src/modules/identity/contracts';
 
 /**
  * Every route is a decision.
  *
- * A route must declare the permission it needs, or be explicitly marked public.
- * Without this test, the first endpoint someone adds in a hurry ships with no
- * authorization at all and nothing notices — the guard would reject it at
- * runtime, but only once somebody calls it.
+ * Each route must declare exactly one access level — public, authenticated, or
+ * a permission. The AccessGuard refuses undeclared routes at runtime; this test
+ * refuses them at build time, before anyone has to call one to find out.
  *
- * New controllers must be added to this list; that is deliberate friction.
+ * Controllers are DISCOVERED from the source tree, not listed by hand. The
+ * Foundation version of this test used a list, which meant a new controller
+ * nobody added to it was never checked at all.
  */
-const CONTROLLERS = [AuthController, LiveController, HealthController];
+const SRC = join(__dirname, '..', '..', 'src');
 
-interface RouteInfo {
-  readonly controller: string;
-  readonly method: string;
-  readonly permission: unknown;
-  readonly isPublic: boolean;
+function controllerFiles(dir: string): string[] {
+  return readdirSync(dir).flatMap((entry) => {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) return controllerFiles(path);
+    return path.endsWith('.controller.ts') ? [path] : [];
+  });
 }
 
-function routesOf(controller: new (...args: never[]) => unknown): RouteInfo[] {
-  const prototype = controller.prototype as Record<string, unknown>;
-  return (
-    Object.getOwnPropertyNames(prototype)
-      .filter((name) => name !== 'constructor')
-      .map((name) => prototype[name])
-      .filter(
-        (handler): handler is (...args: unknown[]) => unknown => typeof handler === 'function',
-      )
-      // Nest marks a method as a route by attaching a 'path' metadata key.
-      .filter((handler) => Reflect.getMetadata('path', handler) !== undefined)
-      .map((handler) => ({
-        controller: controller.name,
-        method: handler.name,
-        permission: Reflect.getMetadata(REQUIRE_PERMISSION, handler),
-        isPublic: Reflect.getMetadata(PUBLIC_ROUTE, handler) === true,
-      }))
-  );
+type Constructor = abstract new (...args: never[]) => unknown;
+
+interface Route {
+  readonly name: string;
+  readonly isPublic: boolean;
+  readonly authenticated: boolean;
+  readonly permission: unknown;
+}
+
+async function discover(): Promise<{ controllers: string[]; routes: Route[] }> {
+  const controllers: string[] = [];
+  const routes: Route[] = [];
+  for (const file of controllerFiles(SRC)) {
+    const exported = (await import(file)) as Record<string, unknown>;
+    for (const candidate of Object.values(exported)) {
+      if (typeof candidate !== 'function') continue;
+      if (Reflect.getMetadata(PATH_METADATA, candidate) === undefined) continue;
+      const controller = candidate as Constructor & { name: string };
+      controllers.push(`${relative(SRC, file)}#${controller.name}`);
+
+      const prototype = controller.prototype as Record<string, unknown>;
+      for (const method of Object.getOwnPropertyNames(prototype)) {
+        const handler = prototype[method];
+        if (method === 'constructor' || typeof handler !== 'function') continue;
+        if (Reflect.getMetadata(PATH_METADATA, handler) === undefined) continue;
+        routes.push({
+          name: `${controller.name}.${method}`,
+          isPublic: Reflect.getMetadata(PUBLIC_ROUTE, handler) === true,
+          authenticated: Reflect.getMetadata(REQUIRE_AUTHENTICATION, handler) === true,
+          permission: Reflect.getMetadata(REQUIRE_PERMISSION, handler),
+        });
+      }
+    }
+  }
+  return { controllers, routes };
 }
 
 describe('route authorization', () => {
-  const routes = CONTROLLERS.flatMap(routesOf);
+  let controllers: string[] = [];
+  let routes: Route[] = [];
 
-  it('finds the routes it is meant to be checking', () => {
-    expect(routes.length).toBeGreaterThanOrEqual(7);
+  beforeAll(async () => {
+    ({ controllers, routes } = await discover());
   });
 
-  it('declares a permission or an explicit public marker on every route', () => {
-    const undeclared = routes
-      .filter((route) => route.permission === undefined && !route.isPublic)
-      .map((route) => `${route.controller}.${route.method}`);
+  it('finds every controller in the source tree', () => {
+    expect(controllers.sort()).toEqual([
+      'modules/identity/api/admin-users.controller.ts#AdminUsersController',
+      'modules/identity/api/auth.controller.ts#AuthController',
+      'modules/live/api/live.controller.ts#LiveController',
+      'platform/health/health.controller.ts#HealthController',
+    ]);
+    expect(routes.length).toBeGreaterThanOrEqual(20);
+  });
 
-    expect(undeclared).toEqual([]);
+  it('declares exactly one access level on every route', () => {
+    const wrong = routes
+      .map((route) => ({
+        route: route.name,
+        declared: [route.isPublic, route.authenticated, route.permission !== undefined].filter(
+          Boolean,
+        ).length,
+      }))
+      .filter((entry) => entry.declared !== 1);
+    expect(wrong).toEqual([]);
+  });
+
+  it('only ever requires a permission that exists in the catalogue', () => {
+    const unknown = routes
+      .filter((route) => route.permission !== undefined)
+      .filter((route) => typeof route.permission !== 'string' || !isPermission(route.permission))
+      .map((route) => route.name);
+    expect(unknown).toEqual([]);
   });
 
   it('keeps the set of public routes small and deliberate', () => {
     const publicRoutes = routes
       .filter((route) => route.isPublic)
-      .map((route) => `${route.controller}.${route.method}`)
+      .map((route) => route.name)
       .sort();
 
-    // Login and the two health probes. Anything else must be argued for.
+    // Sign-in, token refresh, and the two health probes. Anything else must be
+    // argued for — in this list, in review.
     expect(publicRoutes).toEqual([
-      'AuthController.authenticate',
+      'AuthController.login',
+      'AuthController.refresh',
       'HealthController.live',
       'HealthController.ready',
     ]);
   });
 
-  it('never marks a route both public and permission-guarded', () => {
-    const contradictory = routes
-      .filter((route) => route.isPublic && route.permission !== undefined)
-      .map((route) => `${route.controller}.${route.method}`);
-
-    expect(contradictory).toEqual([]);
+  it('puts every administrative route behind a permission, never mere authentication', () => {
+    const lax = routes
+      .filter((route) => route.name.startsWith('AdminUsersController.'))
+      .filter((route) => route.permission === undefined)
+      .map((route) => route.name);
+    expect(lax).toEqual([]);
   });
 });

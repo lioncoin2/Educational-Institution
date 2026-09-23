@@ -53,7 +53,7 @@ Depth of implementation varies deliberately:
 
 | Module | State |
 | --- | --- |
-| `identity` | Implemented end to end: domain, use cases, adapters, HTTP, guards, tests |
+| `identity` | **Identity & Access V1**: authentication, rotating refresh sessions, multi-device, provisioning, audit, rate limiting. On Postgres, tested |
 | `live` | Implemented end to end against the RTC port; in-memory persistence |
 | `files` | Policy + storage port + local adapter implemented; upload endpoint deferred |
 | the other eight | Contracts and a Nest module only — deliberately empty |
@@ -125,12 +125,16 @@ Every external dependency sits behind a port, in exactly one adapter file:
 | --- | --- | --- |
 | Realtime audio | `RtcProvider` | `LiveKitRtcProvider`, `FakeRtcProvider` |
 | Binary storage | `StorageProvider` | `LocalStorageProvider` (S3 adapter later) |
-| Users | `UserRepository` | `InMemoryUserRepository` (Postgres later) |
+| Accounts | `UserRepository` | `DrizzleUserRepository`, `InMemoryUserRepository` |
+| Sessions | `AuthSessionRepository` | `DrizzleAuthSessionRepository`, in-memory |
+| Role matrix | `RoleCatalog` | `DrizzleRoleCatalog`, in-memory (provisional) |
+| Refresh secrets | `SecureTokenGenerator` | `CryptoSecureTokenGenerator` |
+| Rate limits | `RateLimiter` | `InMemoryRateLimiter` (Redis later) |
 | Password hashing | `PasswordHasher` | `ScryptPasswordHasher` |
 | Token issuing | `TokenIssuer` | `JwtTokenIssuer` |
 | Time | `Clock` | `SystemClock`, `FixedClock` |
 | Ids | `IdGenerator` | `UuidGenerator` |
-| Audit | `AuditLog` | `LoggingAuditLog` (Postgres later) |
+| Audit | `AuditLog` | `DrizzleAuditLog`, `LoggingAuditLog` |
 | Events | `EventPublisher` | `InProcessEventBus` |
 
 `livekit-server-sdk` is imported by exactly one file in the repository. So is
@@ -145,15 +149,14 @@ Named, so that absence reads as a decision rather than an oversight:
 
 - **No chat UI and no 2500-person room UI.** Explicitly out of scope for this
   milestone. The contracts they will need exist; the screens do not.
-- **No Postgres adapters yet.** Repositories are in-memory. They implement the
-  same ports the Postgres versions will. See
-  [persistence.md](persistence.md).
-- **No seeded accounts and no default credentials.** Shipping a known
-  owner/password would be a security hole and an invented institutional rule.
-  See [open-questions.md](open-questions.md), Q2.
-- **No real role→permission matrix.** What a Supervisor may actually do is an
-  institutional decision, not an engineering one. The current matrix is marked
-  `PROVISIONAL_ROLE_PERMISSIONS` in code. Q1.
+- **Postgres adapters only where there is code.** Identity and audit are on
+  Postgres. `live` is still in memory. The eight contract-only modules have no
+  tables. See [persistence.md](persistence.md).
+- **No seeded accounts and no default credentials.** The first owner is created
+  on the server with a CLI that reads the password from stdin. Q2.
+- **No confirmed role→permission matrix.** What a Supervisor may actually do is
+  an institutional decision. The matrix in force is provisional, in one file,
+  and in the database. Q1.
 - **No messaging implementation.** Only the boundary. See
   [messaging.md](messaging.md).
 - **No load testing.** The design is *arranged to be* load-testable; it has not
@@ -182,6 +185,8 @@ receives a short-lived, capability-scoped join token minted server-side.
 
 - [dependency-rules.md](dependency-rules.md) — the enforced rules
 - [module-boundaries.md](module-boundaries.md) — each module's remit
+- [authentication.md](authentication.md) — sign-in, tokens, passwords, provisioning
+- [session-management.md](session-management.md) — devices, rotation, revocation
 - [authorization.md](authorization.md) — how permission decisions are made
 - [events.md](events.md) — how modules stay decoupled
 - [realtime.md](realtime.md) — the 2500-participant design

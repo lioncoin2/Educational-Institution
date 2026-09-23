@@ -15,54 +15,69 @@ not a rewrite. That is the point of leaving the seam.
 
 ## Q1 — What may each role actually do?
 
-**Question.** Ten roles exist: Owner, Administrator, Supervisor, Teacher,
-Assistant Teacher, Student, Parent, Content Manager, Support, Auditor. The exact
-permission set for each is an institutional decision.
+**Question.** Six roles are active: OWNER, ADMIN, SUPERVISOR, TEACHER,
+ASSISTANT_TEACHER, STUDENT. The exact permission set of each is an institutional
+decision. Concretely, and none of these is rhetorical:
 
-Concretely, and these are not rhetorical: May a Supervisor amend attendance, or
-only view it? May an Assistant Teacher grant speaking permission in a live
-room? May a Parent see a sibling's progress? May Support read a message body,
-or only its metadata? May an Auditor read message content at all?
+- Should the **owner** hold every permission, including `messaging.manage`, the
+  power to read other people's private conversations?
+- May an **admin** hold `messaging.manage` at all? (Withheld provisionally.)
+- May a **supervisor** amend attendance, or only view it? Moderate a teacher's
+  live room?
+- May an **assistant teacher** speak in, or moderate, a live room?
+- May anyone other than a room's **host** moderate it: supervisor, admin, owner?
+  (Provisionally no one, including the owner.)
+- Should **teachers** be limited to their own halaqat for attendance and
+  assignments? (The mechanism, resource-scoped policy rules, exists; no rule is
+  defined.)
 
-**Why not guessed.** Each of these encodes a real position on delegation,
-privacy and accountability. "Supervisors can edit attendance" is either
-obviously right or obviously wrong depending on the institution, and getting it
-wrong silently is a governance failure, not a bug.
+**Why not guessed.** Each of these encodes a position on delegation, privacy
+and accountability. "Supervisors can edit attendance" is obviously right or
+obviously wrong depending on the institution, and getting it wrong silently is
+a governance failure, not a bug.
 
-**Built instead.** The mechanism, complete and tested: a typed permission
-catalog, a role resolver, deny-overrides evaluation, guards and use-case
-checks. The matrix itself is exported as `PROVISIONAL_ROLE_PERMISSIONS`, named
-so that no reader mistakes it for a decision. `POLICY_RULES` is registered as an
-empty array.
+**Built instead.** The whole mechanism, tested: permission catalogue, role
+catalogue in the database, deny-overrides evaluation, resource-scoped rules,
+guards, and use-case checks. A provisional matrix and one provisional rule
+(host-only moderation) sit together in
+`identity/domain/provisional-policy.ts`, named so no reader mistakes them for
+decisions. [authorization.md §4](authorization.md) explains the two technical
+constraints that shaped the matrix.
 
-**When answered.** Edit one constant and register policy rules. No use case, no
-guard and no controller changes.
-
----
-
-## Q2 — How is the first Owner account created?
-
-**Question.** The system ships with no users. Something has to create the first
-one. Options: a CLI provisioning command run by an operator; a one-time setup
-token; an out-of-band insert by a DBA; an invitation from an existing
-deployment.
-
-**Why not guessed.** The obvious shortcut — seeding `owner@institution /
-changeme` — is a security hole that survives into production with remarkable
-reliability. It is also an invented institutional rule about who the owner is.
-
-**Built instead.** Nothing. There is no seeded account and no default credential
-anywhere in this repository. `InMemoryUserRepository` starts empty;
-`DrizzleUserRepository` reads whatever the database holds.
-
-**When answered.** A provisioning use case plus one entry point. The
-authentication path is already built and tested.
+**When answered.** A reviewed migration rewriting `role_permissions`, plus
+policy rules for any scoping. No use case, guard or controller changes. A test
+keeps the code constant and the table in step.
 
 ---
 
-## Q3 — What is the retention policy for files and messages?
+## Q2 — Who is the first owner, and how are accounts created after that?
 
-**Question.** How long are voice messages kept? Homework submissions after a
+**Question.** The system ships with no users and no default credential. How
+should the first owner be provisioned in production, and by whom? After that,
+is staff-only creation of accounts right for every group, or will some people,
+guardians for instance, ever register themselves?
+
+**Why not guessed.** Seeding `owner@institution / changeme` is a security hole
+that reliably survives into production, and an invented rule about who the
+owner is. Public registration is a policy the institution has not asked for.
+
+**Built instead.** A mechanism, not a decision. `bootstrap-owner`, a
+command-line tool run on the server, creates the first OWNER from credentials
+typed at that moment (password on stdin). It refuses while any active owner
+exists. After that, accounts are created only through `/admin/users` by holders
+of `users.manage`. There is no registration endpoint.
+
+**When answered.** Who runs the bootstrap is an operational decision; the tool
+exists. Self-registration, if ever wanted, is a new use case with its own
+permissions and abuse controls. Nothing existing changes.
+
+---
+
+## Q3 — What is the retention policy for files, messages, audit entries and session history?
+
+**Question.** How long are audit entries kept, including the client IP
+addresses recorded on sign-in events? How long is the history of revoked and
+expired sessions kept? How long are voice messages kept? Homework submissions after a
 programme ends? Messages in a channel nobody uses any more? Does a deleted
 message's attachment get deleted, and immediately or on a schedule?
 
@@ -241,6 +256,130 @@ everywhere rather than `new Date()` being called. No recurrence model exists
 yet, so nothing has been decided wrongly.
 
 **When answered.** The recurrence model in `operations`.
+
+---
+
+## Q13 — What do SUSPENDED and DISABLED mean, and who may move an account between them?
+
+**Question.** Accounts have four states: PENDING (created, never usable),
+ACTIVE, SUSPENDED and DISABLED. What distinguishes a suspension from a
+disablement for this institution: unpaid fees, a disciplinary matter, leaving
+the institution? May a disabled account ever be re-enabled? Should suspensions
+expire automatically?
+
+**Why not guessed.** Only the *mechanics* are technical: only ACTIVE may sign
+in, and suspending or disabling ends every session. The *meaning* of each state,
+and who may use it on whom, is policy.
+
+**Built instead.** The four states and a transition table (no way back into
+PENDING; DISABLED may return to ACTIVE, so the state is not a dead end by fiat).
+PENDING was added beyond the brief's three because provisioning is
+create → assign roles → activate. Without it, "not yet switched on" would be
+stored as DISABLED, and a brand-new account would be indistinguishable from one
+deliberately turned off. Who may change status is `users.manage`, bounded by the
+no-escalation rule.
+
+**When answered.** Permissions or policy rules per transition; perhaps an
+expiry on suspensions (an `automation` job). The states themselves are unlikely
+to change.
+
+---
+
+## Q14 — Password policy: minimum length, and a breached-password check
+
+**Question.** Is 8 characters the right minimum for this institution, perhaps
+higher for staff? Should new passwords be checked against a list of known
+breached passwords, as NIST SP 800-63B recommends?
+
+**Why not guessed.** The minimum is a usability trade-off against security,
+and many users here are children. A breached-password check means either
+shipping a large list or calling an external service, and the latter sends
+(hashed prefixes of) passwords to a third party.
+
+**Built instead.** NIST's floor of 8 and a ceiling of 128, counted in characters,
+applied only when a password is set. Marked provisional in
+`identity/domain/password-policy.ts`.
+
+**When answered.** Two constants, and possibly one more domain check.
+
+---
+
+## Q15 — After an administrator sets someone's password, must they change it?
+
+**Question.** Staff can set an account's initial password and reset a
+forgotten one; for learners without email, that is the realistic path. Should
+the person be forced to choose their own password at next sign-in? Should staff
+be able to see or choose the password at all, or should the system generate a
+one-time one?
+
+**Why not guessed.** A forced change is safer, and adds a step for small
+children using shared devices. A generated one-time password changes what the
+admin UI shows. Both are product decisions.
+
+**Built instead.** Reset sets the password and ends every session of the
+account. Nothing forces a change.
+
+**When answered.** A `mustChangePassword` flag and a check in login. Contained
+to identity.
+
+---
+
+## Q16 — How long should a sign-in last?
+
+**Question.** Sessions last 30 days, absolutely, and refreshing never extends
+them. There is no idle timeout. Is 30 days right, and should it differ for
+staff, or for shared devices? Should an unused session expire sooner? That
+would mean re-entering a password after the summer break.
+
+**Why not guessed.** It trades convenience for children against exposure on
+lost or shared devices, and the institution knows which devices are shared.
+
+**Built instead.** Absolute expiry, configurable (`REFRESH_SESSION_TTL_SECONDS`);
+15-minute access tokens (`JWT_ACCESS_TTL`). Strict refresh rotation with no
+grace window: a client that refreshes twice at once signs itself out. That is
+the safe default and is documented as a client requirement.
+
+**When answered.** Configuration, and possibly an idle-timeout check in refresh.
+If telemetry shows real users signed out by double refreshes, reconsider a
+short grace window, knowing it opens a replay window.
+
+---
+
+## Q17 — How does the web app hold its refresh token?
+
+**Question.** Mobile apps keep tokens in Keychain/Keystore. A browser has no
+equivalent: `localStorage` is readable by any script that runs on the page. The
+usual answer is an httpOnly, Secure, SameSite cookie scoped to `/auth/refresh`,
+which brings CSRF considerations and a CORS policy with credentials.
+
+**Why not guessed.** It depends on how the web app will be deployed (same
+origin as the API, or not), and the Flutter web build is not connected to the
+API yet.
+
+**Built instead.** Refresh tokens travel in the response body, which is right
+for mobile. The `AuthRepository` contract states the storage rule.
+
+**When answered.** A cookie mode on `/auth/login` and `/auth/refresh`, and a CORS
+allowlist in configuration. Must be done before the web app is connected.
+
+---
+
+## Q18 — May an admin create other admins?
+
+**Question.** Under the provisional matrix, an ADMIN holds everything an ADMIN
+holds, so the no-escalation rule allows one admin to grant ADMIN to another
+account, and to suspend or reset the password of another admin. Should creating
+and managing admins be reserved to the owner?
+
+**Why not guessed.** Delegation of administrative power is exactly the kind of
+governance choice this document exists for.
+
+**Built instead.** The mechanically consistent default: no one may create or
+manage an account more powerful than their own. Admins cannot touch owners;
+among equals it is allowed.
+
+**When answered.** A policy rule denying `roles.assign` of ADMIN to non-owners,
+or a permission split. No structural change.
 
 ---
 

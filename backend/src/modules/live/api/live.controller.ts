@@ -25,7 +25,7 @@ export class LiveController {
 
   /** Returns a short-lived, capability-scoped token. */
   @Post('sessions/:sessionId/join')
-  @RequirePermission(Permissions.live.joinRoom)
+  @RequirePermission(Permissions.live.join)
   @HttpCode(HttpStatus.OK)
   async joinSession(
     @CurrentPrincipal() principal: Principal,
@@ -36,7 +36,7 @@ export class LiveController {
   }
 
   @Post('sessions/:sessionId/hand')
-  @RequirePermission(Permissions.live.requestSpeaker)
+  @RequirePermission(Permissions.live.raiseHand)
   @HttpCode(HttpStatus.ACCEPTED)
   async raise(
     @CurrentPrincipal() principal: Principal,
@@ -49,14 +49,14 @@ export class LiveController {
   }
 
   @Post('requests/:requestId/grant')
-  @RequirePermission(Permissions.live.grantSpeaker)
+  @RequirePermission(Permissions.live.moderate)
   @HttpCode(HttpStatus.OK)
   async grant(@CurrentPrincipal() principal: Principal, @Param('requestId') requestId: string) {
     return unwrap(await this.moderate.grant({ principal, requestId }));
   }
 
   @Post('requests/:requestId/revoke')
-  @RequirePermission(Permissions.live.revokeSpeaker)
+  @RequirePermission(Permissions.live.moderate)
   @HttpCode(HttpStatus.OK)
   async revoke(@CurrentPrincipal() principal: Principal, @Param('requestId') requestId: string) {
     return unwrap(await this.moderate.revoke({ principal, requestId }));

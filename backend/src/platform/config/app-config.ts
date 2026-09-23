@@ -13,6 +13,14 @@ export interface AppConfig {
   readonly nodeEnv: NodeEnv;
   readonly port: number;
   readonly logLevel: string;
+  readonly http: {
+    /**
+     * Express `trust proxy`. Must match the deployment: trusting a proxy that
+     * is not there lets any client forge its IP, and with it escape per-IP
+     * rate limits.
+     */
+    readonly trustProxy: boolean | number;
+  };
   readonly database: {
     readonly url: string;
     /**
@@ -24,7 +32,17 @@ export interface AppConfig {
     readonly configured: boolean;
   };
   readonly redis: { readonly url: string };
-  readonly auth: { readonly jwtSecret: string; readonly accessTtlSeconds: number };
+  readonly auth: {
+    readonly jwtSecret: string;
+    readonly jwtIssuer: string;
+    readonly jwtAudience: string;
+    /** Access token lifetime. Short, but not the revocation mechanism — sessions are. */
+    readonly accessTtlSeconds: number;
+    /** Absolute session lifetime. Refreshing does not extend it. */
+    readonly refreshSessionTtlSeconds: number;
+    /** How long the role → permission matrix is cached per process. */
+    readonly rolePolicyCacheSeconds: number;
+  };
   readonly livekit: {
     readonly url: string;
     readonly apiKey: string;
@@ -44,15 +62,31 @@ export class ConfigurationError extends Error {
 const PLACEHOLDER_SECRETS = new Set([
   'change-me',
   'change-me-in-every-environment',
+  'development-only-secret',
   'devkey',
   'secret',
   '',
 ]);
 
+/**
+ * HS256 is only as strong as its key. RFC 7518 §3.2 requires a key at least
+ * as long as the hash output: 256 bits, i.e. 32 bytes.
+ */
+const MIN_JWT_SECRET_BYTES = 32;
+
+const DAY = 24 * 60 * 60;
+
 function readInt(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === '') return fallback;
   const parsed = Number.parseInt(raw, 10);
   return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+function readTrustProxy(raw: string | undefined): boolean | number {
+  if (raw === undefined || raw.trim() === '' || raw === 'false') return false;
+  if (raw === 'true') return true;
+  const hops = Number.parseInt(raw, 10);
+  return Number.isNaN(hops) ? false : hops;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -76,18 +110,34 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     return value;
   };
 
+  const jwtSecret = secret('JWT_SECRET', 'development-only-secret');
+  if (isProduction && Buffer.byteLength(jwtSecret, 'utf8') < MIN_JWT_SECRET_BYTES) {
+    problems.push(`JWT_SECRET must be at least ${MIN_JWT_SECRET_BYTES} bytes in production`);
+  }
+
+  const accessTtlSeconds = readInt(env.JWT_ACCESS_TTL, 900);
+  const refreshSessionTtlSeconds = readInt(env.REFRESH_SESSION_TTL_SECONDS, 30 * DAY);
+  if (accessTtlSeconds <= 0 || refreshSessionTtlSeconds <= accessTtlSeconds) {
+    problems.push('REFRESH_SESSION_TTL_SECONDS must exceed a positive JWT_ACCESS_TTL');
+  }
+
   const config: AppConfig = Object.freeze({
     nodeEnv,
     port: readInt(env.PORT, 3000),
     logLevel: env.LOG_LEVEL ?? (isProduction ? 'info' : 'debug'),
+    http: Object.freeze({ trustProxy: readTrustProxy(env.TRUST_PROXY) }),
     database: Object.freeze({
       url: required('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/institution'),
       configured: (env.DATABASE_URL ?? '').trim() !== '',
     }),
     redis: Object.freeze({ url: required('REDIS_URL', 'redis://localhost:6379') }),
     auth: Object.freeze({
-      jwtSecret: secret('JWT_SECRET', 'development-only-secret'),
-      accessTtlSeconds: readInt(env.JWT_ACCESS_TTL, 900),
+      jwtSecret,
+      jwtIssuer: env.JWT_ISSUER ?? 'institution-api',
+      jwtAudience: env.JWT_AUDIENCE ?? 'institution-clients',
+      accessTtlSeconds,
+      refreshSessionTtlSeconds,
+      rolePolicyCacheSeconds: readInt(env.ROLE_POLICY_CACHE_SECONDS, 30),
     }),
     livekit: Object.freeze({
       url: required('LIVEKIT_URL', 'ws://localhost:7880'),

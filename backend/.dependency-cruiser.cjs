@@ -35,6 +35,24 @@ module.exports = {
       to: { dependencyTypes: ['npm', 'core'] },
     },
     {
+      name: 'domain-reaches-no-npm',
+      severity: 'error',
+      comment:
+        'The rule above checks direct imports only. This one follows every import ' +
+        'transitively: a domain file that imports a contracts barrel which happens to ' +
+        're-export a Nest decorator would pull the framework into the domain without ' +
+        'any single edge being illegal. Import the specific pure contract file instead.',
+      from: { path: '^src/modules/[^/]+/domain/' },
+      to: { path: '^node_modules/', reachable: true },
+    },
+    {
+      name: 'shared-kernel-reaches-no-npm',
+      severity: 'error',
+      comment: 'The shared kernel is imported by every domain, so the same transitive rule applies.',
+      from: { path: '^src/shared/' },
+      to: { path: '^node_modules/', reachable: true },
+    },
+    {
       name: 'domain-does-not-look-outward',
       severity: 'error',
       comment:

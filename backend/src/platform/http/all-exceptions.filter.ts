@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+import type { FailureKind } from '../../shared';
+
 /**
  * Status boundaries as plain numbers.
  *
@@ -34,6 +36,21 @@ const CODE_BY_STATUS: Readonly<Record<number, string>> = {
   403: 'forbidden',
   404: 'not_found',
   409: 'conflict',
+  422: 'validation',
+  429: 'rate_limited',
+};
+
+/**
+ * The failure kind a framework status corresponds to, so a client can branch
+ * on `error.kind` whether the failure came from a use case or from Nest. A 400
+ * has none: it means the request was malformed, not that anything failed.
+ */
+const KIND_BY_STATUS: Readonly<Record<number, FailureKind>> = {
+  401: 'unauthenticated',
+  403: 'forbidden',
+  404: 'not_found',
+  409: 'conflict',
+  412: 'precondition_failed',
   422: 'validation',
   429: 'rate_limited',
 };
@@ -75,6 +92,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       if (status >= SERVER_ERROR) {
         this.logger.error({ requestId, status, err: exception }, 'request failed');
       }
+      const retryAfter = retryAfterSecondsOf(body);
+      if (retryAfter !== undefined) response.setHeader('Retry-After', String(retryAfter));
       response.status(status).json({ ...body, requestId });
       return;
     }
@@ -101,14 +120,26 @@ export class AllExceptionsFilter implements ExceptionFilter {
     // a single message.
     const issues = Array.isArray(raw) ? raw.map(describe) : null;
 
+    const kind = KIND_BY_STATUS[status];
     return {
       error: {
+        ...(kind === undefined ? {} : { kind }),
         code: CODE_BY_STATUS[status] ?? 'request_failed',
         message: issues ? issues.join('; ') : describe(raw),
         ...(issues ? { details: { issues } } : {}),
       },
     };
   }
+}
+
+/** A rate-limited failure carries its wait; HTTP clients expect it as a header. */
+function retryAfterSecondsOf(body: WrappedError): number | undefined {
+  const details = body.error.details;
+  if (typeof details !== 'object' || details === null) return undefined;
+  const seconds = (details as { retryAfterSeconds?: unknown }).retryAfterSeconds;
+  return typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0
+    ? Math.ceil(seconds)
+    : undefined;
 }
 
 /**

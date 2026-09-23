@@ -31,8 +31,42 @@ npm run start:dev
 ```
 
 There is **no seeded account and no default password.** The system starts with
-zero users, on purpose — see
-[open-questions.md Q2](../docs/architecture/open-questions.md).
+zero users, on purpose. Create the first owner on the server — the password is
+read from standard input, never from an argument or the environment:
+
+```bash
+npm run build
+read -rs OWNER_PW && printf '%s\n' "$OWNER_PW" | \
+  node dist/cli/bootstrap-owner.js --email owner@institution.org --name "Full Name"
+```
+
+It refuses once an active owner exists. Every other account is created by staff
+through `/admin/users`. See
+[authentication.md](../docs/architecture/authentication.md).
+
+---
+
+## The API so far
+
+| | Endpoint | Access |
+| --- | --- | --- |
+| Sign in | `POST /auth/login` | public · rate-limited |
+| Refresh | `POST /auth/refresh` | public · rate-limited |
+| Sign out | `POST /auth/logout` | authenticated |
+| Who am I | `GET /auth/me` | authenticated |
+| My devices | `GET /auth/sessions`, `DELETE /auth/sessions/:id` | authenticated |
+| My password | `POST /auth/password` | authenticated · rate-limited |
+| Accounts | `GET /admin/users`, `GET /admin/users/:id` | `users.read` |
+| Create | `POST /admin/users` | `users.manage` |
+| Roles | `POST /admin/users/:id/roles`, `DELETE …/roles/:role` | `roles.assign` |
+| Status | `POST /admin/users/:id/status` | `users.manage` |
+| Reset password | `POST /admin/users/:id/password` | `users.manage` |
+| Sign out everywhere | `DELETE /admin/users/:id/sessions` | `sessions.manage` |
+| Live | `POST /live/sessions/:id/join` · `…/hand`, `POST /live/requests/:id/grant` · `…/revoke` | `live.*` |
+| Health | `GET /health/live`, `GET /health/ready` | public |
+
+Errors always have one shape:
+`{ "error": { "kind"?, "code", "message", "details"? }, "requestId" }`.
 
 ---
 
@@ -44,6 +78,7 @@ zero users, on purpose — see
 | `npm test` | Jest: unit, integration and architecture tests |
 | `npm run test:arch` | Just the architecture rules |
 | `npm run test:integration` | Just the Postgres suites (needs `TEST_DATABASE_URL`) |
+| `npm run identity:bootstrap-owner` | Create the first owner (after `npm run build`; password on stdin) |
 | `npm run arch:graph` | dependency-cruiser directly |
 | `npm run db:generate` | Diff schema files → a new SQL migration |
 | `npm run db:migrate` | Apply pending migrations |
@@ -52,7 +87,8 @@ zero users, on purpose — see
 Run `npm run verify` before pushing. CI runs exactly this, plus a real Postgres.
 
 The Postgres suites **skip with a printed warning** when `TEST_DATABASE_URL` is
-unset. To run them locally:
+unset. Each suite creates and drops its own database, so point it at a server
+where the user may `CREATE DATABASE`. To run them locally:
 
 ```bash
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/institution_test npm test
@@ -96,9 +132,15 @@ rather than as review comments. Each exists for a reason recorded in
    `domain/`, `application/`, `infrastructure/` or `api/`.
 3. **`platform/` may not import `modules/`.**
 4. **Only `platform/config` reads the environment.**
-5. **Every route declares a permission** — `@RequirePermission(...)` or
-   `@PublicRoute()`. A route that declares neither returns 403 to everyone,
-   including you, on the first request. That is intentional.
+5. **Every route declares exactly one access level** — `@PublicRoute()`,
+   `@Authenticated()` or `@RequirePermission(...)`. A route that declares none
+   returns 403 to everyone, including you, on the first request, and the
+   architecture test fails the build. That is intentional.
+6. **Use cases authorize themselves**, with the resource in context. The route
+   guard is the coarse check; a job or event handler calling the same use case
+   passes through no guard.
+7. **Domain files import specific contract files, never a contracts barrel** —
+   the transitive rule will show you the chain to `@nestjs/common` if you do.
 
 If a rule is wrong, argue with it in a pull request. Do not route around it —
 the violation message tells you which rule and why it exists.

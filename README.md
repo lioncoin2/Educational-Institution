@@ -9,7 +9,8 @@
 |---|---|
 | **Prototype الواجهات** (`app/`) | ✅ مُنفَّذ — واجهات تعمل ببيانات Mock داخل الذاكرة |
 | **أساس المعمارية** (`backend/`) | ✅ Foundation V1 — الأساس والحدود والوحدات الأولى |
-| الوحدات المكتملة في الـ Backend | `identity` (الهوية والصلاحيات) · `live` (الغرف الصوتية) · `files` (جزئياً) |
+| **الهوية والصلاحيات** (Identity & Access V1) | ✅ تسجيل الدخول، رموز تحديث دوّارة، جلسات لكل جهاز، إدارة الحسابات من قِبل الموظفين، سجلّ تدقيق في PostgreSQL |
+| الوحدات المكتملة في الـ Backend | `identity` · `live` (الغرف الصوتية) · `files` (جزئياً) |
 | الوحدات المُعرَّفة كحدود فقط | `people` · `academic` · `operations` · `assignments` · `messaging` · `notifications` · `automation` · `reporting` |
 
 > **الأساس ليس منتجاً جاهزاً للإنتاج.** ما لم يُنفَّذ ويُختبر فعلياً موثَّق صراحةً
@@ -25,6 +26,8 @@
 | [`docs/architecture/overview.md`](docs/architecture/overview.md) | **ابدأ من هنا** — شكل النظام، الوحدات، الطبقات، وما لم يُبنَ عمداً |
 | [`docs/architecture/dependency-rules.md`](docs/architecture/dependency-rules.md) | قواعد الاعتماد المُلزِمة — مُطبَّقة آلياً وتُفشِل البناء عند مخالفتها |
 | [`docs/architecture/module-boundaries.md`](docs/architecture/module-boundaries.md) | مسؤولية كل وحدة، وما **لا** يجوز لها معرفته |
+| [`docs/architecture/authentication.md`](docs/architecture/authentication.md) | تسجيل الدخول، الرموز، كلمات المرور، إنشاء الحسابات |
+| [`docs/architecture/session-management.md`](docs/architecture/session-management.md) | الجلسات لكل جهاز، تدوير رموز التحديث، إنهاء الجلسات |
 | [`docs/architecture/authorization.md`](docs/architecture/authorization.md) | الصلاحيات والسياسات — نقطة قرار واحدة مركزية |
 | [`docs/architecture/realtime.md`](docs/architecture/realtime.md) | تصميم الغرف الصوتية (‏2500 مشارك)، وما ثبت منه وما لم يثبت |
 | [`docs/architecture/events.md`](docs/architecture/events.md) | الأحداث بين الوحدات |

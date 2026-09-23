@@ -58,7 +58,7 @@ export class JoinLiveSessionUseCase {
   ) {}
 
   async execute(command: JoinLiveSessionCommand): Promise<Result<RtcAccessToken>> {
-    const allowed = this.authorization.authorize(command.principal, Permissions.live.joinRoom);
+    const allowed = this.authorization.authorize(command.principal, Permissions.live.join);
     if (!allowed.ok) return allowed;
 
     const session = await this.sessions.findById(command.sessionId as never);
@@ -80,7 +80,15 @@ export class JoinLiveSessionUseCase {
       return err(failure('not_found', 'live.room_not_found', 'No such live room.'));
     }
 
-    const isHost = room.hostUserId === command.principal.userId;
+    // The host publishes by virtue of running the room AND holding live.speak;
+    // anyone else publishes only while holding a per-session grant.
+    const isHost =
+      room.hostUserId === command.principal.userId &&
+      this.authorization.can(command.principal, Permissions.live.speak, {
+        resourceType: 'live.session',
+        resourceId: session.id,
+        ownerUserId: room.hostUserId,
+      });
     const holdsGrant = currentSpeakers(await this.requests.findBySession(session.id)).some(
       (request) => request.userId === command.principal.userId,
     );

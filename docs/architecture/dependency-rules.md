@@ -40,6 +40,29 @@ The cost is real: `ScryptPasswordHasher` lives in infrastructure because
 `node:crypto` is not allowed in domain, even though hashing feels domain-ish.
 That cost is accepted.
 
+### `domain-reaches-no-npm` and `shared-kernel-reaches-no-npm`
+
+The rule above checks **direct** imports. These two follow every import
+**transitively**, using dependency-cruiser's `reachable` rules.
+
+The gap they close is real and easy to fall into. `identity/contracts/index.ts`
+re-exports `RequirePermission`, which imports `@nestjs/common`. A domain file
+that imports the contracts *barrel*, even for a single type, would pull Nest
+into the domain, and no single edge in the chain would break the direct rule.
+With these rules, the violation prints the whole path:
+
+```
+src/modules/identity/domain/policy.ts →
+src/modules/identity/contracts/index.ts →
+src/modules/identity/contracts/route-access.ts →
+node_modules/@nestjs/common/index.js
+```
+
+That chain is not hypothetical. It is the negative control run when the rule
+was added. The fix, and the convention: domain files import the specific pure
+contract file (`contracts/permissions`, `contracts/authorization`), never the
+barrel.
+
 ### `domain-does-not-look-outward`
 
 The domain must not import `application/`, `infrastructure/`, `api/` or
@@ -80,11 +103,16 @@ Domain entities are not wire formats. Serializing one straight onto an HTTP
 response couples the public API to internal modelling, so every future domain
 refactor becomes a breaking API change. Controllers speak DTOs.
 
-This rule caught a real violation during development: `AuthenticationGuard`
+This rule caught a real violation during Foundation V1. `AuthenticationGuard`
 imported `permissionsForRoles` from `identity/domain/role.ts` to build a
-`Principal`. The fix was not to weaken the rule — it was to add
-`principalFor()` to identity's public contract, which is where that capability
-belonged all along, since the HTTP edge needs it on every request.
+`Principal`. The fix then was to widen identity's public contract with
+`principalFor()`, not to weaken the rule.
+
+Identity & Access V1 replaced that fix with a better one. Resolving a principal
+now needs the session and the account's current state, so it became a use case
+in identity's application layer (`ResolvePrincipalUseCase`), called by
+identity's own `AccessGuard`. `principalFor()` was removed from the public
+contract: no other module ever needed it.
 
 ### `no-cross-module-internals`
 
@@ -184,7 +212,12 @@ npm run verify       # format + lint + typecheck + arch + all tests
 ```
 
 `npm run arch:graph` currently reports **no dependency violations found
-(98 modules, 213 dependencies cruised)**.
+(150 modules, 499 dependencies cruised)**.
+
+`test/architecture/boundaries.spec.ts` also asserts two properties directly, so
+they are named in their own right: nothing outside identity imports anything of
+identity's except `contracts/` and `identity.module.ts`, and nothing outside
+identity imports identity's schema.
 
 ---
 

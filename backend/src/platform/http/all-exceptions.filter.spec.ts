@@ -27,6 +27,9 @@ function run(exception: unknown, requestId: string | null = 'req-1'): Captured {
   let body: Record<string, unknown> = {};
 
   const response = {
+    setHeader() {
+      return this;
+    },
     status(code: number) {
       status = code;
       return this;
@@ -84,7 +87,11 @@ describe('AllExceptionsFilter', () => {
     const { status, body } = run(new NotFoundException('No such room.'));
 
     expect(status).toBe(HttpStatus.NOT_FOUND);
-    expect(errorOf(body)).toEqual({ code: 'not_found', message: 'No such room.' });
+    expect(errorOf(body)).toEqual({
+      kind: 'not_found',
+      code: 'not_found',
+      message: 'No such room.',
+    });
     expect(body.statusCode).toBeUndefined();
   });
 
@@ -95,6 +102,39 @@ describe('AllExceptionsFilter', () => {
     expect(errorOf(run(new HttpException('x', 429)).body).code).toBe('rate_limited');
     // An unmapped status still produces our shape, never Nest's.
     expect(errorOf(run(new HttpException('x', 418)).body).code).toBe('request_failed');
+  });
+
+  // Clients branch on `kind` — it must be there whether a use case or Nest failed.
+  it('classifies framework errors with the same kinds use cases use', () => {
+    expect(errorOf(run(new HttpException('x', 401)).body).kind).toBe('unauthenticated');
+    expect(errorOf(run(new ForbiddenException()).body).kind).toBe('forbidden');
+    expect(errorOf(run(new HttpException('x', 429)).body).kind).toBe('rate_limited');
+    expect(errorOf(run(new HttpException('x', 400)).body).kind).toBeUndefined();
+  });
+
+  it('sets Retry-After on a rate-limited failure', () => {
+    const headers: Record<string, string> = {};
+    const host = {
+      switchToHttp: () => ({
+        getResponse: () => ({
+          setHeader: (name: string, value: string) => (headers[name] = value),
+          status() {
+            return this;
+          },
+          json() {
+            return this;
+          },
+        }),
+        getRequest: () => ({ id: 'req-1' }),
+      }),
+    } as unknown as ArgumentsHost;
+    new AllExceptionsFilter().catch(
+      new FailureException(
+        failure('rate_limited', 'x.limited', 'Slow down.', { retryAfterSeconds: 42.2 }),
+      ),
+      host,
+    );
+    expect(headers['Retry-After']).toBe('43');
   });
 
   it('collapses ValidationPipe messages into one message and keeps the detail', () => {

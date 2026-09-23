@@ -8,6 +8,27 @@
       "when": 1790126514488,
       "tag": "0000_old_spencer_smythe",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790129243445,
+      "tag": "0001_access_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790129276670,
+      "tag": "0002_seed_access_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790129309251,
+      "tag": "0003_tighten_identity",
+      "breakpoints": true
     }
   ]
 }

@@ -1,40 +1,86 @@
-import { ALL_PERMISSIONS, Permissions } from '../contracts';
-import { PROVISIONAL_ROLE_PERMISSIONS, RoleNames, permissionsForRoles } from './role';
+import { ALL_PERMISSIONS, Permissions } from '../contracts/permissions';
+import { PROVISIONAL_POLICY_RULES, PROVISIONAL_ROLE_PERMISSIONS } from './provisional-policy';
+import { ACTIVE_ROLES, Roles, isWellFormedRoleCode } from './role';
 
-describe('role → permission resolution', () => {
-  it('gives the owner every permission in the catalogue', () => {
-    const owner = permissionsForRoles([RoleNames.owner]);
-    for (const permission of ALL_PERMISSIONS) {
-      expect(owner.has(permission)).toBe(true);
+describe('role catalogue', () => {
+  it('activates exactly the six roles of this milestone', () => {
+    expect([...ACTIVE_ROLES].sort()).toEqual(
+      ['ADMIN', 'ASSISTANT_TEACHER', 'OWNER', 'STUDENT', 'SUPERVISOR', 'TEACHER'].sort(),
+    );
+  });
+
+  it('does not activate roles the institution has not defined', () => {
+    for (const inactive of ['PARENT', 'AUDITOR', 'CONTENT_MANAGER', 'SUPPORT']) {
+      expect(ACTIVE_ROLES).not.toContain(inactive);
+      expect(Object.keys(PROVISIONAL_ROLE_PERMISSIONS)).not.toContain(inactive);
     }
   });
 
-  it('grants nothing for an unknown role', () => {
-    expect(permissionsForRoles(['not-a-role']).size).toBe(0);
+  it('accepts only upper-case role codes', () => {
+    expect(isWellFormedRoleCode('ASSISTANT_TEACHER')).toBe(true);
+    expect(isWellFormedRoleCode('teacher')).toBe(false);
+    expect(isWellFormedRoleCode('X')).toBe(false);
+    expect(isWellFormedRoleCode("TEACHER'; --")).toBe(false);
+  });
+});
+
+describe('provisional role matrix', () => {
+  const grants = (role: keyof typeof PROVISIONAL_ROLE_PERMISSIONS) =>
+    new Set<string>(PROVISIONAL_ROLE_PERMISSIONS[role]);
+
+  it('defines a row for every active role', () => {
+    expect(Object.keys(PROVISIONAL_ROLE_PERMISSIONS).sort()).toEqual([...ACTIVE_ROLES].sort());
   });
 
-  it('unions the permissions of several roles', () => {
-    const combined = permissionsForRoles([RoleNames.student, RoleNames.auditor]);
-    expect(combined.has(Permissions.live.requestSpeaker)).toBe(true);
-    expect(combined.has(Permissions.audit.read)).toBe(true);
-  });
-
-  // The separation that keeps a 2500-person room safe: students may ask for the
-  // floor, only a host may hand it over.
-  it('does not let a student grant themselves the floor', () => {
-    const student = permissionsForRoles([RoleNames.student]);
-    expect(student.has(Permissions.live.requestSpeaker)).toBe(true);
-    expect(student.has(Permissions.live.grantSpeaker)).toBe(false);
-    expect(student.has(Permissions.live.muteParticipant)).toBe(false);
-  });
-
-  it('only ever references permissions that exist in the catalogue', () => {
+  it('only ever references catalogued permissions, each at most once per role', () => {
     const known = new Set<string>(ALL_PERMISSIONS);
-    for (const [role, granted] of Object.entries(PROVISIONAL_ROLE_PERMISSIONS)) {
-      for (const permission of granted) {
-        expect(known.has(permission)).toBe(true);
-        expect(typeof role).toBe('string');
+    for (const granted of Object.values(PROVISIONAL_ROLE_PERMISSIONS)) {
+      expect(new Set(granted).size).toBe(granted.length);
+      for (const permission of granted) expect(known.has(permission)).toBe(true);
+    }
+  });
+
+  // OWNER and ADMIN must differ, or the no-escalation rule would let an admin
+  // reset an owner's password. This is the technical constraint, not a policy.
+  it('keeps OWNER and ADMIN distinct, with OWNER strictly stronger', () => {
+    const owner = grants(Roles.owner);
+    const admin = grants(Roles.admin);
+    expect([...admin].every((permission) => owner.has(permission))).toBe(true);
+    expect(owner.size).toBeGreaterThan(admin.size);
+    expect(admin.has(Permissions.settings.manage)).toBe(false);
+  });
+
+  // ADMIN must hold everything the roles it onboards hold, or it could not
+  // assign them under the no-escalation rule.
+  it('lets ADMIN grant every role below it', () => {
+    const admin = grants(Roles.admin);
+    for (const role of [Roles.supervisor, Roles.teacher, Roles.assistantTeacher, Roles.student]) {
+      for (const permission of PROVISIONAL_ROLE_PERMISSIONS[role]) {
+        expect(admin.has(permission)).toBe(true);
       }
     }
+  });
+
+  // The separation that keeps a 2500-person room safe.
+  it('lets a student ask for the floor but never take or give it', () => {
+    const student = grants(Roles.student);
+    expect(student.has(Permissions.live.raiseHand)).toBe(true);
+    expect(student.has(Permissions.live.speak)).toBe(false);
+    expect(student.has(Permissions.live.moderate)).toBe(false);
+  });
+
+  it('gives teachers the live capabilities the brief names', () => {
+    const teacher = grants(Roles.teacher);
+    for (const permission of [
+      Permissions.live.join,
+      Permissions.live.speak,
+      Permissions.live.moderate,
+    ]) {
+      expect(teacher.has(permission)).toBe(true);
+    }
+  });
+
+  it('registers the host-only moderation rule', () => {
+    expect(PROVISIONAL_POLICY_RULES.map((rule) => rule.id)).toEqual(['host-only-moderation']);
   });
 });
