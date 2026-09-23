@@ -140,7 +140,10 @@ export class CreateCommunityUseCase {
     return ok(
       communityView(
         community,
-        this.authorization.me(principal, community.id, { community, stint: owner }),
+        this.authorization.me(principal, community.id, {
+          community,
+          stint: { ...owner, grants: [] },
+        }),
       ),
     );
   }
@@ -224,7 +227,13 @@ export class ListCommunitiesUseCase {
       const page = paged(rows, limit, (row) => ({ at: row.stint.joinedAt, id: row.community.id }));
       return ok({
         items: page.items.map((row) =>
-          communityView(row.community, this.authorization.me(principal, row.community.id, row)),
+          communityView(
+            row.community,
+            this.authorization.me(principal, row.community.id, {
+              community: row.community,
+              stint: { ...row.stint, grants: row.grants },
+            }),
+          ),
         ),
         nextCursor: page.nextCursor,
       });

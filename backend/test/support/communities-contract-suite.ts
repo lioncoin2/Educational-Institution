@@ -1,4 +1,6 @@
 import type { Principal } from '../../src/shared';
+import type { CommunityCapability } from '../../src/modules/communities/contracts/capabilities';
+import type { GrantKey } from '../../src/modules/communities/domain/ports';
 import { META, type CommunitiesHarness } from './communities-harness';
 
 /**
@@ -211,6 +213,7 @@ export function communityContractSuite(
           communityId: id,
           userId: 'admin-1',
           actor: stale,
+          removerCeilings: new Set(),
           removedBy: 'admin-1',
           at,
         }),
@@ -260,6 +263,7 @@ export function communityContractSuite(
         communityId: id,
         userId: 'joiner',
         creatorUserId: 'plain-member',
+        creatorCapability: 'community.members.invite',
         stintId: 'never-joined',
         at: h.clock.now(),
       });
@@ -268,6 +272,397 @@ export function communityContractSuite(
       expect((await h.readModel.findInvitation(id, invitationId))?.uses).toBe(0);
       expect(await h.readModel.latestStints(id, ['joiner'])).toEqual([]);
       expect(await h.readModel.communities([id])).toEqual(before);
+    });
+  });
+
+  describe('delegation (P3)', () => {
+    let teacher: Principal;
+    let ownerStint: string;
+
+    beforeEach(async () => {
+      teacher = h.person('teacher-1', ['TEACHER']);
+      h.person('teacher-2', ['TEACHER']);
+      await h.addPeople(admin, id, 'teacher-1', 'teacher-2');
+      ownerStint = (await h.store.authorityOf(id, 'admin-1')).stint?.id ?? '';
+    });
+
+    const owner = () => ({ userId: 'admin-1', membershipId: ownerStint });
+
+    it('grants a batch at once, reports repeats unchanged, and writes nothing twice', async () => {
+      const first = await h.store.grant({
+        communityId: id,
+        owner: owner(),
+        granteeUserId: 'teacher-1',
+        capabilities: ['community.lock', 'community.members.view'],
+        at: h.clock.now(),
+        newId: () => h.ids.next(),
+      });
+      if (first.kind !== 'granted') throw new Error(first.kind);
+      // Created in the vocabulary's order, whatever order they were named in.
+      expect(first.created.map((grant) => grant.capability)).toEqual([
+        'community.members.view',
+        'community.lock',
+      ]);
+      expect(first.unchanged).toEqual([]);
+
+      const again = await h.store.grant({
+        communityId: id,
+        owner: owner(),
+        granteeUserId: 'teacher-1',
+        capabilities: ['community.lock', 'community.live.start'],
+        at: h.clock.now(),
+        newId: () => h.ids.next(),
+      });
+      if (again.kind !== 'granted') throw new Error(again.kind);
+      expect(again.created.map((grant) => grant.capability)).toEqual(['community.live.start']);
+      expect(again.unchanged.map((grant) => grant.id)).toEqual([
+        first.created.find((grant) => grant.capability === 'community.lock')?.id,
+      ]);
+      expect(
+        (await h.readModel.grants(id, { userId: 'teacher-1', limit: 10 })).map(
+          (grant) => grant.capability,
+        ),
+      ).toEqual(['community.live.start', 'community.lock', 'community.members.view']);
+    });
+
+    it('refuses a grantee who is not an ACTIVE member, or is the owner — writing nothing', async () => {
+      h.person('outsider', ['TEACHER']);
+      for (const granteeUserId of ['outsider', 'admin-1']) {
+        expect(
+          await h.store.grant({
+            communityId: id,
+            owner: owner(),
+            granteeUserId,
+            capabilities: ['community.lock'],
+            at: h.clock.now(),
+            newId: () => h.ids.next(),
+          }),
+        ).toEqual({ kind: 'grantee_ineligible' });
+      }
+      expect(await h.readModel.grants(id, { limit: 10 })).toEqual([]);
+    });
+
+    it('refuses grants, revocations and transfers resting on a stale owner stint', async () => {
+      const [grantId] = await h.delegate(admin, id, 'teacher-1', 'community.lock');
+      const stale = { userId: 'admin-1', membershipId: 'no-such-stint' };
+      expect(
+        await h.store.grant({
+          communityId: id,
+          owner: stale,
+          granteeUserId: 'teacher-2',
+          capabilities: ['community.lock'],
+          at: h.clock.now(),
+          newId: () => h.ids.next(),
+        }),
+      ).toEqual({ kind: 'basis_lost' });
+      expect(
+        await h.store.revokeGrant({
+          communityId: id,
+          grantId: grantId ?? '',
+          owner: stale,
+          at: h.clock.now(),
+        }),
+      ).toEqual({ kind: 'basis_lost' });
+      expect(
+        await h.store.transfer({
+          communityId: id,
+          toUserId: 'teacher-2',
+          actor: { kind: 'owner', ...stale },
+          transferredBy: 'admin-1',
+          at: h.clock.now(),
+        }),
+      ).toEqual({ kind: 'owner_conflict' });
+      expect((await h.readModel.grants(id, { limit: 10 })).map((grant) => grant.userId)).toEqual([
+        'teacher-1',
+      ]);
+      expect((await h.store.authorityOf(id, 'admin-1')).stint?.standing).toBe('OWNER');
+    });
+
+    it('revokes once, answers a repeat unchanged, and never reaches into another community', async () => {
+      const [grantId] = await h.delegate(admin, id, 'teacher-1', 'community.lock');
+      h.clock.advance(-60); // a lagging clock never ends a grant before it began
+      const revoked = await h.store.revokeGrant({
+        communityId: id,
+        grantId: grantId ?? '',
+        owner: owner(),
+        at: h.clock.now(),
+      });
+      if (revoked.kind !== 'revoked') throw new Error(revoked.kind);
+      expect(revoked.grant).toMatchObject({ endReason: 'revoked', endedBy: 'admin-1' });
+      expect(revoked.grant.endedAt?.getTime()).toBe(revoked.grant.grantedAt.getTime());
+      expect(
+        await h.store.revokeGrant({
+          communityId: id,
+          grantId: grantId ?? '',
+          owner: owner(),
+          at: h.clock.now(),
+        }),
+      ).toEqual({ kind: 'unchanged', grant: revoked.grant });
+
+      const other = await h.community(admin, 'أخرى');
+      const otherOwner = (await h.store.authorityOf(other, 'admin-1')).stint?.id ?? '';
+      expect(
+        await h.store.revokeGrant({
+          communityId: other,
+          grantId: grantId ?? '',
+          owner: { userId: 'admin-1', membershipId: otherOwner },
+          at: h.clock.now(),
+        }),
+      ).toEqual({ kind: 'not_found' });
+    });
+
+    it('bases an act on an ACTIVE grant only, re-verified by the store', async () => {
+      const [lockGrant, viewGrant] = await h.delegate(
+        admin,
+        id,
+        'teacher-1',
+        'community.lock',
+        'community.members.view',
+      );
+      const read = await h.store.authorityOf(id, 'teacher-1');
+      expect(read.stint?.grants.map((grant) => grant.capability).sort()).toEqual([
+        'community.lock',
+        'community.members.view',
+      ]);
+      const delegate = {
+        kind: 'grant' as const,
+        userId: 'teacher-1',
+        membershipId: read.stint?.id ?? '',
+        grantId: lockGrant ?? '',
+        capability: 'community.lock' as const,
+      };
+      // Naming a grant of another capability is no basis at all.
+      expect(
+        await h.store.changeStatus({
+          communityId: id,
+          to: 'LOCKED',
+          actor: { ...delegate, grantId: viewGrant ?? '' },
+          actorUserId: 'teacher-1',
+          at: h.clock.now(),
+        }),
+      ).toEqual({ kind: 'basis_lost' });
+      await h.store.revokeGrant({
+        communityId: id,
+        grantId: lockGrant ?? '',
+        owner: owner(),
+        at: h.clock.now(),
+      });
+      expect(
+        await h.store.changeStatus({
+          communityId: id,
+          to: 'LOCKED',
+          actor: delegate,
+          actorUserId: 'teacher-1',
+          at: h.clock.now(),
+        }),
+      ).toEqual({ kind: 'basis_lost' });
+      expect((await h.readModel.communities([id]))[0]?.status).toBe('OPEN');
+    });
+
+    it('bounds a delegate’s removals by R6 — dormant grants included — and never removes the owner', async () => {
+      h.person('student-1', ['STUDENT']);
+      await h.addPeople(admin, id, 'student-1');
+      const [removeGrant] = await h.delegate(admin, id, 'teacher-1', 'community.members.remove');
+      await h.delegate(admin, id, 'teacher-2', 'community.lock');
+      const remover = {
+        kind: 'grant' as const,
+        userId: 'teacher-1',
+        membershipId: (await h.store.authorityOf(id, 'teacher-1')).stint?.id ?? '',
+        grantId: removeGrant ?? '',
+        capability: 'community.members.remove' as const,
+      };
+      const everything = new Set<CommunityCapability>([
+        'community.members.remove',
+        'community.lock',
+        'community.members.view',
+      ]);
+      const removal = (userId: string, removerCeilings: ReadonlySet<CommunityCapability>) =>
+        h.store.removeMember({
+          communityId: id,
+          userId,
+          actor: remover,
+          removerCeilings,
+          removedBy: 'teacher-1',
+          at: h.clock.now(),
+        });
+
+      // teacher-2 holds community.lock; teacher-1 does not.
+      expect(await removal('teacher-2', everything)).toEqual({ kind: 'holds_more' });
+      expect(await removal('admin-1', everything)).toEqual({ kind: 'owner' });
+      // Holding a capability's ceiling is not holding the capability.
+      const removed = await removal('student-1', new Set());
+      expect(removed).toMatchObject({ kind: 'removed', endedGrants: [] });
+
+      // Once teacher-1 holds community.lock too, teacher-2 is removable — and their grants end with them.
+      await h.delegate(admin, id, 'teacher-1', 'community.lock');
+      const second = await removal('teacher-2', everything);
+      if (second.kind !== 'removed') throw new Error(second.kind);
+      expect(second.endedGrants.map((grant) => [grant.capability, grant.endReason])).toEqual([
+        ['community.lock', 'membership_ended'],
+      ]);
+      expect(await h.readModel.grants(id, { userId: 'teacher-2', limit: 10 })).toEqual([]);
+    });
+
+    it('ends a leaver’s grants with the stint, and a rejoin revives none', async () => {
+      await h.delegate(admin, id, 'teacher-1', 'community.lock', 'community.members.view');
+      const left = await h.store.leave({ communityId: id, userId: 'teacher-1', at: h.clock.now() });
+      if (left.kind !== 'left') throw new Error(left.kind);
+      expect(left.endedGrants.map((grant) => grant.endReason)).toEqual([
+        'membership_ended',
+        'membership_ended',
+      ]);
+      await h.addPeople(admin, id, 'teacher-1');
+      expect((await h.store.authorityOf(id, 'teacher-1')).stint?.grants).toEqual([]);
+      expect(await h.readModel.grants(id, { limit: 10 })).toEqual([]);
+    });
+
+    it('transfers ownership: demotes, promotes, and ends the new owner’s own grants', async () => {
+      await h.delegate(admin, id, 'teacher-1', 'community.lock');
+      const [kept] = await h.delegate(admin, id, 'teacher-2', 'community.members.view');
+      const moved = await h.store.transfer({
+        communityId: id,
+        toUserId: 'teacher-1',
+        actor: { kind: 'owner', ...owner() },
+        transferredBy: 'admin-1',
+        at: h.clock.now(),
+      });
+      if (moved.kind !== 'transferred') throw new Error(moved.kind);
+      expect([moved.from.userId, moved.from.standing, moved.to.userId, moved.to.standing]).toEqual([
+        'admin-1',
+        'MEMBER',
+        'teacher-1',
+        'OWNER',
+      ]);
+      expect(moved.endedGrants.map((grant) => [grant.capability, grant.endReason])).toEqual([
+        ['community.lock', 'ownership_changed'],
+      ]);
+      // Grants survive a transfer — except the new owner's own.
+      expect((await h.readModel.grants(id, { limit: 10 })).map((grant) => grant.id)).toEqual([
+        kept,
+      ]);
+      // Naming the owner again changes nothing; a non-member is refused.
+      expect(
+        await h.store.transfer({
+          communityId: id,
+          toUserId: 'teacher-1',
+          actor: { kind: 'oversight' },
+          transferredBy: null,
+          at: h.clock.now(),
+        }),
+      ).toEqual({ kind: 'unchanged' });
+      expect(
+        await h.store.transfer({
+          communityId: id,
+          toUserId: 'nobody',
+          actor: { kind: 'oversight' },
+          transferredBy: null,
+          at: h.clock.now(),
+        }),
+      ).toEqual({ kind: 'target_not_member' });
+      expect(
+        await h.store.transfer({
+          communityId: 'no-such-community',
+          toUserId: 'teacher-1',
+          actor: { kind: 'oversight' },
+          transferredBy: null,
+          at: h.clock.now(),
+        }),
+      ).toEqual({ kind: 'not_found' });
+    });
+
+    it('admits through a delegate’s link only while the delegate’s grant stands', async () => {
+      const [inviteGrant] = await h.delegate(admin, id, 'teacher-1', 'community.members.invite');
+      const { invitationId } = await h.link(teacher, id);
+      const redeem = (userId: string) =>
+        h.store.redeem({
+          invitationId,
+          communityId: id,
+          userId,
+          creatorUserId: 'teacher-1',
+          creatorCapability: 'community.members.invite',
+          stintId: `stint-${userId}`,
+          at: h.clock.now(),
+        });
+      expect((await redeem('joiner-1')).kind).toBe('joined');
+      await h.store.revokeGrant({
+        communityId: id,
+        grantId: inviteGrant ?? '',
+        owner: owner(),
+        at: h.clock.now(),
+      });
+      expect(await redeem('joiner-2')).toEqual({ kind: 'creator_lost' });
+      expect((await h.readModel.findInvitation(id, invitationId))?.uses).toBe(1);
+    });
+
+    it('lists grants by capability then holder, keyset-paged and filtered', async () => {
+      await h.delegate(admin, id, 'teacher-2', 'community.lock', 'community.chat.post');
+      await h.delegate(admin, id, 'teacher-1', 'community.lock', 'community.live.moderate');
+      const seen: string[] = [];
+      let after: GrantKey | undefined;
+      for (;;) {
+        const page = await h.readModel.grants(id, { after, limit: 3 });
+        seen.push(...page.map((grant) => `${grant.capability}/${grant.userId}`));
+        const last = page[page.length - 1];
+        if (page.length < 3 || last === undefined) break;
+        after = { capability: last.capability, userId: last.userId };
+      }
+      expect(seen).toEqual([
+        'community.chat.post/teacher-2',
+        'community.live.moderate/teacher-1',
+        'community.lock/teacher-1',
+        'community.lock/teacher-2',
+      ]);
+      expect(
+        (await h.readModel.grants(id, { capability: 'community.lock', limit: 10 })).map(
+          (grant) => grant.userId,
+        ),
+      ).toEqual(['teacher-1', 'teacher-2']);
+    });
+  });
+
+  describe('COMMUNITY_CAPABILITY_HOLDERS', () => {
+    it('lists the owner and effective grantees — never the dormant, the departed or overseers', async () => {
+      for (const userId of ['t-a', 't-b', 't-c', 't-d', 't-e']) h.person(userId, ['TEACHER']);
+      h.person('overseer', ['OWNER']); // holds communities.manage, never a stint here
+      await h.addPeople(admin, id, 't-a', 't-b', 't-c', 't-d', 't-e');
+      for (const userId of ['t-a', 't-b', 't-c', 't-d']) {
+        await h.delegate(admin, id, userId, 'community.members.remove');
+      }
+      await h.delegate(admin, id, 't-e', 'community.lock'); // another capability
+      h.accounts.setRoles('t-b', ['STUDENT']); // dormant: lost communities.moderate
+      h.accounts.suspend('t-c'); // dormant: cannot sign in
+      await h.remove.execute({ principal: admin, communityId: id, userId: 't-d', meta: META });
+
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      let pages = 0;
+      do {
+        const page: { userIds: readonly string[]; nextCursor: string | null } =
+          await h.holders.list(id, 'community.members.remove', { cursor, limit: 1 });
+        seen.push(...page.userIds);
+        cursor = page.nextCursor;
+        pages += 1;
+      } while (cursor !== null);
+      expect(seen).toEqual(['admin-1', 't-a']);
+      // One candidate per page — some pages come back empty after filtering.
+      expect(pages).toBeGreaterThan(seen.length);
+      expect(await h.holders.list('no-such-community', 'community.lock', { limit: 10 })).toEqual({
+        userIds: [],
+        nextCursor: null,
+      });
+    });
+
+    it('throws RangeError on a bad limit, a forged cursor or an unknown capability', async () => {
+      await expect(h.holders.list(id, 'community.lock', { limit: 0 })).rejects.toThrow(RangeError);
+      await expect(h.holders.list(id, 'community.lock', { limit: 1001 })).rejects.toThrow(
+        RangeError,
+      );
+      await expect(
+        h.holders.list(id, 'community.lock', { cursor: 'forged', limit: 5 }),
+      ).rejects.toThrow(RangeError);
+      await expect(h.holders.list(id, 'community.view' as never, { limit: 5 })).rejects.toThrow(
+        RangeError,
+      );
     });
   });
 

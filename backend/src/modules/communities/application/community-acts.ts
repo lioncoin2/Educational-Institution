@@ -1,9 +1,9 @@
 import { failure, type Failure, type Principal } from '../../../shared';
 import { isSystemPrincipal } from '../../identity/contracts/principal';
 import type { CommunityPermit } from '../contracts/authorization';
-import type { ActRule } from '../domain/act-rules';
-import type { ActingBasis } from '../domain/ports';
-import type { CommunityAuthorizationService } from './community-authorization.service';
+import { backingCapability, type ActRule, type OwnerOperation } from '../domain/act-rules';
+import type { ActingBasis, OwnerBasis } from '../domain/ports';
+import type { CommunityAuthorizationService, OwnerPermit } from './community-authorization.service';
 
 /** A deadlock victim, after the store's one retry. Nothing was changed. */
 export const COMMUNITY_CONFLICT = failure(
@@ -29,8 +29,7 @@ export function actorOf(principal: Principal): string | null {
 
 /**
  * The basis a mutation hands the store to re-verify under lock. A
- * membership permit never mutates on someone else's behalf, and the grant
- * basis arrives with delegation (P3).
+ * membership permit never mutates on someone else's behalf.
  */
 export function actingBasis(permit: CommunityPermit): ActingBasis {
   if (permit.basis === 'oversight') return { kind: 'oversight' };
@@ -41,7 +40,33 @@ export function actingBasis(permit: CommunityPermit): ActingBasis {
       membershipId: permit.membership.membershipId,
     };
   }
+  const capability = backingCapability(permit.act);
+  if (permit.basis === 'grant' && permit.membership !== null && permit.grantId !== null) {
+    if (capability === null) throw new Error(`${permit.act} rests on no capability.`);
+    return {
+      kind: 'grant',
+      userId: permit.principalUserId,
+      membershipId: permit.membership.membershipId,
+      grantId: permit.grantId,
+      capability,
+    };
+  }
   throw new Error(`A ${permit.basis} permit cannot authorize this change.`);
+}
+
+/** The owner an owner-operation permit rests on; refuses an oversight permit. */
+export function ownerBasis(permit: OwnerPermit): OwnerBasis {
+  if (permit.basis !== 'owner' || permit.membership === null) {
+    throw new Error(`${permit.operation} on the ${permit.basis} basis has no owner to rest on.`);
+  }
+  return { userId: permit.principalUserId, membershipId: permit.membership.membershipId };
+}
+
+/** An owner-operation permit as the store re-verifies it: the owner's stint, or oversight. */
+export function ownerActingBasis(permit: OwnerPermit): ActingBasis {
+  return permit.basis === 'oversight'
+    ? { kind: 'oversight' }
+    : { kind: 'owner', ...ownerBasis(permit) };
 }
 
 /**
@@ -56,5 +81,16 @@ export async function refusalAfterBasisLost(
   rule: ActRule,
 ): Promise<Failure> {
   const again = await authorization.evaluate(principal, communityId, rule);
+  return again.result.ok ? COMMUNITY_CONFLICT : again.result.error;
+}
+
+/** `refusalAfterBasisLost` for the owner's own operations. */
+export async function ownerRefusalAfterBasisLost(
+  authorization: CommunityAuthorizationService,
+  principal: Principal,
+  communityId: string,
+  operation: OwnerOperation,
+): Promise<Failure> {
+  const again = await authorization.evaluateOwner(principal, communityId, operation);
   return again.result.ok ? COMMUNITY_CONFLICT : again.result.error;
 }

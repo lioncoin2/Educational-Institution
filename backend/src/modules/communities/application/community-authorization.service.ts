@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { err, ok, type Principal, type Result } from '../../../shared';
+import { err, ok, type Failure, type Principal, type Result } from '../../../shared';
 import {
   AUTHORIZATION_SERVICE,
   type AuthorizationContext,
@@ -12,25 +12,51 @@ import {
   COMMUNITY_PARTICIPATION,
   COMMUNITY_RESOURCE,
   type CommunityAct,
+  type CommunityCapability,
 } from '../contracts/capabilities';
 import {
   MAX_AUTHORIZE_BATCH,
   type CommunityAuthorization,
   type CommunityPermit,
 } from '../contracts/authorization';
-import { ruleFor, type ActRule } from '../domain/act-rules';
+import { ruleFor, type ActRule, type OwnerOperation } from '../domain/act-rules';
 import {
   decideCommunityAct,
   holdsAnyCeiling,
   type AuthorityRead,
   type HeldCeilings,
 } from '../domain/authority';
+import { decideOwnerOperation } from '../domain/delegation';
 import { COMMUNITY_STORE, type CommunityAuthorityRead, type CommunityStore } from '../domain/ports';
 import type { MeView } from './views';
 
 /** An answer, and the read it was made from (null when nothing was read). */
 export interface Evaluation {
   readonly result: Result<CommunityPermit>;
+  readonly read: CommunityAuthorityRead | null;
+}
+
+/**
+ * Permission for one of the owner's own operations — granting, revoking,
+ * listing every grant, handing ownership over (P3). Not a CommunityPermit:
+ * these are not acts, and no other module ever asks for them.
+ */
+export interface OwnerPermit {
+  readonly principalUserId: string;
+  readonly communityId: string;
+  readonly operation: OwnerOperation['name'];
+  readonly basis: 'owner' | 'oversight';
+  /** The owner's ACTIVE stint; null exactly on the oversight basis. */
+  readonly membership: {
+    readonly membershipId: string;
+    readonly joinedAt: Date;
+    readonly version: number;
+  } | null;
+  readonly ceiling: readonly Permission[];
+}
+
+export interface OwnerEvaluation {
+  readonly result: Result<OwnerPermit>;
   readonly read: CommunityAuthorityRead | null;
 }
 
@@ -42,8 +68,10 @@ export interface Evaluation {
  * with the community as context (`communities.community/<id>`, and the act
  * as an attribute a future identity DENY rule could match). Communities never
  * passes `ownerUserId`, so no identity rule written for another resource can
- * fire here. Then one read — the community and the principal's ACTIVE stint
- * — and the pure `decideCommunityAct`.
+ * fire here. Then one read — the community, the principal's ACTIVE stint and
+ * that stint's ACTIVE grants — and the pure `decideCommunityAct`. The owner's
+ * own operations (granting, revoking, transferring) go through the same read
+ * and the pure `decideOwnerOperation`.
  *
  * Stateless: nothing is cached between requests, and a store failure rejects
  * the promise — a caller fails closed and never answers from roles alone.
@@ -110,6 +138,84 @@ export class CommunityAuthorizationService implements CommunityAuthorization {
   }
 
   /**
+   * The owner's own operations (R1; a transfer's authority, §6.9): the
+   * ceiling in memory first — nothing is read without it — then the same one
+   * read, then `decideOwnerOperation`. Never gated by the lifecycle.
+   */
+  async evaluateOwner(
+    principal: Principal,
+    communityId: string,
+    operation: OwnerOperation,
+  ): Promise<OwnerEvaluation> {
+    const held = this.ownerCeilings(principal, communityId, operation);
+    if (!held.standing && !(operation.oversightCeiling !== null && held.oversight)) {
+      return { result: this.ownerRefusal(principal, communityId, operation), read: null };
+    }
+    const read = await this.store.authorityOf(communityId, principal.userId);
+    return { result: this.decideOwner(principal, communityId, operation, read), read };
+  }
+
+  /** `evaluateOwner` from a read already made — the same decision, no further read. */
+  decideOwner(
+    principal: Principal,
+    communityId: string,
+    operation: OwnerOperation,
+    read: AuthorityRead,
+  ): Result<OwnerPermit> {
+    const decision = decideOwnerOperation(
+      operation,
+      this.ownerCeilings(principal, communityId, operation),
+      read,
+    );
+    switch (decision.kind) {
+      case 'no_ceiling':
+        return this.ownerRefusal(principal, communityId, operation);
+      case 'refused':
+        return err(decision.failure);
+      case 'permit':
+        return ok({
+          principalUserId: principal.userId,
+          communityId,
+          operation: operation.name,
+          basis: decision.basis,
+          membership: decision.membership,
+          ceiling:
+            decision.basis === 'owner'
+              ? operation.ownerCeiling
+              : (operation.oversightCeiling ?? []),
+        });
+    }
+  }
+
+  /**
+   * Whether the principal holds a rule's standing ceiling, asked of identity
+   * in memory with the act as context: null when held, else identity's own
+   * refusal (403 `identity.permission_denied`). Used for R2 — nobody gives
+   * a capability whose ceiling they lack — before anything is read.
+   */
+  ceilingRefusal(principal: Principal, communityId: string, rule: ActRule): Failure | null {
+    if (this.ceilings(principal, communityId, rule).standing) return null;
+    const refused = this.noCeiling(principal, communityId, rule);
+    return refused.ok ? null : refused.error;
+  }
+
+  /**
+   * The capabilities whose identity ceiling the principal holds right now,
+   * in this community's context — what their grants can make effective
+   * (R4), and what bounds a delegate's removals (R6).
+   */
+  capabilitiesWithinCeiling(
+    principal: Principal,
+    communityId: string,
+  ): ReadonlySet<CommunityCapability> {
+    return new Set(
+      COMMUNITY_CAPABILITIES.filter(
+        (capability) => this.ceilings(principal, communityId, ruleFor(capability)).standing,
+      ),
+    );
+  }
+
+  /**
    * What the principal may do in the community, from a read already made:
    * every capability and participation act the same evaluator would permit
    * right now. No further read.
@@ -151,10 +257,47 @@ export class CommunityAuthorizationService implements CommunityAuthorization {
           act: rule.act,
           basis: decision.basis,
           membership: decision.membership,
-          grantId: null,
+          grantId: decision.grantId,
           ceiling: decision.ceiling,
         });
     }
+  }
+
+  private ownerContext(communityId: string, operation: OwnerOperation): AuthorizationContext {
+    return {
+      resourceType: COMMUNITY_RESOURCE,
+      resourceId: communityId,
+      attributes: { operation: operation.name },
+    };
+  }
+
+  private ownerCeilings(
+    principal: Principal,
+    communityId: string,
+    operation: OwnerOperation,
+  ): HeldCeilings {
+    const context = this.ownerContext(communityId, operation);
+    const holdsAll = (permissions: readonly Permission[]) =>
+      permissions.every((permission) => this.identity.can(principal, permission, context));
+    return {
+      standing: holdsAll(operation.ownerCeiling),
+      oversight: operation.oversightCeiling !== null && holdsAll(operation.oversightCeiling),
+    };
+  }
+
+  /** Identity's own refusal for the first owner-ceiling permission the principal lacks. */
+  private ownerRefusal(
+    principal: Principal,
+    communityId: string,
+    operation: OwnerOperation,
+  ): Result<OwnerPermit> {
+    const context = this.ownerContext(communityId, operation);
+    for (const permission of operation.ownerCeiling) {
+      const allowed = this.identity.authorize(principal, permission, context);
+      if (!allowed.ok) return allowed;
+    }
+    // Unreachable for a well-formed operation: the owner ceiling was not all held.
+    throw new Error(`No ceiling refusal for ${operation.name}`);
   }
 
   private context(communityId: string, rule: ActRule): AuthorizationContext {

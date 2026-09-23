@@ -1,6 +1,8 @@
 import { domainEvent } from '../../../shared/domain-event';
 import {
   CommunityEvents,
+  type CapabilityGranted,
+  type CapabilityRevoked,
   type CommunityCreated,
   type CommunityLocked,
   type CommunityUnlocked,
@@ -8,8 +10,10 @@ import {
   type InvitationRevoked,
   type MemberAdded,
   type MemberRemoved,
+  type OwnershipTransferred,
 } from '../contracts/events';
 import type { Community } from './community';
+import type { CapabilityGrant } from './grant';
 import type { Invitation } from './invitation';
 import type { Stint } from './membership';
 
@@ -130,6 +134,77 @@ export function invitationRevoked(
       revokedBy: invitation.revokedBy,
     },
     invitation.revokedAt,
+    correlationId,
+  );
+}
+
+export function capabilityGranted(
+  grant: CapabilityGrant,
+  correlationId?: string,
+): CapabilityGranted {
+  return domainEvent(
+    CommunityEvents.capabilityGranted,
+    grant.communityId,
+    {
+      communityId: grant.communityId,
+      grantId: grant.id,
+      membershipId: grant.membershipId,
+      userId: grant.userId,
+      capability: grant.capability,
+      grantedBy: grant.grantedBy,
+    },
+    grant.grantedAt,
+    correlationId,
+  );
+}
+
+/** For a grant the owner revoked — never for one that ended with its stint or a transfer. */
+export function capabilityRevoked(
+  grant: CapabilityGrant,
+  correlationId?: string,
+): CapabilityRevoked {
+  if (grant.endReason !== 'revoked' || grant.endedAt === null || grant.endedBy === null) {
+    throw new Error('capabilityRevoked needs a grant the owner revoked');
+  }
+  return domainEvent(
+    CommunityEvents.capabilityRevoked,
+    grant.communityId,
+    {
+      communityId: grant.communityId,
+      grantId: grant.id,
+      membershipId: grant.membershipId,
+      userId: grant.userId,
+      capability: grant.capability,
+      revokedBy: grant.endedBy,
+    },
+    grant.endedAt,
+    correlationId,
+  );
+}
+
+export function ownershipTransferred(
+  transfer: {
+    readonly from: Stint;
+    readonly to: Stint;
+    readonly endedGrants: readonly CapabilityGrant[];
+    readonly transferredBy: string | null;
+    readonly basis: 'owner' | 'oversight';
+    readonly at: Date;
+  },
+  correlationId?: string,
+): OwnershipTransferred {
+  return domainEvent(
+    CommunityEvents.ownershipTransferred,
+    transfer.to.communityId,
+    {
+      communityId: transfer.to.communityId,
+      fromUserId: transfer.from.userId,
+      toUserId: transfer.to.userId,
+      transferredBy: transfer.transferredBy,
+      basis: transfer.basis,
+      endedGrantIds: transfer.endedGrants.map((grant) => grant.id),
+    },
+    transfer.at,
     correlationId,
   );
 }

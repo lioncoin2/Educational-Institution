@@ -14,6 +14,7 @@ import {
 } from 'class-validator';
 
 import { MAX_MEMBERS_PER_ADD } from '../../application/communities-settings';
+import { COMMUNITY_CAPABILITIES, type CommunityCapability } from '../../contracts/capabilities';
 
 /**
  * Transport shapes for /communities. They bound what a request may carry;
@@ -82,4 +83,40 @@ export class CreateInvitationDto {
 export class RedeemInvitationDto {
   @Allow()
   token?: unknown;
+}
+
+/**
+ * A grant list's filters. A capability outside the vocabulary is refused
+ * here (400); `userId` narrows the owner's view, and for anyone else can
+ * only name themself.
+ */
+export class ListGrantsQuery extends PageQuery {
+  @IsOptional()
+  @IsString()
+  @MaxLength(ID_MAX)
+  userId?: string;
+
+  @IsOptional()
+  @IsIn([...COMMUNITY_CAPABILITIES])
+  capability?: CommunityCapability;
+}
+
+/** One member, one to seven distinct capabilities of the vocabulary — or 400. */
+export class GrantCapabilitiesDto {
+  @IsString()
+  @MaxLength(ID_MAX)
+  userId!: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(COMMUNITY_CAPABILITIES.length)
+  @ArrayUnique()
+  @IsIn([...COMMUNITY_CAPABILITIES], { each: true })
+  capabilities!: CommunityCapability[];
+}
+
+export class TransferOwnershipDto {
+  @IsString()
+  @MaxLength(ID_MAX)
+  userId!: string;
 }

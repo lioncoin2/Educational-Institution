@@ -1,5 +1,6 @@
 import { Permissions, type Permission } from '../../identity/contracts/permissions';
 import {
+  isCommunityCapability,
   isCommunityParticipationAct,
   type CommunityAct,
   type CommunityCapability,
@@ -110,7 +111,44 @@ export function ruleFor(act: CommunityAct): ActRule {
   return ACT_RULES[act];
 }
 
-/** The capability a derived act rests on: `community.live.host` is backed by `community.live.start`. */
+/**
+ * The capability a grant must name for an act (§6.3): a capability is its
+ * own; `community.live.host` is backed by `community.live.start`; a
+ * participation act rests on no capability — membership alone gives it,
+ * and no grant ever does.
+ */
 export function backingCapability(act: CommunityAct): CommunityCapability | null {
-  return act === 'community.live.host' ? 'community.live.start' : null;
+  if (act === 'community.live.host') return 'community.live.start';
+  return isCommunityCapability(act) ? act : null;
 }
+
+/**
+ * The owner's own operations (P3, §6.6): managing grants, and handing
+ * ownership over. They are not acts — no grant can give them, so there is no
+ * sub-delegation (R1) — and no lifecycle status closes them: they are
+ * management, as removing a member or unlocking is (PROVISIONAL, Q46).
+ *
+ *   ownerCeiling      what the owner must hold: `communities.moderate`, the
+ *                     single ceiling of ownership and of every delegable
+ *                     capability (ADR 0017; PROVISIONAL, Q42, Q44)
+ *   oversightCeiling  reach without ownership: only a transfer, by a
+ *                     `communities.manage` holder naming someone other than
+ *                     themself — the recovery path (PROVISIONAL, Q42, Q43)
+ */
+export interface OwnerOperation {
+  readonly name: 'community.grants.manage' | 'community.ownership.transfer';
+  readonly ownerCeiling: readonly Permission[];
+  readonly oversightCeiling: readonly Permission[] | null;
+}
+
+export const MANAGE_GRANTS: OwnerOperation = Object.freeze({
+  name: 'community.grants.manage',
+  ownerCeiling: Object.freeze([communities.moderate]),
+  oversightCeiling: null,
+});
+
+export const TRANSFER_OWNERSHIP: OwnerOperation = Object.freeze({
+  name: 'community.ownership.transfer',
+  ownerCeiling: Object.freeze([communities.moderate]),
+  oversightCeiling: Object.freeze([communities.manage]),
+});

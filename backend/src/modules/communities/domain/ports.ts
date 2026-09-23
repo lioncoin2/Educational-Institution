@@ -1,6 +1,8 @@
+import type { CommunityCapability } from '../contracts/capabilities';
 import type { CommunityStatus } from '../contracts/vocabulary';
-import type { AuthorityRead } from './authority';
+import type { AuthorityRead, HeldGrant } from './authority';
 import type { Community } from './community';
+import type { CapabilityGrant } from './grant';
 import type { Invitation } from './invitation';
 import type { Stint } from './membership';
 
@@ -19,12 +21,28 @@ export interface CommunityAuthorityRead extends AuthorityRead {
 /**
  * The standing an act rests on, handed to the store so it can re-verify it
  * UNDER LOCK (ADR 0017): an owner's act locks the owner's stint FOR SHARE and
- * is refused (`basis_lost`) unless it is still the ACTIVE owner stint; an
- * oversight act rests on identity's ceiling alone and locks no stint.
+ * is refused (`basis_lost`) unless it is still the ACTIVE owner stint; a
+ * delegate's act locks the delegate's stint and ACTIVE grants FOR SHARE and
+ * is refused unless the stint is ACTIVE and the grant it rests on is still
+ * ACTIVE on it; an oversight act rests on identity's ceiling alone and locks
+ * no stint.
  */
 export type ActingBasis =
   | { readonly kind: 'owner'; readonly userId: string; readonly membershipId: string }
+  | {
+      readonly kind: 'grant';
+      readonly userId: string;
+      readonly membershipId: string;
+      readonly grantId: string;
+      readonly capability: CommunityCapability;
+    }
   | { readonly kind: 'oversight' };
+
+/** The owner, as grant management and a transfer by the owner rest on them. */
+export interface OwnerBasis {
+  readonly userId: string;
+  readonly membershipId: string;
+}
 
 /** A deadlock victim, after one retry. The in-memory store never answers it. */
 export interface Contended {
@@ -57,15 +75,26 @@ export type AddMembersOutcome =
   | Contended;
 
 export type RemoveOutcome =
-  | { readonly kind: 'removed'; readonly stint: Stint }
+  /** The stint ended, and with it every grant resting on it (`membership_ended`). */
+  | {
+      readonly kind: 'removed';
+      readonly stint: Stint;
+      readonly endedGrants: readonly CapabilityGrant[];
+    }
   | { readonly kind: 'not_member' }
   | { readonly kind: 'owner' }
+  /** R6: a delegate cannot remove someone holding a capability they do not effectively hold. */
+  | { readonly kind: 'holds_more' }
   | { readonly kind: 'not_found' }
   | BasisLost
   | Contended;
 
 export type LeaveOutcome =
-  | { readonly kind: 'left'; readonly stint: Stint }
+  | {
+      readonly kind: 'left';
+      readonly stint: Stint;
+      readonly endedGrants: readonly CapabilityGrant[];
+    }
   | { readonly kind: 'not_member' }
   | { readonly kind: 'owner' }
   | { readonly kind: 'not_found' }
@@ -86,6 +115,49 @@ export type RevokeInvitationOutcome =
   | BasisLost
   | Contended;
 
+export type GrantOutcome =
+  | {
+      readonly kind: 'granted';
+      /** New grants, one per capability the grantee did not already hold. */
+      readonly created: readonly CapabilityGrant[];
+      /** Grants the grantee already held (R7): nothing was written for them. */
+      readonly unchanged: readonly CapabilityGrant[];
+    }
+  /** R3/R5 under lock: the grantee is not an ACTIVE member, or is the owner. */
+  | { readonly kind: 'grantee_ineligible' }
+  /** The owner's stint is no longer the ACTIVE owner stint (or the community is gone). */
+  | BasisLost
+  | Contended;
+
+export type RevokeGrantOutcome =
+  | { readonly kind: 'revoked'; readonly grant: CapabilityGrant }
+  /** The grant had already ended — revoked, or with its stint: nothing written. */
+  | { readonly kind: 'unchanged'; readonly grant: CapabilityGrant }
+  /** No such grant in this community. */
+  | { readonly kind: 'not_found' }
+  | BasisLost
+  | Contended;
+
+export type TransferOutcome =
+  | {
+      readonly kind: 'transferred';
+      readonly from: Stint;
+      readonly to: Stint;
+      /** The new owner's own grants, ended `ownership_changed`: they hold everything now. */
+      readonly endedGrants: readonly CapabilityGrant[];
+    }
+  /** The target already is the owner: nothing written. */
+  | { readonly kind: 'unchanged' }
+  /** The target is not an ACTIVE member. */
+  | { readonly kind: 'target_not_member' }
+  /**
+   * Ownership, or the target's membership, changed while this transfer
+   * waited for its locks: another transfer or a removal won. Nothing written.
+   */
+  | { readonly kind: 'owner_conflict' }
+  | { readonly kind: 'not_found' }
+  | Contended;
+
 /**
  * Every way a redemption ends (§7.3). Every refusal consumed nothing: the
  * use, the counter and the version all roll back together.
@@ -100,7 +172,7 @@ export type RedeemOutcome =
   | { readonly kind: 'expired' }
   | { readonly kind: 'exhausted' }
   | { readonly kind: 'locked' }
-  /** The link's creator no longer holds the standing to admit anyone (Q48). */
+  /** The link's creator no longer stands as owner or holds `community.members.invite` (Q48). */
   | { readonly kind: 'creator_lost' }
   | { readonly kind: 'not_found' }
   | Contended;
@@ -148,16 +220,22 @@ export interface CommunityStore {
     readonly newId: () => string;
   }): Promise<AddMembersOutcome>;
 
-  /** Ends someone else's ACTIVE stint as REMOVED. The owner is never removed. */
+  /**
+   * Ends someone else's ACTIVE stint as REMOVED, and every grant on it. The
+   * owner is never removed; a delegate is bounded by R6, decided under lock
+   * against the delegate's ACTIVE grants and `removerCeilings` — the
+   * capabilities whose identity ceiling the remover holds right now.
+   */
   removeMember(input: {
     readonly communityId: string;
     readonly userId: string;
     readonly actor: ActingBasis;
+    readonly removerCeilings: ReadonlySet<CommunityCapability>;
     readonly removedBy: string | null;
     readonly at: Date;
   }): Promise<RemoveOutcome>;
 
-  /** Ends one's own ACTIVE stint as LEFT. The owner cannot leave. */
+  /** Ends one's own ACTIVE stint as LEFT, and every grant on it. The owner cannot leave. */
   leave(input: {
     readonly communityId: string;
     readonly userId: string;
@@ -187,7 +265,8 @@ export interface CommunityStore {
 
   /**
    * The whole redemption, in one transaction (§7.3): the redeemer's latest
-   * stint, the link's use, the creator's standing, the lifecycle gate, the
+   * stint, the link's use, the creator's standing (the owner, or a holder of
+   * an ACTIVE `community.members.invite` grant), the lifecycle gate, the
    * counter and version, and the new stint — or nothing at all.
    */
   redeem(input: {
@@ -195,9 +274,46 @@ export interface CommunityStore {
     readonly communityId: string;
     readonly userId: string;
     readonly creatorUserId: string;
+    /** The capability a creator who is not the owner must still hold a grant of. */
+    readonly creatorCapability: CommunityCapability;
     readonly stintId: string;
     readonly at: Date;
   }): Promise<RedeemOutcome>;
+
+  /**
+   * Grants capabilities to one member (S4), atomically: the owner's and the
+   * grantee's stints re-read under lock, then one grant per capability not
+   * already held. The community row is never touched.
+   */
+  grant(input: {
+    readonly communityId: string;
+    readonly owner: OwnerBasis;
+    readonly granteeUserId: string;
+    readonly capabilities: readonly CommunityCapability[];
+    readonly at: Date;
+    readonly newId: () => string;
+  }): Promise<GrantOutcome>;
+
+  /** One-way: an ended grant stays ended, and a repeat is `unchanged`. */
+  revokeGrant(input: {
+    readonly communityId: string;
+    readonly grantId: string;
+    readonly owner: OwnerBasis;
+    readonly at: Date;
+  }): Promise<RevokeGrantOutcome>;
+
+  /**
+   * Hands ownership to an ACTIVE member (§6.9), in one transaction: the
+   * owner's and the target's stints FOR UPDATE, demote, promote, and the new
+   * owner's grants ended. The actor is the owner or oversight.
+   */
+  transfer(input: {
+    readonly communityId: string;
+    readonly toUserId: string;
+    readonly actor: ActingBasis;
+    readonly transferredBy: string | null;
+    readonly at: Date;
+  }): Promise<TransferOutcome>;
 }
 
 /** A position in a list ordered by (instant, id). */
@@ -206,9 +322,17 @@ export interface Keyset {
   readonly id: string;
 }
 
+/** A position in a community's grant list, ordered by (capability, user). */
+export interface GrantKey {
+  readonly capability: CommunityCapability;
+  readonly userId: string;
+}
+
 export interface MyCommunity {
   readonly community: Community;
   readonly stint: Stint;
+  /** The stint's ACTIVE grants — for the `me` block, from the same statement. */
+  readonly grants: readonly HeldGrant[];
 }
 
 /**
@@ -254,6 +378,29 @@ export interface CommunityReadModel {
     afterVersion: number,
     limit: number,
   ): Promise<{ readonly community: Community; readonly stints: readonly Stint[] } | null>;
+  /**
+   * A community's ACTIVE grants by (capability, user), optionally for one
+   * user or one capability — on the ACTIVE-only grant indexes.
+   */
+  grants(
+    communityId: string,
+    page: {
+      readonly userId?: string;
+      readonly capability?: CommunityCapability;
+      readonly after?: GrantKey;
+      readonly limit: number;
+    },
+  ): Promise<readonly CapabilityGrant[]>;
+  /**
+   * Who may hold `capability` by standing, before any ceiling is checked:
+   * the owner and every ACTIVE grantee of it, in user-id order after
+   * `afterUserId`. Never an overseer.
+   */
+  holderCandidates(
+    communityId: string,
+    capability: CommunityCapability,
+    page: { readonly afterUserId?: string; readonly limit: number },
+  ): Promise<readonly string[]>;
   /** ACTIVE member ids in id order, after `afterUserId`. */
   memberIds(
     communityId: string,

@@ -20,6 +20,11 @@ export const CommunityAudit = {
   memberLeft: 'communities.member.left',
   invitationCreated: 'communities.invitation.created',
   invitationRevoked: 'communities.invitation.revoked',
+  /** One entry per grant row the owner created (P3). */
+  capabilityGranted: 'communities.capability.granted',
+  /** The owner took a grant back (P3). Grants ending with a stint are in the stint's entry. */
+  capabilityRevoked: 'communities.capability.revoked',
+  ownershipTransferred: 'communities.ownership.transferred',
   /** PROVISIONAL (Q43): a read made without membership, on the oversight basis. */
   oversightRead: 'communities.oversight.read',
 } as const;
@@ -31,6 +36,7 @@ export const CommunityPages = {
   communities: { default: 30, max: 100 },
   roster: { default: 50, max: 200 },
   invitations: { default: 50, max: 200 },
+  grants: { default: 50, max: 200 },
 } as const;
 
 /**
@@ -56,6 +62,7 @@ export const CommunityRateLimits = {
     windowSeconds: 60 * 60,
   },
   memberAddsPerUser: { name: 'communities.members.add.user', limit: 60, windowSeconds: 10 * 60 },
+  grantsPerUser: { name: 'communities.grants.user', limit: 60, windowSeconds: 10 * 60 },
   joinsPerUser: { name: 'communities.join.user', limit: 10, windowSeconds: 10 * 60 },
   /** Generous, so a school behind one address is not throttled. */
   joinsPerIp: { name: 'communities.join.ip', limit: 300, windowSeconds: 60 },

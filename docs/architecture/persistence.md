@@ -144,6 +144,12 @@ transcribed, and a test asserts the database and the constants agree.
 | `0009_seed_communities_permissions` | **custom data**, generated from constants | `communities.read`, `create`, `moderate`, `manage`, and their provisional grants (Q41, Q43, Q44) |
 | `0010_communities` | generated, **additive only** (plus a header comment) | `communities`, `community_members` (one row per stint) and `community_invitations`, with their CHECKs, the partial unique "one ACTIVE stint" and "one owner" indexes, the version index that orders the membership changefeed, and `RESTRICT` foreign keys inside the module only |
 
+### Communities delegation (P3)
+
+| Migration | Kind | Does |
+| --- | --- | --- |
+| `0011_communities_grants` | generated, **additive only** (plus a header comment) | `communities_capability_grants`: one row per grant, never deleted; the composite foreign key `(membership_id, community_id, user_id)` onto the stint's own triple (`community_members_stint_key`, from 0010), so a grant is bound to one stint of one community; CHECKs for the closed capability vocabulary, no self-grant and a consistent, one-way end; the partial unique "one ACTIVE grant per stint and capability" index and two ACTIVE-only lookup indexes |
+
 Each has its own upgrade test (`test/integration/communities-migrations.spec.ts`)
 asserting exactly its delta on a database already in use; the academic upgrade
 test stays pinned to 0007–0008.
@@ -402,7 +408,18 @@ and say so on stderr; CI always sets it.
   members over about 900,000 stint rows, `EXPLAIN` of the statements the
   adapter actually sends shows index scans only, `members()` walks 30,000 in
   exactly 30 pages, a roster page is two statements and one directory call,
-  and no request path counts.
+  and no request path counts. Delegation (P3): every grant CHECK, the
+  composite key and the one-ACTIVE-grant index bite, and the capability CHECK
+  lists exactly the contract's vocabulary; fifty identical grants make one
+  row, one audit entry and one event; batches naming the same capabilities
+  in opposite orders never deadlock; a grant racing its grantee's removal is
+  refused or ended with the stint; a delegate's removal racing the
+  revocation of their grant commits first or is refused; two delegates never
+  remove each other; a transfer racing its target's removal, and two
+  simultaneous transfers, always leave exactly one owner; holders page
+  exactly once while grants churn; and a delegate's authorization, a
+  capability's holders and the owner's grant list stay on the ACTIVE-only
+  grant indexes beside 20,000 ended grants.
 
 ---
 

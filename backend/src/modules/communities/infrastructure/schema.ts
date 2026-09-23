@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   bigint,
   check,
+  foreignKey,
   index,
   integer,
   pgTable,
@@ -12,12 +13,14 @@ import {
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
+import { COMMUNITY_CAPABILITIES, type CommunityCapability } from '../contracts/capabilities';
 import type {
   CommunityStatus,
   MembershipSource,
   MembershipStanding,
   MembershipStatus,
 } from '../contracts/vocabulary';
+import type { GrantEndReason } from '../domain/grant';
 
 /**
  * Communities' tables (§5). Communities owns them; no other module reads or
@@ -36,6 +39,9 @@ import type {
  *   community_members_version_unique   membership versions unique per community
  *   community_invitations_token_hash_unique   a token hash identifies one link
  *   community_invitations_uses_within_limit   a link is never used past its limit
+ *   communities_capability_grants_active_unique  at most one ACTIVE grant per stint and capability
+ *   communities_capability_grants_stint_fk     a grant's community and person are its stint's
+ *   communities_capability_grants_not_self     nobody grants to themself
  *
  * `member_count` has no upper bound: no size limit is policy here (Q20).
  * `membership_version` and `version` are bigint — they only ever grow.
@@ -189,6 +195,78 @@ export const communityMembers = pgTable(
   ],
 );
 
+/** The delegable capabilities, as a SQL list — generated from the contract, never retyped. */
+const CAPABILITY_LIST = sql.raw(
+  COMMUNITY_CAPABILITIES.map((capability) => `'${capability}'`).join(', '),
+);
+
+/**
+ * `communities_capability_grants` (P3): one capability given by the owner to
+ * one member's stint. Rows are never deleted: a grant ends once — revoked by
+ * the owner, with the stint it rests on, or when its holder becomes owner —
+ * and a re-grant is a new row. The composite key binds a grant to exactly one
+ * stint of one community, so a grant in A gives nothing in B, and a rejoin
+ * (a new stint) never revives one. Delegation never touches the community row.
+ */
+export const communityCapabilityGrants = pgTable(
+  'communities_capability_grants',
+  {
+    id: text('id').primaryKey(),
+    communityId: text('community_id').notNull(),
+    membershipId: text('membership_id').notNull(),
+    userId: text('user_id').notNull(),
+    capability: text('capability').$type<CommunityCapability>().notNull(),
+    grantedBy: text('granted_by').notNull(),
+    grantedAt: timestamp('granted_at', { withTimezone: true }).notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    endedBy: text('ended_by'),
+    endReason: text('end_reason').$type<GrantEndReason>(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'communities_capability_grants_stint_fk',
+      columns: [table.membershipId, table.communityId, table.userId],
+      foreignColumns: [communityMembers.id, communityMembers.communityId, communityMembers.userId],
+    }).onDelete('restrict'),
+    // One ACTIVE grant per stint and capability: idempotent grants (R7); the
+    // authorization probe; the "me" block.
+    uniqueIndex('communities_capability_grants_active_unique')
+      .on(table.membershipId, table.capability)
+      .where(sql`${table.endedAt} is null`),
+    // Holders of a capability, and the owner's list of a community's grants.
+    index('communities_capability_grants_active_by_community')
+      .on(table.communityId, table.capability, table.userId)
+      .where(sql`${table.endedAt} is null`),
+    // A holder's own grants.
+    index('communities_capability_grants_active_by_user')
+      .on(table.userId, table.communityId)
+      .where(sql`${table.endedAt} is null`),
+    check(
+      'communities_capability_grants_capability_valid',
+      sql`${table.capability} in (${CAPABILITY_LIST})`,
+    ),
+    // No self-grant (R5).
+    check('communities_capability_grants_not_self', sql`${table.grantedBy} <> ${table.userId}`),
+    check(
+      'communities_capability_grants_ended_by_needs_end',
+      sql`${table.endedBy} is null or ${table.endedAt} is not null`,
+    ),
+    check(
+      'communities_capability_grants_ended_after_granted',
+      sql`${table.endedAt} is null or ${table.endedAt} >= ${table.grantedAt}`,
+    ),
+    check(
+      'communities_capability_grants_end_reason_valid',
+      sql`${table.endReason} in ('revoked', 'membership_ended', 'ownership_changed')`,
+    ),
+    check(
+      'communities_capability_grants_end_consistent',
+      sql`(${table.endedAt} is null) = (${table.endReason} is null)`,
+    ),
+  ],
+);
+
 export type CommunityRow = typeof communities.$inferSelect;
 export type CommunityMemberRow = typeof communityMembers.$inferSelect;
 export type CommunityInvitationRow = typeof communityInvitations.$inferSelect;
+export type CommunityGrantRow = typeof communityCapabilityGrants.$inferSelect;

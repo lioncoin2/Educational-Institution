@@ -1,6 +1,7 @@
 import type { CommunityCapability, CommunityParticipationAct } from '../contracts/capabilities';
 import type { InvitationState, MembershipStanding } from '../contracts/vocabulary';
 import type { Community } from '../domain/community';
+import type { CapabilityGrant } from '../domain/grant';
 import { invitationState, type Invitation } from '../domain/invitation';
 
 /**
@@ -93,4 +94,36 @@ export interface AddMembersView {
   readonly added: readonly string[];
   /** Accounts that already were: nothing was written for them. */
   readonly unchanged: readonly string[];
+}
+
+/**
+ * One ACTIVE grant, as the owner — or its holder — sees it. `dormant`: the
+ * holder no longer has the capability's identity ceiling (or cannot sign
+ * in), so the grant is kept but not effective (R4, Q45).
+ */
+export interface GrantView {
+  readonly grantId: string;
+  readonly userId: string;
+  readonly capability: CommunityCapability;
+  readonly grantedAt: Date;
+  readonly grantedBy: string;
+  readonly dormant: boolean;
+}
+
+export function grantView(grant: CapabilityGrant, dormant: boolean): GrantView {
+  return {
+    grantId: grant.id,
+    userId: grant.userId,
+    capability: grant.capability,
+    grantedAt: grant.grantedAt,
+    grantedBy: grant.grantedBy,
+    dormant,
+  };
+}
+
+export interface GrantCapabilitiesView {
+  /** Grants given now. */
+  readonly created: readonly GrantView[];
+  /** Grants the member already held: nothing was written for them (R7). */
+  readonly unchanged: readonly GrantView[];
 }

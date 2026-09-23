@@ -63,6 +63,10 @@ describe('communities API', () => {
       ['POST', '/communities/x/invitations'],
       ['GET', '/communities/x/invitations'],
       ['POST', '/communities/x/invitations/y/revoke'],
+      ['GET', '/communities/x/grants'],
+      ['POST', '/communities/x/grants'],
+      ['DELETE', '/communities/x/grants/y'],
+      ['PUT', '/communities/x/owner'],
     ]) {
       expect({ method, path, status: (await call(method, path)).status }).toEqual({
         method,
@@ -304,6 +308,159 @@ describe('communities API', () => {
       code(await call('POST', `/communities/${communityId}/invitations/nope/revoke`, admin)),
     ).toBe('communities.invitation_not_found');
     expect(invitationId).not.toBe(id);
+  });
+
+  it('delegates: the owner grants (201, then 200), a delegate acts, only the owner revokes (204)', async () => {
+    const grants = `/communities/${communityId}/grants`;
+    const granted = await call('POST', grants, admin, {
+      userId: teacher.id,
+      capabilities: ['community.lock', 'community.members.view'],
+    });
+    expect(granted.status).toBe(201);
+    const created = granted.body.created as Record<string, unknown>[];
+    expect(created.map((grant) => grant.capability)).toEqual([
+      'community.members.view',
+      'community.lock',
+    ]);
+    for (const grant of created) {
+      expect(Object.keys(grant).sort()).toEqual([
+        'capability',
+        'dormant',
+        'grantId',
+        'grantedAt',
+        'grantedBy',
+        'userId',
+      ]);
+    }
+    const again = await call('POST', grants, admin, {
+      userId: teacher.id,
+      capabilities: ['community.lock'],
+    });
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({
+      created: [],
+      unchanged: [{ capability: 'community.lock' }],
+    });
+
+    // The vocabulary is closed at the edge; unknown fields are refused.
+    for (const body of [
+      { userId: teacher.id, capabilities: ['community.view'] },
+      { userId: teacher.id, capabilities: [] },
+      { userId: teacher.id, capabilities: ['community.lock', 'community.lock'] },
+      { userId: teacher.id, capabilities: ['community.lock'], grantedBy: admin.id },
+    ]) {
+      expect((await call('POST', grants, admin, body)).status).toBe(400);
+    }
+    const byStudent = await call('POST', grants, student, {
+      userId: teacher.id,
+      capabilities: ['community.lock'],
+    });
+    expect({ status: byStudent.status, code: code(byStudent) }).toEqual({
+      status: 403,
+      code: 'identity.permission_denied',
+    });
+    const byDelegate = await call('POST', grants, teacher, {
+      userId: student.id,
+      capabilities: ['community.lock'],
+    });
+    expect({ status: byDelegate.status, code: code(byDelegate) }).toEqual({
+      status: 403,
+      code: 'communities.not_community_owner',
+    });
+    const toStudent = await call('POST', grants, admin, {
+      userId: student.id,
+      capabilities: ['community.lock'],
+    });
+    expect({ status: toStudent.status, code: code(toStudent) }).toEqual({
+      status: 422,
+      code: 'communities.grantee_ineligible',
+    });
+    expect(
+      (
+        await call('POST', '/communities/00000000-0000-4000-8000-00000000abcd/grants', admin, {
+          userId: teacher.id,
+          capabilities: ['community.lock'],
+        })
+      ).status,
+    ).toBe(404);
+
+    // The delegate acts — and sees exactly what was delegated.
+    const view = await call('GET', `/communities/${communityId}`, teacher);
+    expect(view.body.me).toMatchObject({
+      standing: 'MEMBER',
+      capabilities: ['community.members.view', 'community.lock'],
+    });
+    expect((await call('POST', `/communities/${communityId}/lock`, teacher)).status).toBe(200);
+    expect((await call('POST', `/communities/${communityId}/unlock`, teacher)).status).toBe(200);
+    expect((await call('GET', `/communities/${communityId}/members`, teacher)).status).toBe(200);
+
+    // The owner sees every grant; a holder their own; another member none; an outsider nothing.
+    const listed = await call('GET', grants, admin);
+    expect(listed.status).toBe(200);
+    expect(listed.body.items).toHaveLength(2);
+    expect((await call('GET', grants, teacher)).body.items).toHaveLength(2);
+    expect((await call('GET', grants, student)).body.items).toEqual([]);
+    expect((await call('GET', `${grants}?capability=community.view`, admin)).status).toBe(400);
+    expect((await call('GET', grants, outsider)).status).toBe(404);
+
+    const lockGrant = created.find((grant) => grant.capability === 'community.lock');
+    const path = `${grants}/${lockGrant?.grantId as string}`;
+    const byHolder = await call('DELETE', path, teacher);
+    expect({ status: byHolder.status, code: code(byHolder) }).toEqual({
+      status: 403,
+      code: 'communities.not_community_owner',
+    });
+    expect((await call('DELETE', path, admin)).status).toBe(204);
+    expect((await call('DELETE', path, admin)).status).toBe(204);
+    const unknown = await call('DELETE', `${grants}/no-such-grant`, admin);
+    expect({ status: unknown.status, code: code(unknown) }).toEqual({
+      status: 404,
+      code: 'communities.grant_not_found',
+    });
+    expect((await call('POST', `/communities/${communityId}/lock`, teacher)).status).toBe(403);
+  });
+
+  it('transfers ownership: 200 with the caller’s new standing; oversight never names itself', async () => {
+    const heir = await r.provision('heir', 'TEACHER', 'الأستاذ يوسف');
+    await call('POST', `/communities/${communityId}/members`, admin, { userIds: [heir.id] });
+    const owner = `/communities/${communityId}/owner`;
+
+    for (const [target, expected] of [
+      [outsider.id, 'communities.owner_ineligible'], // not a member
+      [student.id, 'communities.owner_ineligible'], // no communities.moderate
+    ] as const) {
+      const refused = await call('PUT', owner, admin, { userId: target });
+      expect({ status: refused.status, code: code(refused) }).toEqual({
+        status: 422,
+        code: expected,
+      });
+    }
+    const byMember = await call('PUT', owner, teacher, { userId: heir.id });
+    expect({ status: byMember.status, code: code(byMember) }).toEqual({
+      status: 403,
+      code: 'communities.not_community_owner',
+    });
+    const selfAssigned = await call('PUT', owner, r.owner, { userId: r.owner.id });
+    expect({ status: selfAssigned.status, code: code(selfAssigned) }).toEqual({
+      status: 403,
+      code: 'communities.owner_self_assignment',
+    });
+    expect((await call('PUT', owner, admin, {})).status).toBe(400);
+
+    const moved = await call('PUT', owner, admin, { userId: heir.id });
+    expect(moved.status).toBe(200);
+    expect(moved.body).toMatchObject({ id: communityId, me: { standing: 'MEMBER' } });
+    const repeat = await call('PUT', owner, heir, { userId: heir.id });
+    expect(repeat.status).toBe(200);
+    expect(repeat.body).toMatchObject({ me: { standing: 'OWNER' } });
+
+    // Oversight hands it back — the recovery path.
+    const back = await call('PUT', owner, r.owner, { userId: admin.id });
+    expect(back.status).toBe(200);
+    expect(back.body).toMatchObject({ me: { standing: null } });
+    expect((await call('GET', `/communities/${communityId}`, admin)).body).toMatchObject({
+      me: { standing: 'OWNER' },
+    });
   });
 
   it('removes and leaves: 204, and never the owner', async () => {

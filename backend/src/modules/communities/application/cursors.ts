@@ -1,5 +1,6 @@
 import { err, failure, ok, type Result } from '../../../shared';
-import type { Keyset } from '../domain/ports';
+import { isCommunityCapability } from '../contracts/capabilities';
+import type { GrantKey, Keyset } from '../domain/ports';
 
 /**
  * Page cursors are opaque to clients: base64url of the (instant, id) the next
@@ -71,6 +72,48 @@ export function decodeMemberCursor(raw: string): string {
   const userId = decoded.slice(MEMBER_CURSOR_PREFIX.length);
   if (!decoded.startsWith(MEMBER_CURSOR_PREFIX) || !ID_SHAPE.test(userId)) {
     throw new RangeError('That member cursor was not issued by COMMUNITY_MEMBERSHIP.');
+  }
+  return userId;
+}
+
+/** A grant list's cursor: the (capability, user) of the last grant shown. */
+export function encodeGrantCursor(key: GrantKey): string {
+  return Buffer.from(JSON.stringify(['g1', key.capability, key.userId])).toString('base64url');
+}
+
+export function decodeGrantCursor(raw: string | undefined): Result<GrantKey | undefined> {
+  if (raw === undefined) return ok(undefined);
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+    if (
+      Array.isArray(parsed) &&
+      parsed.length === 3 &&
+      parsed[0] === 'g1' &&
+      typeof parsed[1] === 'string' &&
+      isCommunityCapability(parsed[1]) &&
+      typeof parsed[2] === 'string' &&
+      ID_SHAPE.test(parsed[2])
+    ) {
+      return ok({ capability: parsed[1], userId: parsed[2] });
+    }
+  } catch {
+    // Falls through: whatever it was, it was not one of ours.
+  }
+  return err(INVALID);
+}
+
+/** The holders contract's cursor, as opaque as the membership contract's. */
+const HOLDER_CURSOR_PREFIX = 'h1:';
+
+export function encodeHolderCursor(userId: string): string {
+  return Buffer.from(`${HOLDER_CURSOR_PREFIX}${userId}`).toString('base64url');
+}
+
+export function decodeHolderCursor(raw: string): string {
+  const decoded = Buffer.from(raw, 'base64url').toString('utf8');
+  const userId = decoded.slice(HOLDER_CURSOR_PREFIX.length);
+  if (!decoded.startsWith(HOLDER_CURSOR_PREFIX) || !ID_SHAPE.test(userId)) {
+    throw new RangeError('That holder cursor was not issued by COMMUNITY_CAPABILITY_HOLDERS.');
   }
   return userId;
 }

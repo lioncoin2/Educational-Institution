@@ -21,7 +21,7 @@ import {
 import { Permissions } from '../../identity/contracts/permissions';
 import { isSystemPrincipal } from '../../identity/contracts/principal';
 import { COMMUNITY_RESOURCE } from '../contracts/capabilities';
-import { LINK_MANAGEMENT_RULE, ruleFor } from '../domain/act-rules';
+import { LINK_MANAGEMENT_RULE, backingCapability, ruleFor } from '../domain/act-rules';
 import { COMMUNITY_NOT_FOUND } from '../domain/authority';
 import { invitationCreated, invitationRevoked, memberAdded } from '../domain/events';
 import {
@@ -81,8 +81,9 @@ const INVITATION_INVALID = failure(
 );
 
 /**
- * A manager creates a link (S2): the owner — or a delegate from P3; never an
- * overseer, and never while the community is LOCKED. The token appears in
+ * A manager creates a link (S2): the owner, or a delegate holding
+ * `community.members.invite`; never an overseer, and never while the
+ * community is LOCKED. The token appears in
  * this response and nowhere else, ever: only its SHA-256 is stored, and no
  * log line, audit entry or event carries either.
  */
@@ -188,8 +189,9 @@ export class CreateInvitationUseCase {
 
 /**
  * A community's links, newest first — metadata only, never a token or a
- * hash; the state derived now. The owner, or an overseer (audited) — who may
- * list and revoke links, to kill a leaked one, but never create them.
+ * hash; the state derived now. The owner, a delegate holding
+ * `community.members.invite`, or an overseer (audited) — who may list and
+ * revoke links, to kill a leaked one, but never create them.
  */
 @Injectable()
 export class ListInvitationsUseCase {
@@ -370,9 +372,16 @@ export class RedeemInvitationUseCase {
     if (!isTokenShaped(command.token)) return err(INVITATION_INVALID);
     const link = await this.store.findInvitationByTokenHash(this.secrets.hash(command.token));
     if (link === null) return err(INVITATION_INVALID);
-    // The creator's ceiling, before the transaction; their standing, under lock.
-    const creator = await this.people.eligible([link.createdBy], Permissions.communities.moderate);
-    if (!creator.has(link.createdBy)) return err(INVITATION_INVALID);
+    // The creator must still hold what creating the link needed: the act's
+    // ceiling now, before the transaction; their standing — the owner, or an
+    // ACTIVE grant of the act's capability — under lock (Q48).
+    const act = ruleFor('community.members.invite');
+    for (const permission of act.standingCeiling) {
+      const creator = await this.people.eligible([link.createdBy], permission);
+      if (!creator.has(link.createdBy)) return err(INVITATION_INVALID);
+    }
+    const creatorCapability = backingCapability(act.act);
+    if (creatorCapability === null) throw new Error('a link rests on a capability');
 
     const at = this.clock.now();
     const outcome = await this.store.redeem({
@@ -380,6 +389,7 @@ export class RedeemInvitationUseCase {
       communityId: link.communityId,
       userId: principal.userId,
       creatorUserId: link.createdBy,
+      creatorCapability,
       stintId: this.ids.next<'CommunityMembership'>(),
       at,
     });

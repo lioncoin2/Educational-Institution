@@ -17,6 +17,7 @@ import {
 import { Permissions } from '../../identity/contracts/permissions';
 import { ruleFor } from '../domain/act-rules';
 import { COMMUNITY_NOT_FOUND } from '../domain/authority';
+import { MEMBER_HOLDS_MORE_CAPABILITIES } from '../domain/delegation';
 import { memberAdded, memberRemoved } from '../domain/events';
 import {
   COMMUNITY_READ_MODEL,
@@ -53,8 +54,8 @@ const MEMBER_NOT_FOUND = failure(
 );
 
 /**
- * A manager adds accounts directly (owner, or a grant from P3 — oversight
- * never adds, §6.11). Idempotent per account: someone already a member is
+ * A manager adds accounts directly (the owner, or a delegate holding
+ * `community.members.invite` — oversight never adds, §6.11). Idempotent per account: someone already a member is
  * reported `unchanged` and nothing is written for them. Everyone named must
  * be an ACTIVE account allowed to take part in communities; an unknown id and
  * an ineligible one are refused alike, so nobody can probe for accounts.
@@ -173,9 +174,12 @@ export class AddMembersUseCase {
 }
 
 /**
- * A manager removes a member (owner, or oversight; a grant from P3). Allowed
- * while LOCKED. The owner is never removed. Only the removed person is told
- * (P5); nothing else is announced to members (Q49).
+ * A manager removes a member: the owner, a delegate holding
+ * `community.members.remove`, or oversight. Allowed while LOCKED. The owner
+ * is never removed, and a delegate never removes someone holding a
+ * capability the delegate does not effectively hold (R6, decided under
+ * lock). The member's grants end with the stint. Only the removed person is
+ * told (P5); nothing else is announced to members (Q49).
  */
 @Injectable()
 export class RemoveMemberUseCase {
@@ -204,6 +208,7 @@ export class RemoveMemberUseCase {
       communityId,
       userId: command.userId,
       actor: actingBasis(permit),
+      removerCeilings: this.authorization.capabilitiesWithinCeiling(principal, communityId),
       removedBy: actor,
       at,
     });
@@ -220,6 +225,7 @@ export class RemoveMemberUseCase {
               userId: outcome.stint.userId,
               membershipId: outcome.stint.id,
               membershipVersion: outcome.stint.version,
+              endedGrantIds: outcome.endedGrants.map((grant) => grant.id),
               authority: authorityOf(permit),
             },
             correlationId: command.meta.correlationId,
@@ -229,6 +235,8 @@ export class RemoveMemberUseCase {
         return ok(undefined);
       case 'not_member':
         return err(MEMBER_NOT_FOUND);
+      case 'holds_more':
+        return err(MEMBER_HOLDS_MORE_CAPABILITIES);
       case 'owner':
         return err(
           failure(
@@ -290,6 +298,7 @@ export class LeaveCommunityUseCase {
             metadata: {
               membershipId: outcome.stint.id,
               membershipVersion: outcome.stint.version,
+              endedGrantIds: outcome.endedGrants.map((grant) => grant.id),
               authority: authorityOf(permit),
             },
             correlationId: command.meta.correlationId,
@@ -315,8 +324,8 @@ export class LeaveCommunityUseCase {
 }
 
 /**
- * The roster, a page at a time (Q22): the owner, a delegate, or an overseer
- * (whose read is audited). Display names from identity, one call per page —
+ * The roster, a page at a time (Q22): the owner, a delegate holding
+ * `community.members.view`, or an overseer (whose read is audited). Display names from identity, one call per page —
  * never an email, never how or by whom someone joined.
  */
 @Injectable()

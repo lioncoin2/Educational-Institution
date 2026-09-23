@@ -1,7 +1,16 @@
 import { Injectable } from '@nestjs/common';
 
+import { COMMUNITY_CAPABILITIES, type CommunityCapability } from '../contracts/capabilities';
 import type { CommunityStatus } from '../contracts/vocabulary';
 import type { Community } from '../domain/community';
+import { effectiveCapabilities, mayGrant, mayRemove } from '../domain/delegation';
+import {
+  endGrant,
+  isActiveGrant,
+  newGrant,
+  type CapabilityGrant,
+  type GrantEndReason,
+} from '../domain/grant';
 import { invitationState, type Invitation } from '../domain/invitation';
 import { effectsOf } from '../domain/lifecycle';
 import { endStint, latestStint, memberStint, type Stint } from '../domain/membership';
@@ -12,13 +21,18 @@ import type {
   CommunityReadModel,
   CommunityStore,
   CreateInvitationOutcome,
+  GrantKey,
+  GrantOutcome,
   Keyset,
   LeaveOutcome,
   MyCommunity,
+  OwnerBasis,
   RedeemOutcome,
   RemoveOutcome,
+  RevokeGrantOutcome,
   RevokeInvitationOutcome,
   StatusChange,
+  TransferOutcome,
 } from '../domain/ports';
 
 const pair = (communityId: string, userId: string) => `${communityId}\u0000${userId}`;
@@ -30,6 +44,18 @@ function byKey(a: Keyset, b: Keyset): number {
   const t = a.at.getTime() - b.at.getTime();
   return t !== 0 ? t : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
+
+const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/** (capability, user) ascending — Postgres' text order for these ASCII values. */
+function byGrantKey(a: GrantKey, b: GrantKey): number {
+  const c = compare(a.capability, b.capability);
+  return c !== 0 ? c : compare(a.userId, b.userId);
+}
+
+const CAPABILITY_ORDER = new Map<string, number>(
+  COMMUNITY_CAPABILITIES.map((capability, index) => [capability, index]),
+);
 
 /**
  * Communities in memory — development without a database, and the store the
@@ -51,6 +77,9 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
   private readonly stintsByPair = new Map<string, string[]>();
   private readonly invitationById = new Map<string, Invitation>();
   private readonly invitationByHash = new Map<string, string>();
+  private readonly grantById = new Map<string, CapabilityGrant>();
+  /** Stint id → the ids of its ACTIVE grants (at most one per capability). */
+  private readonly activeGrantsByStint = new Map<string, Set<string>>();
 
   // ── CommunityStore ─────────────────────────────────────────────────────
 
@@ -89,7 +118,7 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     readonly at: Date;
   }): Promise<StatusChange> {
     // The same order as the transaction: the basis first, then the row.
-    if (!this.basisHolds(input.communityId, input.actor)) return { kind: 'basis_lost' };
+    if (!this.basis(input.communityId, input.actor).holds) return { kind: 'basis_lost' };
     const community = this.communityById.get(input.communityId);
     if (community === undefined) return { kind: 'not_found' };
     const from: CommunityStatus = input.to === 'LOCKED' ? 'OPEN' : 'LOCKED';
@@ -114,7 +143,7 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     readonly at: Date;
     readonly newId: () => string;
   }): Promise<AddMembersOutcome> {
-    if (!this.basisHolds(input.communityId, input.actor)) return { kind: 'basis_lost' };
+    if (!this.basis(input.communityId, input.actor).holds) return { kind: 'basis_lost' };
     const community = this.communityById.get(input.communityId);
     if (community === undefined) return { kind: 'not_found' };
     const userIds = [...new Set(input.userIds)];
@@ -151,17 +180,27 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     readonly communityId: string;
     readonly userId: string;
     readonly actor: ActingBasis;
+    readonly removerCeilings: ReadonlySet<CommunityCapability>;
     readonly removedBy: string | null;
     readonly at: Date;
   }): Promise<RemoveOutcome> {
-    if (!this.basisHolds(input.communityId, input.actor)) return { kind: 'basis_lost' };
+    const basis = this.basis(input.communityId, input.actor);
+    if (!basis.holds) return { kind: 'basis_lost' };
     const community = this.communityById.get(input.communityId);
     if (community === undefined) return { kind: 'not_found' };
     const stint = this.activeStint(input.communityId, input.userId);
     if (stint === null) return { kind: 'not_member' };
-    if (stint.standing === 'OWNER') return { kind: 'owner' };
+    const decision = mayRemove({
+      basis: input.actor.kind,
+      target: stint,
+      targetGrants: this.activeGrantsOf(stint.id).map((grant) => grant.capability),
+      removerEffective: effectiveCapabilities(basis.capabilities, input.removerCeilings),
+    });
+    if (decision === 'owner') return { kind: 'owner' };
+    if (decision === 'holds_more') return { kind: 'holds_more' };
+    const endedGrants = this.endGrantsOf(stint.id, 'membership_ended', input.removedBy, input.at);
     const ended = this.end(community, stint, 'REMOVED', input.removedBy, input.at);
-    return { kind: 'removed', stint: ended };
+    return { kind: 'removed', stint: ended, endedGrants };
   }
 
   async leave(input: {
@@ -174,8 +213,9 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     const stint = this.activeStint(input.communityId, input.userId);
     if (stint === null) return { kind: 'not_member' };
     if (stint.standing === 'OWNER') return { kind: 'owner' };
+    const endedGrants = this.endGrantsOf(stint.id, 'membership_ended', input.userId, input.at);
     const ended = this.end(community, stint, 'LEFT', input.userId, input.at);
-    return { kind: 'left', stint: ended };
+    return { kind: 'left', stint: ended, endedGrants };
   }
 
   async createInvitation(input: {
@@ -184,7 +224,7 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
   }): Promise<CreateInvitationOutcome> {
     const { invitation } = input;
     if (!this.communityById.has(invitation.communityId)) return { kind: 'not_found' };
-    if (!this.basisHolds(invitation.communityId, input.actor)) return { kind: 'basis_lost' };
+    if (!this.basis(invitation.communityId, input.actor).holds) return { kind: 'basis_lost' };
     if (this.invitationByHash.has(invitation.tokenHash)) return { kind: 'token_collision' };
     if (this.invitationById.has(invitation.id)) throw new Error('duplicate invitation id');
     this.invitationById.set(invitation.id, invitation);
@@ -199,7 +239,7 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     readonly revokedBy: string | null;
     readonly at: Date;
   }): Promise<RevokeInvitationOutcome> {
-    if (!this.basisHolds(input.communityId, input.actor)) return { kind: 'basis_lost' };
+    if (!this.basis(input.communityId, input.actor).holds) return { kind: 'basis_lost' };
     const invitation = this.invitationById.get(input.invitationId);
     if (invitation === undefined || invitation.communityId !== input.communityId) {
       return { kind: 'not_found' };
@@ -234,6 +274,7 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     readonly communityId: string;
     readonly userId: string;
     readonly creatorUserId: string;
+    readonly creatorCapability: CommunityCapability;
     readonly stintId: string;
     readonly at: Date;
   }): Promise<RedeemOutcome> {
@@ -252,7 +293,13 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     if (state === 'EXHAUSTED') return { kind: 'exhausted' };
 
     const creator = this.activeStint(input.communityId, input.creatorUserId);
-    if (creator?.standing !== 'OWNER') return { kind: 'creator_lost' };
+    const admits =
+      creator !== null &&
+      (creator.standing === 'OWNER' ||
+        this.activeGrantsOf(creator.id).some(
+          (grant) => grant.capability === input.creatorCapability,
+        ));
+    if (!admits) return { kind: 'creator_lost' };
 
     const community = this.communityById.get(input.communityId);
     if (community === undefined) return { kind: 'not_found' };
@@ -279,6 +326,94 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     return { kind: 'joined', stint };
   }
 
+  async grant(input: {
+    readonly communityId: string;
+    readonly owner: OwnerBasis;
+    readonly granteeUserId: string;
+    readonly capabilities: readonly CommunityCapability[];
+    readonly at: Date;
+    readonly newId: () => string;
+  }): Promise<GrantOutcome> {
+    if (!this.ownerHolds(input.communityId, input.owner)) return { kind: 'basis_lost' };
+    const grantee = this.activeStint(input.communityId, input.granteeUserId);
+    if (grantee === null || !mayGrant({ grantorUserId: input.owner.userId, grantee })) {
+      return { kind: 'grantee_ineligible' };
+    }
+    const capabilities = [...new Set(input.capabilities)].sort(
+      (a, b) => (CAPABILITY_ORDER.get(a) ?? 0) - (CAPABILITY_ORDER.get(b) ?? 0),
+    );
+    const created: CapabilityGrant[] = [];
+    const unchanged: CapabilityGrant[] = [];
+    for (const capability of capabilities) {
+      const held = this.activeGrantsOf(grantee.id).find((grant) => grant.capability === capability);
+      if (held !== undefined) {
+        unchanged.push(held);
+        continue;
+      }
+      const grant = newGrant({
+        id: input.newId(),
+        communityId: input.communityId,
+        membershipId: grantee.id,
+        userId: grantee.userId,
+        capability,
+        grantedBy: input.owner.userId,
+        at: input.at,
+      });
+      this.putGrant(grant);
+      created.push(grant);
+    }
+    return { kind: 'granted', created, unchanged };
+  }
+
+  async revokeGrant(input: {
+    readonly communityId: string;
+    readonly grantId: string;
+    readonly owner: OwnerBasis;
+    readonly at: Date;
+  }): Promise<RevokeGrantOutcome> {
+    if (!this.ownerHolds(input.communityId, input.owner)) return { kind: 'basis_lost' };
+    const grant = this.grantById.get(input.grantId);
+    if (grant === undefined || grant.communityId !== input.communityId) {
+      return { kind: 'not_found' };
+    }
+    if (!isActiveGrant(grant)) return { kind: 'unchanged', grant };
+    const revoked = endGrant(grant, { reason: 'revoked', by: input.owner.userId, at: input.at });
+    this.putGrant(revoked);
+    return { kind: 'revoked', grant: revoked };
+  }
+
+  async transfer(input: {
+    readonly communityId: string;
+    readonly toUserId: string;
+    readonly actor: ActingBasis;
+    readonly transferredBy: string | null;
+    readonly at: Date;
+  }): Promise<TransferOutcome> {
+    const { actor } = input;
+    if (actor.kind === 'grant') throw new Error('a grant never transfers ownership');
+    const owner = this.activeStintsOf(input.communityId).find(
+      (stint) => stint.standing === 'OWNER',
+    );
+    if (owner === undefined) return { kind: 'not_found' };
+    const target = this.activeStint(input.communityId, input.toUserId);
+    if (target === null) return { kind: 'target_not_member' };
+    if (actor.kind === 'owner' && owner.id !== actor.membershipId) {
+      return { kind: 'owner_conflict' };
+    }
+    if (target.id === owner.id) return { kind: 'unchanged' };
+    const endedGrants = this.endGrantsOf(
+      target.id,
+      'ownership_changed',
+      input.transferredBy,
+      input.at,
+    );
+    const from: Stint = { ...owner, standing: 'MEMBER' };
+    const to: Stint = { ...target, standing: 'OWNER' };
+    this.putStint(from);
+    this.putStint(to);
+    return { kind: 'transferred', from, to, endedGrants };
+  }
+
   // ── CommunityReadModel ─────────────────────────────────────────────────
 
   async myCommunities(
@@ -290,7 +425,13 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
       if (!key.endsWith(`\u0000${userId}`)) continue;
       const stint = this.stintById.get(stintId);
       const community = stint === undefined ? undefined : this.communityById.get(stint.communityId);
-      if (stint !== undefined && community !== undefined) rows.push({ community, stint });
+      if (stint !== undefined && community !== undefined) {
+        const grants = this.activeGrantsOf(stint.id).map((grant) => ({
+          id: grant.id,
+          capability: grant.capability,
+        }));
+        rows.push({ community, stint, grants });
+      }
     }
     const keyOf = (row: MyCommunity): Keyset => ({ at: row.stint.joinedAt, id: row.community.id });
     return rows
@@ -382,6 +523,46 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     return { community, stints };
   }
 
+  async grants(
+    communityId: string,
+    page: {
+      readonly userId?: string;
+      readonly capability?: CommunityCapability;
+      readonly after?: GrantKey;
+      readonly limit: number;
+    },
+  ): Promise<readonly CapabilityGrant[]> {
+    return [...this.activeGrantsByStint.values()]
+      .flatMap((ids) => [...ids])
+      .map((id) => this.grantById.get(id))
+      .filter((grant): grant is CapabilityGrant => grant?.communityId === communityId)
+      .filter((grant) => page.userId === undefined || grant.userId === page.userId)
+      .filter((grant) => page.capability === undefined || grant.capability === page.capability)
+      .filter((grant) => page.after === undefined || byGrantKey(grant, page.after) > 0)
+      .sort(byGrantKey)
+      .slice(0, page.limit);
+  }
+
+  async holderCandidates(
+    communityId: string,
+    capability: CommunityCapability,
+    page: { readonly afterUserId?: string; readonly limit: number },
+  ): Promise<readonly string[]> {
+    const holders = new Set<string>();
+    for (const stint of this.activeStintsOf(communityId)) {
+      if (
+        stint.standing === 'OWNER' ||
+        this.activeGrantsOf(stint.id).some((grant) => grant.capability === capability)
+      ) {
+        holders.add(stint.userId);
+      }
+    }
+    return [...holders]
+      .filter((userId) => page.afterUserId === undefined || userId > page.afterUserId)
+      .sort(compare)
+      .slice(0, page.limit);
+  }
+
   async memberIds(
     communityId: string,
     page: {
@@ -416,21 +597,92 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
               standing: stint.standing,
               joinedAt: stint.joinedAt,
               version: stint.version,
+              grants: this.activeGrantsOf(stint.id).map((grant) => ({
+                id: grant.id,
+                capability: grant.capability,
+              })),
             },
     };
   }
 
-  /** The owner's act needs the owner's stint to still be the ACTIVE owner stint. */
-  private basisHolds(communityId: string, actor: ActingBasis): boolean {
-    if (actor.kind === 'oversight') return true;
+  /**
+   * The act's basis, as the transaction re-verifies it under lock: the
+   * owner's stint still the ACTIVE owner stint; a delegate's stint still
+   * ACTIVE with the grant the act rests on still ACTIVE on it (and, for R6,
+   * the capabilities of all its ACTIVE grants); oversight, nothing to check.
+   */
+  private basis(
+    communityId: string,
+    actor: ActingBasis,
+  ): { readonly holds: boolean; readonly capabilities: readonly CommunityCapability[] } {
+    if (actor.kind === 'oversight') return { holds: true, capabilities: [] };
+    if (actor.kind === 'owner')
+      return { holds: this.ownerHolds(communityId, actor), capabilities: [] };
     const stint = this.stintById.get(actor.membershipId);
+    if (
+      stint === undefined ||
+      stint.communityId !== communityId ||
+      stint.userId !== actor.userId ||
+      stint.status !== 'ACTIVE'
+    ) {
+      return { holds: false, capabilities: [] };
+    }
+    const grants = this.activeGrantsOf(stint.id);
+    return {
+      holds: grants.some(
+        (grant) => grant.id === actor.grantId && grant.capability === actor.capability,
+      ),
+      capabilities: grants.map((grant) => grant.capability),
+    };
+  }
+
+  /** The owner's act needs the owner's stint to still be the ACTIVE owner stint. */
+  private ownerHolds(communityId: string, owner: OwnerBasis): boolean {
+    const stint = this.stintById.get(owner.membershipId);
     return (
       stint !== undefined &&
       stint.communityId === communityId &&
-      stint.userId === actor.userId &&
+      stint.userId === owner.userId &&
       stint.status === 'ACTIVE' &&
       stint.standing === 'OWNER'
     );
+  }
+
+  private activeGrantsOf(membershipId: string): CapabilityGrant[] {
+    return [...(this.activeGrantsByStint.get(membershipId) ?? [])]
+      .map((id) => this.grantById.get(id))
+      .filter((grant): grant is CapabilityGrant => grant !== undefined)
+      .sort((a, b) => compare(a.id, b.id));
+  }
+
+  private putGrant(grant: CapabilityGrant): void {
+    const active = this.activeGrantsByStint.get(grant.membershipId) ?? new Set<string>();
+    if (isActiveGrant(grant)) {
+      const clash = [...active]
+        .map((id) => this.grantById.get(id))
+        .find((held) => held?.capability === grant.capability && held.id !== grant.id);
+      if (clash !== undefined)
+        throw new Error('a second ACTIVE grant of one capability on one stint');
+      active.add(grant.id);
+    } else {
+      active.delete(grant.id);
+    }
+    this.activeGrantsByStint.set(grant.membershipId, active);
+    this.grantById.set(grant.id, grant);
+  }
+
+  /** Ends every ACTIVE grant on a stint, in id order — as the transaction reports them. */
+  private endGrantsOf(
+    membershipId: string,
+    reason: GrantEndReason,
+    by: string | null,
+    at: Date,
+  ): CapabilityGrant[] {
+    return this.activeGrantsOf(membershipId).map((grant) => {
+      const ended = endGrant(grant, { reason, by, at });
+      this.putGrant(ended);
+      return ended;
+    });
   }
 
   private activeStint(communityId: string, userId: string): Stint | null {

@@ -6,12 +6,19 @@ const OPEN = { status: 'OPEN' };
 const LOCKED = { status: 'LOCKED' };
 const FUTURE = { status: 'ARCHIVED' }; // a status this build does not know
 
-const ownerStint = { id: 'stint-o', standing: 'OWNER' as const, joinedAt: new Date(1), version: 1 };
+const ownerStint = {
+  id: 'stint-o',
+  standing: 'OWNER' as const,
+  joinedAt: new Date(1),
+  version: 1,
+  grants: [],
+};
 const memberStint = {
   id: 'stint-m',
   standing: 'MEMBER' as const,
   joinedAt: new Date(2),
   version: 2,
+  grants: [],
 };
 
 const both: HeldCeilings = { standing: true, oversight: true };
@@ -186,6 +193,83 @@ describe('decideCommunityAct — the evaluator (§6.5)', () => {
     expect(
       outcome(decide('community.members.invite', oversightOnly, { community: OPEN, stint: null })),
     ).toBe('no_ceiling');
+  });
+
+  describe('the grant basis (P3)', () => {
+    const delegate = (...capabilities: string[]) => ({
+      ...memberStint,
+      grants: capabilities.map((capability, i) => ({
+        id: `grant-${i}`,
+        capability: capability as 'community.lock',
+      })),
+    });
+
+    it('gives a member exactly the capabilities granted, within the ceiling', () => {
+      const read = { community: OPEN, stint: delegate('community.lock', 'community.members.view') };
+      expect(decide('community.lock', standingOnly, read)).toMatchObject({
+        kind: 'permit',
+        basis: 'grant',
+        grantId: 'grant-0',
+        membership: { membershipId: 'stint-m' },
+        ceiling: ['communities.moderate'],
+      });
+      expect(outcome(decide('community.members.view', standingOnly, read))).toBe('permit:grant');
+      // A capability not granted stays refused, naming the act.
+      expect(outcome(decide('community.members.remove', standingOnly, read))).toBe(
+        'communities.capability_required',
+      );
+    });
+
+    it('never counts a grant without its ceiling — dormant, not deleted (R4)', () => {
+      const read = { community: OPEN, stint: delegate('community.lock') };
+      expect(outcome(decide('community.lock', none, read))).toBe('no_ceiling');
+      // With only oversight left, the act is taken on oversight, not the dormant grant.
+      expect(decide('community.lock', oversightOnly, read)).toMatchObject({
+        kind: 'permit',
+        basis: 'oversight',
+        grantId: null,
+        membership: null,
+      });
+    });
+
+    it('backs community.live.host by a grant of community.live.start', () => {
+      const read = { community: OPEN, stint: delegate('community.live.start') };
+      expect(decide('community.live.host', standingOnly, read)).toMatchObject({
+        basis: 'grant',
+        grantId: 'grant-0',
+      });
+      expect(outcome(decide('community.live.moderate', standingOnly, read))).toBe(
+        'communities.capability_required',
+      );
+    });
+
+    it('never gives a participation act — membership alone does', () => {
+      const read = { community: OPEN, stint: delegate('community.chat.post') };
+      expect(decide('community.chat.read', standingOnly, read)).toMatchObject({
+        basis: 'membership',
+        grantId: null,
+      });
+    });
+
+    it('ranks after the owner and before oversight; the lifecycle still applies after it', () => {
+      expect(
+        outcome(
+          decide('community.lock', both, { community: OPEN, stint: delegate('community.lock') }),
+        ),
+      ).toBe('permit:grant');
+      expect(
+        outcome(
+          decide('community.members.invite', standingOnly, {
+            community: LOCKED,
+            stint: delegate('community.members.invite'),
+          }),
+        ),
+      ).toBe('communities.community_locked');
+      // A grant on nobody's stint is no basis: the owner path and the grant path both need a stint.
+      expect(
+        outcome(decide('community.lock', standingOnly, { community: OPEN, stint: null })),
+      ).toBe('communities.community_not_found');
+    });
   });
 
   it('closes every new action on a status it does not know, and ejects nobody', () => {

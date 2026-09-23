@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Put,
   Query,
   Res,
   UseInterceptors,
@@ -28,6 +29,7 @@ import {
   GetCommunityUseCase,
   ListCommunitiesUseCase,
 } from '../application/community.use-cases';
+import { TransferOwnershipUseCase } from '../application/delegation.use-cases';
 import { RedeemInvitationUseCase } from '../application/invitation.use-cases';
 import {
   AddMembersUseCase,
@@ -41,6 +43,7 @@ import {
   ListCommunitiesQuery,
   PageQuery,
   RedeemInvitationDto,
+  TransferOwnershipDto,
 } from './dto/communities.dto';
 import {
   toAddMembersResponse,
@@ -53,7 +56,8 @@ import {
  * /communities — communities, their members, and joining by link.
  *
  * The edge permission is `communities.read` for every route but creation
- * (`communities.create`). It is never the decision: every use case asks
+ * (`communities.create`) and granting or revoking a capability
+ * (`communities.moderate`, on the grants controller). It is never the decision: every use case asks
  * again, with the community in context, through COMMUNITY_AUTHORIZATION —
  * so a route reached without its guard (a job, a handler) is exactly as safe.
  * A non-member is told what anyone is told about a community that does not
@@ -72,6 +76,7 @@ export class CommunitiesController {
     private readonly removeMember: RemoveMemberUseCase,
     private readonly leaveCommunity: LeaveCommunityUseCase,
     private readonly redeemInvitation: RedeemInvitationUseCase,
+    private readonly transferOwnership: TransferOwnershipUseCase,
   ) {}
 
   @Get()
@@ -216,6 +221,27 @@ export class CommunitiesController {
     @RequestMetadata() meta: CallMetadata,
   ): Promise<void> {
     unwrap(await this.removeMember.execute({ principal, communityId, userId, meta }));
+  }
+
+  /**
+   * Hands ownership to a member: by the owner, or through oversight naming
+   * someone other than themself. 200 with the community as the caller now
+   * stands in it; naming the current owner changes nothing and is 200 too.
+   */
+  @Put(':communityId/owner')
+  @RequirePermission(Permissions.communities.read)
+  @HttpCode(HttpStatus.OK)
+  async transfer(
+    @CurrentPrincipal() principal: Principal,
+    @Param('communityId') communityId: string,
+    @Body() dto: TransferOwnershipDto,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toCommunityResponse(
+      unwrap(
+        await this.transferOwnership.execute({ principal, communityId, userId: dto.userId, meta }),
+      ),
+    );
   }
 
   @Post(':communityId/leave')

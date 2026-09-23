@@ -222,6 +222,8 @@ events are grandfathered). Since Phase 0 that includes live's events
 | `communities.member.added` | communities — a manager's add (`source: ADDED`) or a link redemption (`INVITATION`), with its `membershipVersion` | Messaging's projection wake-up (P4), realtime relay (P5); none subscribed yet |
 | `communities.member.removed` | communities — a leave (`reason: LEFT`) or a removal (`REMOVED`); class **S** | Live ejection (P6), Messaging wake-up (P4), realtime relay (P5); none subscribed yet |
 | `communities.invitation.created` · `.revoked` | communities | none; never on any wire — revocation takes effect inside redemption |
+| `communities.capability.granted` · `.revoked` | communities — one per grant row the owner created, or revoked; a grant that ends with its stint is implied by `member.removed` | realtime relay (P5), Live re-evaluates a holder in a running session (P6); none subscribed yet |
+| `communities.ownership.transferred` | communities — with `basis` (`owner` \| `oversight`) and the new owner's `endedGrantIds` | realtime relay (P5); none subscribed yet |
 
 The `live.speaker.*`, `identity.*`, `messaging.*`, `notifications.*`,
 `academic.*` and `communities.*` events are raised by implemented code today; messaging's have two real subscribers,

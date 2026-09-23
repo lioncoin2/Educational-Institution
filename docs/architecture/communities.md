@@ -36,9 +36,9 @@ decides it. Nothing here decides an institutional policy.
 > `COMMUNITY_MEMBERSHIP` (all five reads), `COMMUNITY_DIRECTORY`, every
 > transaction in the [§4](#the-global-lock-order) lock order behind the
 > per-community admission mutex, one deadlock retry, and 503 `unavailable`
-> for a store or directory outage. Not yet, by phase: the grant basis,
-> `COMMUNITY_CAPABILITY_HOLDERS`, grants and transfer (P3);
-> `COMMUNITY_CHAT_READ_CEILING` (P4); `permittedAmong` and
+> for a store or directory outage. Left for later phases: the grant basis,
+> `COMMUNITY_CAPABILITY_HOLDERS`, grants and transfer (P3, landed since —
+> below); `COMMUNITY_CHAT_READ_CEILING` (P4); `permittedAmong` and
 > `community.live.remain` (P6). No consumer uses the contracts yet.
 >
 > Choices the design left to implementation, all technical rather than
@@ -88,6 +88,86 @@ decides it. Nothing here decides an institutional policy.
 > 900,000 stint rows, 30,000 and 100,000 members, `EXPLAIN` of the statements
 > actually sent), `communities-migrations.spec.ts`, the application and API
 > suites, and `test/architecture/communities-boundaries.spec.ts`.
+
+> **P3 landed (2026-09-23).** Delegation is implemented: migration
+> `0011_communities_grants` ([§5.5](#55-migrations)); the grant basis of
+> [§6.5](#65-the-evaluator), re-verified under lock; grant, revoke and list
+> grants (`/communities/:communityId/grants`) and `PUT
+> /communities/:communityId/owner` ([§12](#12-api)); R1–R7 of
+> [§6.8](#68-delegation-and-the-no-escalation-rule-p3); transfer as in
+> [§6.9](#69-transfer); grants ended with their stint (`membership_ended`) or
+> when their holder becomes owner (`ownership_changed`), and dormant while
+> their holder lacks the ceiling ([§6.10](#610-how-grants-end-and-dormancy));
+> the link-creator re-check's grant lookup ([§7.3](#73-redemption));
+> `COMMUNITY_CAPABILITY_HOLDERS` ([§10](#10-public-contracts)); and the three
+> events and audit actions of [§11](#11-events-and-audit). The module exports
+> four contract tokens. Still no consumer uses them.
+>
+> Choices the design left to implementation, all technical rather than
+> policy unless marked:
+>
+> - The owner's own operations are evaluated apart from the act rules, by
+>   `decideOwnerOperation` over two constants: `MANAGE_GRANTS` (grant,
+>   revoke, see every grant) and `TRANSFER_OWNERSHIP`. Both need
+>   `communities.moderate`; only a transfer is reachable by oversight
+>   (`communities.manage`). They are not acts, so no grant can reach them
+>   (no sub-delegation, R1). **PROVISIONAL (Q46):** no lifecycle status
+>   closes them — granting, revoking and transferring are management, and
+>   continue while LOCKED.
+> - R1 is checked before R3. [S4](#s4--delegate-a-capability-p3) asks the
+>   account directory about the grantee (step 5) before the transaction
+>   learns whether the caller is the owner (step 7); here the owner is
+>   established first, with the evaluator's one read, so only the owner can
+>   learn from a 422 whether an account is eligible. The transaction re-checks
+>   both under lock.
+> - Codes the design did not name: 403 `communities.member_holds_more_capabilities`
+>   (R6 — deliberately without detail, since which capabilities a member holds
+>   is the owner's to see, Q45); 422 `communities.capabilities_invalid` (for
+>   callers that bypass the DTO); 429 `communities.too_many_grants`, at 60 grant
+>   requests per 10 minutes per person (PROVISIONAL, [Q26](open-questions.md#q26--realtime-limits)).
+> - A grant request answers 201 when any grant was created and 200 when the
+>   member already held every one named, as member adds do; [§12](#12-api)
+>   says so.
+> - The grant list refuses overseers and non-members with 404: [§6.6](#66-which-act-each-communities-operation-asks)
+>   admits the owner and holders only. A non-owner's `userId` filter naming
+>   someone else returns an empty page. Dormancy costs one
+>   `ACCOUNT_DIRECTORY.withPermission` call per ceiling permission per page.
+> - Transfer: a target that is not an ACTIVE member when first read is 422
+>   `communities.owner_ineligible`; if the owner changed, or the target left
+>   or was removed, while the transfer waited for its locks, it is 409
+>   `communities.owner_conflict`. Transfers serialize on the two stint rows;
+>   the one-owner index stays the backstop, and a violation of it would be a
+>   fault (500), never a 409.
+> - Step 4 of [the lock order](#the-global-lock-order), precisely: a
+>   delegate's act locks all of the delegate's ACTIVE grants `FOR SHARE` (at
+>   most seven — R6 compares against all of them); a stint's end locks its
+>   grants `FOR UPDATE` before the community row. A grant batch inserts in the
+>   vocabulary's order, so two batches naming the same capabilities in
+>   different orders cannot wait on each other's rows.
+> - Every stint lock returns the row as locked, and every decision about a
+>   stint is made on that row. The P3 concurrency suite found a removal (and
+>   likewise a leave) deciding on a row read before its lock: when a transfer
+>   made the target the owner in between, the removal ended the owner's stint
+>   and violated `community_members_owner_active` (a 500). Fixed before landing.
+> - A removal's and a leave's audit entry lists the grants that ended with the
+>   stint (`endedGrantIds`); they have no event of their own
+>   ([§6.10](#610-how-grants-end-and-dormancy)).
+> - "My communities" is still one statement: each row carries its stint's
+>   ACTIVE grants, aggregated over the ACTIVE-only unique grant index, for the
+>   `me` block.
+> - `COMMUNITY_CAPABILITY_HOLDERS` reads candidates in user-id order — the
+>   owner through `community_members_owner_unique`, grantees through
+>   `communities_capability_grants_active_by_community` — then keeps those
+>   holding every permission of the capability's ceiling. Its cursor follows
+>   the candidates, so a page may be short, even empty.
+>
+> Evidence: `domain/delegation.spec.ts`, `grant.spec.ts` and the grant rows
+> of `authority.spec.ts`; `application/delegation.spec.ts`; the P3 cases of
+> the contract suite, run on both adapters; the grant constraints and seven
+> delegation races of `communities-postgres.spec.ts` (under
+> `statement_timeout`, deadlock retries asserted zero); the delegate's
+> authorization, holders and grant-list `EXPLAIN`s beside 20,000 ended grants
+> in `communities-scale.spec.ts`; the 0011 upgrade test; and the API suite.
 
 ---
 
@@ -770,9 +850,11 @@ there is no recovery path
 
 ### 6.8 Delegation, and the no-escalation rule (P3)
 
-Pure domain functions (`mayDelegate`, `mayGrant`, `mayRemove`, `mayTransfer`),
-the analogue of identity's `canGrantRole` (`identity/domain/administration.ts:17-37`),
-reimplemented because that file is identity-internal.
+Pure domain functions in `communities/domain/delegation.ts`
+(`decideOwnerOperation`, `ceilingOf`, `mayGrant`, `effectiveCapabilities`,
+`mayRemove`, `mayTransfer`), the analogue of identity's `canGrantRole`
+(`identity/domain/administration.ts:17-37`), reimplemented because that file
+is identity-internal.
 
 | Rule | Statement | Enforced by |
 | --- | --- | --- |
@@ -1480,7 +1562,7 @@ unwrap Results; no business logic.
 | `POST /communities/:communityId/invitations/:invitationId/revoke` | `members.invite`, or oversight | 200 `InvitationResponse` (idempotent) | 404 `communities.invitation_not_found` |
 | `POST /communities/join {token}` | `communities.read` + `mayJoinByInvitation` | 201 `CommunityResponse` when joined, 200 when already a member | 404 `communities.invitation_invalid`; 412 `communities.invitation_revoked` / `_expired` / `_exhausted` / `community_locked`; 403 `communities.rejoin_requires_manager`; 429 `communities.too_many_attempts` |
 | `GET /communities/:communityId/grants?userId&capability&cursor&limit` (P3) | owner: all; holder: own | 200 `{items: [{grantId, userId, capability, grantedAt, grantedBy, dormant}], nextCursor}` | 404 |
-| `POST /communities/:communityId/grants {userId, capabilities[1..7]}` (P3) | owner (R1–R3) | 201 `{created, unchanged}` | 403 `communities.not_community_owner`, 403 `identity.permission_denied`, 422 `communities.grantee_ineligible`, 404 |
+| `POST /communities/:communityId/grants {userId, capabilities[1..7]}` (P3) | owner (R1–R3) | 201 `{created, unchanged}` when any grant was created; 200 when all were already held | 403 `communities.not_community_owner`, 403 `identity.permission_denied`, 422 `communities.grantee_ineligible`, 404 |
 | `DELETE /communities/:communityId/grants/:grantId` (P3) | owner | 204 (idempotent) | 404 `communities.grant_not_found` |
 | `PUT /communities/:communityId/owner {userId}` (P3) | owner, or `communities.manage` | 200 `CommunityResponse` | 409 `communities.owner_conflict`, 422 `communities.owner_ineligible`, 403 `communities.owner_self_assignment` |
 
@@ -1979,7 +2061,7 @@ backend/src/modules/communities/
   domain/                        community.ts, membership.ts (stints), invitation.ts, grant.ts,
                                  lifecycle.ts (statePermits, LifecycleEffects),
                                  act-rules.ts (PROVISIONAL), authority.ts (decideCommunityAct),
-                                 delegation.ts (mayDelegate, mayGrant, mayRemove, mayTransfer),
+                                 delegation.ts (decideOwnerOperation, mayGrant, mayRemove, mayTransfer, …),
                                  events.ts (factories importing ../contracts/events), ports.ts, text.ts
   application/                   community-authorization.service.ts, community-membership.service.ts,
                                  community-directory.service.ts, capability-holders.service.ts,

@@ -50,12 +50,18 @@ describe('communities boundaries', () => {
     for (const file of [
       'src/modules/communities/domain/authority.ts',
       'src/modules/communities/domain/lifecycle.ts',
+      'src/modules/communities/domain/delegation.ts',
+      'src/modules/communities/domain/grant.ts',
       'src/modules/communities/application/community-authorization.service.ts',
       'src/modules/communities/application/invitation.use-cases.ts',
+      'src/modules/communities/application/delegation.use-cases.ts',
+      'src/modules/communities/application/capability-holders.service.ts',
       'src/modules/communities/infrastructure/drizzle-community-repository.ts',
       'src/modules/communities/infrastructure/in-memory-community-store.ts',
       'src/modules/communities/api/communities.controller.ts',
+      'src/modules/communities/api/community-grants.controller.ts',
       'src/modules/communities/contracts/authorization.ts',
+      'src/modules/communities/contracts/capability-holders.ts',
       SCHEMA,
       MODULE_FILE,
     ]) {

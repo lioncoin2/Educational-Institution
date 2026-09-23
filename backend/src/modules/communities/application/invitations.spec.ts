@@ -117,6 +117,7 @@ describe('invitation links', () => {
             communityId: id,
             userId: s2.userId,
             creatorUserId: 'admin-1',
+            creatorCapability: 'community.members.invite',
             stintId: `double-click-${i}`,
             at: h.clock.now(),
           }),

@@ -1,9 +1,13 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 
 import { DATABASE, postgresErrorCode, type Database } from '../../../platform/database';
+import { COMMUNITY_CAPABILITIES, type CommunityCapability } from '../contracts/capabilities';
 import { COMMUNITY_STATUSES, type CommunityStatus } from '../contracts/vocabulary';
+import type { HeldGrant } from '../domain/authority';
 import type { Community } from '../domain/community';
+import { effectiveCapabilities, mayGrant, mayRemove } from '../domain/delegation';
+import { newGrant, type CapabilityGrant, type GrantEndReason } from '../domain/grant';
 import { invitationState, type Invitation } from '../domain/invitation';
 import { effectsOf } from '../domain/lifecycle';
 import { memberStint, type Stint } from '../domain/membership';
@@ -14,22 +18,33 @@ import type {
   CommunityStore,
   Contended,
   CreateInvitationOutcome,
+  GrantOutcome,
   LeaveOutcome,
+  OwnerBasis,
   RedeemOutcome,
   RemoveOutcome,
+  RevokeGrantOutcome,
   RevokeInvitationOutcome,
   StatusChange,
+  TransferOutcome,
 } from '../domain/ports';
 import { KeyedMutex } from './keyed-mutex';
 import {
   communityRow,
+  grantRow,
   invitationRow,
   stintRow,
   toCommunity,
+  toGrant,
   toInvitation,
   toStint,
 } from './row-mapping';
-import { communities, communityInvitations, communityMembers } from './schema';
+import {
+  communities,
+  communityCapabilityGrants,
+  communityInvitations,
+  communityMembers,
+} from './schema';
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
@@ -59,6 +74,20 @@ const iso = (at: Date) => sql`${at.toISOString()}::timestamptz`;
 /** `greatest(column, at)` — a stored instant never moves backwards on a lagging clock. */
 const notBefore = (column: unknown, at: Date) => sql`greatest(${column}, ${iso(at)})`;
 
+/** The capabilities in the vocabulary's own order: every grant batch inserts in it (see `grant`). */
+const CAPABILITY_ORDER = new Map<string, number>(
+  COMMUNITY_CAPABILITIES.map((capability, index) => [capability, index]),
+);
+
+/** A grant's ACTIVE predicate, unqualified — as the partial unique index states it. */
+const GRANT_ACTIVE = sql`ended_at is null`;
+
+interface VerifiedBasis {
+  readonly holds: boolean;
+  /** The actor's ACTIVE grants, locked — for the grant basis only (R6 reads them). */
+  readonly grants: readonly HeldGrant[];
+}
+
 function textArray(values: readonly string[]): SQL {
   return sql`array[${sql.join(
     values.map((value) => sql`${value}`),
@@ -74,14 +103,17 @@ function textArray(values: readonly string[]): SQL {
  *   1 per-pair advisory locks, sorted by computed key and deduplicated
  *   2 the invitation row
  *   3 existing stint rows, in ascending id
+ *   4 grant rows: an actor's, FOR SHARE; those that end with a stint, FOR UPDATE
  *   5 the community row — last: its UPDATE allocates membership versions and
  *     moves member_count, so versions are unique and in commit order
  *   6 new rows
  *
- * (4, grant rows, arrives with delegation in P3.) Every transaction that
- * reaches the community row first passes the per-community admission mutex,
- * before it takes a pool connection. A deadlock victim — which the order
- * should make impossible — retries once, then reports `conflict`.
+ * No transaction takes a row FOR SHARE and later updates it: a stint or a
+ * grant that will change is locked FOR UPDATE first. Grant, revoke and
+ * transfer never reach the community row. Every transaction that reaches it
+ * first passes the per-community admission mutex, before it takes a pool
+ * connection. A deadlock victim — which the order should make impossible —
+ * retries once, then reports `conflict`.
  *
  * Everything runs at READ COMMITTED: a conditional UPDATE re-evaluates its
  * WHERE on the newest row version after waiting, which is what makes the
@@ -110,7 +142,8 @@ export class DrizzleCommunityRepository implements CommunityStore {
     const reads = new Map<string, CommunityAuthorityRead>();
     if (communityIds.length === 0) return reads;
     // One statement on the primary: the communities by id, LEFT JOIN the
-    // user's ACTIVE stint — two unique-index probes per id, whatever the size.
+    // user's ACTIVE stint, LEFT JOIN that stint's ACTIVE grants (at most one
+    // per capability) — unique-index probes per id, whatever the size.
     const rows = await this.db
       .select({
         community: communities,
@@ -118,6 +151,8 @@ export class DrizzleCommunityRepository implements CommunityStore {
         standing: communityMembers.standing,
         joinedAt: communityMembers.joinedAt,
         version: communityMembers.version,
+        grantId: communityCapabilityGrants.id,
+        capability: communityCapabilityGrants.capability,
       })
       .from(communities)
       .leftJoin(
@@ -128,8 +163,22 @@ export class DrizzleCommunityRepository implements CommunityStore {
           eq(communityMembers.status, 'ACTIVE'),
         ),
       )
+      .leftJoin(
+        communityCapabilityGrants,
+        and(
+          eq(communityCapabilityGrants.membershipId, communityMembers.id),
+          isNull(communityCapabilityGrants.endedAt),
+        ),
+      )
       .where(inArray(communities.id, [...new Set(communityIds)]));
+    const grantsOf = new Map<string, HeldGrant[]>();
     for (const row of rows) {
+      const grants = grantsOf.get(row.community.id) ?? [];
+      grantsOf.set(row.community.id, grants);
+      if (row.grantId !== null && row.capability !== null) {
+        grants.push({ id: row.grantId, capability: row.capability });
+      }
+      if (reads.has(row.community.id)) continue;
       reads.set(row.community.id, {
         community: toCommunity(row.community),
         stint:
@@ -143,6 +192,7 @@ export class DrizzleCommunityRepository implements CommunityStore {
                 standing: row.standing,
                 joinedAt: row.joinedAt,
                 version: Number(row.version),
+                grants,
               },
       });
     }
@@ -172,8 +222,8 @@ export class DrizzleCommunityRepository implements CommunityStore {
   }): Promise<StatusChange> {
     const from: CommunityStatus = input.to === 'LOCKED' ? 'OPEN' : 'LOCKED';
     return this.write(input.communityId, async (tx) => {
-      // 3: the actor's basis, re-verified under lock (not on oversight).
-      if (!(await this.holdsBasis(tx, input.communityId, input.actor))) {
+      // 3, 4: the actor's basis, re-verified under lock (not on oversight).
+      if (!(await this.verifyBasis(tx, input.communityId, input.actor)).holds) {
         return { kind: 'basis_lost' };
       }
       // 5: an absolute target, so the conditional UPDATE is the whole race.
@@ -211,8 +261,8 @@ export class DrizzleCommunityRepository implements CommunityStore {
     return this.write(input.communityId, async (tx) => {
       // 1: every (community, person) pair, in computed-key order.
       await this.pairLocks(tx, input.communityId, userIds);
-      // 3: the actor's basis.
-      if (!(await this.holdsBasis(tx, input.communityId, input.actor))) {
+      // 3, 4: the actor's basis.
+      if (!(await this.verifyBasis(tx, input.communityId, input.actor)).holds) {
         return { kind: 'basis_lost' };
       }
       // Who is already in — stable under the pair locks.
@@ -270,30 +320,55 @@ export class DrizzleCommunityRepository implements CommunityStore {
     readonly communityId: string;
     readonly userId: string;
     readonly actor: ActingBasis;
+    readonly removerCeilings: ReadonlySet<CommunityCapability>;
     readonly removedBy: string | null;
     readonly at: Date;
   }): Promise<RemoveOutcome> {
+    const { actor } = input;
     return this.write(input.communityId, async (tx) => {
       await this.pairLocks(tx, input.communityId, [input.userId]);
-      const target = await this.activeStint(tx, input.communityId, input.userId);
-      // 3: the actor's stint FOR SHARE and the target's FOR UPDATE, in ascending id.
+      const found = await this.activeStint(tx, input.communityId, input.userId);
+      // 3: the target's stint FOR UPDATE and the actor's FOR SHARE, in ascending id.
       const locks: { id: string; mode: 'share' | 'update' }[] = [];
-      if (target !== null) locks.push({ id: target.id, mode: 'update' });
-      if (input.actor.kind === 'owner' && input.actor.membershipId !== target?.id) {
-        locks.push({ id: input.actor.membershipId, mode: 'share' });
+      if (found !== null) locks.push({ id: found.id, mode: 'update' });
+      if (actor.kind !== 'oversight' && actor.membershipId !== found?.id) {
+        locks.push({ id: actor.membershipId, mode: 'share' });
       }
-      await this.lockStints(tx, locks);
-      if (!(await this.holdsBasis(tx, input.communityId, input.actor))) {
-        return { kind: 'basis_lost' };
-      }
+      const locked = await this.lockStints(tx, locks);
+      // Decide on the row as it is now: the pair lock kept its status, but a
+      // transfer may have made the target the owner while this waited.
+      const target = found === null ? null : (locked.get(found.id) ?? null);
+      // 4: the target's grants FOR UPDATE — they end with the stint, and R6
+      // reads them — then the actor's basis (a delegate removing themself
+      // already holds these rows FOR UPDATE, so nothing is upgraded).
+      const targetGrants = target === null ? [] : await this.lockGrantsOf(tx, target.id);
+      const basis = await this.verifyBasis(tx, input.communityId, actor);
+      if (!basis.holds) return { kind: 'basis_lost' };
       if (target === null) {
         return (await this.exists(tx, input.communityId))
           ? { kind: 'not_member' }
           : { kind: 'not_found' };
       }
-      if (target.standing === 'OWNER') return { kind: 'owner' };
+      const decision = mayRemove({
+        basis: actor.kind,
+        target,
+        targetGrants: targetGrants.map((grant) => grant.capability),
+        removerEffective: effectiveCapabilities(
+          basis.grants.map((grant) => grant.capability),
+          input.removerCeilings,
+        ),
+      });
+      if (decision === 'owner') return { kind: 'owner' };
+      if (decision === 'holds_more') return { kind: 'holds_more' };
+      const endedGrants = await this.endGrantsOf(
+        tx,
+        target.id,
+        'membership_ended',
+        input.removedBy,
+        input.at,
+      );
       const ended = await this.endStint(tx, target, 'REMOVED', input.removedBy, input.at);
-      return { kind: 'removed', stint: ended };
+      return { kind: 'removed', stint: ended, endedGrants };
     });
   }
 
@@ -304,16 +379,26 @@ export class DrizzleCommunityRepository implements CommunityStore {
   }): Promise<LeaveOutcome> {
     return this.write(input.communityId, async (tx) => {
       await this.pairLocks(tx, input.communityId, [input.userId]);
-      const own = await this.activeStint(tx, input.communityId, input.userId);
-      if (own === null) {
+      const found = await this.activeStint(tx, input.communityId, input.userId);
+      if (found === null) {
         return (await this.exists(tx, input.communityId))
           ? { kind: 'not_member' }
           : { kind: 'not_found' };
       }
-      await this.lockStints(tx, [{ id: own.id, mode: 'update' }]);
+      // 3: as it is once locked — a transfer may have made them the owner meanwhile.
+      const own = (await this.lockStints(tx, [{ id: found.id, mode: 'update' }])).get(found.id);
+      if (own === undefined) throw new Error(`stint ${found.id} vanished under its pair lock`);
       if (own.standing === 'OWNER') return { kind: 'owner' };
+      // 4: every grant on the stint ends with it.
+      const endedGrants = await this.endGrantsOf(
+        tx,
+        own.id,
+        'membership_ended',
+        input.userId,
+        input.at,
+      );
       const ended = await this.endStint(tx, own, 'LEFT', input.userId, input.at);
-      return { kind: 'left', stint: ended };
+      return { kind: 'left', stint: ended, endedGrants };
     });
   }
 
@@ -326,7 +411,7 @@ export class DrizzleCommunityRepository implements CommunityStore {
     return this.retrying(() =>
       this.transact(async (tx) => {
         if (!(await this.exists(tx, invitation.communityId))) return { kind: 'not_found' };
-        if (!(await this.holdsBasis(tx, invitation.communityId, input.actor))) {
+        if (!(await this.verifyBasis(tx, invitation.communityId, input.actor)).holds) {
           return { kind: 'basis_lost' };
         }
         const inserted = await tx
@@ -363,8 +448,8 @@ export class DrizzleCommunityRepository implements CommunityStore {
             ),
           )
           .returning();
-        // 3: the actor's basis; losing it undoes the revocation.
-        if (!(await this.holdsBasis(tx, input.communityId, input.actor))) {
+        // 3, 4: the actor's basis; losing it undoes the revocation.
+        if (!(await this.verifyBasis(tx, input.communityId, input.actor)).holds) {
           throw new Rollback<RevokeInvitationOutcome>({ kind: 'basis_lost' });
         }
         if (row !== undefined) return { kind: 'revoked', invitation: toInvitation(row) };
@@ -405,6 +490,7 @@ export class DrizzleCommunityRepository implements CommunityStore {
     readonly communityId: string;
     readonly userId: string;
     readonly creatorUserId: string;
+    readonly creatorCapability: CommunityCapability;
     readonly stintId: string;
     readonly at: Date;
   }): Promise<RedeemOutcome> {
@@ -463,9 +549,10 @@ export class DrizzleCommunityRepository implements CommunityStore {
         }
       }
 
-      // 3: the creator still stands as owner, under lock (P3 adds the grant lookup).
+      // 3: the creator still stands, under lock: as the owner — or, 4, as the
+      // holder of an ACTIVE grant of the capability a link needs.
       const [creator] = await tx
-        .select({ standing: communityMembers.standing })
+        .select({ id: communityMembers.id, standing: communityMembers.standing })
         .from(communityMembers)
         .where(
           and(
@@ -475,9 +562,22 @@ export class DrizzleCommunityRepository implements CommunityStore {
           ),
         )
         .for('share');
-      if (creator?.standing !== 'OWNER') {
-        throw new Rollback<RedeemOutcome>({ kind: 'creator_lost' });
+      let admits = creator?.standing === 'OWNER';
+      if (!admits && creator !== undefined) {
+        const [grant] = await tx
+          .select({ id: communityCapabilityGrants.id })
+          .from(communityCapabilityGrants)
+          .where(
+            and(
+              eq(communityCapabilityGrants.membershipId, creator.id),
+              eq(communityCapabilityGrants.capability, input.creatorCapability),
+              isNull(communityCapabilityGrants.endedAt),
+            ),
+          )
+          .for('share');
+        admits = grant !== undefined;
       }
+      if (!admits) throw new Rollback<RedeemOutcome>({ kind: 'creator_lost' });
 
       // 5: the lifecycle gate, the counter and the version, in one statement.
       const version = await this.allocate(tx, input.communityId, 1, input.at, true);
@@ -497,6 +597,215 @@ export class DrizzleCommunityRepository implements CommunityStore {
       await tx.insert(communityMembers).values(stintRow(stint));
       return { kind: 'joined', stint };
     });
+  }
+
+  // ── Delegation and ownership (P3) ──────────────────────────────────────
+
+  async grant(input: {
+    readonly communityId: string;
+    readonly owner: OwnerBasis;
+    readonly granteeUserId: string;
+    readonly capabilities: readonly CommunityCapability[];
+    readonly at: Date;
+    readonly newId: () => string;
+  }): Promise<GrantOutcome> {
+    // One order for every batch: two batches naming the same capabilities
+    // for one grantee insert them in the same order, so the second waits on
+    // the first's row instead of each waiting on the other's.
+    const capabilities = [...new Set(input.capabilities)].sort(
+      (a, b) => (CAPABILITY_ORDER.get(a) ?? 0) - (CAPABILITY_ORDER.get(b) ?? 0),
+    );
+    // No community row, no admission: a grant never touches it.
+    return this.retrying(() =>
+      this.transact(async (tx) => {
+        // 3: the owner's and the grantee's ACTIVE stints, FOR SHARE, in ascending id.
+        const stints = await tx
+          .select({
+            id: communityMembers.id,
+            userId: communityMembers.userId,
+            standing: communityMembers.standing,
+          })
+          .from(communityMembers)
+          .where(
+            and(
+              eq(communityMembers.communityId, input.communityId),
+              inArray(communityMembers.userId, [input.owner.userId, input.granteeUserId]),
+              eq(communityMembers.status, 'ACTIVE'),
+            ),
+          )
+          .orderBy(asc(communityMembers.id))
+          .for('share');
+        const owner = stints.find((stint) => stint.userId === input.owner.userId);
+        if (owner?.id !== input.owner.membershipId || owner.standing !== 'OWNER') {
+          return { kind: 'basis_lost' };
+        }
+        const grantee =
+          stints.find((stint) => stint.userId === input.granteeUserId && stint.id !== owner.id) ??
+          null;
+        if (grantee === null || !mayGrant({ grantorUserId: owner.userId, grantee })) {
+          return { kind: 'grantee_ineligible' };
+        }
+        // 6: one row per capability not already held; an identical grant in
+        // flight is waited for on the partial unique index, then skipped (R7).
+        const inserted = await tx
+          .insert(communityCapabilityGrants)
+          .values(
+            capabilities.map((capability) =>
+              grantRow(
+                newGrant({
+                  id: input.newId(),
+                  communityId: input.communityId,
+                  membershipId: grantee.id,
+                  userId: grantee.userId,
+                  capability,
+                  grantedBy: owner.userId,
+                  at: input.at,
+                }),
+              ),
+            ),
+          )
+          .onConflictDoNothing({
+            target: [communityCapabilityGrants.membershipId, communityCapabilityGrants.capability],
+            where: GRANT_ACTIVE,
+          })
+          .returning();
+        const created = inserted.map(toGrant);
+        const createdCapabilities = new Set(created.map((grant) => grant.capability));
+        const held = capabilities.filter((capability) => !createdCapabilities.has(capability));
+        const unchanged =
+          held.length === 0
+            ? []
+            : (
+                await tx
+                  .select()
+                  .from(communityCapabilityGrants)
+                  .where(
+                    and(
+                      eq(communityCapabilityGrants.membershipId, grantee.id),
+                      inArray(communityCapabilityGrants.capability, held),
+                      isNull(communityCapabilityGrants.endedAt),
+                    ),
+                  )
+              ).map(toGrant);
+        return { kind: 'granted', created, unchanged };
+      }),
+    );
+  }
+
+  async revokeGrant(input: {
+    readonly communityId: string;
+    readonly grantId: string;
+    readonly owner: OwnerBasis;
+    readonly at: Date;
+  }): Promise<RevokeGrantOutcome> {
+    return this.retrying(() =>
+      this.transact(async (tx) => {
+        // 3: the owner's standing.
+        if (!(await this.ownerHolds(tx, input.communityId, input.owner))) {
+          return { kind: 'basis_lost' };
+        }
+        // 4: the grant — one-way, and linearized with every act resting on it.
+        const [row] = await tx
+          .update(communityCapabilityGrants)
+          .set({
+            endedAt: notBefore(communityCapabilityGrants.grantedAt, input.at),
+            endedBy: input.owner.userId,
+            endReason: 'revoked',
+          })
+          .where(
+            and(
+              eq(communityCapabilityGrants.id, input.grantId),
+              eq(communityCapabilityGrants.communityId, input.communityId),
+              isNull(communityCapabilityGrants.endedAt),
+            ),
+          )
+          .returning();
+        if (row !== undefined) return { kind: 'revoked', grant: toGrant(row) };
+        const [current] = await tx
+          .select()
+          .from(communityCapabilityGrants)
+          .where(
+            and(
+              eq(communityCapabilityGrants.id, input.grantId),
+              eq(communityCapabilityGrants.communityId, input.communityId),
+            ),
+          );
+        return current === undefined
+          ? { kind: 'not_found' }
+          : { kind: 'unchanged', grant: toGrant(current) };
+      }),
+    );
+  }
+
+  async transfer(input: {
+    readonly communityId: string;
+    readonly toUserId: string;
+    readonly actor: ActingBasis;
+    readonly transferredBy: string | null;
+    readonly at: Date;
+  }): Promise<TransferOutcome> {
+    const { actor } = input;
+    if (actor.kind === 'grant') throw new Error('a grant never transfers ownership');
+    return this.retrying(() =>
+      this.transact(async (tx) => {
+        // Who the owner and the target are now…
+        const [owner] = await tx
+          .select()
+          .from(communityMembers)
+          .where(
+            and(
+              eq(communityMembers.communityId, input.communityId),
+              eq(communityMembers.standing, 'OWNER'),
+            ),
+          );
+        if (owner === undefined) return { kind: 'not_found' };
+        const target = await this.activeStint(tx, input.communityId, input.toUserId);
+        if (target === null) return { kind: 'target_not_member' };
+        if (actor.kind === 'owner' && owner.id !== actor.membershipId) {
+          return { kind: 'owner_conflict' };
+        }
+        if (target.id === owner.id) return { kind: 'unchanged' };
+        // …then 3: both stints FOR UPDATE in ascending id, and re-read. A
+        // transfer or removal that committed while this one waited wins.
+        const locked = await this.lockStints(tx, [
+          { id: owner.id, mode: 'update' },
+          { id: target.id, mode: 'update' },
+        ]);
+        const from = locked.get(owner.id);
+        const to = locked.get(target.id);
+        if (from?.status !== 'ACTIVE' || from.standing !== 'OWNER' || to?.status !== 'ACTIVE') {
+          return { kind: 'owner_conflict' };
+        }
+        // 4: the new owner's grants end — they hold everything now.
+        const endedGrants = await this.endGrantsOf(
+          tx,
+          to.id,
+          'ownership_changed',
+          input.transferredBy,
+          input.at,
+        );
+        // Demote, then promote: the one-owner index cannot be deferred.
+        const [demoted] = await tx
+          .update(communityMembers)
+          .set({ standing: 'MEMBER' })
+          .where(eq(communityMembers.id, from.id))
+          .returning();
+        const [promoted] = await tx
+          .update(communityMembers)
+          .set({ standing: 'OWNER' })
+          .where(eq(communityMembers.id, to.id))
+          .returning();
+        if (demoted === undefined || promoted === undefined) {
+          throw new Error(`stints of ${input.communityId} vanished while locked`);
+        }
+        return {
+          kind: 'transferred',
+          from: toStint(demoted),
+          to: toStint(promoted),
+          endedGrants,
+        };
+      }),
+    );
   }
 
   // ── Transaction plumbing ───────────────────────────────────────────────
@@ -561,32 +870,49 @@ export class DrizzleCommunityRepository implements CommunityStore {
        order by keys.k`);
   }
 
-  /** Step 3: existing stint rows, in ascending id. */
+  /**
+   * Step 3: existing stint rows, in ascending id — each returned as it is once
+   * locked. Anything decided about a stint is decided on this read, never on
+   * one made before the lock: a row read earlier may have changed while this
+   * transaction waited for it.
+   */
   private async lockStints(
     tx: Transaction,
     locks: readonly { readonly id: string; readonly mode: 'share' | 'update' }[],
-  ): Promise<void> {
+  ): Promise<ReadonlyMap<string, Stint>> {
+    const rows = new Map<string, Stint>();
     for (const lock of [...locks].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
-      await tx
-        .select({ id: communityMembers.id })
+      const [row] = await tx
+        .select()
         .from(communityMembers)
         .where(eq(communityMembers.id, lock.id))
         .for(lock.mode);
+      if (row !== undefined) rows.set(row.id, toStint(row));
     }
+    return rows;
   }
 
   /**
-   * An owner's act holds only while the owner's stint is still the ACTIVE
-   * owner stint — read FOR SHARE, so a concurrent change serializes with the
-   * act. Oversight rests on identity's ceiling and locks no stint.
+   * The actor's basis, re-verified under lock (ADR 0017), so a concurrent
+   * change serializes with the act: it commits first, authorized at that
+   * instant, or the act finds its basis gone.
+   *
+   *   owner      the owner's stint, FOR SHARE: still the ACTIVE owner stint
+   *   grant      the delegate's stint, FOR SHARE: still ACTIVE; then 4, every
+   *              ACTIVE grant on it, FOR SHARE: the one the act rests on among
+   *              them (R6 reads the rest)
+   *   oversight  identity's ceiling alone: nothing to lock
    */
-  private async holdsBasis(
+  private async verifyBasis(
     tx: Transaction,
     communityId: string,
     actor: ActingBasis,
-  ): Promise<boolean> {
-    if (actor.kind === 'oversight') return true;
-    const [row] = await tx
+  ): Promise<VerifiedBasis> {
+    if (actor.kind === 'oversight') return { holds: true, grants: [] };
+    if (actor.kind === 'owner') {
+      return { holds: await this.ownerHolds(tx, communityId, actor), grants: [] };
+    }
+    const [stint] = await tx
       .select({ id: communityMembers.id })
       .from(communityMembers)
       .where(
@@ -595,11 +921,93 @@ export class DrizzleCommunityRepository implements CommunityStore {
           eq(communityMembers.communityId, communityId),
           eq(communityMembers.userId, actor.userId),
           eq(communityMembers.status, 'ACTIVE'),
+        ),
+      )
+      .for('share');
+    if (stint === undefined) return { holds: false, grants: [] };
+    const grants = await tx
+      .select({
+        id: communityCapabilityGrants.id,
+        capability: communityCapabilityGrants.capability,
+      })
+      .from(communityCapabilityGrants)
+      .where(
+        and(
+          eq(communityCapabilityGrants.membershipId, actor.membershipId),
+          isNull(communityCapabilityGrants.endedAt),
+        ),
+      )
+      .orderBy(asc(communityCapabilityGrants.id))
+      .for('share');
+    return {
+      holds: grants.some(
+        (grant) => grant.id === actor.grantId && grant.capability === actor.capability,
+      ),
+      grants,
+    };
+  }
+
+  /** The owner's act holds only while the owner's stint is still the ACTIVE owner stint. */
+  private async ownerHolds(
+    tx: Transaction,
+    communityId: string,
+    owner: OwnerBasis,
+  ): Promise<boolean> {
+    const [row] = await tx
+      .select({ id: communityMembers.id })
+      .from(communityMembers)
+      .where(
+        and(
+          eq(communityMembers.id, owner.membershipId),
+          eq(communityMembers.communityId, communityId),
+          eq(communityMembers.userId, owner.userId),
+          eq(communityMembers.status, 'ACTIVE'),
           eq(communityMembers.standing, 'OWNER'),
         ),
       )
       .for('share');
     return row !== undefined;
+  }
+
+  /** Step 4: a stint's ACTIVE grants, FOR UPDATE in ascending id — they are about to end. */
+  private async lockGrantsOf(tx: Transaction, membershipId: string): Promise<CapabilityGrant[]> {
+    const rows = await tx
+      .select()
+      .from(communityCapabilityGrants)
+      .where(
+        and(
+          eq(communityCapabilityGrants.membershipId, membershipId),
+          isNull(communityCapabilityGrants.endedAt),
+        ),
+      )
+      .orderBy(asc(communityCapabilityGrants.id))
+      .for('update');
+    return rows.map(toGrant);
+  }
+
+  /** Ends every ACTIVE grant on a stint whose rows this transaction may lock or already holds. */
+  private async endGrantsOf(
+    tx: Transaction,
+    membershipId: string,
+    reason: GrantEndReason,
+    by: string | null,
+    at: Date,
+  ): Promise<CapabilityGrant[]> {
+    const rows = await tx
+      .update(communityCapabilityGrants)
+      .set({
+        endedAt: notBefore(communityCapabilityGrants.grantedAt, at),
+        endedBy: by,
+        endReason: reason,
+      })
+      .where(
+        and(
+          eq(communityCapabilityGrants.membershipId, membershipId),
+          isNull(communityCapabilityGrants.endedAt),
+        ),
+      )
+      .returning();
+    return rows.map(toGrant).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   }
 
   private async activeStint(

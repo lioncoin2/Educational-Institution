@@ -108,8 +108,32 @@ describeWithPostgres('Communities at scale', () => {
       select 'small-m-' || g, 'small-' || g, 'u-many', 'ACTIVE', 'OWNER', 'ADDED', 'u-many',
              now() - make_interval(secs => g), 1
         from generate_series(1, 500) g`);
+    // Delegation in the 30,000: 2,000 members may remove, 1,000 of them also
+    // moderate live sessions — and 20,000 grants of the past, ended, that the
+    // ACTIVE-only grant indexes never carry.
+    await db.execute(sql`
+      insert into communities_capability_grants (id, community_id, membership_id, user_id,
+                                                 capability, granted_by, granted_at)
+      select 'g-remove-' || g, 'c-30k', 'c-30k-m-' || g, md5('c-30k:' || g),
+             'community.members.remove', md5('c-30k:1'), now()
+        from generate_series(2, 2001) g`);
+    await db.execute(sql`
+      insert into communities_capability_grants (id, community_id, membership_id, user_id,
+                                                 capability, granted_by, granted_at)
+      select 'g-live-' || g, 'c-30k', 'c-30k-m-' || g, md5('c-30k:' || g),
+             'community.live.moderate', md5('c-30k:1'), now()
+        from generate_series(2, 1001) g`);
+    await db.execute(sql`
+      insert into communities_capability_grants (id, community_id, membership_id, user_id,
+                                                 capability, granted_by, granted_at, ended_at,
+                                                 ended_by, end_reason)
+      select 'g-ended-' || g, 'c-30k', 'c-30k-m-' || g, md5('c-30k:' || g),
+             'community.lock', md5('c-30k:1'), now() - interval '90 days',
+             now() - interval '30 days', md5('c-30k:1'), 'revoked'
+        from generate_series(2, 20001) g`);
     await db.execute(sql`analyze communities`);
     await db.execute(sql`analyze community_members`);
+    await db.execute(sql`analyze communities_capability_grants`);
 
     store = new DrizzleCommunityRepository(db);
     readModel = new DrizzleCommunityReadModel(db);
@@ -167,6 +191,78 @@ describeWithPostgres('Communities at scale', () => {
                  where community_id = 'c-100k' and status = 'ACTIVE')::int as hundred`)
     ).rows;
     expect(row).toEqual({ stints: 900_530, thirty: 30_000, hundred: 100_000 });
+    expect(
+      (
+        await db.execute(sql`
+          select count(*) filter (where ended_at is null)::int as active,
+                 count(*) filter (where ended_at is not null)::int as ended
+            from communities_capability_grants`)
+      ).rows[0],
+    ).toEqual({ active: 3_000, ended: 20_000 });
+  });
+
+  it('authorizes a delegate with one more probe — on ACTIVE grants only', async () => {
+    // The 500th member: a stint holding two ACTIVE grants and one ended one.
+    const user = await pool.query<{ user_id: string }>(
+      `select user_id from community_members where id = 'c-30k-m-500'`,
+    );
+    const userId = user.rows[0]?.user_id ?? '';
+    const read = await store.authorityOf('c-30k', userId);
+    expect(read.stint?.grants.map((grant) => grant.capability).sort()).toEqual([
+      'community.live.moderate',
+      'community.members.remove',
+    ]);
+    const nodes = await plansOf(() => store.authorityOf('c-30k', userId));
+    expect(seqScans(nodes)).toEqual([]);
+    const probe = nodes.find((node) => node['Relation Name'] === 'communities_capability_grants');
+    expect(probe?.['Index Name']).toBe('communities_capability_grants_active_unique');
+    expect(probe?.['Index Cond']).toMatch(/membership_id/u);
+  });
+
+  it('pages a capability’s holders on the ACTIVE-grant and one-owner indexes', async () => {
+    const [middle] = (
+      await pool.query<{ user_id: string }>(
+        `select user_id from communities_capability_grants
+          where community_id = 'c-30k' and capability = 'community.members.remove'
+          order by user_id offset 1000 limit 1`,
+      )
+    ).rows;
+    for (const afterUserId of [undefined, middle?.user_id]) {
+      const nodes = await plansOf(() =>
+        readModel.holderCandidates('c-30k', 'community.members.remove', {
+          afterUserId,
+          limit: 1001,
+        }),
+      );
+      expect(seqScans(nodes)).toEqual([]);
+      expect(indexes(nodes)).toContain('communities_capability_grants_active_by_community');
+      expect(indexes(nodes)).toContain('community_members_owner_unique');
+    }
+    const first = await readModel.holderCandidates('c-30k', 'community.members.remove', {
+      limit: 5000,
+    });
+    // Every grantee and the owner, once each — and nobody whose grant ended.
+    expect(first).toHaveLength(2001);
+    expect(new Set(first).size).toBe(2001);
+  });
+
+  it('lists the owner’s grant page on the ACTIVE-grant index, from the middle', async () => {
+    const [middle] = (
+      await pool.query<{ user_id: string }>(
+        `select user_id from communities_capability_grants
+          where community_id = 'c-30k' and ended_at is null
+            and capability = 'community.members.remove'
+          order by user_id offset 500 limit 1`,
+      )
+    ).rows;
+    const nodes = await plansOf(() =>
+      readModel.grants('c-30k', {
+        after: { capability: 'community.members.remove', userId: middle?.user_id ?? '' },
+        limit: 201,
+      }),
+    );
+    expect(seqScans(nodes)).toEqual([]);
+    expect(indexes(nodes)).toContain('communities_capability_grants_active_by_community');
   });
 
   it.each([['c-30k'], ['c-100k']])(

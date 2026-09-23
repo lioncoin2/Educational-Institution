@@ -1306,8 +1306,9 @@ audiences.
 > approved on 2026-09-23 and is implemented in phases; Q40 is answered. Each
 > **Built instead** below was written before implementation and reads
 > "nothing", followed by the default the design uses; the phase that builds a
-> default updates its entry. Every such default is PROVISIONAL, belongs to the
-> question it sits under, and is not a decision.
+> default updates its entry (Q41–Q49 name the phase, P2 or P3, that built
+> theirs). Every such default is PROVISIONAL, belongs to the question it sits
+> under, and is not a decision — building it answered nothing.
 >
 > The brief's "group" is the **Community** aggregate here: "group" already
 > means messaging's `GROUP` conversation type, and is used for Tahajji's
@@ -1356,7 +1357,7 @@ provided reconnection stays reliable for legitimate participants.
 spaces of up to 30,000 people, many of them minors, is a safeguarding
 decision, like Q6 for conversations. What a «مجموعة» is remains Q36.
 
-**Built instead.** Nothing — design only
+**Built instead.** Implemented as the default below — P2 (the ceilings, migration 0009)
 ([communities.md §6.2](communities.md#62-identity-ceilings);
 [ADR 0016](decisions/0016-communities-module.md),
 [ADR 0017](decisions/0017-community-scoped-authorization.md)). PROVISIONAL
@@ -1389,7 +1390,7 @@ conversation owner, who can neither be removed nor leave, with no transfer
 (`membership.use-cases.ts:211-219, 297-302`); that was chosen for
 conversations, not for communities.
 
-**Built instead.** Nothing — design only
+**Built instead.** Implemented as the default below — P2 (one owner, who cannot leave or be removed), P3 (transfer)
 ([communities.md §6.7](communities.md#67-the-owner),
 [§6.9](communities.md#69-transfer)). PROVISIONAL default:
 
@@ -1427,7 +1428,7 @@ permission never substitutes for membership, although `messaging.manage` may
 remove members (Q23). Academic's `academic.manage` acts on any halaqa.
 Access to children's rosters is a privacy decision.
 
-**Built instead.** Nothing — design only
+**Built instead.** Implemented as the default below — P2 (view, members, lock, links, removal, the audited reads), P3 (transfer)
 ([communities.md §6.11](communities.md#611-oversight-communitiesmanage);
 [ADR 0017](decisions/0017-community-scoped-authorization.md)). PROVISIONAL
 default: `communities.manage` is held by OWNER and ADMIN. It may view, list
@@ -1459,7 +1460,7 @@ role matrix (Q1).
 and building chains of delegation, are governance and safeguarding choices.
 The brief names only the teacher.
 
-**Built instead.** Nothing — design only
+**Built instead.** Implemented as the default below — P3
 ([communities.md §6.8](communities.md#68-delegation-and-the-no-escalation-rule-p3);
 [ADR 0017](decisions/0017-community-scoped-authorization.md)). PROVISIONAL
 default:
@@ -1497,7 +1498,7 @@ Revealing staff or monitor roles in large groups of minors is a privacy
 decision (Q22). Time-boxed grants are already deferred in
 [authorization.md §10](authorization.md#10-deferred).
 
-**Built instead.** Nothing — design only
+**Built instead.** Implemented as the default below — P3
 ([communities.md §6.10](communities.md#610-how-grants-end-and-dormancy)).
 PROVISIONAL default:
 
@@ -1538,7 +1539,7 @@ grantee ([communities.md §6.14](communities.md#614-not-every-teacher-can-lock-e
 and adds `communities.manage` holders, which the brief does not name; both
 need institutional confirmation.
 
-**Built instead.** Nothing — design only
+**Built instead.** Implemented as the default below — P2 (P3 adds grant, revoke and transfer to management: never closed by LOCKED)
 ([communities.md §8.2](communities.md#82-what-locked-means--provisional);
 [ADR 0016](decisions/0016-communities-module.md)). PROVISIONAL default, as
 one Communities table (`statePermits` plus `LifecycleEffects`):
@@ -1549,7 +1550,7 @@ one Communities table (`statePermits` plus `LifecycleEffects`):
 | Links | suspended: neither consumed nor revoked; valid again after unlock unless expired or revoked; no new links |
 | Chat | no posting; reading continues |
 | Live | no new session; a running session continues, and join, rejoin, raise hand and moderation continue in it |
-| Management | continues: unlock, view members, revoke links, remove members |
+| Management | continues: unlock, view members, revoke links, remove members; and (P3) grant and revoke capabilities, transfer ownership |
 | Who may lock | the owner, a holder of a delegated `community.lock`, or a `communities.manage` holder (beyond brief §5; [Q43](#q43--institutional-oversight-of-communities)) |
 
 The gate never blocks unlocking.
@@ -1568,7 +1569,7 @@ snapshots? Is a community ever deleted?
 **Why not guessed.** Q32 left ARCHIVED undecided for the academic structure
 for the same reason: its meaning is policy.
 
-**Built instead.** Nothing — design only
+**Built instead.** Implemented as the default below — P2
 ([communities.md §8.1](communities.md#81-states);
 [ADR 0016](decisions/0016-communities-module.md)). PROVISIONAL default: no
 ARCHIVED state; LOCKED is the only closed state. A community is never
@@ -1597,7 +1598,7 @@ appetite. Q2 forbids self-registration. Brief §4: a teacher can add members
 through a link; here "teacher" is the owner or a `community.members.invite`
 grantee.
 
-**Built instead.** Nothing — design only
+**Built instead.** Implemented as the default below — P2 (P3 adds the creator's grant lookup)
 ([communities.md §7](communities.md#7-invitation-links);
 [ADR 0016](decisions/0016-communities-module.md)). PROVISIONAL default:
 
@@ -1635,7 +1636,7 @@ their creator's authority removes one check.
 **Why not guessed.** Removal is a moderation act with safeguarding weight.
 Announcing it discloses membership (Q22).
 
-**Built instead.** Nothing — design only
+**Built instead.** Implemented as the default below — P2
 ([communities.md §3.2](communities.md#32-membership-stints)).
 PROVISIONAL default:
 

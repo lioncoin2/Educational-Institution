@@ -1,14 +1,18 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
 
 import { DATABASE, type Database } from '../../../platform/database';
+import type { CommunityCapability } from '../contracts/capabilities';
+import type { HeldGrant } from '../domain/authority';
 import type { Community } from '../domain/community';
+import type { CapabilityGrant } from '../domain/grant';
 import type { Invitation } from '../domain/invitation';
 import type { Stint } from '../domain/membership';
-import type { CommunityReadModel, Keyset, MyCommunity } from '../domain/ports';
-import { toCommunity, toInvitation, toStint } from './row-mapping';
+import type { CommunityReadModel, GrantKey, Keyset, MyCommunity } from '../domain/ports';
+import { toCommunity, toGrant, toInvitation, toStint } from './row-mapping';
 import {
   communities,
+  communityCapabilityGrants,
   communityInvitations,
   communityMembers,
   type CommunityMemberRow,
@@ -32,9 +36,18 @@ export class DrizzleCommunityReadModel implements CommunityReadModel {
     userId: string,
     page: { readonly before?: Keyset; readonly limit: number },
   ): Promise<readonly MyCommunity[]> {
-    // community_members_user_idx (user_id, joined_at, community_id) WHERE ACTIVE, backwards.
+    // community_members_user_idx (user_id, joined_at, community_id) WHERE ACTIVE,
+    // backwards; each stint's ACTIVE grants (at most seven) through
+    // communities_capability_grants_active_unique — still one statement.
     const rows = await this.db
-      .select({ stint: communityMembers, community: communities })
+      .select({
+        stint: communityMembers,
+        community: communities,
+        grants: sql<HeldGrant[]>`coalesce((
+          select json_agg(json_build_object('id', g.id, 'capability', g.capability) order by g.id)
+            from ${communityCapabilityGrants} g
+           where g.membership_id = ${communityMembers.id} and g.ended_at is null), '[]'::json)`,
+      })
       .from(communityMembers)
       .innerJoin(communities, eq(communities.id, communityMembers.communityId))
       .where(
@@ -51,6 +64,7 @@ export class DrizzleCommunityReadModel implements CommunityReadModel {
     return rows.map((row) => ({
       community: toCommunity(row.community),
       stint: toStint(row.stint),
+      grants: row.grants,
     }));
   }
 
@@ -199,6 +213,66 @@ export class DrizzleCommunityReadModel implements CommunityReadModel {
         row.stint === null ? [] : [toStint(fromJsonStint(row.stint))],
       ),
     };
+  }
+
+  async grants(
+    communityId: string,
+    page: {
+      readonly userId?: string;
+      readonly capability?: CommunityCapability;
+      readonly after?: GrantKey;
+      readonly limit: number;
+    },
+  ): Promise<readonly CapabilityGrant[]> {
+    // communities_capability_grants_active_by_community (community_id,
+    // capability, user_id) WHERE ACTIVE — or, for one person, …_active_by_user.
+    const rows = await this.db
+      .select()
+      .from(communityCapabilityGrants)
+      .where(
+        and(
+          eq(communityCapabilityGrants.communityId, communityId),
+          isNull(communityCapabilityGrants.endedAt),
+          page.userId === undefined ? undefined : eq(communityCapabilityGrants.userId, page.userId),
+          page.capability === undefined
+            ? undefined
+            : eq(communityCapabilityGrants.capability, page.capability),
+          page.after === undefined
+            ? undefined
+            : sql`(${communityCapabilityGrants.capability}, ${communityCapabilityGrants.userId}) > (${page.after.capability}, ${page.after.userId})`,
+        ),
+      )
+      .orderBy(asc(communityCapabilityGrants.capability), asc(communityCapabilityGrants.userId))
+      .limit(page.limit);
+    return rows.map(toGrant);
+  }
+
+  async holderCandidates(
+    communityId: string,
+    capability: CommunityCapability,
+    page: { readonly afterUserId?: string; readonly limit: number },
+  ): Promise<readonly string[]> {
+    // Keyset by user id over two bounded branches: the capability's ACTIVE
+    // grantees (…_active_by_community) and the owner (community_members_owner_unique).
+    const after = (column: unknown) =>
+      page.afterUserId === undefined ? sql`` : sql` and ${column} > ${page.afterUserId}`;
+    const result = await this.db.execute<{ readonly user_id: string }>(sql`
+      select h.user_id
+        from ((select g.user_id
+                 from ${communityCapabilityGrants} g
+                where g.community_id = ${communityId}
+                  and g.capability = ${capability}
+                  and g.ended_at is null${after(sql`g.user_id`)}
+                order by g.user_id
+                limit ${page.limit})
+              union
+              (select m.user_id
+                 from ${communityMembers} m
+                where m.community_id = ${communityId}
+                  and m.standing = 'OWNER'${after(sql`m.user_id`)})) as h
+       order by h.user_id
+       limit ${page.limit}`);
+    return result.rows.map((row) => row.user_id);
   }
 
   async memberIds(

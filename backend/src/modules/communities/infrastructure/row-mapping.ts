@@ -1,7 +1,13 @@
 import type { Community } from '../domain/community';
+import type { CapabilityGrant } from '../domain/grant';
 import type { Invitation } from '../domain/invitation';
 import type { Stint } from '../domain/membership';
-import type { CommunityInvitationRow, CommunityMemberRow, CommunityRow } from './schema';
+import type {
+  CommunityGrantRow,
+  CommunityInvitationRow,
+  CommunityMemberRow,
+  CommunityRow,
+} from './schema';
 
 /** Rows to entities and back, field by field — no spreading, so no column leaks. */
 
@@ -98,5 +104,35 @@ export function invitationRow(invitation: Invitation): CommunityInvitationRow {
     uses: invitation.uses,
     revokedAt: invitation.revokedAt,
     revokedBy: invitation.revokedBy,
+  };
+}
+
+export function toGrant(row: CommunityGrantRow): CapabilityGrant {
+  return {
+    id: row.id,
+    communityId: row.communityId,
+    membershipId: row.membershipId,
+    userId: row.userId,
+    capability: row.capability,
+    grantedBy: row.grantedBy,
+    grantedAt: row.grantedAt,
+    endedAt: row.endedAt,
+    endedBy: row.endedBy,
+    endReason: row.endReason,
+  };
+}
+
+export function grantRow(grant: CapabilityGrant): CommunityGrantRow {
+  return {
+    id: grant.id,
+    communityId: grant.communityId,
+    membershipId: grant.membershipId,
+    userId: grant.userId,
+    capability: grant.capability,
+    grantedBy: grant.grantedBy,
+    grantedAt: grant.grantedAt,
+    endedAt: grant.endedAt,
+    endedBy: grant.endedBy,
+    endReason: grant.endReason,
   };
 }

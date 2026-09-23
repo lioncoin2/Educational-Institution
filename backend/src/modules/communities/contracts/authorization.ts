@@ -13,7 +13,7 @@ export const MAX_AUTHORIZE_BATCH = 1000;
  *
  *   membership  a participation act, by an ACTIVE member
  *   owner       a capability the owner holds implicitly
- *   grant       a capability delegated to a member (P3 — never issued before)
+ *   grant       a capability the owner delegated to a member, on that member's stint
  *   oversight   institutional reach without membership (`communities.manage`)
  */
 export type CommunityAuthorityBasis = 'membership' | 'owner' | 'grant' | 'oversight';
@@ -35,7 +35,7 @@ export interface CommunityPermit {
     readonly joinedAt: Date;
     readonly version: number;
   } | null;
-  /** Non-null exactly when the basis is a grant (P3). */
+  /** Non-null exactly when the basis is a grant. */
   readonly grantId: string | null;
   /** The identity permissions required, and held, on the path taken. */
   readonly ceiling: readonly Permission[];

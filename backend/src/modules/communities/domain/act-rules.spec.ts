@@ -152,6 +152,11 @@ describe('the act rules (PROVISIONAL)', () => {
 
   it('backs community.live.host by community.live.start', () => {
     expect(backingCapability('community.live.host')).toBe('community.live.start');
+    // A capability rests on itself; a participation act on none — no grant ever gives one.
+    for (const capability of COMMUNITY_CAPABILITIES) {
+      expect(backingCapability(capability)).toBe(capability);
+    }
+    for (const act of COMMUNITY_PARTICIPATION) expect(backingCapability(act)).toBeNull();
     expect(ACT_RULES['community.live.host'].standingCeiling).toEqual(
       ACT_RULES['community.live.start'].standingCeiling,
     );

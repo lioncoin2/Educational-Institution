@@ -2,7 +2,12 @@ import { MODULE_METADATA } from '@nestjs/common/constants';
 
 import { IdentityModule } from '../identity/identity.module';
 import { CommunitiesModule } from './communities.module';
-import { COMMUNITY_AUTHORIZATION, COMMUNITY_DIRECTORY, COMMUNITY_MEMBERSHIP } from './contracts';
+import {
+  COMMUNITY_AUTHORIZATION,
+  COMMUNITY_CAPABILITY_HOLDERS,
+  COMMUNITY_DIRECTORY,
+  COMMUNITY_MEMBERSHIP,
+} from './contracts';
 
 describe('the Communities module', () => {
   it('imports identity and nothing else — no chat, no live, no attendance', () => {
@@ -11,10 +16,11 @@ describe('the Communities module', () => {
     ]);
   });
 
-  it('exports its three contract tokens and nothing else', () => {
+  it('exports its four contract tokens and nothing else', () => {
     expect(Reflect.getMetadata(MODULE_METADATA.EXPORTS, CommunitiesModule)).toEqual([
       COMMUNITY_AUTHORIZATION,
       COMMUNITY_MEMBERSHIP,
+      COMMUNITY_CAPABILITY_HOLDERS,
       COMMUNITY_DIRECTORY,
     ]);
   });

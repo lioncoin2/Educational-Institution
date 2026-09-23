@@ -9,6 +9,7 @@ import {
   type EventPublisher,
 } from '../../../shared';
 import type { CommunityAct, CommunityPermit } from '../contracts';
+import type { OwnerPermit } from './community-authorization.service';
 import { COMMUNITY_AUDIT_RESOURCE, CommunityAudit } from './communities-settings';
 
 /**
@@ -64,5 +65,14 @@ export function authorityOf(permit: CommunityPermit): Readonly<Record<string, un
     basis: permit.basis,
     membershipId: permit.membership?.membershipId ?? null,
     grantId: permit.grantId,
+  };
+}
+
+/** The same, for one of the owner's own operations (P3): no act and no grant rests on it. */
+export function ownerAuthorityOf(permit: OwnerPermit): Readonly<Record<string, unknown>> {
+  return {
+    operation: permit.operation,
+    basis: permit.basis,
+    membershipId: permit.membership?.membershipId ?? null,
   };
 }

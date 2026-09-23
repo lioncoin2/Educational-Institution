@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 
 import type { Database } from '../../src/platform/database';
+import { COMMUNITY_CAPABILITIES } from '../../src/modules/communities/contracts/capabilities';
 import { DrizzleCommunityReadModel } from '../../src/modules/communities/infrastructure/drizzle-community-read-model';
 import { DrizzleCommunityRepository } from '../../src/modules/communities/infrastructure/drizzle-community-repository';
 import { communityContractSuite } from '../support/communities-contract-suite';
@@ -44,7 +45,9 @@ describeWithPostgres('Communities in Postgres', () => {
   });
 
   const reset = async () => {
-    await db.execute(sql`truncate community_members, community_invitations, communities`);
+    await db.execute(
+      sql`truncate communities_capability_grants, community_members, community_invitations, communities`,
+    );
   };
 
   const postgresHarness = (): CommunitiesHarness =>
@@ -243,13 +246,113 @@ describeWithPostgres('Communities in Postgres', () => {
         select conrelid::regclass::text as source, confrelid::regclass::text as target
           from pg_constraint
          where contype = 'f'
-           and conrelid::regclass::text in ('communities', 'community_members', 'community_invitations')
+           and conrelid::regclass::text in ('communities', 'community_members',
+                                            'community_invitations', 'communities_capability_grants')
          order by 1, 2`);
       expect(keys.rows).toEqual([
+        { source: 'communities_capability_grants', target: 'community_members' },
         { source: 'community_invitations', target: 'communities' },
         { source: 'community_members', target: 'communities' },
         { source: 'community_members', target: 'community_invitations' },
       ]);
+    });
+
+    describe('grants (P3)', () => {
+      let memberStint: string;
+
+      beforeEach(async () => {
+        const admin = h.person('admin-1', ['ADMIN']);
+        h.person('teacher-1', ['TEACHER']);
+        await h.addPeople(admin, communityId, 'teacher-1');
+        memberStint = (await h.store.authorityOf(communityId, 'teacher-1')).stint?.id ?? '';
+      });
+
+      const grantRow = (id: string, fields: string) =>
+        sql.raw(`insert into communities_capability_grants (id, community_id, membership_id,
+                   user_id, capability, granted_by, granted_at, ended_at, ended_by, end_reason)
+                 values ('${id}', ${fields})`);
+
+      it('binds a grant to its stint’s own community and person (the composite key)', async () => {
+        const other = await h.community(h.person('admin-1', ['ADMIN']), 'أخرى');
+        for (const fields of [
+          // the stint of another community
+          `'${other}', '${memberStint}', 'teacher-1', 'community.lock', 'admin-1', now(), null, null, null`,
+          // someone else's stint
+          `'${communityId}', '${memberStint}', 'admin-1', 'community.lock', 'x', now(), null, null, null`,
+          // no stint at all
+          `'${communityId}', 'no-such-stint', 'teacher-1', 'community.lock', 'admin-1', now(), null, null, null`,
+        ]) {
+          expect(await violated(grantRow(`bad-${fields.length}`, fields))).toBe(
+            'communities_capability_grants_stint_fk',
+          );
+        }
+      });
+
+      it('keeps every grant row consistent with itself', async () => {
+        const row = (rest: string) => `'${communityId}', '${memberStint}', 'teacher-1', ${rest}`;
+        const cases: [string, string][] = [
+          [
+            row(`'community.lock', 'teacher-1', now(), null, null, null`),
+            'communities_capability_grants_not_self',
+          ],
+          [
+            row(`'community.attendance.record', 'admin-1', now(), null, null, null`),
+            'communities_capability_grants_capability_valid',
+          ],
+          [
+            row(`'community.lock', 'admin-1', now(), null, 'admin-1', null`),
+            'communities_capability_grants_ended_by_needs_end',
+          ],
+          [
+            row(`'community.lock', 'admin-1', now(), now() - interval '1 second', null, 'revoked'`),
+            'communities_capability_grants_ended_after_granted',
+          ],
+          [
+            row(`'community.lock', 'admin-1', now(), now(), null, 'expired'`),
+            'communities_capability_grants_end_reason_valid',
+          ],
+          [
+            row(`'community.lock', 'admin-1', now(), now(), null, null`),
+            'communities_capability_grants_end_consistent',
+          ],
+          [
+            row(`'community.lock', 'admin-1', now(), null, null, 'revoked'`),
+            'communities_capability_grants_end_consistent',
+          ],
+        ];
+        for (const [fields, constraint] of cases) {
+          expect(await violated(grantRow(`bad-${constraint}-${fields.length}`, fields))).toBe(
+            constraint,
+          );
+        }
+      });
+
+      it('allows one ACTIVE grant per stint and capability — and any number of ended ones', async () => {
+        const fields = (end: string) =>
+          `'${communityId}', '${memberStint}', 'teacher-1', 'community.lock', 'admin-1', now(), ${end}`;
+        await db.execute(grantRow('ended-1', fields(`now(), 'admin-1', 'revoked'`)));
+        await db.execute(grantRow('ended-2', fields(`now(), 'admin-1', 'revoked'`)));
+        await db.execute(grantRow('active-1', fields('null, null, null')));
+        expect(await violated(grantRow('active-2', fields('null, null, null')))).toBe(
+          'communities_capability_grants_active_unique',
+        );
+        // A stint with grants is history: it cannot be deleted from under them.
+        expect(await violated(sql`delete from community_members where id = ${memberStint}`)).toBe(
+          'communities_capability_grants_stint_fk',
+        );
+      });
+
+      it('lists in its capability CHECK exactly the delegable vocabulary', async () => {
+        const [check] = (
+          await db.execute(sql`
+            select pg_get_constraintdef(oid) as definition from pg_constraint
+             where conname = 'communities_capability_grants_capability_valid'`)
+        ).rows as { definition: string }[];
+        const listed = [...(check?.definition ?? '').matchAll(/'([a-z_.]+)'::text/gu)].map(
+          (match) => match[1],
+        );
+        expect(listed).toEqual([...COMMUNITY_CAPABILITIES]);
+      });
     });
   });
 
@@ -302,6 +405,7 @@ describeWithPostgres('Communities in Postgres', () => {
         communityId,
         userId,
         creatorUserId: 'admin-1',
+        creatorCapability: 'community.members.invite',
         stintId: `stint-${userId}-${i}-${Math.random().toString(36).slice(2)}`,
         at: at(),
       });
@@ -473,6 +577,7 @@ describeWithPostgres('Communities in Postgres', () => {
                   communityId,
                   userId: other,
                   actor: owner(),
+                  removerCeilings: new Set(),
                   removedBy: 'admin-1',
                   at: at(),
                 }),
@@ -534,6 +639,7 @@ describeWithPostgres('Communities in Postgres', () => {
                 communityId,
                 userId,
                 actor: owner(),
+                removerCeilings: new Set(),
                 removedBy: 'admin-1',
                 at: at(),
               }),
@@ -567,6 +673,330 @@ describeWithPostgres('Communities in Postgres', () => {
           .map(([userId]) => userId)
           .sort(),
       ).toEqual(active.sort());
+    });
+  });
+
+  describe('delegation races (P3)', () => {
+    let stores: DrizzleCommunityRepository[];
+    let h: CommunitiesHarness;
+    let communityId: string;
+    let ownerStintId: string;
+
+    afterEach(() => {
+      expect(
+        [...stores, h.store as DrizzleCommunityRepository].map((each) => each.deadlockRetries),
+      ).toEqual(new Array(stores.length + 1).fill(0));
+    });
+
+    beforeEach(async () => {
+      await reset();
+      stores = Array.from({ length: 4 }, () => new DrizzleCommunityRepository(db));
+      h = postgresHarness();
+      communityId = await h.community(h.person('admin-1', ['ADMIN']));
+      ownerStintId = (await h.store.authorityOf(communityId, 'admin-1')).stint?.id ?? '';
+    });
+
+    const admin = () => h.person('admin-1', ['ADMIN']);
+    const owner = () => ({ userId: 'admin-1', membershipId: ownerStintId });
+    const store = (i: number) => stores[i % stores.length];
+    const at = () => h.clock.now();
+    const stintOf = async (userId: string) =>
+      (await h.store.authorityOf(communityId, userId)).stint?.id ?? '';
+    const members = async (...userIds: string[]) => {
+      for (const userId of userIds) h.person(userId, ['TEACHER']);
+      await h.addPeople(admin(), communityId, ...userIds);
+    };
+    const delegateOf = async (userId: string, grantId: string) => ({
+      kind: 'grant' as const,
+      userId,
+      membershipId: await stintOf(userId),
+      grantId,
+      capability: 'community.members.remove' as const,
+    });
+
+    /** No ACTIVE grant ever rests on an ended stint; exactly one ACTIVE owner. */
+    const invariants = async () => {
+      expect(
+        await count(sql`select count(*)::int as n
+                          from communities_capability_grants g
+                          join community_members m on m.id = g.membership_id
+                         where g.ended_at is null and m.status <> 'ACTIVE'`),
+      ).toBe(0);
+      expect(
+        await count(sql`select count(*)::int as n from community_members
+                         where community_id = ${communityId} and standing = 'OWNER'
+                           and status = 'ACTIVE'`),
+      ).toBe(1);
+    };
+
+    it('fifty identical grants: one row, one audit entry, one event', async () => {
+      await members('teacher-1');
+      h.journal.clear();
+      const results = await Promise.all(
+        Array.from({ length: 50 }, () =>
+          h.grant.execute({
+            principal: admin(),
+            communityId,
+            userId: 'teacher-1',
+            capabilities: ['community.lock'],
+            meta: META,
+          }),
+        ),
+      );
+      expect(results.filter((r) => r.ok && r.value.anyCreated)).toHaveLength(1);
+      expect(results.filter((r) => r.ok && !r.value.anyCreated)).toHaveLength(49);
+      expect(await count(sql`select count(*)::int as n from communities_capability_grants`)).toBe(
+        1,
+      );
+      expect(h.journal.actions()).toEqual(['communities.capability.granted']);
+      expect(h.journal.eventNames()).toEqual(['communities.capability.granted']);
+    });
+
+    it('overlapping batches named in opposite orders never deadlock, and never double up', async () => {
+      await members('teacher-1');
+      const batches = [
+        ['community.lock', 'community.members.view', 'community.members.remove'],
+        ['community.members.remove', 'community.members.view', 'community.lock'],
+      ] as const;
+      const outcomes = await Promise.all(
+        Array.from({ length: 24 }, (_, i) =>
+          store(i).grant({
+            communityId,
+            owner: owner(),
+            granteeUserId: 'teacher-1',
+            capabilities: batches[i % 2] ?? [],
+            at: at(),
+            newId: () => `grant-${i}-${Math.random().toString(36).slice(2)}`,
+          }),
+        ),
+      );
+      expect(outcomes.every((o) => o.kind === 'granted')).toBe(true);
+      const created = outcomes.flatMap((o) => (o.kind === 'granted' ? o.created : []));
+      expect(created).toHaveLength(3);
+      expect(
+        await count(sql`select count(*)::int as n from communities_capability_grants
+                         where ended_at is null`),
+      ).toBe(3);
+    });
+
+    it('a grant racing the grantee’s removal: refused, or granted and ended with the stint', async () => {
+      const ids = Array.from({ length: 12 }, (_, i) => `grantee-${i}`);
+      await members(...ids);
+      const outcomes = await Promise.all(
+        ids.map(async (userId, i) => {
+          const [granted, removed] = await Promise.all([
+            store(i).grant({
+              communityId,
+              owner: owner(),
+              granteeUserId: userId,
+              capabilities: ['community.lock', 'community.chat.post'],
+              at: at(),
+              newId: () => `g-${userId}-${Math.random().toString(36).slice(2)}`,
+            }),
+            store(i + 1).removeMember({
+              communityId,
+              userId,
+              actor: { kind: 'oversight' },
+              removerCeilings: new Set(),
+              removedBy: 'overseer',
+              at: at(),
+            }),
+          ]);
+          return { granted, removed };
+        }),
+      );
+      for (const { granted, removed } of outcomes) {
+        expect(removed.kind).toBe('removed');
+        if (granted.kind === 'granted' && removed.kind === 'removed') {
+          // Granted first: the removal found the grants and ended them with the stint.
+          expect(removed.endedGrants.map((g) => g.id).sort()).toEqual(
+            granted.created.map((g) => g.id).sort(),
+          );
+        } else {
+          expect(granted).toEqual({ kind: 'grantee_ineligible' });
+        }
+      }
+      await invariants();
+    });
+
+    it('a delegate’s removal racing the revocation of their grant: the act commits first, or is refused', async () => {
+      const targets = Array.from({ length: 10 }, (_, i) => `target-${i}`);
+      await members('delegate', ...targets);
+      for (const [i, target] of targets.entries()) {
+        const [grantId] = await h.delegate(
+          admin(),
+          communityId,
+          'delegate',
+          'community.members.remove',
+        );
+        const actor = await delegateOf('delegate', grantId ?? '');
+        const [removal, revocation] = await Promise.all([
+          store(i).removeMember({
+            communityId,
+            userId: target,
+            actor,
+            removerCeilings: new Set(['community.members.remove']),
+            removedBy: 'delegate',
+            at: at(),
+          }),
+          store(i + 1).revokeGrant({
+            communityId,
+            grantId: grantId ?? '',
+            owner: owner(),
+            at: at(),
+          }),
+        ]);
+        // The revocation always happens; the removal either won the race or found its basis gone.
+        expect(revocation.kind).toBe('revoked');
+        expect(['removed', 'basis_lost']).toContain(removal.kind);
+        const [state] = await h.membership.statesOf(communityId, [target]);
+        expect(state?.active).toBe(removal.kind !== 'removed');
+      }
+      await invariants();
+    });
+
+    it('two delegates removing each other: never both', async () => {
+      for (let round = 0; round < 8; round += 1) {
+        const [a, b] = [`peer-a-${round}`, `peer-b-${round}`];
+        await members(a, b);
+        const [grantA] = await h.delegate(admin(), communityId, a, 'community.members.remove');
+        const [grantB] = await h.delegate(admin(), communityId, b, 'community.members.remove');
+        const ceilings = new Set(['community.members.remove'] as const);
+        const [first, second] = await Promise.all([
+          store(round).removeMember({
+            communityId,
+            userId: b,
+            actor: await delegateOf(a, grantA ?? ''),
+            removerCeilings: ceilings,
+            removedBy: a,
+            at: at(),
+          }),
+          store(round + 1).removeMember({
+            communityId,
+            userId: a,
+            actor: await delegateOf(b, grantB ?? ''),
+            removerCeilings: ceilings,
+            removedBy: b,
+            at: at(),
+          }),
+        ]);
+        expect([first.kind, second.kind].sort()).toEqual(['basis_lost', 'removed']);
+        const states = await h.membership.statesOf(communityId, [a, b]);
+        expect(states.filter((state) => state.active)).toHaveLength(1);
+      }
+      await invariants();
+    });
+
+    it('a transfer racing its target’s removal: one owner, and the loser is told', async () => {
+      const heirs = Array.from({ length: 8 }, (_, round) => `heir-${round}`);
+      await members(...heirs); // while the admin still owns the community
+      const outcomes: string[] = [];
+      for (const [round, target] of heirs.entries()) {
+        const current = (
+          await db.execute(sql`select id, user_id from community_members
+                                where community_id = ${communityId} and standing = 'OWNER'`)
+        ).rows[0] as { id: string; user_id: string };
+        const [moved, removed] = await Promise.all([
+          store(round).transfer({
+            communityId,
+            toUserId: target,
+            actor: { kind: 'owner', userId: current.user_id, membershipId: current.id },
+            transferredBy: current.user_id,
+            at: at(),
+          }),
+          store(round + 1).removeMember({
+            communityId,
+            userId: target,
+            actor: { kind: 'oversight' },
+            removerCeilings: new Set(),
+            removedBy: 'overseer',
+            at: at(),
+          }),
+        ]);
+        outcomes.push(moved.kind);
+        if (moved.kind === 'transferred') {
+          expect(removed).toEqual({ kind: 'owner' });
+        } else {
+          expect(removed.kind).toBe('removed');
+          expect(['owner_conflict', 'target_not_member']).toContain(moved.kind);
+        }
+        await invariants();
+      }
+      // Whichever won each round, the answers were only ever these.
+      expect(
+        outcomes.every((kind) =>
+          ['transferred', 'owner_conflict', 'target_not_member'].includes(kind),
+        ),
+      ).toBe(true);
+    });
+
+    it('two transfers at once: exactly one owner, and the loser gets owner_conflict', async () => {
+      const rounds = Array.from({ length: 8 }, (_, round) => [
+        `candidate-a-${round}`,
+        `candidate-b-${round}`,
+      ]);
+      await members(...rounds.flat()); // while the admin still owns the community
+      for (const [round, [a, b]] of rounds.entries()) {
+        const outcomes = await Promise.all(
+          [a, b].map((toUserId, i) =>
+            store(round + i).transfer({
+              communityId,
+              toUserId,
+              actor: { kind: 'oversight' },
+              transferredBy: 'overseer',
+              at: at(),
+            }),
+          ),
+        );
+        expect(outcomes.map((o) => o.kind).sort()).toEqual(['owner_conflict', 'transferred']);
+        await invariants();
+      }
+    });
+
+    it('pages the holders of a capability exactly once while grants churn around them', async () => {
+      const stable = Array.from({ length: 30 }, (_, i) => `stable-${String(i).padStart(2, '0')}`);
+      const churners = Array.from({ length: 10 }, (_, i) => `churn-${i}`);
+      await members(...stable, ...churners);
+      for (const userId of stable) {
+        await h.delegate(admin(), communityId, userId, 'community.live.moderate');
+      }
+      let churning = true;
+      const churn = (async () => {
+        for (let i = 0; churning; i += 1) {
+          const userId = churners[i % churners.length] ?? '';
+          const outcome = await store(i).grant({
+            communityId,
+            owner: owner(),
+            granteeUserId: userId,
+            capabilities: ['community.live.moderate'],
+            at: at(),
+            newId: () => `churn-${i}-${Math.random().toString(36).slice(2)}`,
+          });
+          if (outcome.kind === 'granted') {
+            for (const grant of outcome.created) {
+              await store(i + 1).revokeGrant({
+                communityId,
+                grantId: grant.id,
+                owner: owner(),
+                at: at(),
+              });
+            }
+          }
+        }
+      })();
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const page: { userIds: readonly string[]; nextCursor: string | null } =
+          await h.holders.list(communityId, 'community.live.moderate', { cursor, limit: 3 });
+        seen.push(...page.userIds);
+        cursor = page.nextCursor;
+      } while (cursor !== null);
+      churning = false;
+      await churn;
+      expect(new Set(seen).size).toBe(seen.length);
+      expect(seen.filter((userId) => !userId.startsWith('churn-'))).toEqual(['admin-1', ...stable]);
+      await invariants();
     });
   });
 
@@ -617,6 +1047,75 @@ describeWithPostgres('Communities in Postgres', () => {
         'communities.member.left',
         'communities.member.removed',
         'communities.community.locked',
+      ]);
+    });
+
+    it('grant, act, go dormant, revoke and transfer end as they do in memory', async () => {
+      await reset();
+      const h = postgresHarness();
+      const admin = h.person('admin-1', ['ADMIN']);
+      const teacher = h.person('teacher-1', ['TEACHER']);
+      h.person('teacher-2', ['TEACHER']);
+      const id = await h.community(admin);
+      await h.addPeople(admin, id, 'teacher-1', 'teacher-2');
+      const [lockGrant] = await h.delegate(admin, id, 'teacher-1', 'community.lock');
+      await h.delegate(admin, id, 'teacher-2', 'community.members.view');
+
+      const locked = await h.status.execute({
+        principal: teacher,
+        communityId: id,
+        to: 'LOCKED',
+        meta: META,
+      });
+      expect(locked).toMatchObject({
+        ok: true,
+        value: { status: 'LOCKED', me: { capabilities: ['community.lock'] } },
+      });
+      const mine = await h.list.execute({ principal: teacher, scope: 'mine', meta: META });
+      expect(mine).toMatchObject({
+        ok: true,
+        value: { items: [{ me: { capabilities: ['community.lock'] } }] },
+      });
+
+      h.accounts.setRoles('teacher-2', ['STUDENT']);
+      const listed = await h.grants.execute({ principal: admin, communityId: id, meta: META });
+      expect(listed.ok && listed.value.items.map((g) => [g.userId, g.dormant])).toEqual([
+        ['teacher-1', false],
+        ['teacher-2', true],
+      ]);
+      await h.revokeGrant.execute({
+        principal: admin,
+        communityId: id,
+        grantId: lockGrant ?? '',
+        meta: META,
+      });
+      const unlocked = await h.status.execute({
+        principal: teacher,
+        communityId: id,
+        to: 'OPEN',
+        meta: META,
+      });
+      expect(unlocked).toMatchObject({
+        ok: false,
+        error: { code: 'communities.capability_required' },
+      });
+
+      const moved = await h.transfer.execute({
+        principal: admin,
+        communityId: id,
+        userId: 'teacher-1',
+        meta: META,
+      });
+      expect(moved).toMatchObject({ ok: true, value: { me: { standing: 'MEMBER' } } });
+      expect(h.journal.actions()).toEqual([
+        'communities.community.created',
+        'communities.member.added',
+        'communities.member.added',
+        'communities.capability.granted',
+        'communities.capability.granted',
+        'communities.community.locked',
+        'communities.capability.revoked',
+        'communities.ownership.transferred',
       ]);
     });
   });

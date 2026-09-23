@@ -23,6 +23,7 @@ import {
   PROVISIONAL_ROLE_PERMISSIONS,
 } from '../../src/modules/identity/domain/provisional-policy';
 import type { KnownRoleCode } from '../../src/modules/identity/domain/role';
+import { CapabilityHoldersService } from '../../src/modules/communities/application/capability-holders.service';
 import { CommunityAuthorizationService } from '../../src/modules/communities/application/community-authorization.service';
 import { CommunityDirectoryService } from '../../src/modules/communities/application/community-directory.service';
 import { CommunityMembershipService } from '../../src/modules/communities/application/community-membership.service';
@@ -35,6 +36,12 @@ import {
 } from '../../src/modules/communities/application/community.use-cases';
 import { CommunitiesJournal } from '../../src/modules/communities/application/communities-journal';
 import {
+  GrantCapabilitiesUseCase,
+  ListGrantsUseCase,
+  RevokeGrantUseCase,
+  TransferOwnershipUseCase,
+} from '../../src/modules/communities/application/delegation.use-cases';
+import {
   CreateInvitationUseCase,
   ListInvitationsUseCase,
   RedeemInvitationUseCase,
@@ -46,6 +53,7 @@ import {
   ListMembersUseCase,
   RemoveMemberUseCase,
 } from '../../src/modules/communities/application/membership.use-cases';
+import type { CommunityCapability } from '../../src/modules/communities/contracts/capabilities';
 import type {
   CommunityReadModel,
   CommunityStore,
@@ -194,6 +202,7 @@ export function communitiesHarness(
     limiter,
     authorization,
     membership: new CommunityMembershipService(readModel),
+    holders: new CapabilityHoldersService(readModel, people),
     directory: new CommunityDirectoryService(readModel),
     create: new CreateCommunityUseCase(
       identity,
@@ -248,6 +257,18 @@ export function communitiesHarness(
       ids,
       communitiesJournal,
     ),
+    grant: new GrantCapabilitiesUseCase(
+      authorization,
+      people,
+      store,
+      limiter,
+      clock,
+      ids,
+      communitiesJournal,
+    ),
+    revokeGrant: new RevokeGrantUseCase(authorization, store, clock, communitiesJournal),
+    grants: new ListGrantsUseCase(authorization, people, readModel),
+    transfer: new TransferOwnershipUseCase(authorization, people, store, clock, communitiesJournal),
 
     /** A signed-in person with these roles, known to the directory. */
     person(userId: string, roles: readonly KnownRoleCode[]): Principal {
@@ -271,6 +292,30 @@ export function communitiesHarness(
     async addPeople(owner: Principal, communityId: string, ...userIds: string[]): Promise<void> {
       const added = await h.add.execute({ principal: owner, communityId, userIds, meta: META });
       if (!added.ok) throw new Error(`could not add members: ${added.error.code}`);
+    },
+
+    /**
+     * Grants capabilities through the use case, as the owner; the ids of the
+     * grants the member now holds for them, in the order named.
+     */
+    async delegate(
+      owner: Principal,
+      communityId: string,
+      userId: string,
+      ...capabilities: CommunityCapability[]
+    ): Promise<string[]> {
+      const granted = await h.grant.execute({
+        principal: owner,
+        communityId,
+        userId,
+        capabilities,
+        meta: META,
+      });
+      if (!granted.ok) throw new Error(`could not grant: ${granted.error.code}`);
+      const held = [...granted.value.view.created, ...granted.value.view.unchanged];
+      return capabilities.map(
+        (capability) => held.find((grant) => grant.capability === capability)?.grantId ?? '',
+      );
     },
 
     /** A link's token, created by `owner`. */

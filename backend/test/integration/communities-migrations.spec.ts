@@ -104,3 +104,61 @@ describeWithPostgres('migration 0010 on a database already in use', () => {
     expect(await column(sql`select count(*)::text from community_members`)).toEqual(['0']);
   });
 });
+
+describeWithPostgres('migration 0011 on a database already in use', () => {
+  let scratch: ScratchDatabase;
+
+  beforeAll(async () => {
+    scratch = await scratchDatabase({ upTo: 11 });
+  }, 60_000);
+
+  afterAll(async () => {
+    await scratch?.drop();
+  });
+
+  const column = async (query: ReturnType<typeof sql>) =>
+    (await scratch.db.execute(query)).rows.map((row) => Object.values(row)[0] as string);
+
+  it('adds exactly the grants table, empty, and leaves every community as it was', async () => {
+    const tables = () =>
+      column(sql`select tablename from pg_tables where schemaname = 'public' order by 1`);
+    const stints = () =>
+      column(sql`select id || ':' || status || ':' || standing || ':' || version
+                   from community_members order by 1`);
+    await scratch.db.execute(sql`
+      insert into communities (id, title, status, membership_version, member_count,
+                               created_by, created_at, updated_at)
+      values ('c-kept', 'باقية', 'LOCKED', 2, 2, 'u-owner', now(), now())`);
+    await scratch.db.execute(sql`
+      insert into community_members (id, community_id, user_id, status, standing, source,
+                                     added_by, joined_at, version)
+      values ('m-owner', 'c-kept', 'u-owner', 'ACTIVE', 'OWNER', 'ADDED', 'u-owner', now(), 1),
+             ('m-member', 'c-kept', 'u-member', 'ACTIVE', 'MEMBER', 'ADDED', 'u-owner', now(), 2)`);
+    const tablesBefore = await tables();
+    const stintsBefore = await stints();
+
+    // Up to and including 0011.
+    await migrateTo(scratch.db, 12);
+
+    const tablesAfter = await tables();
+    expect(tablesAfter.filter((table) => !tablesBefore.includes(table))).toEqual([
+      'communities_capability_grants',
+    ]);
+    expect(tablesBefore.filter((table) => !tablesAfter.includes(table))).toEqual([]);
+    expect(await stints()).toEqual(stintsBefore);
+    expect(
+      await column(sql`select status || ':' || member_count from communities where id = 'c-kept'`),
+    ).toEqual(['LOCKED:2']);
+    expect(await column(sql`select count(*)::text from communities_capability_grants`)).toEqual([
+      '0',
+    ]);
+    // Existing stints can take grants at once: the composite key's target came with 0010.
+    await scratch.db.execute(sql`
+      insert into communities_capability_grants (id, community_id, membership_id, user_id,
+                                                 capability, granted_by, granted_at)
+      values ('g-1', 'c-kept', 'm-member', 'u-member', 'community.lock', 'u-owner', now())`);
+    expect(await column(sql`select capability from communities_capability_grants`)).toEqual([
+      'community.lock',
+    ]);
+  });
+});

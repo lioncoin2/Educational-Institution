@@ -82,6 +82,7 @@ describe('route authorization', () => {
       'modules/academic/api/relationships.controller.ts#AcademicRelationshipsController',
       'modules/academic/api/structure.controller.ts#AcademicStructureController',
       'modules/communities/api/communities.controller.ts#CommunitiesController',
+      'modules/communities/api/community-grants.controller.ts#CommunityGrantsController',
       'modules/communities/api/community-invitations.controller.ts#CommunityInvitationsController',
       'modules/files/api/uploads.controller.ts#UploadsController',
       'modules/files/infrastructure/local-transfer.controller.ts#LocalTransferController',
@@ -205,14 +206,17 @@ describe('route authorization', () => {
   });
 
   // Every communities route declares communities.read at the edge, except
-  // creation (communities.create); none is public or merely authenticated.
-  // The edge is never the decision: every use case asks COMMUNITY_AUTHORIZATION
-  // again with the community in context.
+  // creation (communities.create) and granting or revoking a capability
+  // (communities.moderate, the ceiling of every delegable capability); none is
+  // public or merely authenticated. The edge is never the decision: every use
+  // case asks again with the community in context.
   it('holds every communities route to its edge permission', () => {
     const communities = Object.fromEntries(
       routes
         .filter((route) =>
-          /^(CommunitiesController|CommunityInvitationsController)\./.test(route.name),
+          /^(CommunitiesController|CommunityInvitationsController|CommunityGrantsController)\./.test(
+            route.name,
+          ),
         )
         .map((route) => [route.name, route.permission]),
     );
@@ -228,9 +232,13 @@ describe('route authorization', () => {
       'CommunitiesController.add': read,
       'CommunitiesController.remove': read,
       'CommunitiesController.leave': read,
+      'CommunitiesController.transfer': read,
       'CommunityInvitationsController.create': read,
       'CommunityInvitationsController.list': read,
       'CommunityInvitationsController.revoke': read,
+      'CommunityGrantsController.list': read,
+      'CommunityGrantsController.grant': 'communities.moderate',
+      'CommunityGrantsController.revoke': 'communities.moderate',
     });
   });
 

@@ -3,6 +3,8 @@ import type { InvitationState, MembershipStanding } from '../contracts/vocabular
 import type {
   AddMembersView,
   CommunityView,
+  GrantCapabilitiesView,
+  GrantView,
   InvitationView,
   MemberView,
   PageView,
@@ -91,6 +93,36 @@ export function toAddMembersResponse(view: AddMembersView): {
   readonly unchanged: readonly string[];
 } {
   return { added: view.added, unchanged: view.unchanged };
+}
+
+export interface GrantResponse {
+  readonly grantId: string;
+  readonly userId: string;
+  readonly capability: CommunityCapability;
+  readonly grantedAt: string;
+  readonly grantedBy: string;
+  readonly dormant: boolean;
+}
+
+export function toGrantResponse(view: GrantView): GrantResponse {
+  return {
+    grantId: view.grantId,
+    userId: view.userId,
+    capability: view.capability,
+    grantedAt: view.grantedAt.toISOString(),
+    grantedBy: view.grantedBy,
+    dormant: view.dormant,
+  };
+}
+
+export function toGrantCapabilitiesResponse(view: GrantCapabilitiesView): {
+  readonly created: readonly GrantResponse[];
+  readonly unchanged: readonly GrantResponse[];
+} {
+  return {
+    created: view.created.map(toGrantResponse),
+    unchanged: view.unchanged.map(toGrantResponse),
+  };
 }
 
 export function toPageResponse<T, R>(

@@ -1,4 +1,5 @@
 import type { DomainEvent } from '../../../shared/domain-event';
+import type { CommunityCapability } from './capabilities';
 
 /**
  * Facts Communities publishes — after the database has them, and never for a
@@ -22,6 +23,9 @@ export const CommunityEvents = {
   memberRemoved: 'communities.member.removed',
   invitationCreated: 'communities.invitation.created',
   invitationRevoked: 'communities.invitation.revoked',
+  capabilityGranted: 'communities.capability.granted',
+  capabilityRevoked: 'communities.capability.revoked',
+  ownershipTransferred: 'communities.ownership.transferred',
 } as const;
 
 /** Always followed by `member.added` for the owner. */
@@ -89,6 +93,57 @@ export type InvitationRevoked = DomainEvent<
   { readonly communityId: string; readonly invitationId: string; readonly revokedBy: string | null }
 >;
 
+/**
+ * The owner gave a member one capability. One event per grant row; a repeat
+ * that found the grant already held publishes nothing. Only the holder is
+ * told (P5): nothing is announced to members (Q45).
+ */
+export type CapabilityGranted = DomainEvent<
+  typeof CommunityEvents.capabilityGranted,
+  {
+    readonly communityId: string;
+    readonly grantId: string;
+    readonly membershipId: string;
+    readonly userId: string;
+    readonly capability: CommunityCapability;
+    readonly grantedBy: string;
+  }
+>;
+
+/**
+ * The owner took a capability back. Only for revocations: a grant that ends
+ * with its stint is implied by `member.removed`, and one that ends because
+ * its holder became owner is listed in `ownership.transferred`.
+ */
+export type CapabilityRevoked = DomainEvent<
+  typeof CommunityEvents.capabilityRevoked,
+  {
+    readonly communityId: string;
+    readonly grantId: string;
+    readonly membershipId: string;
+    readonly userId: string;
+    readonly capability: CommunityCapability;
+    readonly revokedBy: string;
+  }
+>;
+
+/**
+ * Ownership moved, by the owner or through oversight. `endedGrantIds` are the
+ * new owner's own grants, ended because the owner holds everything: at most
+ * one per delegable capability.
+ */
+export type OwnershipTransferred = DomainEvent<
+  typeof CommunityEvents.ownershipTransferred,
+  {
+    readonly communityId: string;
+    readonly fromUserId: string;
+    readonly toUserId: string;
+    readonly transferredBy: string | null;
+    readonly basis: 'owner' | 'oversight';
+    readonly endedGrantIds: readonly string[];
+  }
+>;
+
 export type CommunityEvent =
   | CommunityCreated
   | CommunityLocked
@@ -96,4 +151,7 @@ export type CommunityEvent =
   | MemberAdded
   | MemberRemoved
   | InvitationCreated
-  | InvitationRevoked;
+  | InvitationRevoked
+  | CapabilityGranted
+  | CapabilityRevoked
+  | OwnershipTransferred;

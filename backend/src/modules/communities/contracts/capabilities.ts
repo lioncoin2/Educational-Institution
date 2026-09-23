@@ -16,7 +16,7 @@ export const COMMUNITY_RESOURCE = 'communities.community';
 
 /**
  * Capabilities: the acts an owner holds implicitly (within their ceilings)
- * and — from P3 — may delegate to a member one at a time.
+ * and may delegate to a member, one grant per capability.
  *
  * Reserved, and added only with the migration that allows them:
  * `community.attendance.record` and `community.attendance.view` (P9, held),
