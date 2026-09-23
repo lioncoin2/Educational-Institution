@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 
 import { DATABASE, postgresErrorCode, type Database } from '../../../platform/database';
@@ -90,7 +90,9 @@ function textArray(values: readonly string[]): SQL {
  */
 @Injectable()
 export class DrizzleCommunityRepository implements CommunityStore {
+  private readonly logger = new Logger(DrizzleCommunityRepository.name);
   private readonly admission = new KeyedMutex();
+  private retries = 0;
 
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 
@@ -519,11 +521,23 @@ export class DrizzleCommunityRepository implements CommunityStore {
     }
   }
 
+  /**
+   * How many transactions were retried as deadlock victims. The lock order
+   * should make this zero: each retry is logged, and the concurrency suite
+   * asserts it stayed zero — a retry that succeeds would otherwise hide a
+   * deadlock from every outcome.
+   */
+  get deadlockRetries(): number {
+    return this.retries;
+  }
+
   private async retrying<T>(work: () => Promise<T>): Promise<T | Contended> {
     try {
       return await work();
     } catch (error) {
       if (postgresErrorCode(error) !== DEADLOCK) throw error;
+      this.retries += 1;
+      this.logger.warn({ sqlstate: DEADLOCK }, 'deadlock victim; retrying once');
     }
     try {
       return await work();

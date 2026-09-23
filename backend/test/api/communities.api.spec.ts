@@ -78,6 +78,11 @@ describe('communities API', () => {
     expect(code(refused)).toBe('identity.permission_denied');
 
     expect((await call('POST', '/communities', admin, { title: '   ' })).status).toBe(422);
+    const tooLong = await call('POST', '/communities', admin, { title: 'ق'.repeat(401) });
+    expect({ status: tooLong.status, code: code(tooLong) }).toEqual({
+      status: 422,
+      code: 'communities.title_invalid',
+    });
     expect(
       (await call('POST', '/communities', admin, { title: 'x', ownerUserId: teacher.id })).status,
     ).toBe(400);
@@ -169,6 +174,18 @@ describe('communities API', () => {
     expect(
       (await call('GET', `/communities/${communityId}/members?cursor=forged`, admin)).status,
     ).toBe(422);
+    const longForgery = await call(
+      'GET',
+      `/communities/${communityId}/members?cursor=${'x'.repeat(600)}`,
+      admin,
+    );
+    expect({ status: longForgery.status, code: code(longForgery) }).toEqual({
+      status: 422,
+      code: 'communities.cursor_invalid',
+    });
+    // A large limit is clamped to the maximum, not refused.
+    const clamped = await call('GET', `/communities/${communityId}/members?limit=1000000`, admin);
+    expect(clamped.status).toBe(200);
   });
 
   it('lists my communities, and every community only to an overseer', async () => {
@@ -221,7 +238,14 @@ describe('communities API', () => {
     );
     expect(queried.status).toBe(404);
     expect(code(queried)).toBe('communities.invitation_invalid');
-    expect((await call('POST', '/communities/join', joiner, {})).status).toBe(400);
+    // Missing, mistyped or oversized: answered exactly like an unknown token (§7.2).
+    for (const body of [{}, { token: 43 }, { token: 'A'.repeat(600) }]) {
+      const refused = await call('POST', '/communities/join', joiner, body);
+      expect({ status: refused.status, code: code(refused) }).toEqual({
+        status: 404,
+        code: 'communities.invitation_invalid',
+      });
+    }
 
     const joined = await call('POST', '/communities/join', joiner, { token });
     expect(joined.status).toBe(201);

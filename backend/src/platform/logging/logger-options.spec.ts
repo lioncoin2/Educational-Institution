@@ -1,9 +1,16 @@
 import { Writable } from 'node:stream';
 
+import { DrizzleQueryError } from 'drizzle-orm/errors';
 import pino from 'pino';
 
 import { loadConfig } from '../config/app-config';
-import { REDACTED_PATHS, loggerOptions, redactUrl, serializeRequest } from './logger-options';
+import {
+  REDACTED_PATHS,
+  loggerOptions,
+  redactUrl,
+  serializeError,
+  serializeRequest,
+} from './logger-options';
 
 /** A pino logger with the application's real redaction, writing to a string. */
 function capture(): { logger: pino.Logger; output: () => string } {
@@ -113,5 +120,62 @@ describe('log redaction — secrets are never logged', () => {
     });
     expect(forged).not.toContain('forged');
     expect(forged).toMatch(/^[0-9a-f-]{36}$/);
+  });
+});
+
+describe('log redaction — a failed query never logs the values it ran with', () => {
+  const HASH = 'a'.repeat(32) + 'b'.repeat(32);
+  const MULTILINE = 'first line\nsecond line of a bound value';
+
+  /** A Postgres error as node-postgres builds it: its `detail` echoes the row. */
+  function postgresError(): Error {
+    return Object.assign(new Error('canceling statement due to statement timeout'), {
+      code: '57014',
+      severity: 'ERROR',
+      detail: `Failing row contains (${HASH}).`,
+      where: `SQL function with ${HASH}`,
+    });
+  }
+
+  it('drops Drizzle’s bind values from message, stack and fields, and keeps the SQL and SQLSTATE', () => {
+    const failed = new DrizzleQueryError(
+      'select "id" from "community_invitations" where "token_hash" = $1 and "note" = $2',
+      [HASH, MULTILINE],
+      postgresError(),
+    );
+    let written = '';
+    const sink = new Writable({
+      write(chunk: Buffer, _encoding, done) {
+        written += chunk.toString();
+        done();
+      },
+    });
+    const options = loggerOptions(loadConfig({})).pinoHttp as {
+      serializers: Record<string, (value: unknown) => unknown>;
+    };
+    const logger = pino(
+      {
+        redact: { paths: [...REDACTED_PATHS], censor: '[redacted]' },
+        serializers: options.serializers,
+      },
+      sink,
+    );
+    logger.error({ requestId: 'r-1', err: failed }, 'unhandled exception');
+
+    expect(written).not.toContain(HASH);
+    expect(written).not.toContain('second line of a bound value');
+    expect(written).toContain('params: [redacted]');
+    expect(written).toContain('\\"token_hash\\" = $1');
+    expect(written).toContain('canceling statement due to statement timeout');
+    // The application's own configuration uses exactly this serializer.
+    expect(options.serializers.err).toBe(serializeError);
+  });
+
+  it('drops a bare Postgres error’s row-echoing fields too, and leaves other errors alone', () => {
+    const serialized = JSON.stringify(serializeError(postgresError()));
+    expect(serialized).not.toContain(HASH);
+    expect(serialized).toContain('57014');
+    expect(serializeError('not an error')).toBe('not an error');
+    expect(JSON.stringify(serializeError(new TypeError('plain fault')))).toContain('plain fault');
   });
 });

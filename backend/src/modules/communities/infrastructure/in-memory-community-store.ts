@@ -88,9 +88,10 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     readonly actorUserId: string | null;
     readonly at: Date;
   }): Promise<StatusChange> {
+    // The same order as the transaction: the basis first, then the row.
+    if (!this.basisHolds(input.communityId, input.actor)) return { kind: 'basis_lost' };
     const community = this.communityById.get(input.communityId);
     if (community === undefined) return { kind: 'not_found' };
-    if (!this.basisHolds(input.communityId, input.actor)) return { kind: 'basis_lost' };
     const from: CommunityStatus = input.to === 'LOCKED' ? 'OPEN' : 'LOCKED';
     if (community.status !== from) return { kind: 'unchanged', community };
     const changed: Community = {
@@ -113,9 +114,9 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     readonly at: Date;
     readonly newId: () => string;
   }): Promise<AddMembersOutcome> {
+    if (!this.basisHolds(input.communityId, input.actor)) return { kind: 'basis_lost' };
     const community = this.communityById.get(input.communityId);
     if (community === undefined) return { kind: 'not_found' };
-    if (!this.basisHolds(input.communityId, input.actor)) return { kind: 'basis_lost' };
     const userIds = [...new Set(input.userIds)];
     const newcomers = userIds.filter(
       (userId) => !this.activeByPair.has(pair(community.id, userId)),
@@ -153,9 +154,9 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     readonly removedBy: string | null;
     readonly at: Date;
   }): Promise<RemoveOutcome> {
+    if (!this.basisHolds(input.communityId, input.actor)) return { kind: 'basis_lost' };
     const community = this.communityById.get(input.communityId);
     if (community === undefined) return { kind: 'not_found' };
-    if (!this.basisHolds(input.communityId, input.actor)) return { kind: 'basis_lost' };
     const stint = this.activeStint(input.communityId, input.userId);
     if (stint === null) return { kind: 'not_member' };
     if (stint.standing === 'OWNER') return { kind: 'owner' };
@@ -198,7 +199,6 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     readonly revokedBy: string | null;
     readonly at: Date;
   }): Promise<RevokeInvitationOutcome> {
-    if (!this.communityById.has(input.communityId)) return { kind: 'not_found' };
     if (!this.basisHolds(input.communityId, input.actor)) return { kind: 'basis_lost' };
     const invitation = this.invitationById.get(input.invitationId);
     if (invitation === undefined || invitation.communityId !== input.communityId) {

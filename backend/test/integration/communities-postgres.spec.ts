@@ -3,7 +3,6 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 
 import type { Database } from '../../src/platform/database';
-import { effectsOf } from '../../src/modules/communities/domain/lifecycle';
 import { DrizzleCommunityReadModel } from '../../src/modules/communities/infrastructure/drizzle-community-read-model';
 import { DrizzleCommunityRepository } from '../../src/modules/communities/infrastructure/drizzle-community-repository';
 import { communityContractSuite } from '../support/communities-contract-suite';
@@ -188,6 +187,57 @@ describeWithPostgres('Communities in Postgres', () => {
       );
     });
 
+    it('holds the remaining row CHECKs and the token-hash index to account', async () => {
+      const admin = h.person('admin-1', ['ADMIN']);
+      const { invitationId } = await h.link(admin, communityId);
+      const [link] = (
+        await db.execute(
+          sql`select token_hash from community_invitations where id = ${invitationId}`,
+        )
+      ).rows as { token_hash: string }[];
+      expect(
+        await violated(sql`insert into community_invitations
+          (id, community_id, token_hash, created_by, created_at, expires_at)
+          values ('twin', ${communityId}, ${link?.token_hash ?? ''}, 'admin-1', now(), now() + interval '1 day')`),
+      ).toBe('community_invitations_token_hash_unique');
+      expect(
+        await violated(
+          sql`update community_invitations set expires_at = created_at where id = ${invitationId}`,
+        ),
+      ).toBe('community_invitations_expires_after_created');
+      expect(
+        await violated(
+          sql`update community_invitations set max_uses = 0 where id = ${invitationId}`,
+        ),
+      ).toBe('community_invitations_max_uses_positive');
+      expect(
+        await violated(sql`update communities set lifecycle_version = 0 where id = ${communityId}`),
+      ).toBe('communities_lifecycle_version_positive');
+      expect(
+        await violated(
+          sql`update communities set membership_version = -1 where id = ${communityId}`,
+        ),
+      ).toBe('communities_membership_version_nonnegative');
+      expect(
+        await violated(
+          sql`update communities set updated_at = created_at - interval '1 second' where id = ${communityId}`,
+        ),
+      ).toBe('communities_updated_after_created');
+      expect(
+        await violated(
+          stint(
+            'bad-standing',
+            `'u9', 'ACTIVE', 'ADMIN', 'ADDED', null, null, now(), null, null, 77`,
+          ),
+        ),
+      ).toBe('community_members_standing_valid');
+      // The target of P3's composite grant key: unique on (id, community_id, user_id).
+      const key = await db.execute(sql`
+        select pg_get_constraintdef(oid) as definition from pg_constraint
+         where conname = 'community_members_stint_key'`);
+      expect(key.rows).toEqual([{ definition: 'UNIQUE (id, community_id, user_id)' }]);
+    });
+
     it('holds no foreign key into any other module’s tables', async () => {
       const keys = await db.execute(sql`
         select conrelid::regclass::text as source, confrelid::regclass::text as target
@@ -209,6 +259,14 @@ describeWithPostgres('Communities in Postgres', () => {
     let h: CommunitiesHarness;
     let communityId: string;
     let ownerStintId: string;
+
+    // The lock order should make deadlocks impossible. A retried victim
+    // succeeds and hides in every outcome, so the retries are counted instead.
+    afterEach(() => {
+      expect(
+        [...stores, h.store as DrizzleCommunityRepository].map((each) => each.deadlockRetries),
+      ).toEqual(new Array(stores.length + 1).fill(0));
+    });
 
     beforeEach(async () => {
       await reset();
@@ -304,9 +362,6 @@ describeWithPostgres('Communities in Postgres', () => {
 
     it('a lock racing redemptions and adds: nothing joins after the lock commits', async () => {
       const { invitationId } = await h.link(h.person('admin-1', ['ADMIN']), communityId);
-      const lockVersionBefore = await count(
-        sql`select membership_version as n from communities where id = ${communityId}`,
-      );
       const redemptions = Array.from({ length: 30 }, (_, i) =>
         redeem(i, invitationId, `racer-${i}`),
       );
@@ -344,10 +399,8 @@ describeWithPostgres('Communities in Postgres', () => {
       expect(joined + refusedAfterLock + outcomes.filter((o) => o.kind === 'added').length).toBe(
         40,
       );
-      expect(lockVersionBefore).toBeGreaterThan(0);
       // A locked community accepts nobody now.
       expect((await redeem(0, invitationId, 'latecomer')).kind).toBe('locked');
-      expect(effectsOf('LOCKED').acceptsMembers).toBe(false);
       await invariants();
     });
 
@@ -451,17 +504,41 @@ describeWithPostgres('Communities in Postgres', () => {
       await invariants();
     }, 60_000);
 
-    it('changesSince never skips a version while writers commit', async () => {
-      const writers = Array.from({ length: 40 }, (_, i) =>
-        store(i).addMembers({
-          communityId,
-          userIds: [`w-${i}`],
-          actor: owner(),
-          addedBy: 'admin-1',
-          at: at(),
-          newId: () => `feed-${i}-${Math.random().toString(36).slice(2)}`,
-        }),
-      );
+    it('changesSince never skips a version while writers commit — joins, leaves and removals', async () => {
+      // Twenty already in: the storm ends some of their stints, raising those
+      // rows' versions, while forty others join.
+      const early = Array.from({ length: 20 }, (_, i) => `e-${i}`);
+      await store(0).addMembers({
+        communityId,
+        userIds: early,
+        actor: owner(),
+        addedBy: 'admin-1',
+        at: at(),
+        newId: () => `early-${Math.random().toString(36).slice(2)}`,
+      });
+      const writers: Promise<{ kind: string }>[] = [
+        ...Array.from({ length: 40 }, (_, i) =>
+          store(i).addMembers({
+            communityId,
+            userIds: [`w-${i}`],
+            actor: owner(),
+            addedBy: 'admin-1',
+            at: at(),
+            newId: () => `feed-${i}-${Math.random().toString(36).slice(2)}`,
+          }),
+        ),
+        ...early.map((userId, i) =>
+          i % 2 === 0
+            ? store(i).leave({ communityId, userId, at: at() })
+            : store(i).removeMember({
+                communityId,
+                userId,
+                actor: owner(),
+                removedBy: 'admin-1',
+                at: at(),
+              }),
+        ),
+      ];
       // A reader follows the feed while the storm commits.
       const applied = new Map<string, boolean>();
       let after = 0;

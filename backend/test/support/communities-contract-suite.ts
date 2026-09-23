@@ -178,6 +178,99 @@ export function communityContractSuite(
     });
   });
 
+  describe('the store under a lost basis', () => {
+    const stale = { kind: 'owner' as const, userId: 'admin-1', membershipId: 'no-such-stint' };
+
+    it('refuses every owner act whose basis is gone, and writes nothing', async () => {
+      const { invitationId } = await h.link(admin, id);
+      h.person('s1', ['STUDENT']);
+      const at = h.clock.now();
+      const before = await h.readModel.communities([id]);
+
+      expect(
+        await h.store.changeStatus({
+          communityId: id,
+          to: 'LOCKED',
+          actor: stale,
+          actorUserId: 'admin-1',
+          at,
+        }),
+      ).toEqual({ kind: 'basis_lost' });
+      expect(
+        await h.store.addMembers({
+          communityId: id,
+          userIds: ['s1'],
+          actor: stale,
+          addedBy: 'admin-1',
+          at,
+          newId: () => 'never-written',
+        }),
+      ).toEqual({ kind: 'basis_lost' });
+      expect(
+        await h.store.removeMember({
+          communityId: id,
+          userId: 'admin-1',
+          actor: stale,
+          removedBy: 'admin-1',
+          at,
+        }),
+      ).toEqual({ kind: 'basis_lost' });
+      // Revoking writes the link's row before the basis is re-read: it must be undone.
+      expect(
+        await h.store.revokeInvitation({
+          communityId: id,
+          invitationId,
+          actor: stale,
+          revokedBy: 'admin-1',
+          at,
+        }),
+      ).toEqual({ kind: 'basis_lost' });
+      expect((await h.readModel.findInvitation(id, invitationId))?.revokedAt).toBeNull();
+      expect(
+        await h.store.createInvitation({
+          invitation: {
+            id: 'never-created',
+            communityId: id,
+            tokenHash: 'c'.repeat(64),
+            createdBy: 'admin-1',
+            createdAt: at,
+            expiresAt: new Date(at.getTime() + 3_600_000),
+            maxUses: null,
+            uses: 0,
+            revokedAt: null,
+            revokedBy: null,
+          },
+          actor: stale,
+        }),
+      ).toEqual({ kind: 'basis_lost' });
+
+      expect(await h.readModel.communities([id])).toEqual(before);
+      expect(await h.readModel.findInvitation(id, 'never-created')).toBeNull();
+      expect(await h.readModel.latestStints(id, ['s1'])).toEqual([]);
+    });
+
+    it('undoes a link’s use when its creator no longer stands as owner', async () => {
+      const { invitationId } = await h.link(admin, id);
+      h.person('plain-member', ['STUDENT']);
+      await h.addPeople(admin, id, 'plain-member');
+      const before = await h.readModel.communities([id]);
+
+      const outcome = await h.store.redeem({
+        invitationId,
+        communityId: id,
+        userId: 'joiner',
+        creatorUserId: 'plain-member',
+        stintId: 'never-joined',
+        at: h.clock.now(),
+      });
+
+      expect(outcome).toEqual({ kind: 'creator_lost' });
+      expect((await h.readModel.findInvitation(id, invitationId))?.uses).toBe(0);
+      expect(await h.readModel.latestStints(id, ['joiner'])).toEqual([]);
+      expect(await h.readModel.communities([id])).toEqual(before);
+    });
+  });
+
   describe('the directory', () => {
     it('names communities by id, omitting unknown ids', async () => {
       expect(await h.directory.describe([id, 'nope'])).toEqual([

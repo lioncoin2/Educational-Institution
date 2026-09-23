@@ -115,7 +115,7 @@ export class CommunitiesController {
    */
   @Post('join')
   @RequirePermission(Permissions.communities.read)
-  @RateLimit(CommunityRateLimits.joinsPerIp)
+  @RateLimit(CommunityRateLimits.joinsPerIp, 'communities.too_many_attempts')
   async join(
     @CurrentPrincipal() principal: Principal,
     @Body() dto: RedeemInvitationDto,

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 
 import type { Params } from 'nestjs-pino';
+import pino from 'pino';
 
 import type { AppConfig } from '../config/app-config';
 
@@ -81,6 +82,62 @@ export const REDACTED_PATHS: readonly string[] = [
   ...SENSITIVE_KEYS.flatMap((key) => [key, `*.${key}`, `*.*.${key}`, `*.*.*.${key}`]),
 ];
 
+/**
+ * Error fields that carry the VALUES a failed statement was run with, or rows
+ * it touched: Drizzle's `params`; Postgres' `detail` ("Key (token_hash)=(…)
+ * already exists", "Failing row contains (…)"), `where` and `internalQuery`.
+ */
+const VALUE_BEARING_ERROR_FIELDS = ['params', 'parameters', 'detail', 'where', 'internalQuery'];
+
+interface SerializedError {
+  message?: unknown;
+  stack?: unknown;
+  aggregateErrors?: unknown;
+  [key: string]: unknown;
+}
+
+/**
+ * Errors as pino records them — minus every bind value. A failed Drizzle
+ * query's message is `Failed query: <sql>\nparams: <values>`, and pino copies
+ * that message into both `message` and `stack`, and its enumerable `params`
+ * as a field: a statement timeout during a sign-in or a link redemption would
+ * otherwise write a refresh-token hash or an invitation-token hash to the
+ * log. The SQL (with its `$n` placeholders) and the SQLSTATE stay: they are
+ * what an operator needs, and they hold no value.
+ */
+export function serializeError(error: unknown): unknown {
+  const serialized = pino.stdSerializers.err(error as Error) as unknown;
+  if (serialized === error || typeof serialized !== 'object' || serialized === null) {
+    return serialized;
+  }
+  return scrubError(serialized as SerializedError, error);
+}
+
+function scrubError(serialized: SerializedError, raw: unknown): SerializedError {
+  const params = (raw as { params?: unknown } | null)?.params;
+  if (Array.isArray(params)) {
+    // Exactly the text Drizzle's constructor appended: `${params}` renders an
+    // array as String(array) does. The values may contain newlines.
+    const appended = `params: ${String(params)}`;
+    for (const field of ['message', 'stack'] as const) {
+      const text = serialized[field];
+      if (typeof text === 'string')
+        serialized[field] = text.split(appended).join('params: [redacted]');
+    }
+  }
+  for (const field of VALUE_BEARING_ERROR_FIELDS) delete serialized[field];
+  if (Array.isArray(serialized.aggregateErrors)) {
+    const raws = (raw as { errors?: unknown[] } | null)?.errors ?? [];
+    serialized.aggregateErrors = (serialized.aggregateErrors as unknown[]).map(
+      (inner: unknown, index: number): unknown =>
+        typeof inner === 'object' && inner !== null
+          ? scrubError(inner as SerializedError, raws[index])
+          : inner,
+    );
+  }
+  return serialized;
+}
+
 export function loggerOptions(config: AppConfig): Params {
   return {
     pinoHttp: {
@@ -95,7 +152,7 @@ export function loggerOptions(config: AppConfig): Params {
           : randomUUID();
       },
       redact: { paths: [...REDACTED_PATHS], censor: '[redacted]' },
-      serializers: { req: serializeRequest },
+      serializers: { req: serializeRequest, err: serializeError },
     },
   };
 }

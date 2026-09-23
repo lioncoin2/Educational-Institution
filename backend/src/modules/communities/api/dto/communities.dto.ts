@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  Allow,
   ArrayMaxSize,
   ArrayMinSize,
   ArrayUnique,
@@ -8,9 +9,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  Max,
   MaxLength,
-  Min,
   ValidateIf,
 } from 'class-validator';
 
@@ -28,17 +27,15 @@ import { MAX_MEMBERS_PER_ADD } from '../../application/communities-settings';
 const ID_MAX = 128;
 
 export class PageQuery {
-  /** Clamped to the list's maximum by the use case, never refused for being large. */
+  /** Clamped to the list's maximum by the use case — never refused for its size. */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1)
-  @Max(100_000)
   limit?: number;
 
+  /** Opaque; one this API did not issue is 422 `communities.cursor_invalid`. */
   @IsOptional()
   @IsString()
-  @MaxLength(512)
   cursor?: string;
 }
 
@@ -49,9 +46,8 @@ export class ListCommunitiesQuery extends PageQuery {
 }
 
 export class CreateCommunityDto {
-  /** A transport bound; the domain holds a title to 1–100 characters. */
+  /** The domain holds a title to 1–100 characters: anything else is 422 `communities.title_invalid`. */
   @IsString()
-  @MaxLength(400)
   title!: string;
 }
 
@@ -79,11 +75,11 @@ export class CreateInvitationDto {
 /**
  * The token travels in the body, under the key `token` only — which the
  * logger redacts — never in a path or a query string (which are logged, and
- * which link scanners prefetch). A malformed token is not refused here: it is
- * answered exactly like an unknown one.
+ * which link scanners prefetch). It is not validated here at all: a missing,
+ * malformed or unknown token is answered alike, 404
+ * `communities.invitation_invalid` (§7.2), by the use case's shape check.
  */
 export class RedeemInvitationDto {
-  @IsString()
-  @MaxLength(512)
-  token!: string;
+  @Allow()
+  token?: unknown;
 }

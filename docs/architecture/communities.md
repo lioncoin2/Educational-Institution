@@ -63,6 +63,24 @@ decides it. Nothing here decides an institutional policy.
 > - The 503 mapping is a platform interceptor
 >   (`DatabaseUnavailableInterceptor`) that the two Communities controllers opt
 >   into. It maps connection-class failures only; any other error is still a 500.
+> - After an independent review of P2:
+>   - Failed queries are logged without their bind values, so a statement
+>     timeout during a redemption cannot write the token's hash
+>     ([observability.md](observability.md#secret-redaction)).
+>   - Every refusal of [§7.2](#72-lookup) now answers as the design says: a
+>     missing, mistyped or oversized token is 404 `communities.invitation_invalid`,
+>     and the per-address join limit is 429 `communities.too_many_attempts`.
+>     The platform `@RateLimit` takes an optional code. A title over 100
+>     characters is 422 `communities.title_invalid`; any cursor this API did not
+>     issue is 422 `communities.cursor_invalid`; an oversized `limit` is clamped.
+>   - Deadlock retries are counted (`deadlockRetries`) and logged. The
+>     concurrency suite asserts the count stays zero under every race, because a
+>     retry that succeeds would otherwise hide a deadlock.
+>   - The in-memory store re-verifies the basis before it looks for the
+>     community, as the transaction does.
+>   - Both adapters must refuse a lost basis without writing anything
+>     (including undoing a revocation already written), and must undo a link's
+>     use when its creator no longer stands as owner.
 >
 > Evidence: `test/integration/communities-postgres.spec.ts` (constraints, the
 > [§7.4](#74-race-semantics) races through six store instances, the contract

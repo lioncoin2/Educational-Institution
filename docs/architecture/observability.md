@@ -27,10 +27,11 @@ proxy or a future service boundary.
 
 ### Secret redaction
 
-Thirteen sensitive field names are censored at **every depth from zero to
+Sixteen sensitive field names are censored at **every depth from zero to
 three**: `password`, `currentPassword`, `newPassword`, `initialPassword`,
 `passwordHash`, `refreshToken`, `refreshTokenHash`, `previousRefreshTokenHash`,
-`accessToken`, `token`, `secret`, `jwtSecret`, `apiSecret`. The `authorization`
+`accessToken`, `token`, `pushToken`, `deviceToken`, `secret`, `jwtSecret`,
+`apiSecret`, `signingSecret`. The `authorization`
 and `cookie` request headers are censored too. Request bodies are not logged at
 all.
 
@@ -43,6 +44,19 @@ clear. It was found during Identity & Access V1 by testing the claim rather
 than trusting it. Paths are now generated for each depth. A test logs every
 secret at every depth, and a dump of the real application config, and fails if
 any value survives.
+
+**A failed query never logs the values it ran with** (Communities P2 review,
+2026-09-23). Drizzle wraps a driver error as `Failed query: <sql>\nparams:
+<values>`, and pino's error serializer copies that message into both
+`message` and `stack`, and the `params` field as-is. So a statement timeout
+during a sign-in or a link redemption would have written a refresh-token hash
+or an invitation-token hash to the log. The `err` serializer
+(`serializeError` in `logger-options.ts`) now replaces the bind values with
+`[redacted]` wherever they appear, and drops the value-bearing fields of a
+Postgres error (`detail`, which echoes the row or key, plus `where` and
+`internalQuery`). The SQL text, with its `$n` placeholders, and the SQLSTATE
+are kept. A test logs a real `DrizzleQueryError` through the application's
+own serializers and fails if a bound value survives.
 
 An inbound `x-request-id` is adopted only if it looks like an id
 (`[A-Za-z0-9._-]{1,128}`), so a client cannot inject text into every log line

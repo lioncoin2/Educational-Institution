@@ -301,3 +301,33 @@ describe('locking and unlocking', () => {
     }
   });
 });
+
+describe('when the store reports a lost basis or a conflict', () => {
+  it('asks the permit again — and answers 409 conflict when it still passes', async () => {
+    const h = communitiesHarness();
+    const admin = h.person('admin-1', ['ADMIN']);
+    const id = await h.community(admin);
+    h.journal.clear();
+    jest.spyOn(h.store, 'changeStatus').mockResolvedValueOnce({ kind: 'basis_lost' });
+    const raced = await h.status.execute({
+      principal: admin,
+      communityId: id,
+      to: 'LOCKED',
+      meta: META,
+    });
+    expect(raced).toMatchObject({
+      ok: false,
+      error: { kind: 'conflict', code: 'communities.conflict' },
+    });
+    jest.spyOn(h.store, 'addMembers').mockResolvedValueOnce({ kind: 'conflict' });
+    h.person('s1', ['STUDENT']);
+    expect(
+      codeOf(
+        await h.add.execute({ principal: admin, communityId: id, userIds: ['s1'], meta: META }),
+      ),
+    ).toBe('communities.conflict');
+    // Nothing was recorded for either.
+    expect(h.journal.entries).toEqual([]);
+    expect(h.journal.events).toEqual([]);
+  });
+});
