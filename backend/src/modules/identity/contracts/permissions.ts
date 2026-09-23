@@ -39,9 +39,21 @@ export const Permissions = {
     read: 'people.read',
     manage: 'people.manage',
   },
+  /**
+   * `read` is the catalogue and one's OWN academic record; `manage` is the
+   * structure, enrollment and teacher assignment.
+   *
+   * `teach` and `study` grant nothing by themselves. They say which accounts
+   * may be assigned to teach a halaqa, or enrolled in one — so academic can
+   * check "is this a teacher's account?" without ever branching on a role.
+   * What a teacher may see comes from their assignment to a halaqa, not from
+   * holding `teach` (open-questions.md Q31).
+   */
   academic: {
     read: 'academic.read',
     manage: 'academic.manage',
+    teach: 'academic.teach',
+    study: 'academic.study',
   },
   attendance: {
     read: 'attendance.read',

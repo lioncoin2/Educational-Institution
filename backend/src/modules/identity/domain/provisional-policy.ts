@@ -60,9 +60,14 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
       Permissions.files.read,
     ],
 
+    /**
+     * `academic.teach`: eligible to be assigned to a halaqa. Which halaqat a
+     * teacher then sees is decided by those assignments, never by the role.
+     */
     [Roles.teacher]: [
       Permissions.people.read,
       Permissions.academic.read,
+      Permissions.academic.teach,
       Permissions.attendance.read,
       Permissions.attendance.manage,
       Permissions.assignments.read,
@@ -85,6 +90,7 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
      */
     [Roles.assistantTeacher]: [
       Permissions.academic.read,
+      Permissions.academic.teach,
       Permissions.attendance.read,
       Permissions.assignments.read,
       Permissions.messaging.read,
@@ -101,9 +107,14 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
      * but may not START one — no direct messages to peers or to adults of their
      * choosing, no groups of their own. The conservative default for an
      * institution of children; the institution decides otherwise (Q6).
+     *
+     * `academic.study`: eligible to be enrolled in a halaqa. Only students
+     * hold it (besides OWNER and ADMIN, which hold everything they grant); a
+     * staff member who also studies holds the STUDENT role as well (Q30).
      */
     [Roles.student]: [
       Permissions.academic.read,
+      Permissions.academic.study,
       Permissions.assignments.read,
       Permissions.assignments.submit,
       Permissions.messaging.read,

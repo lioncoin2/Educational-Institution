@@ -19,7 +19,8 @@
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run arch:graph && npm test",
     "db:migrate": "drizzle-kit migrate",
     "test:integration": "jest --testPathPatterns=test/integration",
-    "identity:bootstrap-owner": "node dist/cli/bootstrap-owner.js"
+    "identity:bootstrap-owner": "node dist/cli/bootstrap-owner.js",
+    "academic:seed-structure": "node dist/cli/seed-academic-structure.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

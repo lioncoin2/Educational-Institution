@@ -50,6 +50,20 @@
       "when": 1790145788832,
       "tag": "0006_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790151702137,
+      "tag": "0007_academic_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790151712739,
+      "tag": "0008_seed_academic_permissions",
+      "breakpoints": true
     }
   ]
 }

@@ -78,6 +78,9 @@ describe('route authorization', () => {
 
   it('finds every controller in the source tree', () => {
     expect(controllers.sort()).toEqual([
+      'modules/academic/api/my-academic.controller.ts#MyAcademicController',
+      'modules/academic/api/relationships.controller.ts#AcademicRelationshipsController',
+      'modules/academic/api/structure.controller.ts#AcademicStructureController',
       'modules/files/api/uploads.controller.ts#UploadsController',
       'modules/files/infrastructure/local-transfer.controller.ts#LocalTransferController',
       'modules/identity/api/admin-users.controller.ts#AdminUsersController',
@@ -151,6 +154,52 @@ describe('route authorization', () => {
       'NotificationsController.unread',
     ]);
     expect(notificationRoutes.filter((route) => !route.authenticated)).toEqual([]);
+  });
+
+  // Reading is academic.read (and each use case narrows it further: a teacher
+  // to their own halaqat, everyone to their own record); every change is
+  // academic.manage. Nothing academic is public or merely authenticated.
+  it('holds every academic route to its academic permission — reads read, changes manage', () => {
+    const academic = Object.fromEntries(
+      routes
+        .filter((route) =>
+          /^(AcademicStructureController|AcademicRelationshipsController|MyAcademicController)\./.test(
+            route.name,
+          ),
+        )
+        .map((route) => [route.name, route.permission]),
+    );
+    const read = 'academic.read';
+    const manage = 'academic.manage';
+    expect(academic).toEqual({
+      'AcademicStructureController.sections': read,
+      'AcademicStructureController.section': read,
+      'AcademicStructureController.program': read,
+      'AcademicStructureController.halaqa': read,
+      'AcademicStructureController.addSection': manage,
+      'AcademicStructureController.editSection': manage,
+      'AcademicStructureController.activateSection': manage,
+      'AcademicStructureController.deactivateSection': manage,
+      'AcademicStructureController.addProgram': manage,
+      'AcademicStructureController.editProgram': manage,
+      'AcademicStructureController.activateProgram': manage,
+      'AcademicStructureController.deactivateProgram': manage,
+      'AcademicStructureController.addHalaqa': manage,
+      'AcademicStructureController.editHalaqa': manage,
+      'AcademicStructureController.activateHalaqa': manage,
+      'AcademicStructureController.deactivateHalaqa': manage,
+      'AcademicRelationshipsController.students': read,
+      'AcademicRelationshipsController.teachers': read,
+      'AcademicRelationshipsController.enrollStudent': manage,
+      'AcademicRelationshipsController.end': manage,
+      'AcademicRelationshipsController.enrollmentsOf': manage,
+      'AcademicRelationshipsController.assignTeacher': manage,
+      'AcademicRelationshipsController.endTeaching': manage,
+      'AcademicRelationshipsController.assignmentsOf': manage,
+      'MyAcademicController.me': read,
+      'MyAcademicController.enrollments': read,
+      'MyAcademicController.teaching': read,
+    });
   });
 
   it('puts every administrative route behind a permission, never mere authentication', () => {

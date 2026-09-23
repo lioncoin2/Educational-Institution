@@ -1,22 +1,8 @@
 /**
- * Academic — the catalogue: departments, programs, levels and halaqat.
- *
- * It is the structure of what is taught. It owns no schedule and no attendance;
- * Operations does. Other modules reference these ids rather than copying names.
+ * Academic's public surface: the vocabulary, the facts it publishes, and who
+ * is in a halaqa now. Other modules reference academic ids (a halaqa, a
+ * program) and never copy names or read academic's tables.
  */
-export interface ProgramRef {
-  readonly programId: string;
-  readonly name: string;
-}
-
-export interface LevelRef {
-  readonly levelId: string;
-  readonly programId: string;
-  readonly order: number;
-}
-
-export interface HalaqaRef {
-  readonly halaqaId: string;
-  readonly levelId: string;
-  readonly teacherPersonId: string | null;
-}
+export * from './events';
+export * from './relationships';
+export * from './vocabulary';

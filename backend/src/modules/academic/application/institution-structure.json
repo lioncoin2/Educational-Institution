@@ -1,0 +1,93 @@
+{
+  "$comment": "THE single source of the institution's academic structure as the profile states it (docs/institution-profile.pdf, transcribed in docs/pdf-content-extract.md). The seed reads this file; the Flutter app's ProfileData is held to it by app/test/academic/profile_structure_test.dart. Add nothing the profile does not state. Program names inside the PROGRESSIVE sections repeat the section's name: the profile names no program inside a section (open-questions.md Q33). Halaqat are generated from the counts: code <section code>-h<n>, name 'الحلقة <n>'.",
+  "source": "docs/institution-profile.pdf",
+  "sections": [
+    {
+      "code": "dep-literacy",
+      "name": "قسم محو الأمية",
+      "kind": "PROGRESSIVE",
+      "order": 1,
+      "sourcePage": 6,
+      "programs": [
+        { "code": "dep-literacy-program", "name": "قسم محو الأمية", "order": 1, "halaqat": 5 }
+      ]
+    },
+    {
+      "code": "dep-letters",
+      "name": "قسم تلقين الحروف",
+      "kind": "PROGRESSIVE",
+      "order": 2,
+      "sourcePage": 6,
+      "programs": [
+        { "code": "dep-letters-program", "name": "قسم تلقين الحروف", "order": 1, "halaqat": 10 }
+      ]
+    },
+    {
+      "code": "dep-tajweed-1",
+      "name": "قسم تجويد مبتدئ",
+      "kind": "PROGRESSIVE",
+      "order": 3,
+      "sourcePage": 6,
+      "programs": [
+        { "code": "dep-tajweed-1-program", "name": "قسم تجويد مبتدئ", "order": 1, "halaqat": 10 }
+      ]
+    },
+    {
+      "code": "dep-tajweed-2",
+      "name": "قسم تجويد متوسط",
+      "kind": "PROGRESSIVE",
+      "order": 4,
+      "sourcePage": 6,
+      "programs": [
+        { "code": "dep-tajweed-2-program", "name": "قسم تجويد متوسط", "order": 1, "halaqat": 10 }
+      ]
+    },
+    {
+      "code": "dep-tajweed-3",
+      "name": "قسم تجويد متقدم",
+      "kind": "PROGRESSIVE",
+      "order": 5,
+      "sourcePage": 6,
+      "programs": [
+        { "code": "dep-tajweed-3-program", "name": "قسم تجويد متقدم", "order": 1, "halaqat": 10 }
+      ]
+    },
+    {
+      "code": "sec-spelling",
+      "name": "قسم التهجي",
+      "kind": "SPECIAL",
+      "order": 6,
+      "sourcePage": 7,
+      "programs": []
+    },
+    {
+      "code": "sec-kids",
+      "name": "قسم البراعم",
+      "kind": "SPECIAL",
+      "order": 7,
+      "sourcePage": 8,
+      "programs": []
+    },
+    {
+      "code": "sec-languages",
+      "name": "قسم اللغات",
+      "kind": "SPECIAL",
+      "order": 8,
+      "sourcePage": 9,
+      "programs": []
+    },
+    {
+      "code": "accompanying",
+      "name": "البرامج المرافقة",
+      "kind": "ACCOMPANYING",
+      "order": 9,
+      "sourcePage": 10,
+      "programs": [
+        { "code": "prog-hifz-city", "name": "مدينة الحفاظ", "order": 1, "halaqat": 0 },
+        { "code": "prog-nahw", "name": "علوم النحو", "order": 2, "halaqat": 0 },
+        { "code": "prog-maqari", "name": "المقارئ", "order": 3, "halaqat": 0 },
+        { "code": "prog-mutun", "name": "المتون", "order": 4, "halaqat": 0 }
+      ]
+    }
+  ]
+}
