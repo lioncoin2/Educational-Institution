@@ -223,6 +223,19 @@ class MockMessagingRepository implements MessagingRepository {
     return message;
   }
 
+  /// Someone else's message reaching the pretend server — what a live
+  /// connection would then announce. For tests and demonstrations.
+  Message receive(
+    String conversationId, {
+    required String senderId,
+    required String body,
+  }) => _find(conversationId).add(
+    senderId: senderId,
+    type: MessageType.text,
+    body: body,
+    at: DateTime.now().toUtc(),
+  );
+
   _MockConversation _find(String id) {
     final c = _conversations[id];
     if (c == null) {

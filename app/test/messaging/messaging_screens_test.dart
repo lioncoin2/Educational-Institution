@@ -8,8 +8,12 @@ import 'package:quran_institution_app/app/app.dart';
 import 'package:quran_institution_app/data/media/media_seams.dart';
 import 'package:quran_institution_app/data/models/data_origin.dart';
 import 'package:quran_institution_app/data/models/messaging.dart';
+import 'package:quran_institution_app/data/realtime/realtime_client.dart';
+import 'package:quran_institution_app/data/realtime/realtime_frames.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_messaging_repository.dart';
 import 'package:quran_institution_app/providers/app_providers.dart';
+
+import '../realtime/fake_realtime_client.dart';
 
 /// The mock backend with switches for the states a screen must survive.
 class ScriptedRepository extends MockMessagingRepository {
@@ -280,6 +284,71 @@ void main() {
     await tester.tap(find.text('عرض المزيد'));
     await tester.pumpAndSettle();
     expect(find.text('حلقة العصر'), findsOneWidget);
+  });
+
+  group('live', () {
+    late FakeRealtimeClient realtime;
+    setUp(() => realtime = FakeRealtimeClient());
+
+    List<Override> live() => [
+      realtimeConnectionProvider.overrideWithValue(realtime),
+    ];
+
+    testWidgets('shows a message the moment it arrives', (tester) async {
+      await open(tester, '/messages/mock-direct', extra: live());
+      final message = repo.receive(
+        'mock-direct',
+        senderId: 'mock-teacher',
+        body: 'رسالة وصلت الآن',
+      );
+      realtime.emit(
+        MessageSentEvent(
+          eventId: 'message.sent:${message.id}',
+          occurredAt: message.createdAt,
+          conversationId: 'mock-direct',
+          conversationType: ConversationType.direct,
+          message: message,
+          senderName: 'الأستاذ عبدالله',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('رسالة وصلت الآن'), findsOneWidget);
+    });
+
+    testWidgets('says so while the connection is being re-established', (
+      tester,
+    ) async {
+      await open(tester, '/messages/mock-direct', extra: live());
+      expect(find.textContaining('جارٍ إعادة الاتصال'), findsNothing);
+
+      realtime.setStatus(RealtimeStatus.reconnecting);
+      await tester.pump();
+      expect(find.textContaining('جارٍ إعادة الاتصال'), findsOneWidget);
+
+      realtime.setStatus(RealtimeStatus.reconnected);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('جارٍ إعادة الاتصال'), findsNothing);
+    });
+
+    testWidgets('closes the composer once the viewer is removed', (
+      tester,
+    ) async {
+      await open(tester, '/messages/mock-group', extra: live());
+      expect(find.byType(TextField), findsOneWidget);
+
+      realtime.emit(
+        ParticipantRemovedEvent(
+          eventId: 'participant.removed:1',
+          occurredAt: DateTime.now(),
+          conversationId: 'mock-group',
+          userId: MockMessagingRepository.viewer,
+          reason: 'removed',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNothing);
+      expect(find.textContaining('لم تعد عضوًا'), findsOneWidget);
+    });
   });
 
   testWidgets('is reachable from the profile', (tester) async {

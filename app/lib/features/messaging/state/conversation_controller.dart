@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/api/client_ids.dart';
 import '../../../data/models/messaging.dart';
+import '../../../data/realtime/realtime_client.dart';
+import '../../../data/realtime/realtime_frames.dart';
 import '../../../data/repositories/repositories.dart';
 import '../../../providers/app_providers.dart';
 import 'conversation_list_controller.dart';
@@ -51,11 +54,13 @@ class ConversationState {
     required this.viewerId,
     required this.messages,
     required this.lastReadSequence,
+    required this.syncedThrough,
     this.pending = const [],
     this.hasOlder = false,
     this.loadingOlder = false,
     this.olderFailed = false,
     this.senderNames = const {},
+    this.removed = false,
   });
 
   final Conversation conversation;
@@ -70,7 +75,20 @@ class ConversationState {
   final int lastReadSequence;
   final Map<String, String> senderNames;
 
+  /// Every message up to this sequence is held — the server's pages are
+  /// dense, so nothing below it is missing. A message beyond it that is
+  /// not its immediate successor means one was missed on the way: the gap
+  /// is filled over HTTP, never assumed away.
+  final int syncedThrough;
+
+  /// The viewer is no longer a member: nothing more arrives, and nothing
+  /// can be sent.
+  final bool removed;
+
   int get newestSequence => messages.isEmpty ? 0 : messages.last.sequence;
+
+  /// A message is held beyond an unfilled gap.
+  bool get hasGap => newestSequence > syncedThrough;
 
   bool isMine(Message message) => message.senderId == viewerId;
 
@@ -82,6 +100,8 @@ class ConversationState {
     bool? olderFailed,
     int? lastReadSequence,
     Map<String, String>? senderNames,
+    int? syncedThrough,
+    bool? removed,
   }) => ConversationState(
     conversation: conversation,
     viewerId: viewerId,
@@ -92,13 +112,19 @@ class ConversationState {
     olderFailed: olderFailed ?? this.olderFailed,
     lastReadSequence: lastReadSequence ?? this.lastReadSequence,
     senderNames: senderNames ?? this.senderNames,
+    syncedThrough: syncedThrough ?? this.syncedThrough,
+    removed: removed ?? this.removed,
   );
 }
 
 /// One open conversation: its timeline, what is being sent, what is read.
 ///
 /// Order is the server's: confirmed messages sort by sequence, never by a
-/// device clock. Pending messages sit after them until confirmed.
+/// device clock or by the order they arrived in. Messages come from three
+/// places — pages, send responses and the live connection — and all go
+/// through one merge, so the same message arriving twice is held once, and
+/// a pending message becomes its confirmed self exactly once, whichever
+/// confirmation lands first.
 class ConversationController extends AsyncNotifier<ConversationState> {
   ConversationController(this.conversationId);
 
@@ -106,12 +132,28 @@ class ConversationController extends AsyncNotifier<ConversationState> {
 
   static const int pageSize = 30;
 
-  /// Catch-up after a gap stops after this many pages; the rest is a scroll away.
+  /// Catch-up stops after this many pages; the rest is a scroll away.
   static const int maxCatchUpPages = 5;
+
+  Future<void>? _catchingUp;
+  bool _catchUpAgain = false;
 
   @override
   Future<ConversationState> build() async {
     final repository = ref.watch(messagingRepositoryProvider);
+    final realtime = ref.watch(realtimeConnectionProvider);
+    final events = realtime.events.listen(_onEvent);
+    final statuses = realtime.statuses.listen(_onStatus);
+    ref.onDispose(() {
+      unawaited(events.cancel());
+      unawaited(statuses.cancel());
+    });
+    // Once the timeline is on screen, make sure nothing slipped past
+    // between loading it and the live connection.
+    listenSelf((previous, next) {
+      if (previous?.value == null && next.value != null) unawaited(_sync());
+    });
+
     final (conversation, viewer, page) = await (
       repository.conversation(conversationId),
       repository.viewerId(),
@@ -124,6 +166,8 @@ class ConversationController extends AsyncNotifier<ConversationState> {
       hasOlder: page.hasOlder,
       lastReadSequence: page.lastReadSequence,
       senderNames: page.senderNames,
+      // The latest page is complete up to its newest message.
+      syncedThrough: page.items.isEmpty ? 0 : page.items.last.sequence,
     );
   }
 
@@ -163,43 +207,9 @@ class ConversationController extends AsyncNotifier<ConversationState> {
     }
   }
 
-  /// Fetches what arrived since the newest message shown. No realtime push
-  /// in V1: this runs on the refresh action and after each send.
-  Future<void> refreshNewer() async {
-    final current = state.value;
-    if (current == null) return;
-    await _catchUp(current.newestSequence);
-  }
-
-  /// Pages forward from [after] — which may be below the newest message
-  /// shown, when a send landed beyond a gap others' messages left.
-  Future<void> _catchUp(int after) async {
-    final repository = _repository;
-    var cursor = after;
-    for (var page = 0; page < maxCatchUpPages; page++) {
-      final MessagePage next;
-      try {
-        next = await repository.messages(
-          conversationId,
-          after: cursor,
-          limit: pageSize,
-        );
-      } on MessagingException {
-        return;
-      }
-      if (!ref.mounted) return;
-      final now = state.value;
-      if (now == null) return;
-      state = AsyncData(
-        now.copyWith(
-          messages: _merged(now.messages, next.items),
-          senderNames: {...now.senderNames, ...next.senderNames},
-        ),
-      );
-      if (!next.hasNewer || next.items.isEmpty) return;
-      cursor = next.items.last.sequence;
-    }
-  }
+  /// Fetches what arrived after the last complete point — the refresh
+  /// action, and whatever the live connection could not deliver.
+  Future<void> refreshNewer() => _catchUp();
 
   Future<void> sendText(String text) async {
     final body = text.trim();
@@ -256,11 +266,12 @@ class ConversationController extends AsyncNotifier<ConversationState> {
     );
   }
 
-  /// Moves the read watermark to the newest message shown.
+  /// Moves the read watermark to the newest message the timeline holds
+  /// without a gap below it — never past a message the person was not shown.
   Future<void> markLatestRead() async {
     final current = state.value;
-    if (current == null) return;
-    final newest = current.newestSequence;
+    if (current == null || current.removed) return;
+    final newest = current.syncedThrough;
     if (newest <= current.lastReadSequence) return;
     final repository = _repository;
     final list = ref.read(conversationListProvider.notifier);
@@ -277,9 +288,167 @@ class ConversationController extends AsyncNotifier<ConversationState> {
     }
   }
 
+  // ── The live connection ─────────────────────────────────────────────────
+
+  void _onEvent(RealtimeEvent event) {
+    if (event.conversationId != conversationId) return;
+    final current = state.value;
+    // Loading: the page, then _sync, cover it. Removed: nothing more of it.
+    if (current == null || current.removed) return;
+    switch (event) {
+      case MessageSentEvent():
+        final filling = _absorb(
+          [event.message],
+          names: {
+            if (event.senderName != null)
+              event.message.senderId: event.senderName!,
+          },
+        );
+        if (filling != null) unawaited(filling);
+      case MessageReadEvent() when event.userId == current.viewerId:
+        // Read on another device. Only ever forward: an older mark arriving
+        // late must not undo a newer one.
+        if (event.lastReadSequence > current.lastReadSequence) {
+          state = AsyncData(
+            current.copyWith(lastReadSequence: event.lastReadSequence),
+          );
+        }
+      case ParticipantRemovedEvent() when event.userId == current.viewerId:
+        _markRemoved();
+      default:
+        return;
+    }
+  }
+
+  void _onStatus(RealtimeStatus status) {
+    if (status.isLive) unawaited(_sync());
+  }
+
+  /// Confirms this conversation over the live connection and catches up
+  /// over HTTP if the server is ahead of what is held.
+  Future<void> _sync() async {
+    final realtime = ref.read(realtimeConnectionProvider);
+    if (!realtime.status.isLive || state.value == null) return;
+    final result = await realtime.subscribe(conversationId);
+    if (!ref.mounted) return;
+    final now = state.value;
+    if (now == null) return;
+    switch (result) {
+      case Subscribed(:final lastSequence, :final lastReadSequence):
+        if (lastReadSequence > now.lastReadSequence) {
+          state = AsyncData(now.copyWith(lastReadSequence: lastReadSequence));
+        }
+        if (lastSequence > now.syncedThrough) await _catchUp();
+      case SubscriptionRefused(:final code) when code.meansNoAccess:
+        _markRemoved();
+      case SubscriptionRefused():
+      case SubscriptionUnavailable():
+        return; // HTTP still works; the next reconnect tries again.
+    }
+  }
+
+  void _markRemoved() {
+    final current = state.value;
+    if (current == null || current.removed) return;
+    state = AsyncData(current.copyWith(removed: true, pending: const []));
+  }
+
+  // ── One way in for every confirmed message ──────────────────────────────
+
+  /// Merges confirmed messages, retires the pending ones they confirm, and
+  /// fills any gap they reveal — returning that catch-up, if one started.
+  Future<void>? _absorb(
+    List<Message> incoming, {
+    Map<String, String> names = const {},
+  }) {
+    final now = state.value;
+    if (now == null || incoming.isEmpty) return null;
+    final merged = _merged(now.messages, incoming);
+    final confirmed = {
+      for (final m in incoming)
+        if (m.senderId == now.viewerId && m.clientMessageId != null)
+          m.clientMessageId!,
+    };
+    final ownNewest = incoming
+        .where(now.isMine)
+        .fold(now.lastReadSequence, (newest, m) => max(newest, m.sequence));
+    final next = now.copyWith(
+      messages: merged,
+      pending: [
+        for (final p in now.pending)
+          if (!confirmed.contains(p.clientMessageId)) p,
+      ],
+      senderNames: {...now.senderNames, ...names},
+      syncedThrough: _advance(now.syncedThrough, merged),
+      // Sending means having read up to here — the server says so too.
+      lastReadSequence: ownNewest,
+    );
+    state = AsyncData(next);
+    return next.hasGap ? _catchUp() : null;
+  }
+
+  /// Pages forward from the complete point until the server has nothing
+  /// newer. One at a time; a gap found meanwhile runs it once more.
+  Future<void> _catchUp() {
+    final running = _catchingUp;
+    if (running != null) {
+      _catchUpAgain = true;
+      return running;
+    }
+    return _catchingUp = _runCatchUp().whenComplete(() => _catchingUp = null);
+  }
+
+  Future<void> _runCatchUp() async {
+    do {
+      _catchUpAgain = false;
+      for (var page = 0; page < maxCatchUpPages; page++) {
+        final now = state.value;
+        if (now == null || now.removed) return;
+        final MessagePage next;
+        try {
+          next = await _repository.messages(
+            conversationId,
+            after: now.syncedThrough,
+            limit: pageSize,
+          );
+        } on MessagingException {
+          return;
+        }
+        if (!ref.mounted) return;
+        final current = state.value;
+        if (current == null) return;
+        final merged = _merged(current.messages, next.items);
+        // A page is dense from its cursor: everything up to its last item
+        // is now held.
+        final pageEnd = next.items.isEmpty
+            ? current.syncedThrough
+            : max(current.syncedThrough, next.items.last.sequence);
+        final confirmed = {
+          for (final m in next.items)
+            if (m.senderId == current.viewerId && m.clientMessageId != null)
+              m.clientMessageId!,
+        };
+        state = AsyncData(
+          current.copyWith(
+            messages: merged,
+            pending: [
+              for (final p in current.pending)
+                if (!confirmed.contains(p.clientMessageId)) p,
+            ],
+            senderNames: {...current.senderNames, ...next.senderNames},
+            syncedThrough: _advance(pageEnd, merged),
+          ),
+        );
+        if (!next.hasNewer || next.items.isEmpty) break;
+      }
+    } while (_catchUpAgain && ref.mounted && (state.value?.hasGap ?? false));
+  }
+
+  // ── Sending ─────────────────────────────────────────────────────────────
+
   Future<void> _enqueue(PendingMessage message) async {
     final current = state.value;
-    if (current == null) return;
+    if (current == null || current.removed) return;
     state = AsyncData(current.copyWith(pending: [...current.pending, message]));
     await _deliver(message);
   }
@@ -313,24 +482,11 @@ class ConversationController extends AsyncNotifier<ConversationState> {
         ),
       };
       if (!ref.mounted) return;
-      final now = state.value;
-      if (now == null) return;
-      final before = now.newestSequence;
-      final gap = stored.sequence > before + 1;
-      state = AsyncData(
-        now.copyWith(
-          messages: _merged(now.messages, [stored]),
-          pending: [
-            for (final p in now.pending)
-              if (p.clientMessageId != message.clientMessageId) p,
-          ],
-          // Sending means having read up to here — the server says so too.
-          lastReadSequence: max(now.lastReadSequence, stored.sequence),
-        ),
-      );
-      ref.invalidate(conversationListProvider);
-      // Others wrote meanwhile: fill the gap below our message.
-      if (gap) await _catchUp(before);
+      // The same path a live copy of this message takes: whichever arrives
+      // first confirms it, the other changes nothing. Others' messages that
+      // landed below it are fetched before the send counts as done.
+      ref.read(conversationListProvider.notifier).messageStored(stored);
+      await _absorb([stored]);
     } on MessagingException catch (error) {
       if (!ref.mounted) return;
       _replacePending(
@@ -360,6 +516,17 @@ class ConversationController extends AsyncNotifier<ConversationState> {
     }
     return byId.values.toList()
       ..sort((a, b) => a.sequence.compareTo(b.sequence));
+  }
+
+  /// The complete point, moved forward over every message that directly
+  /// follows it.
+  static int _advance(int syncedThrough, List<Message> messages) {
+    final held = {for (final m in messages) m.sequence};
+    var through = syncedThrough;
+    while (held.contains(through + 1)) {
+      through += 1;
+    }
+    return through;
   }
 }
 

@@ -58,6 +58,30 @@ class ApiClient {
 
   TokenStore get tokens => _tokens;
 
+  /// The access token for a connection that is not an HTTP request — the
+  /// realtime socket — renewed first when [renew] is set.
+  ///
+  /// Renewal is the same single-flight refresh every request uses, so a
+  /// socket and an HTTP call that need a new token at once share one
+  /// refresh rather than racing (the server would take the second for a
+  /// stolen token). Null when nobody is signed in, or when the renewal was
+  /// refused — the session is over, and [onSignedOut] runs as it would for
+  /// a request. Throws [ApiException] when the server could not be reached.
+  Future<String?> accessToken({bool renew = false}) async {
+    final tokens = await _tokens.read();
+    if (tokens == null) return null;
+    if (!renew) return tokens.accessToken;
+    switch (await _refresh(tokens)) {
+      case _Refresh.renewed:
+        return (await _tokens.read())?.accessToken;
+      case _Refresh.refused:
+        onSignedOut?.call();
+        return null;
+      case _Refresh.unreachable:
+        throw _unreachable();
+    }
+  }
+
   /// A path relative to the API, or an absolute URL (object storage), as a URI.
   Uri resolve(String pathOrUrl, [Map<String, String>? query]) {
     final uri = _base.resolve(

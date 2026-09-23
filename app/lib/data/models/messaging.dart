@@ -261,6 +261,56 @@ class Conversation implements Sourced {
 
   static const int unreadCountCap = 100;
 
+  /// How much of a message a list preview shows — the server's cut, too.
+  static const int previewLength = 140;
+
+  /// This conversation once [message] has arrived: preview, activity and
+  /// unread count as the server would now report them. A message it has
+  /// already counted — a duplicate, or an older one arriving late —
+  /// changes nothing.
+  Conversation withMessage(
+    Message message, {
+    String? senderName,
+    required bool fromViewer,
+  }) {
+    if (message.sequence <= lastSequence) return this;
+    final body = message.body;
+    return Conversation(
+      id: id,
+      type: type,
+      title: title,
+      counterpartUserId: counterpartUserId,
+      memberCount: memberCount,
+      myRole: myRole,
+      canPost: canPost,
+      canManageMembers: canManageMembers,
+      lastSequence: message.sequence,
+      // Sending a message means having read up to it; the server says so too.
+      lastReadSequence: fromViewer ? message.sequence : lastReadSequence,
+      unreadCount: fromViewer
+          ? 0
+          : (unreadCount + 1 > unreadCountCap
+                ? unreadCountCap
+                : unreadCount + 1),
+      lastMessage: MessagePreview(
+        sequence: message.sequence,
+        senderId: message.senderId,
+        senderName: senderName,
+        type: message.type,
+        text: message.isDeleted || body == null
+            ? null
+            : String.fromCharCodes(body.runes.take(previewLength)),
+        deleted: message.isDeleted,
+        createdAt: message.createdAt,
+      ),
+      createdAt: createdAt,
+      activityAt: message.createdAt.isAfter(activityAt)
+          ? message.createdAt
+          : activityAt,
+      origin: origin,
+    );
+  }
+
   Conversation withReadUpTo(int sequence) => Conversation(
     id: id,
     type: type,

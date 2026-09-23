@@ -234,4 +234,96 @@ void main() {
       isNot(contains('secret')),
     );
   });
+
+  group('a token for the realtime connection', () {
+    test('is the current access token, without calling out', () async {
+      var calls = 0;
+      final api = ApiClient(
+        baseUri: base,
+        httpClient: MockClient((_) async {
+          calls += 1;
+          return json(200, {});
+        }),
+        tokenStore: await signedIn(),
+      );
+      expect(await api.accessToken(), 'access-1');
+      expect(calls, 0);
+    });
+
+    test('is null when nobody is signed in', () async {
+      final api = ApiClient(
+        baseUri: base,
+        httpClient: MockClient((_) async => json(200, {})),
+        tokenStore: InMemoryTokenStore(),
+      );
+      expect(await api.accessToken(renew: true), isNull);
+    });
+
+    test('renews through the one shared refresh — never two at once', () async {
+      var refreshes = 0;
+      final gate = Completer<void>();
+      final api = ApiClient(
+        baseUri: base,
+        httpClient: MockClient((request) async {
+          if (request.url.path == '/auth/refresh') {
+            refreshes += 1;
+            await gate.future;
+            return json(200, {
+              'accessToken': 'access-2',
+              'refreshToken': 'refresh-2',
+            });
+          }
+          return json(200, {});
+        }),
+        tokenStore: await signedIn(),
+      );
+      final socket = api.accessToken(renew: true);
+      final another = api.accessToken(renew: true);
+      gate.complete();
+      expect(await socket, 'access-2');
+      expect(await another, 'access-2');
+      expect(refreshes, 1);
+    });
+
+    test('is null, and signs out, when the session is over', () async {
+      var signedOut = false;
+      final store = await signedIn();
+      final api = ApiClient(
+        baseUri: base,
+        httpClient: MockClient(
+          (_) async => error(401, 'identity.refresh_token_invalid'),
+        ),
+        tokenStore: store,
+        onSignedOut: () => signedOut = true,
+      );
+      expect(await api.accessToken(renew: true), isNull);
+      expect(signedOut, isTrue);
+      expect(await store.read(), isNull);
+    });
+
+    test(
+      'throws, keeping the session, when the server cannot be reached',
+      () async {
+        final store = await signedIn();
+        final api = ApiClient(
+          baseUri: base,
+          httpClient: MockClient(
+            (_) async => throw http.ClientException('down'),
+          ),
+          tokenStore: store,
+        );
+        await expectLater(
+          api.accessToken(renew: true),
+          throwsA(
+            isA<ApiException>().having(
+              (e) => e.isUnreachable,
+              'unreachable',
+              true,
+            ),
+          ),
+        );
+        expect(await store.read(), isNotNull);
+      },
+    );
+  });
 }

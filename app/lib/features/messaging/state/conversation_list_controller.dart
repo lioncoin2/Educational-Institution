@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/models/messaging.dart';
+import '../../../data/realtime/realtime_client.dart';
+import '../../../data/realtime/realtime_frames.dart';
 import '../../../providers/app_providers.dart';
 
 class ConversationListState {
@@ -31,11 +35,38 @@ class ConversationListState {
   );
 }
 
-/// The signed-in person's conversations, a page at a time.
+/// The signed-in person's conversations, a page at a time — kept current
+/// by the live connection while it is up:
+///
+///   conversation.created a conversation to show: the list is fetched again
+///   message.sent         the conversation's preview, activity, unread count
+///                        and place in the list
+///   message.read         the badge clears (read on another device)
+///   participant.added    a conversation to show: the list is fetched again
+///   participant.removed  the conversation leaves the list
+///
+/// Whenever the connection comes (back) up, the first page is fetched again
+/// over HTTP: whatever happened while it was down is in there.
 class ConversationListController extends AsyncNotifier<ConversationListState> {
+  String? _viewerId;
+  Future<void>? _resyncing;
+
   @override
   Future<ConversationListState> build() async {
-    final page = await ref.watch(messagingRepositoryProvider).conversations();
+    final repository = ref.watch(messagingRepositoryProvider);
+    final realtime = ref.watch(realtimeConnectionProvider);
+    final events = realtime.events.listen(_onEvent);
+    final statuses = realtime.statuses.listen(_onStatus);
+    ref.onDispose(() {
+      unawaited(events.cancel());
+      unawaited(statuses.cancel());
+    });
+
+    final (page, viewer) = await (
+      repository.conversations(),
+      repository.viewerId(),
+    ).wait;
+    _viewerId = viewer;
     return ConversationListState(
       items: page.items,
       nextCursor: page.nextCursor,
@@ -53,11 +84,12 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
     try {
       final page = await repository.conversations(cursor: current.nextCursor);
       if (!ref.mounted) return;
-      final seen = {for (final c in current.items) c.id};
+      final now = state.value ?? current;
+      final seen = {for (final c in now.items) c.id};
       state = AsyncData(
         ConversationListState(
           items: [
-            ...current.items,
+            ...now.items,
             ...page.items.where((c) => !seen.contains(c.id)),
           ],
           nextCursor: page.nextCursor,
@@ -66,7 +98,10 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
     } on MessagingException {
       if (!ref.mounted) return;
       state = AsyncData(
-        current.copyWith(loadingMore: false, loadMoreFailed: true),
+        (state.value ?? current).copyWith(
+          loadingMore: false,
+          loadMoreFailed: true,
+        ),
       );
     }
   }
@@ -90,6 +125,99 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
       ),
     );
   }
+
+  /// A message is stored — by this device's send, or reported by the
+  /// server. Moves its conversation to the top with the new preview; a
+  /// message already counted changes nothing.
+  void messageStored(Message message, {String? senderName}) {
+    final current = state.value;
+    if (current == null) return;
+    final index = current.items.indexWhere(
+      (c) => c.id == message.conversationId,
+    );
+    if (index < 0) {
+      // A conversation this list has not loaded: ask the server.
+      unawaited(_resync());
+      return;
+    }
+    final before = current.items[index];
+    final after = before.withMessage(
+      message,
+      senderName: senderName,
+      fromViewer: message.senderId == _viewerId,
+    );
+    if (identical(before, after)) return;
+    state = AsyncData(
+      current.copyWith(
+        items: _byActivity([
+          for (final c in current.items)
+            if (c.id != after.id) c,
+          after,
+        ]),
+      ),
+    );
+  }
+
+  void _onEvent(RealtimeEvent event) {
+    switch (event) {
+      case ConversationCreatedEvent():
+        final known =
+            state.value?.items.any((c) => c.id == event.conversationId) ??
+            false;
+        if (!known) unawaited(_resync());
+      case MessageSentEvent():
+        messageStored(event.message, senderName: event.senderName);
+      case MessageReadEvent() when event.userId == _viewerId:
+        markedRead(event.conversationId, event.lastReadSequence);
+      case ParticipantAddedEvent() when event.userId == _viewerId:
+        unawaited(_resync());
+      case ParticipantRemovedEvent() when event.userId == _viewerId:
+        final current = state.value;
+        if (current == null) return;
+        state = AsyncData(
+          current.copyWith(
+            items: [
+              for (final c in current.items)
+                if (c.id != event.conversationId) c,
+            ],
+          ),
+        );
+      default:
+        return;
+    }
+  }
+
+  void _onStatus(RealtimeStatus status) {
+    if (status.isLive) unawaited(_resync());
+  }
+
+  /// The first page again, quietly — no spinner over what is shown. Runs
+  /// once at a time; a failure keeps what is shown.
+  Future<void> _resync() {
+    return _resyncing ??= _fetchFirstPage().whenComplete(
+      () => _resyncing = null,
+    );
+  }
+
+  Future<void> _fetchFirstPage() async {
+    if (state.value == null) return; // Still loading: build fetches anyway.
+    try {
+      final page = await ref.read(messagingRepositoryProvider).conversations();
+      if (!ref.mounted) return;
+      state = AsyncData(
+        ConversationListState(items: page.items, nextCursor: page.nextCursor),
+      );
+    } on MessagingException {
+      // The next event or reconnect tries again.
+    }
+  }
+
+  /// Most recently active first; ties by id, as the server breaks them.
+  static List<Conversation> _byActivity(List<Conversation> items) =>
+      items..sort((a, b) {
+        final byTime = b.activityAt.compareTo(a.activityAt);
+        return byTime != 0 ? byTime : b.id.compareTo(a.id);
+      });
 }
 
 final conversationListProvider =

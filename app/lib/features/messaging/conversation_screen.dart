@@ -8,6 +8,7 @@ import '../../data/models/messaging.dart';
 import 'messaging_copy.dart';
 import 'state/conversation_controller.dart';
 import 'widgets/composer.dart';
+import 'widgets/connection_banner.dart';
 import 'widgets/message_bubble.dart';
 
 /// One conversation: its timeline, newest at the bottom, and the composer.
@@ -78,10 +79,16 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         onRetry: () => ref.invalidate(provider),
         builder: (context, state) => Column(
           children: [
+            const ConnectionBanner(),
             Expanded(
               child: _Timeline(state: state, unreadAfter: _unreadAfter),
             ),
-            if (state.conversation.canPost)
+            if (state.removed)
+              const _Notice(
+                icon: Icons.person_off_outlined,
+                text: 'لم تعد عضوًا في هذه المحادثة.',
+              )
+            else if (state.conversation.canPost)
               Composer(
                 onSendText: (text) =>
                     ref.read(provider.notifier).sendText(text),
@@ -89,7 +96,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                     ref.read(provider.notifier).sendFile(file),
               )
             else
-              const _ReadOnlyNotice(),
+              const _Notice(
+                icon: Icons.campaign_outlined,
+                text: 'هذه قناة إعلانات: يمكنك القراءة فقط.',
+              ),
           ],
         ),
       ),
@@ -247,8 +257,12 @@ class _UnreadDivider extends StatelessWidget {
   }
 }
 
-class _ReadOnlyNotice extends StatelessWidget {
-  const _ReadOnlyNotice();
+/// Where the composer would be, when there is nothing to compose.
+class _Notice extends StatelessWidget {
+  const _Notice({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
 
   @override
   Widget build(BuildContext context) {
@@ -260,17 +274,9 @@ class _ReadOnlyNotice extends StatelessWidget {
           padding: const EdgeInsets.all(Insets.lg),
           child: Row(
             children: [
-              Icon(
-                Icons.campaign_outlined,
-                color: context.colors.onSurfaceVariant,
-              ),
+              Icon(icon, color: context.colors.onSurfaceVariant),
               const SizedBox(width: Insets.sm),
-              Expanded(
-                child: Text(
-                  'هذه قناة إعلانات: يمكنك القراءة فقط.',
-                  style: context.text.bodySmall,
-                ),
-              ),
+              Expanded(child: Text(text, style: context.text.bodySmall)),
             ],
           ),
         ),

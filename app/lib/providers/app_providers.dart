@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -15,6 +17,8 @@ import '../data/models/learning.dart';
 import '../data/models/progress.dart';
 import '../data/models/program.dart';
 import '../data/models/student.dart';
+import '../data/realtime/realtime_client.dart';
+import '../data/realtime/websocket_realtime_client.dart';
 import '../data/repositories/http/http_auth_repository.dart';
 import '../data/repositories/http/http_messaging_repository.dart';
 import '../data/repositories/mock/mock_auth_repository.dart';
@@ -90,6 +94,53 @@ final messagingRepositoryProvider = Provider<MessagingRepository>(
         )
       : MockMessagingRepository(),
 );
+
+// ── Realtime ───────────────────────────────────────────────────────────────
+
+/// The live connection: a WebSocket to the backend when one is configured,
+/// nothing at all in the demo build.
+final Provider<RealtimeClient> realtimeClientProvider =
+    Provider<RealtimeClient>((ref) {
+      if (!BackendConfig.isConfigured) return const DisabledRealtimeClient();
+      final api = ref.watch(apiClientProvider);
+      final client = WebSocketRealtimeClient(
+        endpoint: realtimeEndpoint(BackendConfig.baseUri),
+        accessToken: api.accessToken,
+      );
+      ref.onDispose(() => unawaited(client.dispose()));
+      return client;
+    });
+
+/// The connection the messaging state listens to — open while someone is
+/// signed in, closed when they sign out.
+final Provider<RealtimeClient> realtimeConnectionProvider =
+    Provider<RealtimeClient>((ref) {
+      final client = ref.watch(realtimeClientProvider);
+      if (!client.isAvailable) return client;
+      ref.listen<AsyncValue<CurrentUser?>>(sessionUserProvider, (_, next) {
+        if (!next.hasValue) return;
+        unawaited(next.value == null ? client.disconnect() : client.connect());
+      }, fireImmediately: true);
+      // Back from the background, the network may have changed underneath:
+      // a fresh connection now beats waiting for a heartbeat to notice.
+      final lifecycle = AppLifecycleListener(
+        onResume: () {
+          if (client.status != RealtimeStatus.disconnected) {
+            unawaited(client.reconnect());
+          }
+        },
+      );
+      ref.onDispose(lifecycle.dispose);
+      return client;
+    });
+
+/// Where the live connection stands, for the screens that show it.
+final StreamProvider<RealtimeStatus> realtimeStatusProvider =
+    StreamProvider<RealtimeStatus>((ref) async* {
+      final client = ref.watch(realtimeConnectionProvider);
+      yield client.status;
+      yield* client.statuses;
+    });
 
 /// Device capabilities, unbound in this milestone (see media_seams.dart).
 final attachmentPickerProvider = Provider<AttachmentPicker>(

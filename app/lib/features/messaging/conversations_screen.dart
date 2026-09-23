@@ -11,6 +11,7 @@ import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/layout/responsive_body.dart';
 import '../../providers/app_providers.dart';
 import 'state/conversation_list_controller.dart';
+import 'widgets/connection_banner.dart';
 import 'widgets/conversation_tile.dart';
 
 /// The signed-in person's conversations, most recently active first.
@@ -46,7 +47,12 @@ class ConversationsScreen extends ConsumerWidget {
                         actionLabel: 'تسجيل الدخول',
                         onAction: () => context.push(Routes.signIn),
                       )
-                    : const _ConversationList(),
+                    : const Column(
+                        children: [
+                          ConnectionBanner(),
+                          Expanded(child: _ConversationList()),
+                        ],
+                      ),
               )
             : const _ConversationList(),
       ),
