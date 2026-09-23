@@ -111,7 +111,19 @@ describe('what a push says', () => {
     expect(retryDelayMs(1)).toBe(PushRetryPolicy.baseDelayMs);
     expect(retryDelayMs(2)).toBe(PushRetryPolicy.baseDelayMs * 2);
     expect(retryDelayMs(3, 30)).toBe(30_000);
+    expect(retryDelayMs(1, 60)).toBe(PushRetryPolicy.maxDelayMs);
     expect(retryDelayMs(20)).toBe(PushRetryPolicy.maxDelayMs);
-    expect(retryDelayMs(1, 3600)).toBe(PushRetryPolicy.maxDelayMs);
+  });
+
+  it('never retries sooner than asked — asked to wait longer than a retry is held, it gives up', () => {
+    expect(retryDelayMs(1, 61)).toBeNull();
+    expect(retryDelayMs(1, 3600)).toBeNull();
+    expect(retryDelayMs(1, Number.POSITIVE_INFINITY)).toBeNull();
+  });
+
+  it('ignores a retry-after that is not a positive number — an adapter mistake, not an instruction', () => {
+    expect(retryDelayMs(2, 0)).toBe(PushRetryPolicy.baseDelayMs * 2);
+    expect(retryDelayMs(2, -5)).toBe(PushRetryPolicy.baseDelayMs * 2);
+    expect(retryDelayMs(2, Number.NaN)).toBe(PushRetryPolicy.baseDelayMs * 2);
   });
 });

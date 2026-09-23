@@ -107,7 +107,8 @@ function threadKeyOf(target: NotificationTarget): string {
 /**
  * Retries for a `retryable` outcome: a few, spaced out, then give up — the
  * notification is in the inbox whatever happens here. A provider's
- * `retryAfterSeconds` wins when it asks for longer.
+ * `retryAfterSeconds` wins when it asks for longer; one that asks for longer
+ * than `maxDelayMs` is not retried at all (see `retryDelayMs`).
  */
 export const PushRetryPolicy = Object.freeze({
   maxAttempts: 3,
@@ -115,13 +116,23 @@ export const PushRetryPolicy = Object.freeze({
   maxDelayMs: 60_000,
 });
 
-/** How long to wait before attempt `attempt + 1`: doubling, capped, never sooner than asked. */
+/**
+ * How long to wait before attempt `attempt + 1`: doubling up to
+ * `maxDelayMs`, and never sooner than the provider asked.
+ *
+ * `null` means do not retry: the provider asked to wait longer than a retry
+ * is ever held (`maxDelayMs`). Sending early would push into its throttle, and
+ * holding a timer for an hour would keep a push that is stale by then — so the
+ * push is given up, and the notification waits in the inbox. A `retryAfter`
+ * that is not a positive number is an adapter's mistake and is ignored.
+ */
 export function retryDelayMs(
   attempt: number,
   retryAfterSeconds?: number,
   policy: { readonly baseDelayMs: number; readonly maxDelayMs: number } = PushRetryPolicy,
-): number {
+): number | null {
   const backoff = Math.min(policy.baseDelayMs * 2 ** (attempt - 1), policy.maxDelayMs);
-  const asked = retryAfterSeconds === undefined ? 0 : retryAfterSeconds * 1000;
-  return Math.min(Math.max(backoff, asked), policy.maxDelayMs);
+  if (retryAfterSeconds === undefined || !(retryAfterSeconds > 0)) return backoff;
+  const asked = retryAfterSeconds * 1000;
+  return asked > policy.maxDelayMs ? null : Math.max(backoff, asked);
 }

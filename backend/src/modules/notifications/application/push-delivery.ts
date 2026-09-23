@@ -68,7 +68,9 @@ const BATCH = 1000;
  * Each outcome, as the provider adapter classifies it:
  *
  *   delivered       done
- *   retryable       tried again after a backoff, up to `maxAttempts`, then given up
+ *   retryable       tried again after a backoff, up to `maxAttempts`, then given
+ *                   up; never sooner than the provider's `retryAfterSeconds`, and
+ *                   not at all if it asks for longer than a retry is held
  *   invalid_token   the device is disabled — push skips it from now on
  *   rejected        logged, never retried: the same message would fail the same way
  *
@@ -226,6 +228,13 @@ export class PushDelivery implements OnModuleInit, OnModuleDestroy {
           return;
         }
         const delay = retryDelayMs(attempt, outcome.retryAfterSeconds, this.settings);
+        if (delay === null) {
+          this.logger.warn(
+            { ...context, reason: outcome.reason, retryAfterSeconds: outcome.retryAfterSeconds },
+            'push throttled for longer than a retry is held; giving up',
+          );
+          return;
+        }
         this.logger.debug({ ...context, reason: outcome.reason, delay }, 'push failed; retrying');
         this.track(
           new Promise<void>((resolve) => {

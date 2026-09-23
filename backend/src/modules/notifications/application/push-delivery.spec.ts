@@ -112,6 +112,25 @@ describe('push delivery', () => {
     expect(h.push.sendsTo(fcmToken(3))).toBe(2);
   });
 
+  it('gives up rather than retry sooner than a throttling provider asks', async () => {
+    await h.device(ali, fcmToken(1));
+    await h.device(ali, fcmToken(2));
+    // FAST_PUSH holds a retry for at most 5 ms: 1 s is longer, 0.004 s is not.
+    h.push.answer(fcmToken(1), { kind: 'retryable', reason: '429', retryAfterSeconds: 1 });
+    h.push.answer(
+      fcmToken(2),
+      { kind: 'retryable', reason: '429', retryAfterSeconds: 0.004 },
+      { kind: 'delivered' },
+    );
+
+    await h.dispatcher.dispatch([messageRequest(ali.userId, 'm-1')]);
+    await h.settle();
+
+    expect(h.push.sendsTo(fcmToken(1))).toBe(1);
+    expect(h.push.sendsTo(fcmToken(2))).toBe(2);
+    expect(await h.inbox(ali)).toHaveLength(1);
+  });
+
   it('treats an adapter that throws as a transient failure, bounded by the same limit', async () => {
     await h.device(ali, fcmToken(1));
     h.push.throwFor(fcmToken(1));
