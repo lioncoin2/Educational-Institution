@@ -93,6 +93,28 @@ ports injectable in the first place, and Nest's decorators do not impose a data
 model the way an ORM or an SFK SDK does. It is the one framework concession in
 the application layer.
 
+> **Correction (2026-09-23):** this rule never fires. Its target pattern is
+> anchored at the package name (`^(livekit-server-sdk|drizzle-orm|pg|…)`,
+> `backend/.dependency-cruiser.cjs:88`), but dependency-cruiser matches the
+> resolved path, which begins with `node_modules/`, for example
+> `node_modules/livekit-server-sdk/dist/index.js`. A use case importing any
+> package listed above would pass, so the list is stated, not enforced. The
+> two rules below anchor at `^node_modules/`, so they match resolved paths.
+>
+> Nor does any rule confine `livekit-server-sdk` to the live adapter the way
+> those two confine `ws` and the push SDKs. `domain-is-dependency-free`
+> covers `domain/`. Three module-specific specs forbid LiveKit: messaging's
+> for the whole module, and notifications' and academic's for their domain
+> and application layers. Any other `api/`, `infrastructure/` or
+> `platform/` file could import it without failing the build.
+> Today the only importer is `live/infrastructure/livekit-rtc-provider.ts`,
+> by search. The fix is Phase 0 of the proposed design: a corrected
+> pattern, a `livekit-sdk-only-in-the-live-adapter` rule, and a spec proving
+> every rule matches something
+> ([communities-live-attendance.md §25.1](communities-live-attendance.md#251-phase-0-corrections);
+> [ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md),
+> Proposed).
+
 ### `websocket-library-only-in-the-realtime-adapter`
 
 No file under `src/` may import a WebSocket library — `ws`, socket.io and its
@@ -248,6 +270,11 @@ npm run verify       # format + lint + typecheck + arch + all tests
 
 `npm run arch:graph` currently reports **no dependency violations found
 (150 modules, 499 dependencies cruised)**.
+
+> **Correction (2026-09-23):** those counts are from an earlier milestone.
+> At commit `9670c47` it reports no dependency violations found (285
+> modules, 1244 dependencies cruised). "No violations" also means less than
+> it seems while `application-has-no-vendor-sdks` cannot fire (above).
 
 `test/architecture/boundaries.spec.ts` also asserts two properties directly, so
 they are named in their own right: nothing outside identity imports anything of

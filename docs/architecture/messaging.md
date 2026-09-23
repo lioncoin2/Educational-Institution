@@ -28,6 +28,16 @@ checked **in addition to** institutional permissions, never instead of them.
 `MODERATOR` and `ADMIN` conversation roles are the expected next members of
 that list; the column is text + CHECK, so adding one is a cheap migration.
 
+> **Proposed change:** see [community-chat.md](community-chat.md) (design
+> only, [ADR 0018](decisions/0018-community-chat-projection.md) Proposed). A
+> community's chat would be a `CHANNEL` conversation linked to it by
+> `community_id`. Who belongs, reads and posts would be answered by the
+> communities module. Messaging would keep a named, versioned projection of
+> the community's active members and refuse its own add, remove and leave
+> for that conversation with a 412. None of the caps above would apply to
+> it, and it would be reached at `GET /messaging/communities/:id/conversation`.
+> Every other conversation is unchanged.
+
 At most **one direct conversation exists per pair of people**. The pair is
 stored ordered (`direct_user_low < direct_user_high`) under a unique
 constraint, and creation is `INSERT … ON CONFLICT DO NOTHING` followed by a
@@ -338,6 +348,15 @@ Ids and codes only — no text, no file names, no display names:
 survives a future partitioned transport. Initial members are implied by
 `conversation.created` — a 5,000-member channel does not emit 5,000 events.
 A read event is raised only when the watermark actually moved.
+
+> **Correction (2026-09-23):** that holds only for the people named at
+> creation, and creation names at most 200 members and 200 publishers
+> (`MAX_PARTICIPANTS_PER_REQUEST`, `messaging-policy.ts:27`;
+> `create-conversation.use-cases.ts:102`; `messaging.dto.ts:27, 54, 61`).
+> Everyone else is added through `POST …/participants`, at most 200 at a
+> time. Each person added that way emits one `messaging.participant.added`
+> event and one audit entry (`membership.use-cases.ts:143-158`). A
+> 5,000-member channel therefore emits at least 4,599 such events.
 
 ---
 

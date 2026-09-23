@@ -366,6 +366,23 @@ So this document is organized around what actually breaks at that scale, what
 the design does about it, and — at the end, explicitly — **what has been proven
 and what has not.**
 
+> **Proposed change:** see [live.md](live.md) (design only,
+> [ADR 0019](decisions/0019-community-scoped-live-sessions.md) Proposed).
+> Live sessions would belong to a community instead of a halaqa, with
+> Postgres as the record, a presenter slot for screen sharing, narrow RTC
+> ports and a reconciler that brings LiveKit back in line with the record.
+> A configured per-session cap, taken from load tests, would replace the
+> 2500 target
+> ([Q57](open-questions.md#q57--live-session-size-and-concurrency)). 30,000
+> community members is not 30,000 live participants. Self-hosted LiveKit
+> rooms are single-node (verified in LiveKit's server source), and the
+> ~3,000-per-room figure LiveKit publishes is known only second-hand and
+> must be benchmarked: LiveKit's documentation site could not be read from
+> this environment. Until that lands, this part describes the design in
+> force. The corrections below concern today's code;
+> [live.md §1.2](live.md#12-corrections-to-realtimemd-part-a) lists every
+> known inaccuracy in this part.
+
 ---
 
 ## 1. Why 2500 is a different problem from 25
@@ -471,6 +488,15 @@ and the media plane disagree, and we would rather be *more* restrictive on
 record than have a silent grant. Reconciliation of that divergence is
 [open question Q5](open-questions.md).
 
+> **Correction (2026-09-23):** for a grant it is the other way round. The
+> grant is saved before the provider is called
+> (`moderate-speaker.use-case.ts:98-99`). If `updateCapabilities` throws, the
+> record says `granted` while the SFU still has a listener. No moderation
+> log entry, audit entry or event is written, and the request fails. The
+> next join then mints a speaker token, because it reads the saved grant
+> (`join-live-session.use-case.ts:92-100`). That is a silent grant. Only a
+> failed revoke leaves the record as the more restrictive side.
+
 ### 2.3 Concurrent speakers are capped
 
 `MAX_CONCURRENT_SPEAKERS = 4`. The cap is an engineering safeguard, not an
@@ -509,6 +535,27 @@ configuration rather than from the client.
 A leaked join token is worth one room, one identity, ten minutes, and — for a
 listener — no ability to publish anything.
 
+> **Correction (2026-09-23):** the token is still bound to one room and one
+> identity, but the other two limits are wrong.
+>
+> - **Not ten minutes.** The 600-second TTL limits only the first
+>   connection. LiveKit sends a connected participant a refreshed token at
+>   join and then every 5 minutes. Each refreshed token is valid for at least
+>   10 minutes and carries the participant's current grants, room included.
+>   Removal does not revoke it:
+>   the open-source server never reads `revoke_token_ts`, and the SDK itself
+>   says "Even after being removed, the participant can still re-join the
+>   room". Nothing in `live` calls `removeParticipant` today anyway. Sources:
+>   the LiveKit server source, v1.13.7 (`github.com/livekit/livekit` at
+>   `6b2e3ec`), `pkg/service/roommanager.go:61-64, 767-778, 1149-1181`, where
+>   a search for `RevokeTokenTs` finds nothing; and the installed
+>   `livekit-server-sdk` 2.19.1, `dist/RoomServiceClient.d.ts:131`.
+>   LiveKit's documentation site could not be read from this environment.
+> - **Listeners can publish data.** A listener token carries
+>   `canPublishData: true` (`live/domain/rtc-provider.ts:18-22`;
+>   `livekit-rtc-provider.ts:59`), so a listener can send data messages to
+>   the whole room. It cannot publish audio.
+
 ---
 
 ## 3. What talks to what
@@ -537,6 +584,17 @@ LiveController ──► JoinLiveSessionUseCase
 The client talks to our API for *permission* and to the SFU for *media*. It
 never talks to the SFU about permission.
 
+> **Correction (2026-09-23):** the diagram's "local dev without credentials"
+> holds only when `LIVEKIT_API_SECRET` is unset or equals
+> `development-only-secret` (`live.module.ts:47-49`; the default is at
+> `platform/config/app-config.ts:194`). Any other value selects
+> `LiveKitRtcProvider`. That includes the placeholder `change-me` in
+> `backend/.env.example:48`, which the backend's setup copies
+> (`backend/README.md:16`). With it, local development runs the real
+> adapter against `wss://livekit.example.com` (`backend/.env.example:46`). The
+> comment at `live.module.ts:44-46` says the choice is obvious in logs, but
+> no log line reports it.
+
 ---
 
 ## 4. Persistence plan (not yet implemented)
@@ -552,6 +610,16 @@ Current repositories are in-memory. They implement the ports the real ones will:
 
 Redis holds the live queue; Postgres holds what happened. No permanent business
 truth lives only in Redis.
+
+> **Correction (2026-09-23):** that sentence describes the plan, not today.
+> Nothing of live is persisted. The four repositories are in memory, created
+> empty at boot and lost on restart (`live.module.ts:51-57`). There is no
+> live table, migration, Postgres adapter or Redis adapter. Nothing creates
+> a room or a session either. So in the running application every join and
+> raise-hand returns `404 live.session_not_found`, and the use cases run
+> only in unit tests that seed the in-memory repositories. The one durable
+> trace is the audit entry for a grant or revoke, and only when a database
+> is configured (`platform/platform.module.ts:43-48`).
 
 ---
 
@@ -571,6 +639,23 @@ truth lives only in Redis.
   `revoked`) and raises a domain event.
 - A host publishes only while also holding `live.speak`.
 - Nothing outside `livekit-rtc-provider.ts` imports LiveKit.
+
+> **Correction (2026-09-23):** the last item is true today by search: only
+> `live/infrastructure/livekit-rtc-provider.ts:2` imports
+> `livekit-server-sdk`. But no test or rule proves it for the repository.
+> `domain-is-dependency-free` covers `domain/` only.
+> `application-has-no-vendor-sdks` never fires: its target pattern is
+> anchored at the package name, while dependency-cruiser matches resolved
+> paths such as `node_modules/livekit-server-sdk/dist/index.js`
+> (`backend/.dependency-cruiser.cjs:88`). No rule confines LiveKit the way
+> `websocket-library-only-in-the-realtime-adapter` confines `ws` (`:91-103`).
+> Three module-specific specs forbid it: messaging's for the whole module,
+> and notifications' and academic's for their domain and application layers.
+> The fix is Phase 0 of the proposed design
+> ([communities-live-attendance.md §25.1](communities-live-attendance.md#251-phase-0-corrections)).
+> The token items above are proven against `FakeRtcProvider` only. They
+> check the capability decision, not the LiveKit grant, and no spec covers
+> `livekit-rtc-provider.ts`.
 
 **Not proven — no load test has been run:**
 
@@ -612,3 +697,9 @@ Step 1 is possible today. Steps 2–5 need an environment and credentials.
 - Reconciliation between our permission record and the provider's (Q5).
 - Automatic room lifecycle from the schedule — `live` raises the events;
   `automation` will consume them.
+
+> **Correction (2026-09-23):** `live` does not raise the session events
+> today. `liveSessionStarted` and `liveSessionEnded` exist
+> (`live/domain/events.ts:34-50`) but have no caller, because no use case
+> starts or ends a session. Only `live.speaker.requested`, `.granted` and
+> `.revoked` are published.

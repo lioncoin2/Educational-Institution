@@ -48,6 +48,13 @@ constraints that shaped the matrix.
 policy rules for any scoping. No use case, guard or controller changes. A test
 keeps the code constant and the table in step.
 
+**Proposed design (Q40–Q72).**
+[ADR 0017](decisions/0017-community-scoped-authorization.md) would revise
+the host-only answer when it lands (P6): the host while `community.live.host`
+holds, plus holders of `community.live.moderate`; no role, OWNER included,
+moderates without community standing. See
+[Q54](#q54--who-starts-ends-and-moderates-a-live-session).
+
 ---
 
 ## Q2 — Who is the first owner, and how are accounts created after that?
@@ -92,6 +99,10 @@ later.
 **When answered.** A scheduled job in `automation` calling
 `StorageProvider.delete()`. No change to how files are written or read.
 
+**Proposed design (Q40–Q72).** The proposed modules would delete nothing:
+stints, links, grants, live sessions, hands and snapshots are kept until
+this is answered ([Q71](#q71--correcting-retaining-and-erasing-snapshots)).
+
 ---
 
 ## Q4 — How many concurrent speakers, and in what order?
@@ -109,6 +120,10 @@ with a comment saying exactly this. The cap is one exported constant.
 
 **When answered.** Change a comparator, or make it strategy-shaped. Everything
 else about the queue is unaffected.
+
+**Proposed design (Q40–Q72).** Community live sessions would keep 4
+speakers and FCFS; the presenter and moderators publishing by right would use
+no speaker slot. Other floor rules are [Q62](#q62--floor-rules-beyond-first-come-first-served).
 
 ---
 
@@ -130,6 +145,10 @@ holding a silent grant. The divergence is not yet detected or repaired.
 
 **When answered.** A reconciliation step in the live module. The ordering and
 the ports do not change.
+
+**Proposed design (Q40–Q72).** For community live sessions the design
+proposes, PROVISIONALLY, that the record wins and a reconciler converges
+LiveKit to it within 60 s ([live.md §11](live.md#11-the-reconciler)).
 
 ---
 
@@ -443,6 +462,10 @@ and `messaging-settings.ts`: 4,000 characters; groups ≤ 500 members; channels
 
 **When answered.** Constants. No structural change.
 
+**Proposed design (Q40–Q72).** This also covers community size: no member
+limit as policy, and messaging's caps would not apply to community chats
+([communities.md §5.4](communities.md#54-no-ceiling-as-policy)).
+
 ---
 
 ## Q21 — Does someone joining a group see what was said before?
@@ -461,6 +484,10 @@ choose. Channels are the opposite case — notices meant for everyone.
 **When answered.** That function. Existing members' windows are stored per
 participant, so a change applies to future joins without a migration.
 
+**Proposed design (Q40–Q72).** Community chats would follow the channel
+rule (full history), PROVISIONALLY; see
+[Q52](#q52--community-chat-history-for-newcomers-and-returners).
+
 ---
 
 ## Q22 — Who may see who is in a conversation?
@@ -478,6 +505,10 @@ announcing membership changes to the other members waits on this answer.
 
 **When answered.** One condition in `ListParticipantsUseCase`, and the
 matching audience for realtime's `participant.*` events.
+
+**Proposed design (Q40–Q72).** This also covers community rosters: members
+would see the community, its count and themselves; listing would need
+`community.members.view`, with display names only.
 
 ---
 
@@ -501,6 +532,11 @@ every read path, a CHECK that permits a wiped body) but not exposed.
 **When answered.** A review capability would be a new, audited use case with
 its own permission and probably a second approval — not a widening of
 `messaging.read`. Deletion is one use case either way.
+
+**Proposed design (Q40–Q72).** The design reserves
+`community.messages.moderate` ([Q51](#q51--the-community-chat-who-may-post));
+its oversight removes, never adds ([Q43](#q43--institutional-oversight-of-communities));
+removal from a live session is [Q64](#q64--removing-a-participant-from-a-session).
 
 ---
 
@@ -583,6 +619,11 @@ revalidation every 60 seconds; 10,000 connections per instance.
 **When answered.** Constants in that file — after a load test on the
 production topology, not before.
 
+**Proposed design (Q40–Q72).** Join rates through one link, community chat
+fan-out and live capacity would also come from load tests (P8;
+[Q57](#q57--live-session-size-and-concurrency),
+[Q65](#q65--media-hosting-and-operations)).
+
 ---
 
 ## Q27 — How long are notifications kept?
@@ -607,6 +648,11 @@ name.
 `(recipient_user_id, created_at, id)` index already serves a per-person sweep;
 an institution-wide sweep would add a `created_at` index by migration. No
 change to the model or the API.
+
+**Proposed design (Q40–Q72).** Under today's rules one post in a
+30,000-member community chat would write 30,000 rows, kept forever. The
+design keeps community chats above the load-tested size disabled until this
+and Q28 are answered, or the cost is accepted (gate G4).
 
 ---
 
@@ -653,6 +699,10 @@ conversation, updated in place) — no change to the dispatcher or the
 clients. Priority is a request field the dispatcher weighs against
 preferences, plus a permission for who may set it. New categories arrive with
 their types.
+
+**Proposed design (Q40–Q72).** This also decides gate G4 for community chats
+([community-chat.md §11.2](community-chat.md#112-gates-g1g4)). Community,
+live and attendance facts wait on [Q67](#q67--notifications-for-community-live-and-attendance-facts).
 
 ---
 
@@ -831,6 +881,10 @@ scoped), or a grant in the role matrix. Hiding enrollments from before a
 teacher's assignment is a filter in the roster use case. Assistant teachers'
 distinct duties would be permissions checked in the future modules that act
 per halaqa.
+
+**Proposed design (Q40–Q72).** No proposed module would exercise
+`attendance.*`; community snapshots would be scoped by community standing,
+which reviewers must accept ([Q69](#q69--who-records-and-who-views-snapshots)).
 
 ---
 
@@ -1069,6 +1123,11 @@ unconfirmed.
   migrations run before the seed.
 - **Trainees** are Q38.
 
+**Proposed design (Q40–Q72).** The proposed `communities` module is not
+called "group" and has no halaqa link, so it answers nothing here; see
+[Q40](#q40--governance-which-gates-apply-to-the-new-modules) and
+[Q50](#q50--communities-and-the-academic-structure).
+
 ---
 
 ## Q37 — Moving between halaqat and sections: assessment, placement, strengthening, نظام الضخ
@@ -1229,6 +1288,968 @@ halaqa is linked to an audience.
 add programs and halaqat through the API. An audience attached to halaqat
 would be additive, and only if the owner says halaqat are dedicated to
 audiences.
+
+---
+
+> **Q40–Q72 — Communities, Live and Attendance.** State: PROPOSED — design
+> only. Nothing here is implemented; no table, endpoint, event publisher or
+> screen exists. These questions come from the design package in
+> [communities-live-attendance.md](communities-live-attendance.md). Nothing
+> was built for any of them, so each **Built instead** reads "nothing",
+> followed by the default the design would use. Every such default is
+> PROVISIONAL, belongs to the question it sits under, and is not a decision.
+>
+> The brief's "group" is the **Community** aggregate here: "group" already
+> means messaging's `GROUP` conversation type, and is used for Tahajji's
+> «مجموعة» in
+> [Q36](#q36--tahajji-دورة-التهجي-وإعداد-المعلمات-مدينة-التهجي-and-the-40-groups).
+> A community's membership is not a live audience: 30,000 members is not
+> 30,000 live participants. LiveKit facts below come from its server and SDK
+> source; LiveKit's documentation site could not be read from here.
+
+## Q40 — Governance: which gates apply to the new modules?
+
+**Question.** This one is for the user, who set both constraints.
+
+- [academic-reconciliation.md §13](academic-reconciliation.md#13-minimal-recommended-changes-before-the-next-milestone)
+  says that **before any new module**, Q35 and Q36 are answered and ADR 0015
+  lands. Does that step apply to the proposed `communities` module, and so
+  to what is built on it: community-scoped live sessions, the community chat
+  and delegation?
+- The Attendance hold (`academic-reconciliation.md:19-21`,
+  `academic.md:28-30`) says Attendance does not start until the
+  reconciliation has been reviewed. Does it cover the proposed `attendance`
+  module? Its live-presence snapshots use no `attendance.*` permission, no
+  amendment, no calendar, no `AttendanceState` and no halaqa id.
+
+**Why not guessed.** Both constraints were set by the user, and their wording
+is unqualified. A design that ruled itself outside them would be lifting the
+user's constraint on its own.
+
+**Built instead.** Nothing — design only
+([docs/architecture/communities-live-attendance.md §0.2](communities-live-attendance.md#02-the-three-gating-conditions)).
+PROVISIONAL default: both apply. P0 (guards and corrections) and P1
+(hardening the existing live module) change only existing modules, and
+proceed. The communities and attendance modules are not implemented until
+the user rules or the gate is complete. The module is named `communities`
+and has no halaqa link, so nothing answers Q36 in the meantime.
+
+**When answered.** No design changes either way; only phase entry does. If
+both apply, P2 waits for the §13 step, and P9 for the reconciliation review.
+If either does not apply, the ruling is recorded in an ADR, and P2 or P9 may
+start once its other entry conditions hold (P9 also needs P6 and
+[Q69](#q69--who-records-and-who-views-snapshots)).
+
+---
+
+## Q41 — What is a community, and who may create one?
+
+**Question.**
+
+- What is a community in the institution's own terms?
+- Who may create one (`communities.create`)?
+- Who may take part in communities at all (`communities.read`)?
+- May parents or guardians join ([Q10](#q10--what-can-a-parent-see))?
+
+**Why not guessed.** No institutional source mentions communities. Creating
+spaces of up to 30,000 people, many of them minors, is a safeguarding
+decision, like Q6 for conversations. What a «مجموعة» is remains Q36.
+
+**Built instead.** Nothing — design only
+([docs/architecture/communities.md §6.2](communities.md#62-identity-ceilings);
+[ADR 0016](decisions/0016-communities-module.md),
+[ADR 0017](decisions/0017-community-scoped-authorization.md)). PROVISIONAL
+default: `communities.create` for OWNER and ADMIN only; `communities.read`
+for all six active roles, mirroring `messaging.read`; no `kind` field; the
+creator becomes the owner and the first member; PARENT stays inactive.
+
+**When answered.** Grants are rows in identity's data migration 0009 (P2),
+or a later `role_permissions` migration, as in Q1. Kinds, if the institution
+defines them, are a vocabulary column and a CHECK in a Communities
+migration. Parents wait on Q10.
+
+---
+
+## Q42 — Community ownership
+
+**Question.**
+
+- One owner per community, or several?
+- Does ownership carry every capability within the identity ceilings,
+  including moderating sessions that others host?
+- May the owner leave, or be removed?
+- Who may transfer ownership, and to whom? May a `communities.manage` holder
+  name themself?
+- What happens when no eligible member remains to take over?
+
+**Why not guessed.** Communities may outlive the staff who run them, so who
+answers for one is institutional. What exists today is messaging's
+conversation owner, who can neither be removed nor leave, with no transfer
+(`membership.use-cases.ts:211-219, 297-302`); that was chosen for
+conversations, not for communities.
+
+**Built instead.** Nothing — design only
+([docs/architecture/communities.md §6.7](communities.md#67-the-owner),
+[§6.9](communities.md#69-transfer)). PROVISIONAL default:
+
+- exactly one owner, as standing on an ACTIVE stint;
+- the owner implicitly holds every capability within the identity ceilings;
+- the owner cannot leave or be removed while owner;
+- transfer is by the owner, or by a `communities.manage` holder, to an
+  eligible ACTIVE member other than themself;
+- the new owner's grants end, and the old owner becomes MEMBER with no
+  grants;
+- with no eligible member, there is no recovery path.
+
+**When answered.** What ownership implies, leaving and transfer are rows in
+Communities' act rules and checks in the transfer use case (P3). A recovery
+path is one use case under `communities.manage`. Several owners would
+replace the one-owner partial unique index by migration, the largest change
+here; it is cheapest decided before P2.
+
+---
+
+## Q43 — Institutional oversight of communities
+
+**Question.** What may a holder of `communities.manage` (the institution's
+OWNER and ADMIN, provisionally) do in a community they do not belong to?
+
+- View it, list its members, lock and unlock it, list and revoke its links,
+  remove members, recover ownership?
+- Ever add people, create links, read its chat, act in its live sessions or
+  see its attendance?
+- Override a lock that the community's owner set?
+- Are their reads audited?
+
+**Why not guessed.** The precedents conflict. Messaging's rule is that a
+permission never substitutes for membership, although `messaging.manage` may
+remove members (Q23). Academic's `academic.manage` acts on any halaqa.
+Access to children's rosters is a privacy decision.
+
+**Built instead.** Nothing — design only
+([docs/architecture/communities.md §6.11](communities.md#611-oversight-communitiesmanage);
+[ADR 0017](decisions/0017-community-scoped-authorization.md)). PROVISIONAL
+default: `communities.manage` is held by OWNER and ADMIN. It may view, list
+members, lock and unlock, list and revoke links, remove members, and
+transfer ownership (not to oneself). It never adds members, creates links,
+reads chat, acts in live sessions or views attendance. Every read on the
+oversight basis is audited.
+
+**When answered.** Rows for the oversight basis in Communities' act rules
+(P2; transfer in P3). Messaging, Live and Attendance ask
+`COMMUNITY_AUTHORIZATION` and do not change. Who holds the permission is the
+role matrix (Q1).
+
+---
+
+## Q44 — Who may hold delegated capabilities?
+
+**Question.**
+
+- Which roles may own a community or hold a delegated capability
+  (`communities.moderate`)?
+- May a student (a class monitor, for example), an assistant teacher or a
+  supervisor be a delegate?
+- Should some capabilities need a narrower or different ceiling?
+- May delegates delegate further?
+- May a delegate holding `community.members.remove` remove another delegate?
+
+**Why not guessed.** Giving children or assistants power over other members,
+and building chains of delegation, are governance and safeguarding choices.
+The brief names only the teacher.
+
+**Built instead.** Nothing — design only
+([docs/architecture/communities.md §6.8](communities.md#68-delegation-and-the-no-escalation-rule-p3);
+[ADR 0017](decisions/0017-community-scoped-authorization.md)). PROVISIONAL
+default:
+
+- `communities.moderate`: TEACHER, plus OWNER and ADMIN by construction;
+- every delegable capability requires `communities.moderate`, plus
+  `live.moderate` for live acts and `messaging.send` for
+  `community.chat.post`;
+- only the owner grants and revokes; there is no sub-delegation;
+- a non-owner may remove a member only if that member's ACTIVE grants
+  (dormant ones included) are a subset of the remover's effective
+  capabilities, and never the owner.
+
+**When answered.** Who holds `communities.moderate` is a `role_permissions`
+migration, as in Q1. A different ceiling for one capability is one row in
+the act-rules constant (P3). Sub-delegation is one new capability and a
+check; the proposed grant row already records `granted_by`, so no data
+migrates.
+
+---
+
+## Q45 — Capability grants: duration, handover and visibility
+
+**Question.**
+
+- Are grants time-boxed ("acting teacher until Friday")?
+- Do they survive the granting owner handing over ownership?
+- When a holder loses the identity ceiling, is the grant purged or kept
+  dormant?
+- Who may see who holds which capability, and are grants announced to
+  members?
+
+**Why not guessed.** Each answer changes who keeps power as staff rotate.
+Revealing staff or monitor roles in large groups of minors is a privacy
+decision (Q22). Time-boxed grants are already deferred in
+[authorization.md §10](authorization.md#10-deferred).
+
+**Built instead.** Nothing — design only
+([docs/architecture/communities.md §6.10](communities.md#610-how-grants-end-and-dormancy)).
+PROVISIONAL default:
+
+- grants do not expire;
+- they survive a transfer, except the new owner's own grants, which end;
+- on loss of the ceiling a grant is dormant, not deleted, and the owner's
+  view shows it as dormant;
+- the owner sees all grants; each holder sees their own;
+- nothing is broadcast; only the affected user gets the
+  `community.access.changed` frame.
+
+**When answered.** An expiry is a nullable `expires_at` on the proposed
+grants table and one condition in the evaluator (P3, or additive after it).
+Purging is a sweep. Visibility is a view rule; announcing grants is a
+realtime audience (P5) and, if notified, a translator (P10).
+
+---
+
+## Q46 — What does LOCKED mean, and who may lock?
+
+**Question.** Brief §5 asks for these to be evaluated, not decided. While a
+community is LOCKED:
+
+- May anyone join, by any path? Are links suspended, and do they work again
+  after unlock?
+- May anyone post in the chat, and may members still read it?
+- May a new live session start? Does a running one continue, and may members
+  join, rejoin and raise hands in it?
+- May managers still manage?
+
+And: who may lock? What applies to a status the code does not recognise?
+
+**Why not guessed.** Each is a moderation and safeguarding choice, and the
+conservative answers carry costs of their own, such as cutting off a lesson
+in progress.
+
+**Built instead.** Nothing — design only
+([docs/architecture/communities.md §8.2](communities.md#82-what-locked-means--provisional);
+[ADR 0016](decisions/0016-communities-module.md)). PROVISIONAL default, as
+one Communities table (`statePermits` plus `LifecycleEffects`):
+
+| While LOCKED | PROVISIONAL default |
+| --- | --- |
+| Joining | refused, by every path |
+| Links | suspended: neither consumed nor revoked; valid again after unlock unless expired or revoked; no new links |
+| Chat | no posting; reading continues |
+| Live | no new session; a running session continues, and join, rejoin, raise hand and moderation continue in it |
+| Management | continues: unlock, view members, revoke links, remove members |
+| Who may lock | the owner, a holder of a delegated `community.lock`, or a `communities.manage` holder |
+| Unrecognised status | every new action closed, management open, nobody ejected from a running session |
+
+The gate never blocks unlocking.
+
+**When answered.** One row of that table (P2). Messaging, Live and Attendance
+see it only as act refusals and effects flags, so none of them changes.
+
+---
+
+## Q47 — Retiring a community
+
+**Question.** How is a community retired? Is there an ARCHIVED state? Who
+may archive, and can it be undone? What stays readable: the chat, past
+snapshots? Is a community ever deleted?
+
+**Why not guessed.** Q32 left ARCHIVED undecided for the academic structure
+for the same reason: its meaning is policy.
+
+**Built instead.** Nothing — design only
+([docs/architecture/communities.md §8.1](communities.md#81-states);
+[ADR 0016](decisions/0016-communities-module.md)). PROVISIONAL default: no
+ARCHIVED state; LOCKED is the only closed state. A community is never
+deleted: there is no delete route, and foreign keys RESTRICT.
+
+**When answered.** ARCHIVED is a vocabulary value, a CHECK migration and one
+row in the effects table; consumers do not change. Deleting anything is a
+retention decision (Q3).
+
+---
+
+## Q48 — Invitation links
+
+**Question.**
+
+- Who may create and revoke links?
+- What default and maximum lifetime? Are use limits required?
+- Is joining immediate, or does it need approval?
+- What may a link holder see before joining, signed in or not?
+- Does joining need a particular role-wide permission? May guardians join?
+- Does a link stop working when its creator loses the right to invite?
+
+**Why not guessed.** A bearer link lets anyone holding it into a space with
+children. Lifetime, limits and eligibility express the institution's risk
+appetite. Q2 forbids self-registration.
+
+**Built instead.** Nothing — design only
+([docs/architecture/communities.md §7](communities.md#7-invitation-links);
+[ADR 0016](decisions/0016-communities-module.md)). PROVISIONAL default:
+
+- holders of `community.members.invite` create links; `communities.manage`
+  may only list and revoke them;
+- `expiresAt` is required: default 7 days, maximum 30 days, minimum
+  5 minutes;
+- `maxUses` is optional; null means unlimited until expiry;
+- joining is immediate, for signed-in accounts holding `communities.read`
+  only; no account is ever created;
+- there is no preview endpoint;
+- redemption re-checks that the creator currently holds
+  `community.members.invite`; if not, the link fails;
+- per-user and per-IP rate limits are development-safe defaults.
+
+**When answered.** Lifetimes and limits are constants (P2). Eligibility is
+one check in redemption. An approval step is a join-request record and a
+route, both additive. A preview is a new endpoint. Letting links outlive
+their creator's authority removes one check.
+
+---
+
+## Q49 — Leaving, removal and rejoining
+
+**Question.**
+
+- May an ordinary member leave on their own?
+- May a removed member rejoin through a link still in circulation?
+- Must a removal carry a reason?
+- Are removals announced to other members, or notified?
+
+**Why not guessed.** Removal is a moderation act with safeguarding weight.
+Announcing it discloses membership (Q22).
+
+**Built instead.** Nothing — design only
+([docs/architecture/communities.md §3.2](communities.md#32-membership-stints)).
+PROVISIONAL default:
+
+- members other than the owner may leave;
+- someone whose latest stint is REMOVED cannot rejoin by link; a manager may
+  re-add them directly;
+- there is no reason field;
+- only the removed person is told, through the `community.member.removed`
+  frame.
+
+What removal does to a running live session is
+[Q63](#q63--losing-standing-during-a-running-session).
+
+**When answered.** Leaving and rejoining are act rules and one check in
+redemption (P2). A reason is a nullable column on the stint, additive.
+Announcing is a realtime audience (P5) and, for a notification, a translator
+(P10, [Q67](#q67--notifications-for-community-live-and-attendance-facts)).
+
+---
+
+## Q50 — Communities and the academic structure
+
+**Question.**
+
+- Is a community linked to academic structure (a halaqa)?
+- May its membership come from enrollment, joining and leaving
+  automatically?
+- May capabilities follow from teaching assignments?
+
+**Why not guessed.** Q36 is open, and the academic reconciliation is on hold.
+What exists today: `ACADEMIC_RELATIONSHIPS` reads ACTIVE relationships
+whatever the halaqa's status (Q32), and academic's events are not durable,
+so a synced copy would drift.
+
+**Built instead.** Nothing — design only
+([docs/architecture/communities.md §18](communities.md#18-relation-to-academic-q50)).
+PROVISIONAL default: no link, no enrollment-sourced membership and no
+derived capabilities in v1.
+
+**When answered.** If yes: a nullable, immutable `halaqa_id` set at creation
+and validated through `ACADEMIC_RELATIONSHIPS`; a SYNC membership source
+filled by a reconciliation job; a `CapabilitySource` seam inside
+Communities. None of these needs a contract change. None comes before Q36
+and ADR 0015 ([Q40](#q40--governance-which-gates-apply-to-the-new-modules)).
+
+---
+
+## Q51 — The community chat: who may post?
+
+**Question.**
+
+- Does every community have exactly one chat?
+- Who may post in it: every member, the owner only, delegated posters?
+  Nobody while the community is locked?
+- Does the answer depend on the community's size?
+- Who may delete or moderate others' messages in it?
+
+**Why not guessed.** Posting rights in an audience of up to 30,000 that
+includes minors set the abuse surface and the moderation load (Q23). The
+only precedents are messaging's provisional GROUP and CHANNEL rules (Q6,
+Q20).
+
+**Built instead.** Nothing — design only
+([docs/architecture/community-chat.md §5](community-chat.md#5-what-a-community-chat-is);
+[ADR 0018](decisions/0018-community-chat-projection.md)). PROVISIONAL
+default:
+
+- at most one chat per community, stored as an ordinary `CHANNEL`
+  conversation;
+- posting is `community.chat.post`: the owner implicitly, or an explicit
+  grant, with the ceiling `communities.moderate` + `messaging.send`;
+  refused while LOCKED;
+- no moderation of messages in v1 (`community.messages.moderate` is
+  reserved).
+
+**When answered.** Posting rules change Communities' act rules only (P4);
+messaging does not change. Moderating messages adds
+`community.messages.moderate` together with Q23's answer (P12).
+
+---
+
+## Q52 — Community chat history for newcomers and returners
+
+**Question.**
+
+- Does someone who joins a community, including through a link, see its
+  chat's earlier messages?
+- Does someone who rejoins get back their earlier view and read position, or
+  start fresh?
+
+**Why not guessed.** This is Q21's disclosure question for communities. A
+leaked link would expose the whole archive to someone who should never have
+joined.
+
+**Built instead.** Nothing — design only
+([docs/architecture/community-chat.md §9](community-chat.md#9-read-watermarks-and-history-windows);
+[ADR 0018](decisions/0018-community-chat-projection.md)). PROVISIONAL
+default: `COMMUNITY_HISTORY = 'FULL'`, following Q21's channel rule. A
+rejoin starts a new window and watermark.
+
+**When answered.** One constant (P4). Windows are stored per participant
+row, so a change applies to future joins only, without a migration.
+
+---
+
+## Q53 — System notices in a community chat
+
+**Question.** Are system notices ("X joined", "a live session started",
+"attendance was taken") posted into a community's chat?
+
+**Why not guessed.** Messaging dropped system messages
+([ADR 0011](decisions/0011-messaging-v1.md), decision 6), so every message
+needs a sender who is a member allowed to post. Announcing to 30,000 people
+is notification policy (Q28).
+
+**Built instead.** Nothing — design only
+([docs/architecture/community-chat.md §5.2](community-chat.md#52-the-rules-that-override-the-type)).
+PROVISIONAL default: no. The chat is written by people only; other facts
+travel as their own ids-only events and frames.
+
+**When answered.** "No" changes nothing. "Yes" needs a message kind with no
+human sender, which ADR 0011 removed: a new ADR and a messaging vocabulary
+change, after P4.
+
+---
+
+## Q54 — Who starts, ends and moderates a live session?
+
+**Question.**
+
+- Who may start a community's live session, end it and moderate it?
+- What may the host do that other moderators may not? What may a delegated
+  moderator do to the host: mute them, end the session, override them?
+- May the institution's OWNER or ADMIN step in without a community
+  capability?
+
+**Why not guessed.** Q1 keeps live roles provisional ("host only, not even
+OWNER"). Where authority sits inside a live classroom is pedagogy and
+governance.
+
+**Built instead.** Nothing — design only
+([docs/architecture/live.md §7.2](live.md#72-liveaccess-host-and-moderators);
+[ADR 0017](decisions/0017-community-scoped-authorization.md),
+[ADR 0019](decisions/0019-community-scoped-live-sessions.md)). PROVISIONAL
+default:
+
+- start: identity `live.moderate` plus `community.live.start`; the starter
+  becomes host;
+- end and moderate: `community.live.moderate`, or the host while
+  `community.live.host` holds;
+- delegated moderators act only on participants who are not the host;
+- no institution-wide override.
+
+This would revise Q1's provisional answer through ADR 0017 (P6).
+
+**When answered.** Rows in Communities' act rules and in Live's `LiveAccess`
+(P6). An institution-wide override would be an oversight row for the live
+acts ([Q43](#q43--institutional-oversight-of-communities)).
+
+---
+
+## Q55 — Parallel live sessions in one community
+
+**Question.** May a community run more than one live session at the same
+time: parallel teachers, breakouts?
+
+**Why not guessed.** An organisational and teaching choice that the brief
+does not bound.
+
+**Built instead.** Nothing — design only
+([docs/architecture/live.md §4.3](live.md#43-one-live-session-per-community);
+[ADR 0019](decisions/0019-community-scoped-live-sessions.md)). PROVISIONAL
+default: at most one live session per community, enforced by a partial
+unique index. A second start returns the running session.
+
+**When answered.** Dropping one index and changing the start semantics (P6
+or later).
+
+---
+
+## Q56 — Screen sharing
+
+**Question.**
+
+- Who may present: moderators only, current speakers, a student a moderator
+  chooses?
+- Is screen audio allowed? How many may present at once?
+- What content rules apply in rooms with minors?
+- Is anything recorded, and is the start and stop of a share recorded?
+
+**Why not guessed.** Safeguarding and teaching policy. Brief §11 states only
+the default: the teacher may share, and students only with an explicit
+capability. Recording is deferred today
+([realtime.md §6](realtime.md#6-deliberately-deferred)).
+
+**Built instead.** Nothing — design only
+([docs/architecture/live.md §6](live.md#6-the-presenter-slot-screen-share);
+[ADR 0019](decisions/0019-community-scoped-live-sessions.md)). PROVISIONAL
+default:
+
+- only a session moderator who holds `live.speak` may claim the presenter
+  slot, and only for themselves;
+- one presenter at a time, as an engineering bound on egress;
+- no screen audio, no delegation, no recording;
+- opening a presenter grant is audited; closing it is audited when a
+  moderator revoked it.
+
+**When answered.** Who may present is a rule in `LiveAccess` (P6). Delegated
+or audio sharing is P12. Recording would need its own ADR, storage and a Q3
+answer.
+
+---
+
+## Q57 — Live session size and concurrency
+
+**Question.**
+
+- How many people may be in one live session?
+- How many sessions may run at once?
+- When a session is full: refuse, keep a waitlist, or offer a listen-only
+  overflow stream?
+
+**Why not guessed.** Capacity must come from measurement on the real
+topology. The 2,500 figure in today's live code (`rtc-provider.ts:12`) was
+never load-tested. LiveKit's published figure of about 3,000 per room must
+be benchmarked here, and a LiveKit room runs on a single node. 30,000
+members is not 30,000 live participants. Overflow behaviour is a product
+choice.
+
+**Built instead.** Nothing — design only
+([docs/architecture/live.md §12.2](live.md#122-the-cap-and-the-reserve)).
+PROVISIONAL default: `LIVE_MAX_PARTICIPANTS_PER_SESSION = 300` plus a
+reserve of 10, copied onto each session and enforced as LiveKit's
+`maxParticipants`. Over the soft cap, listeners get 412
+`live.session_full`. No waitlist and no overflow. The values rise only after
+load profiles 1–3.
+
+**When answered.** Configuration (`AppConfig.live`), set from the measured
+knees in P8. A waitlist or an overflow stream is a new Live feature; more
+listeners than one room holds is
+[Q58](#q58--more-listeners-than-one-room-can-hold).
+
+---
+
+## Q58 — More listeners than one room can hold
+
+**Question.** Is there a real requirement for more simultaneous listeners
+than one room can hold, for example 30,000? If so, must those listeners be
+able to raise hands and count in attendance?
+
+**Why not guessed.** The brief treats this as a future problem to be kept
+separate. No institutional figure exists.
+
+**Built instead.** Nothing — design only
+([docs/architecture/live.md §12.3](live.md#123-the-large-event-path-stays-out-of-the-domain)).
+PROVISIONAL default: not built. A broadcast seam is reserved inside Live.
+
+**When answered.** A new port in `live/infrastructure` (for example egress
+to a CDN), after P8. Communities, Messaging and Attendance are unaffected.
+
+---
+
+## Q59 — Visibility inside a live session
+
+**Question.** Inside a live session, who may see the roster, who raised a
+hand, who is speaking, and how many are present?
+
+**Why not guessed.** The Q22 and Q25 privacy reasoning applies, especially
+for minors. LiveKit shows every participant who is not hidden to everyone.
+
+**Built instead.** Nothing — design only
+([docs/architecture/live.md §16](live.md#16-what-travels-where);
+[ADR 0019](decisions/0019-community-scoped-live-sessions.md)). PROVISIONAL
+default:
+
+- the LiveKit roster stays visible, as it is today;
+- the hands queue is visible to moderators only; each requester sees their
+  own hand;
+- no "X joined" frames;
+- `hidden` travels in every permission set, always false, as the seam.
+
+**When answered.** Who sees hands is the moderator audience of
+`LIVE_AUDIENCE` (P7). Hidden listeners set `hidden` true in the permission
+set (P12).
+
+---
+
+## Q60 — One account on several devices in a session
+
+**Question.** May one account take part in a live session from more than one
+device at once, for example a teacher presenting from a laptop and speaking
+from a phone?
+
+**Why not guessed.** It changes capacity, grants and attendance counting. It
+is a usage policy with cost consequences.
+
+**Built instead.** Nothing — design only
+([docs/architecture/live.md §9](live.md#9-livekit-hardening)). PROVISIONAL
+default: no. The LiveKit identity is the account id, and the newest device
+wins (`DUPLICATE_IDENTITY`). The client does not rejoin automatically after
+being displaced.
+
+**When answered.** "No" changes nothing. "Yes" changes the LiveKit identity
+scheme, how capacity counts an account, and how a snapshot counts one
+([Q68](#q68--what-counts-as-present-in-a-snapshot)); it belongs in P6,
+before P9.
+
+---
+
+## Q61 — Ending abandoned live sessions
+
+**Question.** When is an abandoned live session ended automatically: after
+it has been empty for some minutes, when the host is absent, after a maximum
+duration?
+
+**Why not guessed.** How long an empty or unattended class stays live is a
+product and organisational choice.
+
+**Built instead.** Nothing — design only
+([docs/architecture/live.md §11.2](live.md#112-room-sweep--every-30-s);
+[ADR 0019](decisions/0019-community-scoped-live-sessions.md)). PROVISIONAL
+default: the system ends a session (reason `idle`) after its room has been
+observed empty continuously for 900 s; never because the host is absent; no
+maximum duration. LiveKit's own timeouts (1,200 s) are a backstop only.
+
+**When answered.** One constant (`IDLE_END_SECONDS`), or one more condition
+in the reconciler's room sweep (P6).
+
+---
+
+## Q62 — Floor rules beyond first come, first served
+
+**Question.**
+
+- May a moderator invite someone to speak who has not raised a hand?
+- May a speaker hand the floor back?
+- Should a pending hand, or a grant held by someone disconnected for a long
+  time, time out?
+
+**Why not guessed.** Queue fairness and classroom flow are teaching policy
+(the Q4 reasoning). An automatic expiry can silently drop a quiet student.
+
+**Built instead.** Nothing — design only
+([docs/architecture/live.md §5.1](live.md#51-transitions)). PROVISIONAL
+default: a grant comes only from a raised hand; a speaker may hand the floor
+back (granted → withdrawn); no timeouts; the speaker cap stays at 4 (Q4).
+
+**When answered.** An invitation to speak is a new transition in the speaker
+state machine; a timeout is a rule in the reconciler (P6, or P12). Queue
+order stays Q4's comparator.
+
+---
+
+## Q63 — Losing standing during a running session
+
+**Question.** Someone is removed from the community, suspended, or loses
+`live.join` or a delegated capability while a session is running.
+
+- Must it take effect in the session immediately, and within what latency?
+- What happens to a host's running session, or to an attendance snapshot in
+  progress?
+- Is anyone told?
+
+**Why not guessed.** This is safeguarding, and cutting off a lesson has a
+visible cost. The open-source LiveKit server keeps refreshing a connected
+participant's token, so a token's lifetime does not bound access.
+
+**Built instead.** Nothing — design only
+([docs/architecture/live.md §11.3](live.md#113-participant-sweep--every-60-s-per-live-session-staggered);
+[ADR 0019](decisions/0019-community-scoped-live-sessions.md)). PROVISIONAL
+default:
+
+- ejection or demotion happens at once through the event path, when the
+  event is delivered, and within 60 s at worst through the participant
+  sweep;
+- their hand, floor and presenter grant close;
+- a host who loses standing loses moderation, but the session continues for
+  the others;
+- only the affected person's client sees `PARTICIPANT_REMOVED`;
+- repeated rejoin attempts are counted and shown to moderators.
+
+**When answered.** A different latency bound is the sweep interval (P6).
+Letting a session finish before ejecting someone is one condition in the
+event handler and the sweep.
+
+---
+
+## Q64 — Removing a participant from a session
+
+**Question.**
+
+- May a moderator remove a participant from a session? May that person
+  re-enter?
+- Is a reason required, and is the person told?
+- When may a moderator reset the media room, which disconnects everyone?
+
+**Why not guessed.** Moderation and due-process policy (Q23 territory).
+
+**Built instead.** Nothing — design only
+([docs/architecture/live.md §3.5](live.md#35-moderationaction)).
+PROVISIONAL default: not built; seams only (`ModerationActionType`
+`remove_participant`, `RtcParticipantControl.removeParticipant`). The media
+reset is planned for P12 as a break-glass step for moderators after repeated
+violations.
+
+**When answered.** A use case on those seams, plus a re-entry rule (P12).
+
+---
+
+## Q65 — Media hosting and operations
+
+**Question.**
+
+- Self-hosted open-source LiveKit, or LiveKit Cloud?
+- Where does it run relative to the API on the VPS?
+- Is TURN over TLS on port 443 needed for school and home networks?
+- Are there data-residency constraints?
+- May load tests ever touch the production host, and who approves a run?
+
+**Why not guessed.** Cost, operations and data residency are the owner's
+trade-off, and the choice sets the ejection guarantees and the reachable
+capacity. Load-testing production is an operational risk decision.
+
+**Built instead.** Nothing — design only
+([docs/architecture/live.md §9](live.md#9-livekit-hardening);
+[communities-live-attendance.md §20.2](communities-live-attendance.md#202-the-single-vps-and-the-path-beyond-it)).
+PROVISIONAL default: self-hosted open-source LiveKit with
+`room.auto_create=false`, no webhooks and no recording, on a single node for
+development and load tests. A TURN decision is needed before the first real
+class. Load tests never use production keys or rooms; they run on a replica
+with the same hardware.
+
+**When answered.** Deployment configuration, before P8 and before the first
+real class. LiveKit Cloud would sit behind the same RTC ports; its ejection
+guarantees have not been verified.
+
+---
+
+## Q66 — Realtime without messaging.read
+
+**Question.** May an account that lacks `messaging.read` receive realtime
+updates for communities and live sessions? Should any role ever lack
+`messaging.read`?
+
+**Why not guessed.** This is a role-matrix decision (Q1). What exists today:
+the realtime connection opens only for holders of `messaging.read`
+(`realtime-sessions.ts:443`). Opening it without that would need a
+permission check per frame family on messaging's frames.
+
+**Built instead.** Nothing — design only
+([docs/architecture/communities-live-attendance.md §16.3](communities-live-attendance.md#163-how-protocol-v1-grows-and-why-there-is-one-socket)).
+PROVISIONAL default: the connection gate stays `messaging.read`. A test pins
+that every role holding `live.join` or `communities.read` also holds
+`messaging.read`. Other accounts get HTTP only.
+
+**When answered.** "No role lacks it" changes nothing. Otherwise the gate at
+that line widens, and messaging's relay checks `messaging.read` per frame
+(P5).
+
+---
+
+## Q67 — Notifications for community, live and attendance facts
+
+**Question.** Which of the new facts deserve a notification, and how loudly:
+invited or added, removed, a live session started, a hand accepted, an
+attendance snapshot recorded? For snapshots, what does the owner receive:
+every snapshot, a summary, or exceptions only? Must any of them be
+guaranteed?
+
+**Why not guessed.** This is notification policy (Q24, Q28), and the brief
+says not to implement delivery. A guarantee would bring in the outbox
+(trigger T2 in [ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md)).
+
+**Built instead.** Nothing — design only
+([docs/architecture/communities-live-attendance.md §14](communities-live-attendance.md#14-event-model)).
+PROVISIONAL default: no translators and no notifications. The design
+publishes the events so that translators can be added later without
+changing any publisher. Viewers read over HTTP.
+
+**When answered.** One translator per fact in notifications, importing only
+the source module's contracts (P10). A guarantee first brings the outbox
+(P11).
+
+---
+
+## Q68 — What counts as present in a snapshot?
+
+**Question.**
+
+- Only accounts fully connected, or also those still joining or
+  reconnecting?
+- Does LiveKit's short resume window after a network drop count?
+- Are the host, speakers and the recorder counted like listeners?
+- Does a connected listener who is muted or idle count?
+
+**Why not guessed.** Brief §14 forbids silently defining presence, and this
+is a record about children.
+
+**Built instead.** Nothing — design only
+([docs/architecture/attendance.md §5.2](attendance.md#52-what-counts-as-observed-provider_registry_v1);
+[ADR 0020](decisions/0020-attendance-snapshots.md)). PROVISIONAL default: no
+entry is labelled present. Both CONNECTED and CONNECTING are stored, with
+separate counts, and every role is treated the same. The rule is versioned
+(`provider_registry_v1`).
+
+**When answered.** A new observation rule under a new id (P9 or later). Old
+snapshots keep theirs; no stored snapshot changes.
+
+---
+
+## Q69 — Who records and who views snapshots?
+
+**Question.**
+
+- Who may record a snapshot, and who may view one?
+- Which "owner" does the brief mean: the community's owner, the
+  institution's OWNER, or both? Which "authorized management principals"?
+  Is a supervisor scoped as Q31 asks?
+- Does recording imply viewing? Must the recorder be the host, or connected?
+- May students or parents see their own entries?
+- For reviewers: is community standing acceptable as the scoping
+  relationship that
+  [academic-reconciliation.md §13](academic-reconciliation.md#13-minimal-recommended-changes-before-the-next-milestone)
+  requires, where it names `ACADEMIC_RELATIONSHIPS`?
+
+**Why not guessed.** These are delegation and privacy boundaries for
+children's presence data, and the §13 precondition names
+`ACADEMIC_RELATIONSHIPS`.
+
+**Built instead.** Nothing — design only
+([docs/architecture/attendance.md §11](attendance.md#11-who-records-and-who-views);
+[ADR 0020](decisions/0020-attendance-snapshots.md)). PROVISIONAL default:
+
+- recording and viewing use `community.attendance.record` and
+  `community.attendance.view`: the owner implicitly, or an explicit grant;
+- their ceilings use no `attendance.*` permission;
+- no institution-wide oversight until
+  [Q43](#q43--institutional-oversight-of-communities) says otherwise;
+- recording does not imply viewing;
+- no student or parent view;
+- the recorder need not be the host.
+
+**When answered.** Rows in Communities' act rules for the two reserved acts
+(P9). An institution-wide view is an oversight row (Q43); a student view is
+a new route. Reviewer acceptance is an entry condition of P9.
+
+---
+
+## Q70 — Is a snapshot the attendance record?
+
+**Question.**
+
+- Is a snapshot the institution's attendance record, or only an observation
+  that may feed operations' `AttendanceRecord`?
+- If it feeds one: how do several snapshots of one session combine, and
+  which states result?
+- What about communities that correspond to halaqat? How does it roll up by
+  calendar (Q12)?
+- Should it fill the app's halaqa attendance figures?
+
+**Why not guessed.** Turning "connected at time T" into present, absent or
+late is exactly the threshold policy brief §14 forbids. `AttendanceState`
+and TE-04 are unconfirmed.
+
+**Built instead.** Nothing — design only
+([docs/architecture/attendance.md §13](attendance.md#13-snapshots-and-operations-attendancerecord);
+[ADR 0020](decisions/0020-attendance-snapshots.md)). PROVISIONAL default:
+observation only. No `AttendanceState`, no absentees, no derivation, and
+nothing fills `Halaqa.attendedSessions`.
+
+**When answered.** A derivation in operations that reads
+`attendance/contracts`: operations depends on attendance, never the reverse.
+It also needs Q8 and Q12, and [Q50](#q50--communities-and-the-academic-structure)
+for halaqat. The snapshot model does not change.
+
+---
+
+## Q71 — Correcting, retaining and erasing snapshots
+
+**Question.**
+
+- May a snapshot be voided or corrected after it is recorded? By whom,
+  within what time, with what reason?
+- How long are snapshots kept?
+- May a person see, or erase, the entries about them?
+
+**Why not guessed.** This is Q8's integrity control and Q3's retention
+decision, about children's data.
+
+**Built instead.** Nothing — design only
+([docs/architecture/attendance.md §10](attendance.md#10-immutability-and-amendment)).
+PROVISIONAL default: immutable, and kept like the audit log until Q3 is
+answered. Corrections belong to a future attendance record using
+`AttendanceAmendment`. No per-person index and no erasure path.
+
+**When answered.** Retention is a scheduled job (Q3). A correction is a
+future attendance record, never an edit of the snapshot. A person's view or
+erasure is a per-person index and a use case, both additive.
+
+---
+
+## Q72 — When and how often snapshots are taken
+
+**Question.**
+
+- How often, and when, may snapshots be taken? Several per session?
+- Ever automatically: at start, at end, at intervals?
+- Is there an upper bound?
+- May one be taken while the community is locked?
+
+**Why not guessed.** Automatic timing or a frequency cap would define
+attendance policy. Engineering limits must come from a load test.
+
+**Built instead.** Nothing — design only
+([docs/architecture/attendance.md §5.4](attendance.md#54-bounds)).
+PROVISIONAL default: only on a press, with no per-session limit.
+PROVISIONAL engineering bounds: 6 presses per 60 s per recorder; listing
+concurrency 4 per process; a 15 s deadline; a 10,000-entry ceiling.
+Attendance applies no lock rule of its own; the `COMMUNITY_AUTHORIZATION`
+answer governs ([Q46](#q46--what-does-locked-mean-and-who-may-lock)).
+
+**When answered.** Constants (P9), recalibrated after the load test.
+Automatic timing is a scheduled caller of the same record use case.
 
 ---
 

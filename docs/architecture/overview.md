@@ -63,6 +63,21 @@ Depth of implementation varies deliberately:
 | `academic` | **Academic Core V1**: sections → programs → halaqat, seeded from the printed institution profile (provisional: the owner's later description differs and is under [reconciliation](academic-reconciliation.md)); dated enrollments and teacher assignments with history; one-active invariants in the database; resource-level access (a teacher's roster through their assignment); `ACADEMIC_RELATIONSHIPS` for later modules ([academic.md](academic.md)). On Postgres, tested |
 | the other five | Contracts and a Nest module only — deliberately empty |
 
+> **Proposed change:** see
+> [communities-live-attendance.md](communities-live-attendance.md) (design
+> only, [ADR 0016](decisions/0016-communities-module.md) Proposed). Two new
+> modules would join this map. `communities` is what the brief calls
+> "groups"; the code name is Community because "group" already means
+> messaging's `GROUP` conversation type, and is used for Tahajji's «مجموعة»
+> in
+> [Q36](open-questions.md#q36--tahajji-دورة-التهجي-وإعداد-المعلمات-مدينة-التهجي-and-the-40-groups).
+> `attendance` would own live-session snapshots; its implementation is held
+> ([ADR 0020](decisions/0020-attendance-snapshots.md)). `live` would become
+> community-scoped ([ADR 0019](decisions/0019-community-scoped-live-sessions.md)).
+> [30,000 community members is not 30,000 live participants](communities-live-attendance.md#13-30000-members-is-not-30000-live-participants):
+> a live session has its own measured cap, and a self-hosted LiveKit room
+> must fit on one node. Neither module exists today.
+
 The near-empty modules exist so that the boundary is decided before the
 code arrives, not after. An empty `contracts/index.ts` is a cheap commitment; a
 module retrofitted into a boundary is not.
@@ -146,6 +161,18 @@ Every external dependency sits behind a port, in exactly one adapter file:
 `livekit-server-sdk` is imported by exactly one file in the repository. So is
 every other vendor SDK. This is checked by
 `application-has-no-vendor-sdks` and `domain-is-dependency-free`.
+
+> **Correction (2026-09-23):** the first sentence is true today by search
+> (`live/infrastructure/livekit-rtc-provider.ts:2`). The claim that it is
+> checked is not. `domain-is-dependency-free` covers `domain/` only.
+> `application-has-no-vendor-sdks` never fires, because its pattern is
+> anchored at the package name while dependency-cruiser matches
+> `node_modules/…` paths (`backend/.dependency-cruiser.cjs:88`). Apart
+> from three module-specific specs, nothing stops an `api/`,
+> `infrastructure/` or `platform/` file from importing LiveKit; see
+> [dependency-rules.md](dependency-rules.md#application-has-no-vendor-sdks).
+> The fix is Phase 0 of the proposed design
+> ([communities-live-attendance.md §25.1](communities-live-attendance.md#251-phase-0-corrections)).
 
 ---
 

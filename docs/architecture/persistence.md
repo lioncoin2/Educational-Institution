@@ -262,6 +262,18 @@ deactivating a halaqa locks it `FOR UPDATE` — so no enrollment slips into a
 halaqa as it closes. Account ids are plain columns: suspending an account
 leaves its enrollments alone.
 
+> **Proposed change:** see
+> [communities.md §5.2](communities.md#52-counters-and-version-allocation)
+> and the
+> [global lock order](communities-live-attendance.md#52-the-global-lock-order-communities)
+> (design only, [ADR 0016](decisions/0016-communities-module.md) Proposed).
+> The proposed `communities` tables would take a per-aggregate,
+> commit-ordered version from `communities.membership_version` under the
+> community row lock, as messaging takes `conversations.last_sequence`
+> under the conversation row lock today. Every communities transaction
+> would take its locks in one global order, with the community row the last
+> existing row it locks.
+
 ### `audit_log`
 
 Owned by **platform**. Now written by `DrizzleAuditLog` whenever a database is
@@ -406,3 +418,8 @@ with Postgres's `max_connections`.
 - A cleanup job for revoked and expired sessions (Q3).
 - Read replicas, partitioning, the transactional outbox.
 - Any schema for the six contract-only modules.
+
+> **Correction (2026-09-23):** five modules are contract only: `people`,
+> `operations`, `assignments`, `automation` and `reporting`, as
+> [module-boundaries.md](module-boundaries.md) says. `live` is implemented,
+> in memory; its Postgres adapters are the first item above.

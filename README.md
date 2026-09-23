@@ -37,6 +37,11 @@
 | [`docs/architecture/notifications.md`](docs/architecture/notifications.md) | الإشعارات: الصندوق المحفوظ، التفضيلات، الأجهزة |
 | [`docs/architecture/academic.md`](docs/architecture/academic.md) | النواة الأكاديمية: الأقسام والبرامج والحلقات، التسجيل، التكليف، الصلاحيات، التهيئة من الملف التعريفي |
 | [`docs/architecture/academic-reconciliation.md`](docs/architecture/academic-reconciliation.md) | مراجعة النواة الأكاديمية مقابل معلومات المالكة (2026-09-23): التعارضات، ما هو آمن، ما يُؤجَّل، أسئلة المالكة |
+| [`docs/architecture/communities-live-attendance.md`](docs/architecture/communities-live-attendance.md) | **مقترح — تصميم فقط، لم يُنفَّذ منه شيء.** المستند المحوري لتصميم المجتمعات والجلسات الصوتية المباشرة ولقطات الحضور: الحكم، الملكية، مخطّط الاعتماديات، العقود، الأحداث، التهديدات، التوسّع، مراحل التنفيذ. «المجتمع» (Community) هو ما يسمّيه الموجز «Group»؛ ولم يُسمَّ «مجموعة» لأنّ `GROUP` نوعُ محادثةٍ في المراسلة، و«مجموعة» هي وحدة التهجي في Q36 |
+| [`docs/architecture/communities.md`](docs/architecture/communities.md) | **مقترح — تصميم فقط.** وحدة `communities`: المجتمع، العضوية، روابط الدعوة، القفل، تفويض الصلاحيات |
+| [`docs/architecture/community-chat.md`](docs/architecture/community-chat.md) | **مقترح — تصميم فقط.** محادثة المجتمع داخل وحدة المراسلة: إسقاطٌ مُسمّى لعضوية المجتمع، لا نظام رسائل ثانٍ |
+| [`docs/architecture/live.md`](docs/architecture/live.md) | **مقترح — تصميم فقط.** تطوّر وحدة `live`: جلسات مرتبطة بالمجتمع، رفع اليد والمتحدّثون، مشاركة الشاشة، منافذ LiveKit، سعة الجلسة |
+| [`docs/architecture/attendance.md`](docs/architecture/attendance.md) | **مقترح — تصميم فقط، والتنفيذ مُعلَّق.** لقطات الحضور أثناء الجلسة المباشرة: من رُصد في الجلسة لحظة الضغط على الزر؛ أمّا معنى «حاضر» فسؤال مفتوح (Q68) |
 | [`docs/architecture/storage.md`](docs/architecture/storage.md) | الملفات والتخزين |
 | [`docs/architecture/persistence.md`](docs/architecture/persistence.md) | قاعدة البيانات واستراتيجية الترحيل |
 | [`docs/architecture/observability.md`](docs/architecture/observability.md) | السجلّات، سجلّ التدقيق، الفحوص الصحّية |

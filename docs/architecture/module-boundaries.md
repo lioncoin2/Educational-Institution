@@ -13,6 +13,23 @@ notifications, academic); the other five are deliberately empty: contracts
 and a Nest module, no implementation. Deciding the boundary before the code
 arrives is cheap; retrofitting one is not.
 
+> **Proposed change:** see [communities.md](communities.md) (design only,
+> [ADR 0016](decisions/0016-communities-module.md) Proposed): a new
+> `communities` module owning communities, their membership, invitation
+> links and lifecycle. It is what the brief calls "groups". The code name is
+> Community because "group" already means messaging's `GROUP` conversation
+> type, and is used for Tahajji's «مجموعة» in
+> [Q36](open-questions.md#q36--tahajji-دورة-التهجي-وإعداد-المعلمات-مدينة-التهجي-and-the-40-groups).
+>
+> **Proposed change:** see [attendance.md](attendance.md) (design only,
+> [ADR 0020](decisions/0020-attendance-snapshots.md) Proposed): a new
+> `attendance` module owning attendance snapshots taken during a live
+> session. Its implementation is **held**.
+>
+> Neither module exists. Implementing either waits on
+> [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules).
+> The sections below describe the modules that exist today.
+
 ---
 
 ## identity
@@ -59,6 +76,18 @@ string is opaque to identity: it does not know that `live.moderate` concerns
 audio, which is why any module can define permissions without identity changing.
 And no other module may read identity's tables. A test asserts that nothing
 outside identity imports its schema.
+
+> **Correction (2026-09-23):** the claim that "any module can define
+> permissions without identity changing" is false. A permission exists only
+> if it is in identity's catalogue (`identity/contracts/permissions.ts:16-17`:
+> "Adding a permission is a code change AND a migration"). Who holds it is
+> identity's provisional matrix (`identity/domain/provisional-policy.ts:32`).
+> A migration seeds both into identity's own `permissions` and
+> `role_permissions` tables, and a test fails if code and tables drift
+> (`test/integration/identity-persistence.spec.ts:84-103`). Messaging and
+> academic each added their permissions this way
+> (`drizzle/0005_seed_messaging_permissions.sql`,
+> `drizzle/0008_seed_academic_permissions.sql`).
 
 ---
 
@@ -148,6 +177,15 @@ room is the same session to operations; it subscribes to `live.session.ended`
 and records attendance from it, and would work identically for a room with
 chairs.
 
+> **Proposed change:** see
+> [attendance.md §3](attendance.md#3-the-smallest-change-to-existing-documents)
+> (design only, [ADR 0020](decisions/0020-attendance-snapshots.md) Proposed).
+> Presence in a live session would be recorded as attendance-module
+> snapshots, not derived by operations from `live.session.ended`. Operations
+> would depend on `attendance/contracts` only if
+> [Q70](open-questions.md#q70--is-a-snapshot-the-attendance-record) says
+> snapshots feed `AttendanceRecord`.
+
 ---
 
 ## assignments
@@ -209,6 +247,15 @@ real time, how bytes are stored, or LiveKit. Architecture tests assert each:
 nothing in messaging reaches `notifications`, `realtime`, `live`, a WebSocket
 library, a push or object-store SDK, the filesystem, or files' internals.
 
+> **Proposed change:** see [community-chat.md](community-chat.md) (design
+> only, [ADR 0018](decisions/0018-community-chat-projection.md) Proposed). A
+> community's chat would be a `CHANNEL` conversation linked by
+> `community_id`, and its participant rows a named, versioned projection of
+> Communities membership. Messaging's application layer would depend on
+> `communities/contracts` and ask Communities who may read and post. It would
+> refuse its own add, remove and leave for that conversation, and still
+> export the same two providers.
+
 ---
 
 ## live
@@ -241,6 +288,30 @@ moderation of who may speak.
 **Must not know.** LiveKit. The domain declares `RtcProvider`; exactly one file
 in the repository imports `livekit-server-sdk`. It also must not know about
 attendance — operations derives that from the events.
+
+> **Correction (2026-09-23):** three statements in this section do not match
+> the code that exists today.
+>
+> - **Entities.** No `SpeakerPermission` type or entity exists under
+>   `backend/src`. A speaker's grant is a `SpeakerRequest` in state `granted`
+>   (`live/domain/speaker-request.ts:12-24`). `Participant` exists only as
+>   the type `LiveParticipant` (`live/domain/participant.ts:5-11`), and
+>   nothing uses it.
+> - **Events.** The list omits `live.speaker.requested`, which
+>   `RequestSpeakerUseCase` publishes
+>   (`live/application/request-speaker.use-case.ts:90`).
+>   `live.session.started` and `live.session.ended` are declared
+>   (`live/domain/events.ts:34-50`) but never raised, because no use case
+>   starts or ends a session.
+> - **Attendance.** Nothing derives attendance from these events: no module
+>   subscribes to any `live.*` event, and operations is contract only.
+>
+> **Proposed change:** see [live.md](live.md) (design only,
+> [ADR 0019](decisions/0019-community-scoped-live-sessions.md) Proposed). A
+> community-scoped `LiveSession` would replace the halaqa-bound `LiveRoom`.
+> Live would depend on `communities/contracts` and export `LIVE_AUDIENCE`,
+> `LIVE_SESSIONS` and `LIVE_PRESENCE`; only attendance may import
+> `LIVE_PRESENCE`. Live would never import attendance.
 
 ---
 

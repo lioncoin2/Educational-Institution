@@ -53,6 +53,19 @@ subscribes. `notifications` may also subscribe. `reporting` may subscribe.
 `live` does not change when any of them appear — and `live` remains testable
 without any of them present.
 
+> **Correction (2026-09-23):** `live` does not raise `live.session.ended`
+> today, and nothing subscribes to it. The factory exists
+> (`live/domain/events.ts:43-50`) but has no caller, because no use case
+> starts or ends a session; `live.session.started` (`:34-41`) is the same.
+> Operations is contract only. The principle this section illustrates is
+> unaffected.
+>
+> **Proposed change:** see
+> [attendance.md §3](attendance.md#3-the-smallest-change-to-existing-documents)
+> (design only, [ADR 0020](decisions/0020-attendance-snapshots.md) Proposed).
+> The attendance half of this example would be superseded: who is connected
+> at a moment is a question, answered through a Live contract, not an event.
+
 **Not the job:** replacing function calls. When `live` needs to know *right
 now* whether a principal may moderate, it asks `identity` synchronously through
 its contract. A question needing an answer is not an event.
@@ -175,6 +188,7 @@ by a real broker and subscribers become consumers. Again the port is unchanged.
 
 | Event | Raised by | Likely subscribers |
 | --- | --- | --- |
+| `live.speaker.requested` | live — a hand is raised. *Correction (2026-09-23): raised today by `RequestSpeakerUseCase` (`request-speaker.use-case.ts:90`) and missing from this table until now* | none subscribed |
 | `live.speaker.granted` | live | reporting, audit |
 | `live.speaker.revoked` | live | reporting, audit |
 | `live.session.started` | live | operations, notifications |
@@ -218,6 +232,20 @@ an unchanged edit) publishes nothing.
 Identity's payloads carry ids and codes only. The Foundation's
 `userCreated` carried the email address, which would have copied personal data
 into every subscriber's storage.
+
+> **Proposed change:** see
+> [communities-live-attendance.md §14](communities-live-attendance.md#14-event-model)
+> (design only,
+> [ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md)
+> Proposed). It would add `communities.*` events and new live events
+> (`live.speaker.withdrawn`, `.declined` and `.expired`,
+> `live.screen_share.started` and `.stopped`, with `communityId` and
+> `stateVersion` in live payloads). It
+> would also add `attendance.snapshot.recorded`, which is held. Event types
+> would live in each publisher's `contracts/`, and every event would carry a
+> durability class (R, S or G), with triggers T1–T4 for adopting the
+> outbox. "operations (attendance)" would leave `live.session.ended`'s
+> subscribers ([ADR 0020](decisions/0020-attendance-snapshots.md)).
 
 ---
 

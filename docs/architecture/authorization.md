@@ -11,6 +11,13 @@ There is exactly **one** decision point, `PolicyAuthorizationService`, behind
 the `AuthorizationService` port — the only thing identity exports to other
 modules. Guards ask it. Use cases ask it. Nothing branches on a role name.
 
+> **Correction (2026-09-23):** `AuthorizationService` is not the only thing
+> identity exports. `IdentityModule` exports three providers:
+> `AUTHORIZATION_SERVICE`, `ACCOUNT_DIRECTORY` and
+> `ACCESS_TOKEN_AUTHENTICATOR` (`identity/identity.module.ts:181`), as
+> [module-boundaries.md](module-boundaries.md#identity) says. It is still
+> the only decision point.
+
 ---
 
 ## 1. The model
@@ -189,6 +196,20 @@ When no owner is supplied, the rule does not apply. That is what lets a use
 case ask the coarse question, "may this principal moderate at all?", before it
 loads the room.
 
+> **Proposed change:** see
+> [communities-live-attendance.md §8](communities-live-attendance.md#8-authorization-model)
+> (design only,
+> [ADR 0017](decisions/0017-community-scoped-authorization.md) Proposed).
+> Inside a community, a decision would be identity's role-wide ceiling AND
+> the principal's standing in that community. The communities module would
+> hold that standing (owner, member, and capabilities the owner delegates)
+> and answer through `COMMUNITY_AUTHORIZATION`. Identity would get no
+> per-resource grants. The host-only rule above would be retired in the
+> change that moves live moderation to community standing (phase P6),
+> leaving `PROVISIONAL_POLICY_RULES` empty. Who may moderate stays open:
+> [Q54](open-questions.md#q54--who-starts-ends-and-moderates-a-live-session)
+> and [Q1](open-questions.md#q1--what-may-each-role-actually-do).
+
 ---
 
 ## 6. Enforcement — at the edge, and again in the use case
@@ -215,6 +236,14 @@ allow a role that cannot log out.
 
 Only four routes are public: login, refresh, and the two health probes. The
 architecture test fixes that list; adding to it is an argued change.
+
+> **Correction (2026-09-23):** six routes are public, not four. Besides
+> login, refresh and the two health probes, the local storage adapter's
+> upload and download routes are `@PublicRoute()`
+> (`files/infrastructure/local-transfer.controller.ts:48, 108`). Their
+> authorization is a purpose-bound signature in the URL, which expires
+> (`:30-33`). The architecture test fixes all six
+> (`test/architecture/authorization.spec.ts:129-136`).
 
 ### In the use case: always
 
