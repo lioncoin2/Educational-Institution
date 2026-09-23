@@ -8,9 +8,9 @@ A module is a unit of ownership, not a folder. If two modules need the same
 table, one of them is wrong.
 
 **Implementation state** is marked on every module. Of the twelve business
-modules, five are implemented (identity, live, files, messaging, realtime) and
-one in part (notifications); the other six are deliberately empty: contracts
-and a Nest module, no implementation. Deciding the boundary before the code
+modules, six are implemented (identity, live, files, messaging, realtime,
+notifications); the other six are deliberately empty: contracts and a Nest
+module, no implementation. Deciding the boundary before the code
 arrives is cheap; retrofitting one is not.
 
 ---
@@ -167,7 +167,9 @@ list members; mark read; add and remove people; leave; get an attachment link.
 (`ConversationType`, `MessageType`, `ParticipantRole`), the event names and
 payload types, `MessageView` (what a member sees of a message),
 `MESSAGE_RECIPIENTS` (current members, paged, optionally only those who can
-see a sequence — for delivery modules), `MESSAGE_DELIVERY` (a stored message
+see a sequence, only those who may read the conversation now — active
+accounts whose roles grant `messaging.read` — or only named people; for
+delivery modules), `MESSAGE_DELIVERY` (a stored message
 rendered for delivery; a principal's position in a conversation they may
 read — for realtime), and `MessageSearch` (an extension point nothing
 implements yet). It exports two providers: `MESSAGE_RECIPIENTS` and
@@ -248,34 +250,62 @@ signed URL. Meaning belongs to the module that referenced the asset.
 
 ## notifications
 
-**State:** partially implemented — the pipeline without a provider. A
-translator subscribes to `messaging.message.sent`, pages the conversation's
-current members through `MESSAGE_RECIPIENTS`, and dispatches one id-only
-notification per page; delivery is a logging placeholder until a push
-provider is chosen (Q24).
+**State:** implemented — Notifications V1. A persistent inbox per person, fed
+by messaging's facts, delivered live through realtime and to devices through
+a push-provider port (a logging adapter until a provider is chosen, Q24). See
+[notifications.md](notifications.md) and
+[ADR 0013](decisions/0013-notifications-v1.md).
 
-**Responsibility.** Reaching a person, whatever the channel.
+**Responsibility.** What a person is told, and whether it has been read:
+deciding — the same way for every source — whether a notification is valid,
+for an active account, wanted, and new; storing it; announcing it; and
+sending it to the person's devices.
 
-**Owned entities (future).** `NotificationPreference`, `DeliveryAttempt`.
+**Owned entities.** `Notification` (recipient, type, category, title and body
+keys, params, typed target, dedupe key, created, read), the per-category
+channel preferences, and the push `Device` registrations. Tables
+`notifications`, `notification_preferences`, `notification_devices` — no
+foreign keys into other modules' tables.
 
-**Public contract.** `NotificationChannel`, `NotificationRequest` (many
-recipients per request), `NotificationSender`, `NOTIFICATION_SENDER`.
-`collapseKey` lets a burst of twenty messages become one notification without
-any calling module learning about batching.
+**Parts.** `domain/` — the model and its validation, the type catalog
+(active and reserved), preference semantics, device-token rules, the push
+port and the lock-screen payload. `application/` — one translator per source
+module (`MessagingNotificationTranslator` today), the event-agnostic
+`NotificationDispatcher`, the inbox, preference and device use cases,
+`PushDelivery`. `infrastructure/` — Drizzle and in-memory repositories,
+`LoggingPushProvider`, the only place a push SDK may ever be imported
+(dependency-cruiser rule). `api/` — `/notifications`, every route
+`@Authenticated()`.
 
-**Depends on.** `messaging/contracts` (its events and recipients),
-`shared`, `platform`.
+**Public contract** (`notifications/contracts/`): the vocabulary (types,
+categories, channels, platforms, providers), `NotificationTarget` and params
+types, the event names and payload types, and `NOTIFICATION_READER`
+(stored notifications rendered for delivery, by id — for realtime). It
+exports one provider: `NOTIFICATION_READER`.
 
-**Independent of realtime.** Both subscribe to `messaging.message.sent`;
-neither knows the other exists (architecture test). A connected app is told
-by realtime; push, once a provider exists, reaches it when it is not.
+**Events.** Publishes `notifications.notification.created` (once per row
+actually stored, with the channel decisions), `.read` and `.all_read` — ids,
+codes and flags, never parameters; `aggregateId` is the recipient.
+Subscribes to `messaging.message.sent`, `messaging.conversation.created`,
+`messaging.participant.added`, and its own `notification.created` (push).
 
-**Must not know — refined in Messaging V1.** The Foundation said
-notifications receives templates, never domain events. The brief for
-Messaging V1 asked for `MessageSent → EventBus → Notifications`, so the rule
-now holds at the right layer: one **translator per source module** knows that
-module's events and turns them into requests; the dispatcher and the delivery
-port know templates and recipients, never why.
+**Depends on.** `messaging/contracts` (events, `MESSAGE_RECIPIENTS`),
+`identity/contracts` (`ACCOUNT_DIRECTORY` for active accounts, the
+route-access declarations), `shared` (event bus ports, audit log, rate
+limiter, clock, ids), `platform` (database, configuration, HTTP plumbing).
+
+**Must not know.** Why a source module does what it does — membership,
+visibility and account rules are asked of their owners, never copied. Any
+module's tables but its own. A socket library, or any push SDK outside its
+infrastructure (architecture tests).
+
+**Only realtime knows notifications, and only its contracts.** Messaging,
+identity, live, academic, assignments and the rest publish events and contain
+no notification logic; architecture tests assert that nothing but realtime
+(contracts only) and the composition root imports it. The Foundation's rule —
+notifications receives templates, never domain events — holds at the right
+layer: the translators know their source's events; the dispatcher and
+delivery know requests and recipients, never why.
 
 ---
 
@@ -285,9 +315,10 @@ port know templates and recipients, never why.
 [realtime.md Part M](realtime.md) and
 [ADR 0012](decisions/0012-realtime-messaging-transport.md).
 
-**Responsibility.** Delivering messaging's facts to the people entitled to
-them while they are connected — nothing else. It stores nothing and decides
-no messaging rule.
+**Responsibility.** Delivering messaging's facts, and each person's own
+notifications, to the people entitled to them while they are connected —
+nothing else. It stores nothing and decides no messaging or notification
+rule.
 
 **Owned state.** In memory, per instance: authenticated connections
 (connection id, account, session, expiry, last seen — no roles, memberships
@@ -298,7 +329,9 @@ the `ClientLink` port, provisional limits. `application/` —
 `ConnectionManager` (register, unregister, per-account lookup, send to one
 or many accounts, drop dead connections), `RealtimeSessions` (authenticate,
 re-authenticate, subscribe, ping, sweep), `MessagingRealtimeRelay` (the
-event subscriber: recipients, render once, fan out). `infrastructure/` —
+event subscriber: recipients, render once, fan out),
+`NotificationRealtimeRelay` (notifications' events → the recipient's own
+connections). `infrastructure/` —
 `WebSocketTransport`, the only code that knows a socket library (`ws`).
 
 **Public contract.** None: nothing depends on realtime, and only the
@@ -307,18 +340,22 @@ protocol at `/realtime`.
 
 **Events.** Subscribes to `messaging.conversation.created`,
 `messaging.message.sent`, `messaging.message.read`,
-`messaging.participant.added`, `messaging.participant.removed`. Publishes
-none.
+`messaging.participant.added`, `messaging.participant.removed`,
+`notifications.notification.created`, `notifications.notification.read`,
+`notifications.notification.all_read`. Publishes none.
 
 **Depends on.** `identity/contracts` (`ACCESS_TOKEN_AUTHENTICATOR`,
 `AUTHORIZATION_SERVICE`, the `messaging.read` permission),
 `messaging/contracts` (events, `MESSAGE_RECIPIENTS`, `MESSAGE_DELIVERY`,
-`MessageView`), `shared` (event subscriber, rate limiter, clock, ids),
-`platform` (configuration, for the handshake's origins and proxy trust).
+`MessageView`), `notifications/contracts` (events, `NOTIFICATION_READER`),
+`shared` (event subscriber, rate limiter, clock, ids), `platform`
+(configuration, for the handshake's origins and proxy trust).
 
-**Must not know.** Messaging's tables or rules, identity's internals,
-notifications. Architecture tests assert each, and that no module but this
-one's infrastructure imports a WebSocket library.
+**Must not know.** Messaging's or notifications' tables and rules, identity's
+internals. Architecture tests assert each — realtime reaches messaging,
+identity and notifications through their contracts only, and stores no
+notification — and that no module but this one's infrastructure imports a
+WebSocket library.
 
 ---
 

@@ -82,8 +82,10 @@ LiveKit credentials and the use case can no longer be run against a fake.
 ### `application-has-no-vendor-sdks`
 
 Use cases must not import `livekit-server-sdk`, `drizzle-orm`, `pg`, `ioredis`,
-`express`, `nestjs-pino`, `pino`, or a WebSocket library (`ws`, socket.io,
-`@nestjs/websockets`, `@nestjs/platform-ws`, `@nestjs/platform-socket.io`).
+`express`, `nestjs-pino`, `pino`, a WebSocket library (`ws`, socket.io,
+`@nestjs/websockets`, `@nestjs/platform-ws`, `@nestjs/platform-socket.io`), or a
+push SDK (`firebase`, `firebase-admin`, `@firebase/*`, `apn`, `@parse/node-apn`,
+`node-apn`, `web-push`, `node-pushnotifications`).
 
 `@nestjs/common` **is** permitted, for `@Injectable()` and `@Inject()`. That is a
 considered exception: it buys constructor injection, which is what keeps the
@@ -102,6 +104,22 @@ identity or notifications from ever growing a dependency on how bytes reach a
 client. `test/architecture/realtime-boundaries.spec.ts` states the same
 properties one by one, and checks the rule is not vacuous (the adapter really
 does import `ws`).
+
+### `push-sdks-only-in-the-notifications-adapter`
+
+No file under `src/` may import a push SDK — Firebase (`firebase`,
+`firebase-admin`, `@firebase/*`), APNs (`apn`, `@parse/node-apn`, `node-apn`),
+`web-push`, `node-pushnotifications`, or their type packages — except
+`modules/notifications/infrastructure/`. Push is an adapter behind
+notifications' `PushProvider` port, so notification logic never depends on a
+vendor, and no other module can send a push behind the notification
+pipeline's back (preferences, the lock-screen policy, dead-token handling).
+None of these packages is installed today: the only adapter is
+`LoggingPushProvider` (ADR 0013, Q24). `test/architecture/notifications-boundaries.spec.ts`
+states the same properties — no module reaches a push SDK, none is in
+`package.json`, every `PushProvider` implementation lives in notifications'
+infrastructure — and that notifications is imported by nothing but the
+composition root and realtime (contracts only).
 
 ### `api-does-not-touch-adapters`
 

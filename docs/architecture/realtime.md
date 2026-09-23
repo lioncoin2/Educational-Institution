@@ -4,9 +4,12 @@ Two unrelated things are "realtime" in this system, and they share nothing
 but the word:
 
 - **[Part M — messaging in real time](#part-m--messaging-in-real-time):** a
-  new message, read mark or membership change reaches the people entitled to
-  it while they are connected. A WebSocket from the API. Implemented
-  (Realtime Messaging V1, [ADR 0012](decisions/0012-realtime-messaging-transport.md)).
+  new message, read mark or membership change — and a new notification —
+  reaches the people entitled to it while they are connected. A WebSocket
+  from the API. Implemented (Realtime Messaging V1,
+  [ADR 0012](decisions/0012-realtime-messaging-transport.md); notifications
+  ride the same connection since Notifications V1,
+  [ADR 0013](decisions/0013-notifications-v1.md)).
 - **[Part A — live audio rooms](#part-a--live-audio-the-2500-participant-design):**
   a teacher speaking to ~2500 listeners. LiveKit media, capability tokens.
   Designed; the coordination layer is implemented.
@@ -43,11 +46,34 @@ Two stacks that meet only at an event:
 | --- | --- |
 | persistence → domain event | event subscriber → recipients → connections → transport |
 | decides membership, visibility, what a message looks like | decides nothing about messaging |
-| imports no socket library, no realtime code (architecture tests) | reads messaging and identity through their contracts only |
+| imports no socket library, no realtime code (architecture tests) | reads messaging, identity and notifications through their contracts only |
 
 Realtime is an **extension**, not a second messaging system: it stores
 nothing, and nothing depends on it. When it is down, messages are still
 stored, HTTP still serves them, and clients catch up by sequence.
+
+**Notifications use the same connection** — the same `ConnectionManager`,
+the same socket, never a second one:
+
+```
+  notifications ─ dispatcher ──▶ notifications (PostgreSQL)        ◀── the truth
+                     │ one per row actually stored
+                     ▼
+     notifications.notification.created  (ids, type, channel flags)
+     notifications.notification.read / all_read
+                     ▼
+   realtime ─ NotificationRealtimeRelay     only if the recipient is connected
+                 │ what? NOTIFICATION_READER  the stored notification, rendered as
+                 │                            the HTTP inbox renders it; a page at a time
+                 ▼
+             ConnectionManager.sendToUser(recipient)   ──▶  UnreadCountController /
+                                                            NotificationListController
+```
+
+The relay depends on notifications' contracts only and stores nothing; the
+recipient is the account the stored row names. Notifications decides what
+exists, for whom, and whether the person wants it live
+([notifications.md §11](notifications.md#11-realtime-delivery)).
 
 ## M2. Transport
 
@@ -80,7 +106,10 @@ nothing else.
    issuer, audience, expiry; the session still live; the account ACTIVE;
    roles and permissions read from storage now. One implementation of
    authentication, not two.
-3. Then the coarse gate every messaging route has: `messaging.read`.
+3. Then the coarse gate every messaging route has: `messaging.read`. (The
+   connection also carries the account's own notifications; the gate is
+   unchanged — every role holds it — and an account without it would read
+   its notifications over HTTP.)
 4. Then the per-account limits (§M8).
 5. `ready` — `{connectionId, userId, expiresAt, heartbeatSeconds}`. The
    user id is the server's, from the token; a frame that tries to state one
@@ -114,6 +143,8 @@ message history, no profile data.
 | `message.read` | the **reader's own** devices (read on the phone, badge clears on the laptop). Not other members: read receipts are open question Q25 |
 | `participant.added` | the person added |
 | `participant.removed` | the person removed or who left — no content |
+| `notification.created` | **the recipient only** — every connection of the account the stored notification belongs to, unless their REALTIME preference for its category is off |
+| `notification.read`, `notification.read_all` | the recipient's own devices, so every badge agrees |
 
 Recipients are read from the database **at delivery time**, through
 messaging's `MESSAGE_RECIPIENTS`: never "everyone online", a role, a
@@ -152,6 +183,12 @@ One JSON object per text frame (`realtime/domain/protocol.ts`,
   redelivered fact carries the same id.
 - `message.read` carries only the watermark: `conversationId`, `userId`,
   `lastReadSequence`, `occurredAt`.
+- `notification.created` carries the notification exactly as
+  `GET /notifications` renders it (`eventId` = `notification.created:<id>`);
+  `notification.read` carries `notificationId` and `readAt`;
+  `notification.read_all` carries the boundary (`throughCreatedAt`,
+  `throughId`) and `readAt`. No recipient id, no deduplication key
+  ([notifications.md §11](notifications.md#11-realtime-delivery)).
 
 **Error codes** (an `error` frame; never a stack trace, never an internal
 message): `UNAUTHORIZED`, `FORBIDDEN`, `INVALID_EVENT` (not JSON, binary,
@@ -196,6 +233,11 @@ same rules:
 7. **Liveness**: the client pings every 25 s and treats 10 s of silence as a
    dead connection (a phone moving from Wi-Fi to cellular, a laptop waking
    up); it reconnects at once when the app returns to the foreground.
+8. **Notifications are merged by id.** A `notification.created` already held
+   changes nothing (the badge counts each id once); on every (re)connect the
+   unread count, and the center's first page if it is open, are fetched again
+   over HTTP. A notification that arrived while the socket was down is found
+   there.
 
 ## M7. Multi-device, and the sender
 
@@ -279,20 +321,28 @@ Backend (`npm run verify`):
 - `test/integration/realtime-postgres.spec.ts` — the brief's scenario on
   PostgreSQL end to end; multi-device; a lost event filled from Postgres;
   nobody receives a conversation they are not in;
-- `test/architecture/realtime-boundaries.spec.ts` — the module boundaries.
+- `realtime/application/notification-relay.spec.ts` — the recipient only,
+  the wire shape, the REALTIME preference, offline recipients, one read per
+  page, read and read-all frames, malformed events;
+- `test/integration/notifications-realtime.spec.ts` — a message sent to a
+  connected recipient, a disconnected one, and one who reconnects, on
+  PostgreSQL end to end;
+- `test/architecture/realtime-boundaries.spec.ts` — the module boundaries
+  (including: realtime reaches notifications through its contracts only).
 
 Flutter (`flutter test`): frame parsing; the WebSocket client against a fake
 server (auth frame, never a URL token; duplicates; subscribe; reconnect;
 4401 renewal; 4403 stop; backoff; heartbeat; re-authentication); the
 conversation and list state (dedupe, pending reconciliation, a lost event,
-reconnect catch-up, monotonic read marks, removal); screens; the import
-boundaries.
+reconnect catch-up, monotonic read marks, removal); notification frames and
+their state (live insertion once, cross-device reads, reconnect resync);
+screens; the import boundaries.
 
 ## M12. Deliberately deferred
 
-- **Push notifications** while not connected (Q24). The shape is ready:
-  `messaging.message.sent` already fans out to two independent
-  subscribers, realtime and notifications, neither aware of the other.
+- **Push to devices that are not connected** — built behind a provider port
+  with a logging adapter; the real provider is Q24
+  ([notifications.md §12](notifications.md#12-push)).
 - **Read receipts and "seen by"** (Q25); **typing indicators; presence.**
   They would ride the same connection, gated by the same `subscribe`.
 - **Announcing membership changes to the other members** of a group —

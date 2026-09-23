@@ -481,25 +481,39 @@ its own permission and probably a second approval — not a widening of
 
 ---
 
-## Q24 — Notifications: provider, previews, quiet hours
+## Q24 — Notifications: push provider, lock-screen previews, quiet hours, mute
 
-**Question.** Which push provider (FCM, APNs, web push)? May a notification
-show the message text on a lock screen — on a child's phone? Quiet hours?
-Per-conversation mute?
+**Question.** Which push provider — FCM for Android (and perhaps iOS and the
+web), APNs directly for iOS, web push? May a push show the sender's name, or
+the message text, on a lock screen — on a child's phone, on a shared classroom
+tablet? Quiet hours, per person or institution-wide? Per-conversation mute?
 
-**Why not guessed.** A provider is an account and a data-processing agreement;
-lock-screen previews of children's messages are a safeguarding decision.
+**Why not guessed.** A provider is an account and a data-processing agreement:
+Google or Apple sees every push's metadata. Lock-screen previews of children's
+messages are a safeguarding decision. Quiet hours are an institutional policy
+whose times depend on Q12 (timezone).
 
-**Built instead.** The whole pipeline except the provider:
-`messaging.message.sent` → notifications' translator → dispatcher → delivery
-port, with a logging placeholder at the end. Notifications carry ids only,
-never text. No preferences. A connected app already receives new messages
-over the realtime connection ([ADR 0012](decisions/0012-realtime-messaging-transport.md));
-push is what would reach it when it is not connected.
+**Built instead (Notifications V1, [ADR 0013](decisions/0013-notifications-v1.md)).**
+Everything except the provider: a stored inbox; per-category preferences with
+a separate PUSH switch; device registration (`POST /notifications/devices`,
+the token never returned or logged); and `PushDelivery` behind the
+`PushProvider` port, with retries classified and dead tokens disabled. The
+only adapter logs that a push would have gone out, and sends nothing. The
+candidate packages were evaluated (versions, licences, platforms —
+[notifications.md §12](notifications.md#12-push)) and none installed, because
+none can be built or verified without a Firebase project, an Apple team and a
+device. **PROVISIONAL lock-screen policy:** a push says only what kind of thing
+happened — "رسالة جديدة" / "لديك رسالة جديدة." — with no sender and no text; the
+full notification is in the app, behind sign-in. There are no quiet hours and
+no mute.
 
-**When answered.** A delivery adapter; a template that may include a preview
-if allowed; preference and quiet-hour filters in the dispatcher, where every
-source of notifications passes.
+**When answered.** One adapter implementing `PushProvider` in
+`notifications/infrastructure/` and one line in `notifications.module.ts`, with
+credentials in configuration; in the app, `PushTokenSource` implemented with
+the chosen SDK, plus the platform project files. A preview, if allowed, is a
+different body key and arguments in `pushMessageFor` (`domain/push.ts`). Quiet
+hours and mute are filters in `PushDelivery`, which every source's
+notifications already pass through, plus a preference field.
 
 ---
 
@@ -517,7 +531,7 @@ and did not reply.
 **Built instead.** Each person's read mark is stored and moves only forward.
 Realtime delivers it to that person's own devices, so a badge cleared on one
 clears on the others — and to nobody else. No API exposes another member's
-mark.
+mark, and reading never creates a notification for anyone (Q28).
 
 **When answered.** A per-conversation-type audience for `message.read` in the
 realtime relay, and a read-model query for "seen by", gated by whatever this
@@ -545,6 +559,75 @@ revalidation every 60 seconds; 10,000 connections per instance.
 
 **When answered.** Constants in that file — after a load test on the
 production topology, not before.
+
+---
+
+## Q27 — How long are notifications kept?
+
+**Question.** Are read notifications deleted after a while (30 days? a term? a
+year?), and unread ones? Are they kept after an account is disabled, and for
+how long? Should they follow the retention of what they point at (Q3)?
+
+**Why not guessed.** A notification is a small record of what someone was
+told — useful to them, and sometimes the evidence that a message reached a
+guardian. Deleting on a guessed schedule is irreversible; keeping everything
+forever has a storage and privacy cost. It is tied to Q3 (retention) and Q13
+(what DISABLED means).
+
+**Built instead.** Kept indefinitely: nothing deletes a notification — not
+suspension, not disabling (tested). Nothing slows down as they accumulate:
+pages are keyset range scans, the unread count reads at most 100 rows, and
+"mark all read" works in chunks. A row holds keys, ids and at most a display
+name.
+
+**When answered.** A scheduled job deleting by `created_at` in chunks — the
+`(recipient_user_id, created_at, id)` index already serves a per-person sweep;
+an institution-wide sweep would add a `created_at` index by migration. No
+change to the model or the API.
+
+---
+
+## Q28 — What deserves a notification, and how loudly?
+
+**Question.**
+
+- **Defaults.** Every channel is on for messages today. Should a channel's
+  posts push by default? Should students get pushes by default?
+- **Collapsing.** Should twenty messages in a busy group be twenty
+  notifications, or one ("20 رسالة جديدة في …")?
+- **Large channels.** Should a post to a 2,000-member channel notify everyone,
+  or only those who opt in?
+- **Priority.** May an administrator send an announcement that is always
+  delivered — above a person's preferences, or through quiet hours? Who may?
+- **Read receipts.** Should reading a message ever notify the sender? (It does
+  not; see Q25.)
+- **Future categories.** When assignments, announcements, certificates and
+  halaqas arrive, which of their facts notify, whom, and do parents receive
+  their child's?
+
+**Why not guessed.** These are questions of attention and trust, not
+mechanics. A school that notifies too much trains everyone to ignore it; one
+that notifies too little misses the message that mattered. The answers differ
+by role, age and institution, and "always delivered" is a power that needs an
+owner (Q1).
+
+**Built instead.** One notification per message per reader (never the
+sender), per new conversation and per addition — the three messaging types
+only. Defaults are all on (PROVISIONAL), and each person may turn each channel
+off per category. There is no collapsing, no priority and no exception to
+preferences, and a read never notifies anyone. The five reserved types
+(assignments, announcements, certificates, halaqas) have no source and are
+refused. The model is ready: every notification has a type and a category, a
+type is activated by one catalog line, and each push already carries a thread
+key that groups a conversation's pushes on the device.
+
+**When answered.** Defaults are one constant (`DEFAULT_CHANNEL_PREFERENCES`),
+or per-role defaults read where `preferencesFor` fills in missing rows.
+Collapsing is a key in the translator (one unread notification per
+conversation, updated in place) — no change to the dispatcher or the
+clients. Priority is a request field the dispatcher weighs against
+preferences, plus a permission for who may set it. New categories arrive with
+their types.
 
 ---
 

@@ -64,6 +64,19 @@ contact is a safeguarding decision (Q6). `messaging.manage` lets a moderator
 remove people from groups and channels; it never grants access to one. See
 [messaging.md §9](messaging.md).
 
+**Notifications add no permission.** Every `/notifications` route is
+`@Authenticated()`: an inbox, its read state, notification preferences and
+push devices are inherent to having an account. What keeps them safe is
+scope — every use case acts on the principal's own id, no request can name
+another account, and another person's notification or device answers `404`
+like one that does not exist. **A notification is never a grant:** its target
+is an address, and opening it goes through the owning module's ordinary
+authorization (someone removed from a conversation keeps the notification
+about it, and gets `messaging.conversation_not_found` when they tap it). Who
+is notified at all is messaging's answer — members who may read the
+conversation now — never a role, organisation or permission broadcast. See
+[notifications.md §15](notifications.md#15-authorization).
+
 A permission exists in three places, and they cannot drift apart silently:
 the TypeScript catalogue, the `permissions` table (seeded by migration), and
 every route declaration. A test compares the table to the catalogue, and the
@@ -188,8 +201,8 @@ registration order. The guard contains no rules; it reads the declaration and
 asks.
 
 `@Authenticated()` is for acts inherent to having an account: who am I, sign me
-out, my devices, my password. Making those grantable would allow a role that
-cannot log out.
+out, my devices, my password, my notifications. Making those grantable would
+allow a role that cannot log out.
 
 Only four routes are public: login, refresh, and the two health probes. The
 architecture test fixes that list; adding to it is an argued change.
@@ -280,6 +293,7 @@ which is asserted by test.
 | System principals held to their grants | `authorization.service.spec.ts`, `provisioning.spec.ts` |
 | Guard fails closed; public skips tokens; 401 vs 403 | `access.guard.spec.ts` |
 | Every discovered route declares exactly one access level; public set fixed; admin routes need a permission | `test/architecture/authorization.spec.ts` |
+| Every notification route is `@Authenticated()`; another person's notification or device is `404`; a notification's target is refused after removal | `test/architecture/authorization.spec.ts`, `test/api/notifications.api.spec.ts` |
 | 401 / 403 / validation / error shape over real HTTP | `test/api/identity.api.spec.ts` |
 
 *Correction to the Foundation document:* it listed catalogue and deny-override

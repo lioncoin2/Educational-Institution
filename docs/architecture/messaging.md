@@ -1,8 +1,8 @@
 # Messaging
 
 **State: implemented (V1).** Domain, use cases, Postgres persistence, HTTP
-API, events, notifications fan-out, and the first backend-backed Flutter
-feature. Decisions are recorded in
+API, events (which notifications and realtime consume), and the first
+backend-backed Flutter feature. Decisions are recorded in
 [ADR 0011](decisions/0011-messaging-v1.md), building on
 [ADR 0007](decisions/0007-messaging-architecture.md).
 
@@ -79,8 +79,10 @@ it by name. Other modules learn about messaging through:
 
 - **events** (`messaging.*`, §9),
 - **`MESSAGE_RECIPIENTS`** — the current members of a conversation, paged,
-  optionally only those who can see a given sequence, for delivery modules
-  (notifications and realtime), and
+  optionally only those who can see a given sequence, only those who may read
+  the conversation now (`readersOnly`: active accounts whose roles grant
+  `messaging.read`, asked of identity by messaging) or only named people — for
+  delivery modules (notifications and realtime), and
 - **`MESSAGE_DELIVERY`** — a stored message rendered exactly as the timeline
   renders it (its `clientMessageId` only in the sender's copy), and "may this
   principal follow this conversation?" answered by the same use case that
@@ -352,23 +354,31 @@ content into a second store.
 ## 13. Notifications
 
 ```
-messaging ──messaging.message.sent──▶ event bus ──▶ notifications
-                                                      │  MessageSentNotifier
-                                                      │    pages MESSAGE_RECIPIENTS
-                                                      │    (current members − sender)
-                                                      ▼
-                                                  NotificationDispatcher
-                                                      ▼
-                                                  NotificationDelivery ── logging placeholder
+messaging ──messaging.message.sent──────▶ event bus ──▶ notifications
+          ──messaging.conversation.created                │ MessagingNotificationTranslator
+          ──messaging.participant.added                   │   asks MESSAGE_RECIPIENTS: current
+                                                          │   members, within the history window,
+                                                          │   readers only, minus the sender
+                                                          ▼
+                                                      NotificationDispatcher → notifications table
+                                                          ▼
+                                             notifications.notification.created
+                                                  ├──▶ realtime (the recipient's connections)
+                                                  └──▶ push (provider port; logging adapter)
 ```
 
-Messaging imports no notification or push code (asserted). The translator in
-notifications is the only code there that knows messaging exists; the
-dispatcher and delivery port know templates and recipients, never why. The
-fan-out is detached from the send — a message returns when stored, not when
-10,000 people have been notified — and walks recipients 1,000 at a time.
-**No push provider exists yet** (FCM/APNs not chosen, Q24): delivery logs a
-template and a recipient count.
+Messaging imports no notification or push code (asserted), and contains no
+notification logic: it publishes its facts. The translator in notifications
+is the only code there that knows messaging exists; it asks messaging who
+may be told — never querying users or copying membership — so a member
+removed, outside the message's history window, suspended, disabled or no
+longer allowed to read is not notified. The sender never is. A notification
+says who sent what kind of message, **never its text**. The fan-out is
+detached from the send — a message returns when stored, not when 10,000
+people have been notified — and walks recipients 1,000 at a time; each
+notification is stored once per recipient however often the fact is
+delivered. Push providers are not chosen yet (Q24): the push port has a
+logging adapter. See [notifications.md](notifications.md).
 
 ---
 
@@ -511,8 +521,9 @@ seam and one provider line.
 
 Not built in V1, by the brief: reactions, threads (replies store a
 reference; no thread view), editing, deletion, search UI, advanced
-moderation, disappearing messages, end-to-end encryption, realtime delivery,
-push notifications, a people picker for starting conversations (V1 starts
+moderation, disappearing messages, end-to-end encryption, realtime delivery
+(since built, §14), notifications (since built, §13; a push provider is Q24),
+a people picker for starting conversations (V1 starts
 them through the API), video messages, image thumbnails, conversation
 archiving, ownership transfer, promoting members to publishers.
 

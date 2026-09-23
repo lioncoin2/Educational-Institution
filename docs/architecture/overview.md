@@ -44,8 +44,8 @@ backend/src/
     messaging/     direct, group and channel conversations
     live/          realtime audio rooms, raise-hand queue, moderation
     files/         upload policy, storage keys, signed access
-    notifications/ delivery of events to people
-    realtime/      messaging events to connected clients, over WebSocket
+    notifications/ each person's inbox: what they were told, read or not; push
+    realtime/      messaging events and notifications to connected clients, over WebSocket
     automation/    scheduled and triggered actions
     reporting/     read models, KPIs, Owner Command Center widgets
 ```
@@ -58,8 +58,8 @@ Depth of implementation varies deliberately:
 | `live` | Implemented end to end against the RTC port; in-memory persistence |
 | `files` | **Messaging V1**: allow-listed, verified uploads; signed links; local adapter with its transfer routes. On Postgres, tested |
 | `messaging` | **Messaging V1**: DMs, groups, channels; server-ordered, idempotent sends; read state; keyset pages; membership-first authorization. On Postgres, tested |
-| `notifications` | The pipeline from `messaging.message.sent` to a delivery port; no push provider yet |
-| `realtime` | **Realtime Messaging V1**: authenticated WebSocket at `/realtime`; messaging events to current members' connections, per event; multi-device; heartbeat; limits. Single instance, tested on Postgres |
+| `notifications` | **Notifications V1**: a persistent inbox fed by messaging's facts; idempotent by a database constraint; read state, capped unread count, keyset pages; per-channel preferences; device registration; push behind a provider port (logging adapter — no provider chosen, Q24). On Postgres, tested |
+| `realtime` | **Realtime Messaging V1**: authenticated WebSocket at `/realtime`; messaging events to current members' connections, per event; each person's new notifications and reads to their own connections; multi-device; heartbeat; limits. Single instance, tested on Postgres |
 | the other six | Contracts and a Nest module only — deliberately empty |
 
 The near-empty modules exist so that the boundary is decided before the
@@ -129,6 +129,7 @@ Every external dependency sits behind a port, in exactly one adapter file:
 | --- | --- | --- |
 | Realtime audio | `RtcProvider` | `LiveKitRtcProvider`, `FakeRtcProvider` |
 | Binary storage | `StorageProvider` | `LocalStorageProvider` (S3 adapter later) |
+| Push delivery | `PushProvider` | `LoggingPushProvider` (APNs / FCM when chosen, Q24) |
 | Accounts | `UserRepository` | `DrizzleUserRepository`, `InMemoryUserRepository` |
 | Sessions | `AuthSessionRepository` | `DrizzleAuthSessionRepository`, in-memory |
 | Role matrix | `RoleCatalog` | `DrizzleRoleCatalog`, in-memory (provisional) |
@@ -153,19 +154,22 @@ Named, so that absence reads as a decision rather than an oversight:
 
 - **No 2500-person room UI.** Out of scope. Messaging V1 built the chat screens
   (list, conversation, composer); live rooms are the next milestone's.
-- **Postgres adapters only where there is code.** Identity, audit, files and
-  messaging are on Postgres. `live` is still in memory. The contract-only
+- **Postgres adapters only where there is code.** Identity, audit, files,
+  messaging and notifications are on Postgres. `live` is still in memory. The contract-only
   modules have no tables. See [persistence.md](persistence.md).
 - **No seeded accounts and no default credentials.** The first owner is created
   on the server with a CLI that reads the password from stdin. Q2.
 - **No confirmed role→permission matrix.** What a Supervisor may actually do is
   an institutional decision. The matrix in force is provisional, in one file,
   and in the database. Q1.
-- **No push notifications, and realtime on one instance.** A connected app
-  receives messages over the realtime WebSocket (ADR 0012); nothing reaches an
-  app that is not connected until a push provider is chosen (Q24). Several
-  API instances need a broker-backed event bus first. See
-  [realtime.md](realtime.md) Part M.
+- **No push provider, and realtime on one instance.** A connected app
+  receives messages and notifications over the realtime WebSocket (ADR 0012);
+  an app that is not connected finds its notifications in the inbox when it
+  next opens. Push is built up to a provider port whose only adapter logs —
+  no Firebase, APNs or web-push SDK is installed until a provider is chosen
+  and can be verified on devices (Q24, ADR 0013). Several API instances need
+  a broker-backed event bus first. See [realtime.md](realtime.md) Part M and
+  [notifications.md](notifications.md).
 - **No load testing.** The design is *arranged to be* load-testable; it has not
   been load-tested. See [realtime.md](realtime.md), "What is proven and what is
   not."
@@ -189,6 +193,11 @@ Realtime Messaging V1 added the live connection the same way: a
 configured and a disabled one otherwise. No screen touches a socket; the
 messaging state listens to the client's events and connection states.
 
+Notifications V1 added `NotificationsRepository` (HTTP and in-memory), the
+notification center and its settings, one unread count behind every badge,
+and a `PushTokenSource` seam with no push SDK behind it yet. The only change
+to Home, Programs and Profile is the badge on their existing bells and row.
+
 The Flutter side holds **no secrets**. It never sees the LiveKit API secret; it
 receives a short-lived, capability-scoped join token minted server-side.
 
@@ -204,6 +213,7 @@ receives a short-lived, capability-scoped join token minted server-side.
 - [events.md](events.md) — how modules stay decoupled
 - [realtime.md](realtime.md) — messaging in real time, and the 2500-participant audio design
 - [messaging.md](messaging.md) — messaging V1: model, ordering, idempotency, authorization
+- [notifications.md](notifications.md) — notifications V1: the inbox, deduplication, delivery, push, devices
 - [storage.md](storage.md) — files and binaries
 - [persistence.md](persistence.md) — database strategy
 - [observability.md](observability.md) — logging, audit, health, metrics

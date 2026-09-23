@@ -15,7 +15,10 @@ modules that have no code yet:
 - files (Messaging V1): `file_assets`;
 - messaging (Messaging V1): `conversations`, `conversation_participants`,
   `messages`, `message_attachments` — see [messaging.md](messaging.md) §2
-  for what each constraint guarantees.
+  for what each constraint guarantees;
+- notifications (Notifications V1): `notifications`,
+  `notification_preferences`, `notification_devices` — see §3 below and
+  [notifications.md](notifications.md).
 
 No table references another module's table: account and file ids are plain
 columns, never cross-module foreign keys (a test asserts it).
@@ -117,6 +120,12 @@ transcribed, and a test asserts the database and the constants agree.
 | `0004_messaging_and_files` | generated, **additive only** | `file_assets` and the four messaging tables, with their uniques, CHECKs, FKs and partial indexes |
 | `0005_seed_messaging_permissions` | **custom data**, generated from constants | `messaging.start_direct`, `create_group`, `create_channel`, and their provisional grants |
 
+### Notifications V1 — one step
+
+| Migration | Kind | Does |
+| --- | --- | --- |
+| `0006_notifications` | generated, **additive only** (plus a header comment) | the three notification tables, with their uniques, CHECKs and partial indexes; no foreign keys |
+
 `drizzle-kit generate` against the committed schema reports no changes — the
 migrations and the schema files agree.
 
@@ -196,6 +205,24 @@ vocabulary, the revocation-reason vocabulary, "revoked iff a reason is given",
 `(user_id) WHERE revoked_at IS NULL` serves the hot queries without scanning
 dead sessions.
 
+### `notifications`, `notification_preferences`, `notification_devices`
+
+Owned by **notifications**. What each guarantee is for:
+
+| Constraint / index | Guarantees |
+| --- | --- |
+| `notifications_dedupe_unique (recipient_user_id, dedupe_key)` | one notification per source fact and recipient — the idempotency of the whole pipeline. The insert is `ON CONFLICT DO NOTHING RETURNING`, so the constraint, not a prior read, decides |
+| `notifications_recipient_created_idx (recipient_user_id, created_at, id)` | the inbox page: a keyset range scan, read backwards for newest first. **Ascending on purpose** — a backward scan yields `ORDER BY created_at DESC, id DESC` (NULLS FIRST); a `DESC NULLS LAST` index cannot serve that order, as the first draft of this migration found (the `EXPLAIN` test caught it) |
+| `notifications_recipient_unread_idx … WHERE read_at IS NULL` | the unread count (at most 100 rows read) and "mark all read" in chunks — both only ever touch unread rows |
+| CHECKs: type and category shape, template keys `notification.<x>.<y>`, `params` a JSON object, `target` an object with a string `kind`, dedupe key length, `read_at ≥ created_at` | the database refuses what the domain refuses, whoever writes |
+| `notification_preferences` PK `(user_id, category)` | one row per person and category; no row means the defaults |
+| `notification_devices_token_unique (provider, token)` | one owner per app installation; registering again updates the row (and may move it to the account now signed in) |
+| `notification_devices_user_enabled_idx (user_id, last_seen_at) WHERE disabled_at IS NULL` | a page of recipients' devices in one query; the least recently seen found cheaply for eviction |
+| CHECKs: platform, provider, APNs only on iOS, token length 32–1024 | no malformed registration survives a buggy caller |
+
+Account ids are plain columns: suspending or disabling an account leaves its
+notification history alone.
+
 ### `audit_log`
 
 Owned by **platform**. Now written by `DrizzleAuditLog` whenever a database is
@@ -219,6 +246,9 @@ in-memory twin for unit tests and database-less development:
 | `FileAssetRepository` | `DrizzleFileAssetRepository` | `InMemoryFileAssetRepository` |
 | `MessagingRepository` (writes) | `DrizzleMessagingRepository` | `InMemoryMessagingStore` |
 | `MessagingReadModel` (pages) | `DrizzleMessagingReadModel` | `InMemoryMessagingStore` (the same instance) |
+| `NotificationRepository` | `DrizzleNotificationRepository` | `InMemoryNotificationRepository` |
+| `PreferenceRepository` | `DrizzlePreferenceRepository` | `InMemoryPreferenceRepository` |
+| `DeviceRepository` | `DrizzleDeviceRepository` | `InMemoryDeviceRepository` |
 
 Selected once per module, keyed on whether `DATABASE_URL` was supplied.
 
@@ -270,6 +300,17 @@ and say so on stderr; CI always sets it.
   nothing more; a lost event filled from the database; nobody — the owner
   included — receiving a conversation they are not in. Fan-out's "who can see
   this sequence" is also tested on the read model directly.
+- **Notifications:** each constraint refuses what it exists to refuse, by
+  name; no foreign key reaches another module's table; twenty concurrent
+  dispatches of one request store one row and publish one event; a messaging
+  fact translated three times concurrently is one row per recipient; keyset
+  paging walks one person's 3,500 rows (of 5,000 in the table) each once,
+  newest first, and `EXPLAIN` shows `notifications_recipient_created_idx`
+  with no sequential scan; the capped unread count uses the partial index;
+  "mark all" in chunks alongside a concurrent single read counts each row
+  once; devices register, refresh, move between accounts and are disabled,
+  and one token registered concurrently from two accounts is one row; a
+  connected, disconnected and reconnected recipient on a real WebSocket.
 
 ---
 
@@ -304,10 +345,10 @@ with Postgres's `max_connections`.
 
 - Postgres adapters for `live` (rooms, sessions, moderation). These are
   in-memory today.
-- The `FileAsset` table: there is no upload endpoint for it to serve yet.
+- Retention for notifications (Q27): kept indefinitely today.
 - A unit of work spanning a state change and its audit entry. Today the audit
   write follows the change and can, in principle, fail after it
   (observability.md).
 - A cleanup job for revoked and expired sessions (Q3).
 - Read replicas, partitioning, the transactional outbox.
-- Any schema for the eight contract-only modules.
+- Any schema for the six contract-only modules.

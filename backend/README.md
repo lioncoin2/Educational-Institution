@@ -33,6 +33,11 @@ The realtime endpoint is served by the same process, on the same port:
 `ws://localhost:3000/realtime`. Nothing to configure; with no one connected it
 costs nothing.
 
+Push notifications need no configuration either, because no provider is wired
+yet: the push port's only adapter logs, at debug level, that a push would have
+gone out — never the device token. Choosing FCM or APNs is open question Q24;
+see [notifications.md §12](../docs/architecture/notifications.md#12-push).
+
 With Postgres:
 
 ```bash
@@ -82,13 +87,18 @@ through `/admin/users`. See
 | Send | `POST …/:id/messages/text` · `/voice` · `/image` · `/file` | `messaging.send` + membership |
 | Attachment link | `GET …/:id/messages/:messageId/attachments/:fileAssetId/link` | `messaging.read` + `files.read` + membership |
 | Membership | `POST …/:id/participants`, `DELETE …/participants/:userId`, `POST …/:id/leave` | owner / moderator, per use case |
+| My notifications | `GET /notifications?cursor&limit`, `GET /notifications/unread-count` | authenticated · your own only |
+| Mark read | `POST /notifications/:id/read`, `POST /notifications/read-all` | authenticated · your own only |
+| Notification settings | `GET` / `PATCH /notifications/preferences` | authenticated · your own only |
+| Push devices | `POST /notifications/devices`, `DELETE /notifications/devices/:id` | authenticated · rate-limited · your own only · the token is never returned |
 | Health | `GET /health/live`, `GET /health/ready` | public |
-| Realtime | WebSocket `/realtime` — `auth`, `subscribe`, `ping` in; `message.sent`, `message.read`, `conversation.created`, `participant.added` / `.removed` out | access token in the first frame · `messaging.read` · events only for conversations you are in |
+| Realtime | WebSocket `/realtime` — `auth`, `subscribe`, `ping` in; `message.sent`, `message.read`, `conversation.created`, `participant.added` / `.removed`, `notification.created`, `notification.read`, `notification.read_all` out | access token in the first frame · `messaging.read` · events only for conversations you are in, and only your own notifications |
 
 Messaging and files are described in
 [messaging.md](../docs/architecture/messaging.md) and
-[storage.md](../docs/architecture/storage.md); the realtime protocol in
-[realtime.md, Part M](../docs/architecture/realtime.md).
+[storage.md](../docs/architecture/storage.md); notifications in
+[notifications.md](../docs/architecture/notifications.md); the realtime
+protocol in [realtime.md, Part M](../docs/architecture/realtime.md).
 
 Errors always have one shape:
 `{ "error": { "kind"?, "code", "message", "details"? }, "requestId" }`.
@@ -130,7 +140,8 @@ src/
   platform/    config, logging, HTTP plumbing, event bus, database, health
                — knows nothing about business modules
   modules/     identity  people  academic  operations  assignments
-               messaging  live  files  notifications  automation  reporting
+               messaging  live  files  notifications  realtime  automation
+               reporting
 ```
 
 Inside a module:

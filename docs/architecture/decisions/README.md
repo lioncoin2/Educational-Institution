@@ -25,3 +25,4 @@ the history, not the current state.
 | [0010](0010-stateful-sessions-and-rotating-refresh-tokens.md) | Stateful sessions, checked per request, with rotating refresh tokens | Accepted |
 | [0011](0011-messaging-v1.md) | Messaging V1: server-ordered, idempotent, membership-first | Accepted |
 | [0012](0012-realtime-messaging-transport.md) | Realtime messaging: plain WebSocket, membership decided per event | Accepted |
+| [0013](0013-notifications-v1.md) | Notifications V1: a stored inbox, idempotent by the database, delivered by subscribers | Accepted |
