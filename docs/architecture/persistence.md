@@ -7,9 +7,18 @@ The instruction that bounded this:
 > Do not create a huge schema just because future features might exist. Only
 > establish the minimum foundation required for the architecture.
 
-So there are exactly the tables identity and audit need, and nothing for
-modules that have no code yet: `roles`, `permissions`, `role_permissions`,
-`users`, `user_identifiers`, `user_roles`, `auth_sessions`, `audit_log`.
+So there are exactly the tables implemented modules need, and nothing for
+modules that have no code yet:
+
+- identity and audit: `roles`, `permissions`, `role_permissions`, `users`,
+  `user_identifiers`, `user_roles`, `auth_sessions`, `audit_log`;
+- files (Messaging V1): `file_assets`;
+- messaging (Messaging V1): `conversations`, `conversation_participants`,
+  `messages`, `message_attachments` — see [messaging.md](messaging.md) §2
+  for what each constraint guarantees.
+
+No table references another module's table: account and file ids are plain
+columns, never cross-module foreign keys (a test asserts it).
 
 ---
 
@@ -100,6 +109,16 @@ Three steps rather than one, for two reasons:
 
 The seed SQL in `0002` was **generated from the TypeScript constants**, not
 transcribed, and a test asserts the database and the constants agree.
+
+### Messaging V1 — two steps
+
+| Migration | Kind | Does |
+| --- | --- | --- |
+| `0004_messaging_and_files` | generated, **additive only** | `file_assets` and the four messaging tables, with their uniques, CHECKs, FKs and partial indexes |
+| `0005_seed_messaging_permissions` | **custom data**, generated from constants | `messaging.start_direct`, `create_group`, `create_channel`, and their provisional grants |
+
+`drizzle-kit generate` against the committed schema reports no changes — the
+migrations and the schema files agree.
 
 ### Migrations are tested against old data, not just an empty database
 
@@ -197,6 +216,9 @@ in-memory twin for unit tests and database-less development:
 | `AuthSessionRepository` | `DrizzleAuthSessionRepository` | `InMemoryAuthSessionRepository` |
 | `RoleCatalog` | `DrizzleRoleCatalog` | `InMemoryRoleCatalog` (the provisional matrix) |
 | `AuditLog` | `DrizzleAuditLog` | `LoggingAuditLog` |
+| `FileAssetRepository` | `DrizzleFileAssetRepository` | `InMemoryFileAssetRepository` |
+| `MessagingRepository` (writes) | `DrizzleMessagingRepository` | `InMemoryMessagingStore` |
+| `MessagingReadModel` (pages) | `DrizzleMessagingReadModel` | `InMemoryMessagingStore` (the same instance) |
 
 Selected once per module, keyed on whether `DATABASE_URL` was supplied.
 
@@ -226,6 +248,21 @@ and say so on stderr; CI always sets it.
 - **The flow:** sign-in, rotation, replay detection and session termination on
   real SQL, asserting no raw token appears anywhere in the table.
 - **Migrations from old data** (above).
+- **Messaging under concurrency:** twenty simultaneous DM creations for one
+  pair yield one conversation; fifty simultaneous sends get sequences 1…50;
+  twelve retries of one send store one row; racing adds never exceed the cap;
+  `member_count` equals the current members; concurrent read marks end at the
+  highest; a removed member is refused at append.
+- **Messaging's database guards:** each unique, FK and CHECK refuses what it
+  exists to refuse, without the repository in the way.
+- **Messaging at volume:** keyset paging over 2,000 messages returns each once;
+  the timeline query uses `Index Scan Backward` on
+  `messages_conversation_sequence_unique` among 12,000 rows; unread counts stop
+  at the cap; fan-out pages a channel's members.
+- **Files:** completion is exactly-once under concurrent calls; storage keys
+  are unique.
+- **The use cases end to end over Drizzle** — a group, text, an image with a
+  verified upload, read state and the list.
 
 ---
 

@@ -47,13 +47,22 @@ The namespaces the brief named, plus identity's own:
 | `academic` | `read`, `manage` |
 | `attendance` | `read`, `manage` |
 | `assignments` | `read`, `submit`, `manage` |
-| `messaging` | `read`, `send`, `manage` |
+| `messaging` | `read`, `send`, `start_direct`, `create_group`, `create_channel`, `manage` |
 | `live` | `join`, `raise_hand`, `speak`, `moderate` |
 | `files` | `read`, `upload` |
 | `reports` | `read` |
 
-25 permissions. The catalogue says what **can** be granted. It says nothing
+28 permissions. The catalogue says what **can** be granted. It says nothing
 about who holds what; that is the role matrix below.
+
+**Messaging permissions are always membership-scoped.** `messaging.read` means
+"may read the conversations you are a current member of", never "may read
+messages"; `messaging.send` means "may post where you are a member and the
+conversation allows it". Starting a conversation is separate from taking part
+(`start_direct`, `create_group`, `create_channel`), because who may initiate
+contact is a safeguarding decision (Q6). `messaging.manage` lets a moderator
+remove people from groups and channels; it never grants access to one. See
+[messaging.md §9](messaging.md).
 
 A permission exists in three places, and they cannot drift apart silently:
 the TypeScript catalogue, the `permissions` table (seeded by migration), and
@@ -94,10 +103,10 @@ testable meanwhile, and it is kept in one file so nobody mistakes it for policy.
 
 | Role | Provisional grants |
 | --- | --- |
-| OWNER | all 25 |
-| ADMIN | all except `settings.manage` and `messaging.manage` (23) |
-| SUPERVISOR | read access: `users`, `people`, `academic`, `attendance`, `assignments`, `reports`, `messaging.read/send`, `live.join`, `files.read` |
-| TEACHER | `people.read`, `academic.read`, `attendance.*`, `assignments.read/manage`, `messaging.read/send`, `live.join/speak/moderate`, `files.*` |
+| OWNER | all 28 |
+| ADMIN | all except `settings.manage` and `messaging.manage` (26) |
+| SUPERVISOR | read access: `users`, `people`, `academic`, `attendance`, `assignments`, `reports`, `messaging.read/send/start_direct/create_group`, `live.join`, `files.read` |
+| TEACHER | `people.read`, `academic.read`, `attendance.*`, `assignments.read/manage`, `messaging.read/send/start_direct/create_group`, `live.join/speak/moderate`, `files.*` |
 | ASSISTANT_TEACHER | `academic.read`, `attendance.read`, `assignments.read`, `messaging.read/send`, `live.join`, `files.read` |
 | STUDENT | `academic.read`, `assignments.read/submit`, `messaging.read/send`, `live.join/raise_hand`, `files.*` |
 

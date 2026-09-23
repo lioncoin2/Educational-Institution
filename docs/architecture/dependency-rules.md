@@ -136,9 +136,13 @@ Otherwise a public contract drags the module's internals along with it, and the
 boundary is decorative. Contracts may use the shared kernel and other modules'
 contracts.
 
-This rule also caught a real violation: `files/contracts/index.ts` re-exported
-`STORAGE_PROVIDER` from `domain/storage-provider.ts`. Ownership was inverted —
-the token now lives in `contracts/` and the domain imports it from there.
+This rule also caught a real violation in the Foundation:
+`files/contracts/index.ts` re-exported `STORAGE_PROVIDER` from
+`domain/storage-provider.ts`. The Foundation fixed the direction by moving the
+token into `contracts/`. Messaging V1 found the deeper defect — the raw storage
+port should not be public at all, since a holder could mint a link to any
+stored object — and moved it back into `files/domain/`, with the asset-level
+`FILE_ASSETS` contract as files' public face (ADR 0011).
 
 ### `platform-knows-no-modules`
 

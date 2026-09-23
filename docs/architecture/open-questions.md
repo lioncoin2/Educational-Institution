@@ -142,12 +142,22 @@ closed? Does a supervisor see a teacher–student conversation?
 **Why not guessed.** This is a safeguarding decision before it is a technical
 one, and defaults in this area are exactly the kind that nobody revisits.
 
-**Built instead.** Nothing that presumes an answer. Messaging is contract-only,
-and the contracts express *shape* (conversations, participants, messages), never
-*who may start one*. The check will be an authorization question with the
-conversation as context — the mechanism from Q1.
+**Built instead (Messaging V1).** Starting a conversation is its own
+permission, separate from taking part: `messaging.start_direct`,
+`messaging.create_group`, `messaging.create_channel`. PROVISIONAL grants:
+teachers and supervisors may start DMs and groups; owners and admins may also
+create channels; **students and assistants start nothing** — they read and
+reply in conversations staff place them in. Anyone ACTIVE with
+`messaging.read` may be addressed. Nobody reads a conversation they are not in
+— not a supervisor, not the owner (see Q23).
 
-**When answered.** Policy rules plus permissions. No contract changes.
+Still open: may students message each other or a teacher of their choosing?
+Should a teacher reach only *their own* students (an academic relationship the
+academic module does not model yet)? Quiet hours? Parents?
+
+**When answered.** Grants in the provisional matrix (a migration), and — for
+"only their own students" — a policy rule with the conversation's members as
+context, the mechanism from Q1. No contract changes.
 
 ---
 
@@ -161,11 +171,14 @@ known. A channel with 2500 members behaves nothing like direct messages between
 two people, and option 2 would couple messaging to the RTC provider —
 contradicting the separation the rest of this design maintains.
 
-**Built instead.** Nothing. What *is* decided: the choice must not leak past
-`messaging/infrastructure/`. Use cases raise `messaging.message.sent` and are
-indifferent to how it reaches a phone.
+**Built instead (Messaging V1).** Persistence is separated from delivery: the
+send use case stores; `messaging.message.sent` announces; `MESSAGE_RECIPIENTS`
+says who is currently in a conversation. The Flutter client catches up with
+`?after=<newest sequence>` on refresh and after each send. No transport.
 
-**When answered.** An adapter in `messaging/infrastructure/`.
+**When answered.** A subscriber to `messaging.message.sent` plus a transport
+adapter (gateway or push service) behind it. Messaging's use cases do not
+change.
 
 ---
 
@@ -357,10 +370,16 @@ origin as the API, or not), and the Flutter web build is not connected to the
 API yet.
 
 **Built instead.** Refresh tokens travel in the response body, which is right
-for mobile. The `AuthRepository` contract states the storage rule.
+for mobile. The `AuthRepository` contract states the storage rule. Messaging V1
+connected the app to the API, including on the web, with two safeguards: a
+**CORS allow-list** (`CORS_ORIGINS` — explicit origins only, never a wildcard,
+never credentials), and a web client that keeps tokens **in memory only** —
+never `localStorage` — so a reload signs the person out, and nothing persists
+for a script to find later. That is safe but inconvenient; it is not the
+answer to this question.
 
-**When answered.** A cookie mode on `/auth/login` and `/auth/refresh`, and a CORS
-allowlist in configuration. Must be done before the web app is connected.
+**When answered.** A cookie mode on `/auth/login` and `/auth/refresh` for the
+web client, with CSRF protection. The allow-list already exists.
 
 ---
 
@@ -380,6 +399,124 @@ among equals it is allowed.
 
 **When answered.** A policy rule denying `roles.assign` of ADMIN to non-owners,
 or a permission split. No structural change.
+
+---
+
+## Q19 — What may be uploaded, and how much?
+
+**Question.** Which file types does the institution need — are Word and
+PowerPoint documents required, or is PDF enough? How large may a voice
+message, an image, a recording, a document be? Is there a per-person or
+per-institution storage quota? How long are uploads that were started but
+never completed kept?
+
+**Why not guessed.** Office formats are ZIP containers that can carry macros;
+accepting them is a security trade-off the institution should make knowingly.
+Size caps are cost and bandwidth decisions for the institution's users and
+connections.
+
+**Built instead.** An allow-list per kind (storage.md §4): JPEG/PNG/WebP
+images ≤ 10 MB; AAC/Opus voice ≤ 5 MB and ≤ 10 minutes; MP3/AAC/Ogg audio
+≤ 50 MB; PDF documents only, ≤ 25 MB. Every limit is marked PROVISIONAL in
+`file-policy.ts`. No quotas. Abandoned uploads are kept (indexed for a future
+sweep).
+
+**When answered.** Constants in `file-policy.ts` (plus a signature for any new
+type); a quota check in `RequestUploadUseCase`; a sweep job.
+
+---
+
+## Q20 — Messaging limits
+
+**Question.** How long may a message be? How many members may a group or a
+channel have? How many messages may one person send per minute?
+
+**Why not guessed.** They shape how the institution uses messaging — one
+2,500-student announcements channel, or one per halaqa.
+
+**Built instead.** PROVISIONAL engineering defaults in `messaging-policy.ts`
+and `messaging-settings.ts`: 4,000 characters; groups ≤ 500 members; channels
+≤ 10,000; 200 people added per request; 120 messages per minute per person;
+60 new conversations per hour per person.
+
+**When answered.** Constants. No structural change.
+
+---
+
+## Q21 — Does someone joining a group see what was said before?
+
+**Question.** When a student is added to an existing group, should they see
+its earlier messages? And in a channel?
+
+**Why not guessed.** Earlier group messages were written to a smaller
+audience; showing them to newcomers is a disclosure their authors did not
+choose. Channels are the opposite case — notices meant for everyone.
+
+**Built instead.** GROUP: history hidden, starting at the join
+(`hidden_through_sequence`). CHANNEL: full history. DIRECT: n/a. One function,
+`historyHiddenThrough()`, marked PROVISIONAL.
+
+**When answered.** That function. Existing members' windows are stored per
+participant, so a change applies to future joins without a migration.
+
+---
+
+## Q22 — Who may see who is in a conversation?
+
+**Question.** Should the subscribers of an announcements channel see one
+another? Should group members see each other's names?
+
+**Why not guessed.** A channel of all students would publish the full roll
+to every student — a privacy decision, especially for minors.
+
+**Built instead.** Groups and DMs: members see members. Channels: only the
+owner and publishers may list members; readers get
+`messaging.members_hidden`.
+
+**When answered.** One condition in `ListParticipantsUseCase`.
+
+---
+
+## Q23 — Moderation, deletion and review
+
+**Question.** May anyone read a conversation they are not in — for
+safeguarding review, after a complaint? When a message is deleted, is its text
+wiped, or kept for review? Who may delete others' messages? How long are
+messages kept (see also Q3)?
+
+**Why not guessed.** Each is a safeguarding and privacy decision with legal
+weight, and the conservative defaults conflict: wiping protects privacy,
+keeping protects review.
+
+**Built instead.** Nobody reads a conversation they are not in — not even the
+owner, who holds every permission (tested). `messaging.manage` lets a
+moderator **remove** someone from a group or channel, audited as moderation,
+and grants no access. Deletion is schema-ready (`deleted_at`, tombstones in
+every read path, a CHECK that permits a wiped body) but not exposed.
+
+**When answered.** A review capability would be a new, audited use case with
+its own permission and probably a second approval — not a widening of
+`messaging.read`. Deletion is one use case either way.
+
+---
+
+## Q24 — Notifications: provider, previews, quiet hours
+
+**Question.** Which push provider (FCM, APNs, web push)? May a notification
+show the message text on a lock screen — on a child's phone? Quiet hours?
+Per-conversation mute?
+
+**Why not guessed.** A provider is an account and a data-processing agreement;
+lock-screen previews of children's messages are a safeguarding decision.
+
+**Built instead.** The whole pipeline except the provider:
+`messaging.message.sent` → notifications' translator → dispatcher → delivery
+port, with a logging placeholder at the end. Notifications carry ids only,
+never text. No preferences.
+
+**When answered.** A delivery adapter; a template that may include a preview
+if allowed; preference and quiet-hour filters in the dispatcher, where every
+source of notifications passes.
 
 ---
 

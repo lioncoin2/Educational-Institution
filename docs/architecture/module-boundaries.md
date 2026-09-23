@@ -7,9 +7,11 @@ that actually does the work — **what it must not know**.
 A module is a unit of ownership, not a folder. If two modules need the same
 table, one of them is wrong.
 
-**Implementation state** is marked on every module. Eight of the twelve are
-deliberately empty: contracts and a Nest module, no implementation. Deciding the
-boundary before the code arrives is cheap; retrofitting one is not.
+**Implementation state** is marked on every module. Of the eleven business
+modules, four are implemented (identity, live, files, messaging) and one in
+part (notifications); the other six are deliberately empty: contracts and a
+Nest module, no implementation. Deciding the boundary before the code arrives
+is cheap; retrofitting one is not.
 
 ---
 
@@ -35,9 +37,11 @@ read accounts); owner bootstrap; per-request principal resolution.
 
 **Public contract** (`identity/contracts/`): `AuthorizationService`
 (`can`, `authorize`), the permission catalogue, the route declarations
-(`RequirePermission`, `Authenticated`, `PublicRoute`), `Principal`, and
-`systemPrincipal`. The module exports exactly one provider:
-`AUTHORIZATION_SERVICE`.
+(`RequirePermission`, `Authenticated`, `PublicRoute`), `Principal`,
+`systemPrincipal`, and `AccountDirectory` — who an account is (id, display
+name, active) and whether it may take part in something, for modules that
+reference accounts they did not create. The module exports exactly two
+providers: `AUTHORIZATION_SERVICE` and `ACCOUNT_DIRECTORY`.
 
 **Events.** `identity.user.created`, `identity.role.assigned`,
 `identity.role.revoked`, `identity.account.status_changed`. Payloads carry ids
@@ -139,27 +143,39 @@ a path, not a URL, not bytes.
 
 ## messaging
 
-**State:** contract only. See [messaging.md](messaging.md) for the full design.
+**State:** implemented — Messaging V1. Domain, use cases, Postgres and
+in-memory adapters, HTTP, events, tests on real Postgres. See
+[messaging.md](messaging.md) and [ADR 0011](decisions/0011-messaging-v1.md).
 
-**Responsibility.** Direct conversations, groups and channels.
+**Responsibility.** Direct conversations, groups and channels: membership,
+server-decided ordering, idempotent sends, read state, and who may read an
+attachment.
 
-**Owned entities.** `Conversation`, `Participant`, `Message`, `ReadReceipt`.
+**Owned entities.** `Conversation`, `Participant` (membership, role, read
+watermark, visibility window), `Message`, `MessageAttachment` (a file
+reference).
 
-**Public contract.** `ConversationType`, `MessageKind`, `ConversationRef`,
-`MessageRef`, `MessageAttachmentRef`, `ReadReceipt`.
+**Use cases.** Start a DM; create a group or channel; send text, voice, image
+or file (four typed use cases); list conversations; open one; page messages;
+list members; mark read; add and remove people; leave; get an attachment link.
 
-The contract is shaped so that reactions, edits, deletions, threads, pins and
-moderation are **additive**: a message already carries an id, a nullable
-`inReplyToMessageId`, and a list of attachment references rather than inline
-payloads. None of those features are implemented; none of them will require the
-existing shape to change.
+**Public contract** (`messaging/contracts/`): the vocabulary
+(`ConversationType`, `MessageType`, `ParticipantRole`), the event names and
+payload types, `MESSAGE_RECIPIENTS` (current members, paged — for delivery
+modules), and `MessageSearch` (an extension point nothing implements yet). It
+exports one provider: `MESSAGE_RECIPIENTS`.
 
-**Events.** `messaging.message.sent`, `messaging.conversation.created`.
+**Events.** `messaging.conversation.created`, `messaging.participant.added`,
+`messaging.participant.removed`, `messaging.message.sent`,
+`messaging.message.read` — ids and codes only.
 
-**Depends on.** `identity/contracts`, `files/contracts`.
+**Depends on.** `identity/contracts` (authorization, account directory),
+`files/contracts` (attachable uploads, download links), `shared`, `platform`.
 
-**Must not know.** How notifications are delivered. It raises
-`messaging.message.sent` and stops caring.
+**Must not know.** How notifications are delivered, how anything is pushed in
+real time, how bytes are stored, or LiveKit. Architecture tests assert each:
+nothing in messaging reaches `notifications`, `live`, a push or object-store
+SDK, the filesystem, or files' internals.
 
 ---
 
@@ -198,18 +214,23 @@ attendance — operations derives that from the events.
 
 ## files
 
-**State:** partially implemented — upload policy, storage port and local adapter
-with signing, plus tests. The receiving endpoint is deferred. See
-[storage.md](storage.md).
+**State:** implemented — Messaging V1. The upload policy, `FileAsset` with its
+Postgres table, the declare → PUT → verify flow, the local adapter and its
+transfer routes, signed links, tests. See [storage.md](storage.md).
 
-**Responsibility.** What may be uploaded, where its bytes live, and who may
-fetch them.
+**Responsibility.** What may be stored, verified storage of it, and
+short-lived links to it. **Not** who may read a file — the module that
+attached it decides that.
 
-**Owned entities.** `FileAsset` (metadata and a storage key — never bytes).
+**Owned entities.** `FileAsset` (metadata and a generated storage key — never
+bytes).
 
-**Public contract.** `FileKind`, `FileAssetRef`, `STORAGE_PROVIDER`.
+**Public contract.** `FileKind`, and `FILE_ASSETS` (`describe`,
+`verifyAttachable`, `createDownloadLink`). The raw `StorageProvider` port is
+**internal**: the Foundation exported it, which let any holder mint a link to
+any stored object; that defect is fixed and a test keeps it fixed.
 
-**Depends on.** `shared`, `platform/config`.
+**Depends on.** `identity/contracts`, `shared`, `platform`.
 
 **Must not know.** What a file *means*. A voice message, a homework submission
 and a certificate scan are one thing to this module: validated bytes behind a
@@ -219,21 +240,30 @@ signed URL. Meaning belongs to the module that referenced the asset.
 
 ## notifications
 
-**State:** contract only.
+**State:** partially implemented — the pipeline without a provider. A
+translator subscribes to `messaging.message.sent`, pages the conversation's
+current members through `MESSAGE_RECIPIENTS`, and dispatches one id-only
+notification per page; delivery is a logging placeholder until a push
+provider is chosen (Q24).
 
 **Responsibility.** Reaching a person, whatever the channel.
 
-**Owned entities.** `NotificationPreference`, `DeliveryAttempt`.
+**Owned entities (future).** `NotificationPreference`, `DeliveryAttempt`.
 
-**Public contract.** `NotificationChannel`, `NotificationRequest`,
-`NotificationSender`, `NOTIFICATION_SENDER`. `collapseKey` is in the contract
-from the start because a burst of twenty messages must be able to become one
-notification without every calling module learning about batching.
+**Public contract.** `NotificationChannel`, `NotificationRequest` (many
+recipients per request), `NotificationSender`, `NOTIFICATION_SENDER`.
+`collapseKey` lets a burst of twenty messages become one notification without
+any calling module learning about batching.
 
-**Depends on.** `identity/contracts`, `people/contracts`.
+**Depends on.** `messaging/contracts` (its events and recipients),
+`shared`, `platform`.
 
-**Must not know.** Why something happened. It receives a template key and
-parameters, not a domain event.
+**Must not know — refined in Messaging V1.** The Foundation said
+notifications receives templates, never domain events. The brief for
+Messaging V1 asked for `MessageSent → EventBus → Notifications`, so the rule
+now holds at the right layer: one **translator per source module** knows that
+module's events and turns them into requests; the dispatcher and the delivery
+port know templates and recipients, never why.
 
 ---
 

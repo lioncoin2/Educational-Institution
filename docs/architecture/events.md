@@ -97,6 +97,30 @@ makes this property assertable in a unit test rather than merely intended.
 Without the copy that is a mutation-during-iteration bug that appears only under
 a specific ordering — the kind that surfaces in production and not in tests.
 
+### Subscribing — the other half of the port
+
+Publishing is `EventPublisher`; subscribing is `EventSubscriber`, a port in the
+shared kernel (`EVENT_SUBSCRIBER`), implemented by the same bus:
+
+```ts
+interface EventSubscriber {
+  subscribe(eventName: string, handler: EventHandler): Unsubscribe;
+}
+```
+
+Until Messaging V1 a module could publish facts but could not react to anyone
+else's without importing platform's concrete bus. Now a subscriber registers in
+`onModuleInit` and unsubscribes in `onModuleDestroy` (notifications'
+`MessageSentNotifier` is the first).
+
+### A subscriber must not hold up the publisher
+
+The bus awaits each handler in turn, so a slow handler delays the request that
+published. Work that scales with audience size — fanning a channel post out to
+10,000 people — is **detached** by the subscriber: the handler schedules it and
+returns, and the detached work logs its own failures. A send returns when its
+message is stored, never when everyone has been notified.
+
 ---
 
 ## 4. Guarantees, stated plainly
@@ -139,11 +163,20 @@ by a real broker and subscribers become consumers. Again the port is unchanged.
 | `identity.role.revoked` | identity | reporting |
 | `identity.account.status_changed` | identity | people, notifications |
 | `operations.attendance.recorded` | operations | reporting, notifications |
-| `messaging.message.sent` | messaging | notifications |
+| `messaging.conversation.created` | messaging | reporting |
+| `messaging.participant.added` | messaging | notifications (future), realtime (future) |
+| `messaging.participant.removed` | messaging | realtime (future) |
+| `messaging.message.sent` | messaging | **notifications — subscribed**, realtime (future), search indexing (future) |
+| `messaging.message.read` | messaging | realtime read receipts (future) |
 
-The `live.speaker.*` and `identity.*` events are raised by implemented code
-today. The rest are declared so the vocabulary is settled before the modules
-arrive. Identity's payloads carry ids and codes only. The Foundation's
+The `live.speaker.*`, `identity.*` and `messaging.*` events are raised by
+implemented code today, and `messaging.message.sent` has the first real
+subscriber. The rest are declared so the vocabulary is settled before the
+modules arrive. Messaging's payloads, like identity's, carry ids and codes
+only — never message text, file names or display names: an event reaches every
+subscriber, some log it, and an outbox will store it. A subscriber that needs
+more asks the publishing module's contract, which applies that module's rules
+(notifications asks messaging for the current members, a page at a time). Identity's payloads carry ids and codes only. The Foundation's
 `userCreated` carried the email address, which would have copied personal data
 into every subscriber's storage.
 

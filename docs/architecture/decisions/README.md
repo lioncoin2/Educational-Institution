@@ -23,3 +23,4 @@ the history, not the current state.
 | [0008](0008-drizzle-over-prisma.md) | Drizzle ORM rather than Prisma | Accepted |
 | [0009](0009-executable-architecture-rules.md) | Enforce boundaries with dependency-cruiser in CI | Accepted |
 | [0010](0010-stateful-sessions-and-rotating-refresh-tokens.md) | Stateful sessions, checked per request, with rotating refresh tokens | Accepted |
+| [0011](0011-messaging-v1.md) | Messaging V1: server-ordered, idempotent, membership-first | Accepted |

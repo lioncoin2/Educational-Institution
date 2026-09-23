@@ -55,10 +55,12 @@ Depth of implementation varies deliberately:
 | --- | --- |
 | `identity` | **Identity & Access V1**: authentication, rotating refresh sessions, multi-device, provisioning, audit, rate limiting. On Postgres, tested |
 | `live` | Implemented end to end against the RTC port; in-memory persistence |
-| `files` | Policy + storage port + local adapter implemented; upload endpoint deferred |
-| the other eight | Contracts and a Nest module only — deliberately empty |
+| `files` | **Messaging V1**: allow-listed, verified uploads; signed links; local adapter with its transfer routes. On Postgres, tested |
+| `messaging` | **Messaging V1**: DMs, groups, channels; server-ordered, idempotent sends; read state; keyset pages; membership-first authorization. On Postgres, tested |
+| `notifications` | The pipeline from `messaging.message.sent` to a delivery port; no push provider yet |
+| the other six | Contracts and a Nest module only — deliberately empty |
 
-The eight near-empty modules exist so that the boundary is decided before the
+The near-empty modules exist so that the boundary is decided before the
 code arrives, not after. An empty `contracts/index.ts` is a cheap commitment; a
 module retrofitted into a boundary is not.
 
@@ -147,17 +149,18 @@ every other vendor SDK. This is checked by
 
 Named, so that absence reads as a decision rather than an oversight:
 
-- **No chat UI and no 2500-person room UI.** Explicitly out of scope for this
-  milestone. The contracts they will need exist; the screens do not.
-- **Postgres adapters only where there is code.** Identity and audit are on
-  Postgres. `live` is still in memory. The eight contract-only modules have no
-  tables. See [persistence.md](persistence.md).
+- **No 2500-person room UI.** Out of scope. Messaging V1 built the chat screens
+  (list, conversation, composer); live rooms are the next milestone's.
+- **Postgres adapters only where there is code.** Identity, audit, files and
+  messaging are on Postgres. `live` is still in memory. The contract-only
+  modules have no tables. See [persistence.md](persistence.md).
 - **No seeded accounts and no default credentials.** The first owner is created
   on the server with a CLI that reads the password from stdin. Q2.
 - **No confirmed role→permission matrix.** What a Supervisor may actually do is
   an institutional decision. The matrix in force is provisional, in one file,
   and in the database. Q1.
-- **No messaging implementation.** Only the boundary. See
+- **No realtime delivery and no push notifications.** Messages are stored and
+  announced by event; delivery transports are extension points (Q7, Q24). See
   [messaging.md](messaging.md).
 - **No load testing.** The design is *arranged to be* load-testable; it has not
   been load-tested. See [realtime.md](realtime.md), "What is proven and what is
@@ -167,14 +170,15 @@ Named, so that absence reads as a decision rather than an oversight:
 
 ## 7. The Flutter application
 
-The existing prototype in `app/` is untouched by this milestone. It was
-inspected first, and it is already organized the way this architecture wants:
-
+The prototype in `app/` is organized the way this architecture wants:
 `app/lib/data/repositories/repositories.dart` declares abstract repository
-interfaces, and the screens depend only on those. The in-memory prototype
-implementations are swapped for HTTP-backed ones by writing new classes against
-the same interfaces — no screen changes. That file is the integration seam, and
-it is where the backend will attach.
+interfaces, and the screens depend only on those.
+
+Messaging V1 used that seam for the first time. `MessagingRepository` and
+`AuthRepository` have HTTP implementations, selected when the app is built with
+`--dart-define=API_BASE_URL=…`; without it the in-memory implementations run,
+so the GitHub Pages demo is unchanged. The rest of the prototype's screens were
+not touched beyond one added entry in the profile.
 
 The Flutter side holds **no secrets**. It never sees the LiveKit API secret; it
 receives a short-lived, capability-scoped join token minted server-side.
@@ -190,7 +194,7 @@ receives a short-lived, capability-scoped join token minted server-side.
 - [authorization.md](authorization.md) — how permission decisions are made
 - [events.md](events.md) — how modules stay decoupled
 - [realtime.md](realtime.md) — the 2500-participant design
-- [messaging.md](messaging.md) — the messaging boundary
+- [messaging.md](messaging.md) — messaging V1: model, ordering, idempotency, authorization
 - [storage.md](storage.md) — files and binaries
 - [persistence.md](persistence.md) — database strategy
 - [observability.md](observability.md) — logging, audit, health, metrics

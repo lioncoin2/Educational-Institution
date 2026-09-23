@@ -19,8 +19,14 @@ npm run start:dev
 
 **It runs with no infrastructure.** Leave `DATABASE_URL` unset and modules fall
 back to in-memory adapters; leave the LiveKit secret at its development default
-and `live` uses a fake RTC provider. Nothing fails at boot for want of a
-service — the fallbacks are deliberate and are logged.
+and `live` uses a fake RTC provider; uploaded files go to `STORAGE_LOCAL_ROOT`
+(`./.storage`, git-ignored). Nothing fails at boot for want of a service — the
+fallbacks are deliberate and are logged.
+
+Production refuses to start without its own `JWT_SECRET` and
+`STORAGE_SIGNING_SECRET` (each ≥ 32 bytes, not a placeholder, not equal to each
+other). For the Flutter **web** app, list its origin in `CORS_ORIGINS`
+(explicit origins only; native apps need nothing). See `.env.example`.
 
 With Postgres:
 
@@ -63,7 +69,19 @@ through `/admin/users`. See
 | Reset password | `POST /admin/users/:id/password` | `users.manage` |
 | Sign out everywhere | `DELETE /admin/users/:id/sessions` | `sessions.manage` |
 | Live | `POST /live/sessions/:id/join` · `…/hand`, `POST /live/requests/:id/grant` · `…/revoke` | `live.*` |
+| Upload a file | `POST /files/uploads` → `PUT <signed url>` → `POST /files/uploads/:id/complete` | `files.upload` |
+| Local storage transfer | `PUT` / `GET /files/local/:token` | public · the signature is the authorization |
+| Conversations | `GET /messaging/conversations`, `GET …/:id`, `GET …/:id/participants` | `messaging.read` + membership |
+| Start one | `POST /messaging/conversations/direct` · `/groups` · `/channels` | `messaging.start_direct` · `create_group` · `create_channel` |
+| Messages | `GET …/:id/messages?before\|after`, `POST …/:id/read` | `messaging.read` + membership |
+| Send | `POST …/:id/messages/text` · `/voice` · `/image` · `/file` | `messaging.send` + membership |
+| Attachment link | `GET …/:id/messages/:messageId/attachments/:fileAssetId/link` | `messaging.read` + `files.read` + membership |
+| Membership | `POST …/:id/participants`, `DELETE …/participants/:userId`, `POST …/:id/leave` | owner / moderator, per use case |
 | Health | `GET /health/live`, `GET /health/ready` | public |
+
+Messaging and files are described in
+[messaging.md](../docs/architecture/messaging.md) and
+[storage.md](../docs/architecture/storage.md).
 
 Errors always have one shape:
 `{ "error": { "kind"?, "code", "message", "details"? }, "requestId" }`.
