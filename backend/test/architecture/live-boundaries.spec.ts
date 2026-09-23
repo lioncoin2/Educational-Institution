@@ -45,8 +45,18 @@ describe('live boundaries', () => {
 
   it('keeps every live layer but infrastructure free of LiveKit and every other vendor', () => {
     const core = (source: string) =>
-      /^src\/modules\/live\/(domain|application|contracts|api)\//.test(source);
+      /^src\/modules\/live\/(domain|application|contracts)\//.test(source);
     expect(reaching(core, (path) => VENDOR_OR_TRANSPORT.test(path))).toEqual([]);
+    // The api layer is the HTTP edge, so it may know the HTTP framework — and
+    // nothing else: no media SDK, no database, no socket library.
+    const api = (source: string) => source.startsWith('src/modules/live/api/');
+    expect(
+      reaching(
+        api,
+        (path) =>
+          VENDOR_OR_TRANSPORT.test(path) && !/^node_modules\/(@types\/)?express\//.test(path),
+      ),
+    ).toEqual([]);
     // …and the domain reaches no npm package at all.
     expect(
       reaching(

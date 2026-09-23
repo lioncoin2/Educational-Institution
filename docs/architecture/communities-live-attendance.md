@@ -1802,7 +1802,7 @@ and [Q36](open-questions.md#q36--tahajji-دورة-التهجي-وإعداد-ال
 | Phase | Status |
 | --- | --- |
 | P0 Corrections and guards | **Landed 2026-09-23.** Items 1–11 of [§25.1](#251-phase-0-corrections): the vendor-SDK rule matches resolved paths; `livekit-sdk-only-in-the-live-adapter`; `rules-match.spec.ts`, `live-boundaries.spec.ts`, `events.spec.ts`; exports-are-contracts and no-`forwardRef` checks; derived module lists; the realtime gate-coupling test; live's events in `live/contracts/events.ts`; `FailureKind 'unavailable'` → 503; the academic upgrade test pinned to its own migrations; the Flutter live guard; the operations and live comments corrected |
-| P1 Live hardening | not started |
+| P1 Live hardening | **Landed 2026-09-23.** Everything in the P1 row below, plus `CapabilityConvergence` (the reconciler's targeted watch, pulled forward and scoped to changed participants) to keep the 120-second token from making reconnection unreliable — see [live.md](live.md#1-what-exists-today) |
 | P2 Communities core | not started |
 | P3–P8, P10–P12 | not started |
 | P9 Attendance | **held** (Q40 ruling: until Q68/Q69 and the related attendance questions are answered) |

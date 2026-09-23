@@ -1,110 +1,106 @@
 import { asId } from '../../../shared';
 import {
   MAX_CONCURRENT_SPEAKERS,
+  TERMINAL_STATES,
   canTransition,
-  currentSpeakers,
-  hasOpenRequest,
-  pendingQueue,
-  speakerSlotsAvailable,
+  isOpen,
+  judgeTransition,
+  queueOrder,
   transition,
   type SpeakerRequest,
   type SpeakerRequestState,
 } from './speaker-request';
 
-const request = (
-  id: string,
-  userId: string,
-  state: SpeakerRequestState,
-  requestedAtMs: number,
-): SpeakerRequest => ({
+const at = (ms: number) => new Date(ms);
+
+const request = (id: string, state: SpeakerRequestState, requestedAt = 1): SpeakerRequest => ({
   id: asId<'SpeakerRequest'>(id),
   sessionId: 'session-1',
-  userId,
-  displayName: userId,
+  userId: `user-${id}`,
   state,
-  requestedAt: new Date(requestedAtMs),
+  requestedAt: at(requestedAt),
+  grantedAt: null,
   decidedAt: null,
   decidedBy: null,
 });
 
-describe('the raise-hand queue', () => {
-  it('orders pending hands oldest first regardless of insertion order', () => {
-    const queue = pendingQueue([
-      request('c', 'u3', 'pending', 300),
-      request('a', 'u1', 'pending', 100),
-      request('b', 'u2', 'pending', 200),
-    ]);
-    expect(queue.map((r) => r.id)).toEqual(['a', 'b', 'c']);
-  });
-
-  it('excludes decided hands from the queue', () => {
-    const queue = pendingQueue([
-      request('a', 'u1', 'granted', 100),
-      request('b', 'u2', 'withdrawn', 200),
-      request('c', 'u3', 'pending', 300),
-    ]);
-    expect(queue.map((r) => r.id)).toEqual(['c']);
-  });
-
-  it('treats a pending or granted hand as already open for that user', () => {
-    const existing = [request('a', 'u1', 'pending', 1), request('b', 'u2', 'granted', 2)];
-    expect(hasOpenRequest(existing, 'u1')).toBe(true);
-    expect(hasOpenRequest(existing, 'u2')).toBe(true);
-    expect(hasOpenRequest(existing, 'u3')).toBe(false);
-  });
-
-  it('does not treat a terminated hand as open, so a user may raise again', () => {
-    const existing = [request('a', 'u1', 'revoked', 1), request('b', 'u1', 'withdrawn', 2)];
-    expect(hasOpenRequest(existing, 'u1')).toBe(false);
-  });
-
-  it('counts only granted hands as current speakers', () => {
-    const all = [
-      request('a', 'u1', 'granted', 1),
-      request('b', 'u2', 'pending', 2),
-      request('c', 'u3', 'revoked', 3),
-    ];
-    expect(currentSpeakers(all).map((r) => r.userId)).toEqual(['u1']);
-  });
-
-  it('reports slots full once the concurrent speaker limit is reached', () => {
-    const granted = Array.from({ length: MAX_CONCURRENT_SPEAKERS }, (_, i) =>
-      request(`g${i}`, `u${i}`, 'granted', i),
-    );
-    expect(speakerSlotsAvailable(granted)).toBe(false);
-    expect(speakerSlotsAvailable(granted.slice(1))).toBe(true);
-  });
-});
+const ALL: readonly SpeakerRequestState[] = [
+  'pending',
+  'granted',
+  'declined',
+  'revoked',
+  'withdrawn',
+];
 
 describe('speaker request transitions', () => {
-  it('allows the legal moves out of pending', () => {
-    expect(canTransition('pending', 'granted')).toBe(true);
-    expect(canTransition('pending', 'declined')).toBe(true);
-    expect(canTransition('pending', 'withdrawn')).toBe(true);
+  it('allows exactly the moves in the table', () => {
+    const allowed = ALL.flatMap((from) =>
+      ALL.filter((to) => canTransition(from, to)).map((to) => `${from}→${to}`),
+    );
+    expect(allowed.sort()).toEqual(
+      [
+        'pending→granted',
+        'pending→declined',
+        'pending→withdrawn',
+        'granted→revoked',
+        // A speaker may yield the floor themself.
+        'granted→withdrawn',
+      ].sort(),
+    );
   });
 
-  it('only allows a granted hand to be revoked', () => {
-    expect(canTransition('granted', 'revoked')).toBe(true);
-    expect(canTransition('granted', 'granted')).toBe(false);
-    expect(canTransition('granted', 'declined')).toBe(false);
-  });
-
-  it('treats terminal states as terminal', () => {
-    for (const state of ['revoked', 'withdrawn', 'declined'] as const) {
-      expect(canTransition(state, 'granted')).toBe(false);
+  it('treats declined, revoked and withdrawn as terminal', () => {
+    for (const state of TERMINAL_STATES) {
+      expect(ALL.filter((to) => canTransition(state, to))).toEqual([]);
+      expect(isOpen(request('x', state))).toBe(false);
     }
+    expect(isOpen(request('x', 'pending'))).toBe(true);
+    expect(isOpen(request('x', 'granted'))).toBe(true);
   });
 
-  it('records who decided and when on a legal transition', () => {
-    const at = new Date(1_700_000_000_000);
-    const result = transition(request('a', 'u1', 'pending', 1), 'granted', at, 'teacher-1');
-    expect(result).not.toBeNull();
-    expect(result?.state).toBe('granted');
-    expect(result?.decidedBy).toBe('teacher-1');
-    expect(result?.decidedAt).toEqual(at);
+  it('records who decided and when; a grant also records when the floor was given', () => {
+    const granted = transition(request('1', 'pending'), 'granted', at(10), 'teacher-1');
+    expect(granted).toMatchObject({
+      state: 'granted',
+      grantedAt: at(10),
+      decidedAt: at(10),
+      decidedBy: 'teacher-1',
+    });
+    const yielded = transition(granted as SpeakerRequest, 'withdrawn', at(20), 'user-1');
+    expect(yielded).toMatchObject({
+      state: 'withdrawn',
+      grantedAt: at(10),
+      decidedAt: at(20),
+      decidedBy: 'user-1',
+    });
   });
 
   it('returns null rather than corrupting state on an illegal transition', () => {
-    expect(transition(request('a', 'u1', 'revoked', 1), 'granted', new Date(), 't')).toBeNull();
+    const original = request('1', 'pending');
+    expect(transition(original, 'revoked', at(5), 'teacher-1')).toBeNull();
+    expect(original.state).toBe('pending');
+  });
+
+  it('defines repeats in one place: the target state is unchanged, a move outside the table is invalid', () => {
+    expect(judgeTransition('granted', 'granted')).toBe('unchanged');
+    expect(judgeTransition('declined', 'declined')).toBe('unchanged');
+    expect(judgeTransition('pending', 'granted')).toBe('apply');
+    expect(judgeTransition('declined', 'granted')).toBe('invalid');
+    expect(judgeTransition('revoked', 'withdrawn')).toBe('invalid');
+  });
+});
+
+describe('the queue order', () => {
+  it('is first come, first served — then by id, so equal instants never reorder', () => {
+    const hands = [
+      request('c', 'pending', 30),
+      request('b', 'pending', 10),
+      request('a', 'pending', 10),
+    ];
+    expect([...hands].sort(queueOrder).map((hand) => hand.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('caps concurrent speakers at a technical limit (Q4)', () => {
+    expect(MAX_CONCURRENT_SPEAKERS).toBe(4);
   });
 });

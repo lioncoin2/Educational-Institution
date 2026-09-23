@@ -1,219 +1,136 @@
-import { asId, err, failure, ok, type Principal, type Result } from '../../../shared';
+import { err, failure, type Result } from '../../../shared';
 import type { AuthorizationService } from '../../identity/contracts';
-import type { LiveRoom, LiveSession } from '../domain/live-room';
-import type { SpeakerRequest } from '../domain/speaker-request';
-import { FakeRtcProvider } from '../infrastructure/fake-rtc-provider';
 import {
-  InMemoryLiveRoomRepository,
-  InMemoryLiveSessionRepository,
-  InMemorySpeakerRequestRepository,
-} from '../infrastructure/in-memory-live-repositories';
-import { JoinLiveSessionUseCase } from './join-live-session.use-case';
-
-const allowAll: AuthorizationService = {
-  can: () => true,
-  authorize: () => ok(undefined),
-};
+  HOST,
+  SESSION,
+  allowAll,
+  liveHarness,
+  liveSession,
+  pending,
+  principalOf,
+} from '../../../../test/support/live-harness';
+import { LISTENER, SPEAKER } from '../domain/rtc-provider';
+import { JOIN_TOKEN_TTL_SECONDS } from './join-live-session.use-case';
 
 const denyAll: AuthorizationService = {
   can: () => false,
   authorize: () => err(failure('forbidden', 'denied', 'no')),
 };
 
-/** May join, may not speak — e.g. a host whose role lacks live.speak. */
-const joinOnly: AuthorizationService = {
-  can: (_principal, permission) => permission === 'live.join',
-  authorize: (_principal, permission) =>
-    permission === 'live.join' ? ok(undefined) : err(failure('forbidden', 'denied', 'no')),
-};
-
-const HOST = 'teacher-1';
-const ROOM_ID = asId<'LiveRoom'>('room-1');
-const SESSION_ID = asId<'LiveSession'>('session-1');
-
-const room: LiveRoom = {
-  id: ROOM_ID,
-  halaqaId: 'halaqa-1',
-  title: 'Tajweed',
-  hostUserId: HOST,
-  maxParticipants: 2500,
-  createdAt: new Date(0),
-};
-
-const liveSession: LiveSession = {
-  id: SESSION_ID,
-  roomId: ROOM_ID,
-  state: 'live',
-  startedAt: new Date(0),
-  endedAt: null,
-};
-
-const principal = (userId: string): Principal => ({
-  userId,
-  roles: [],
-  permissions: new Set<string>(),
-});
-
-function build(options: {
-  authorization?: AuthorizationService;
-  session?: LiveSession;
-  requests?: SpeakerRequest[];
-}) {
-  const rtc = new FakeRtcProvider();
-  const requests = new InMemorySpeakerRequestRepository();
-  const useCase = new JoinLiveSessionUseCase(
-    options.authorization ?? allowAll,
-    new InMemoryLiveSessionRepository([options.session ?? liveSession]),
-    new InMemoryLiveRoomRepository([room]),
-    requests,
-    rtc,
-  );
-  return { useCase, rtc, requests };
-}
-
 const unwrapOk = <T>(result: Result<T>): T => {
   if (!result.ok) throw new Error(`expected ok, got ${result.error.code}`);
   return result.value;
 };
 
-describe('JoinLiveSessionUseCase', () => {
-  it('refuses a caller without the join permission', async () => {
-    const { useCase, rtc } = build({ authorization: denyAll });
+const student = principalOf('student-1', 'STUDENT');
+const teacher = principalOf(HOST, 'TEACHER');
 
-    const result = await useCase.execute({
-      principal: principal('student-1'),
-      sessionId: SESSION_ID,
-      displayName: 'Student',
-    });
-
+describe('joining a live session', () => {
+  it('refuses a caller without the join permission, minting nothing', async () => {
+    const h = liveHarness({ authorization: denyAll });
+    const result = await h.join.execute({ principal: student, sessionId: SESSION });
     expect(result.ok).toBe(false);
-    // Nothing was minted: authorization is checked before any provider call.
-    expect(rtc.issued).toHaveLength(0);
+    expect(h.rtc.issued).toHaveLength(0);
   });
 
-  // The property the whole 2500-participant design rests on.
-  it('issues a listener token that cannot publish audio', async () => {
-    const { useCase, rtc } = build({});
+  // The property a large session rests on.
+  it('gives a listener a token that can publish nothing — not audio, not a screen, not data', async () => {
+    const h = liveHarness();
+    const ticket = unwrapOk(await h.join.execute({ principal: student, sessionId: SESSION }));
+    expect(h.rtc.issued[0]?.capabilities).toEqual(LISTENER);
+    expect(LISTENER).toEqual({
+      canPublishAudio: false,
+      canPublishScreen: false,
+      canPublishScreenAudio: false,
+      canSubscribe: true,
+      canPublishData: false,
+      hidden: false,
+    });
+    expect(ticket).toMatchObject({
+      role: 'listener',
+      media: { microphone: false, screen: false, screenAudio: false },
+    });
+  });
 
-    const token = unwrapOk(
-      await useCase.execute({
-        principal: principal('student-1'),
-        sessionId: SESSION_ID,
-        displayName: 'Student',
-      }),
+  it('gives the host who may speak the microphone, as moderator', async () => {
+    const h = liveHarness();
+    const ticket = unwrapOk(await h.join.execute({ principal: teacher, sessionId: SESSION }));
+    expect(h.rtc.issued[0]?.capabilities).toEqual(SPEAKER);
+    expect(ticket.role).toBe('moderator');
+    expect(ticket.media).toEqual({ microphone: true, screen: false, screenAudio: false });
+  });
+
+  it('does not let the host publish without live.speak', async () => {
+    const joinOnly: AuthorizationService = {
+      can: (_principal, permission) => permission === 'live.join',
+      authorize: (_principal, permission) =>
+        permission === 'live.join'
+          ? allowAll.authorize(_principal, permission)
+          : err(failure('forbidden', 'denied', 'no')),
+    };
+    const h = liveHarness({ authorization: joinOnly });
+    const ticket = unwrapOk(await h.join.execute({ principal: teacher, sessionId: SESSION }));
+    expect(ticket.role).toBe('listener');
+    expect(h.rtc.issued[0]?.capabilities.canPublishAudio).toBe(false);
+  });
+
+  it('names the participant from the account directory — the request carries no name', async () => {
+    const h = liveHarness();
+    await h.join.execute({ principal: student, sessionId: SESSION });
+    expect(h.rtc.issued[0]).toMatchObject({ identity: 'student-1', displayName: 'مريم' });
+  });
+
+  it('scopes the token to the session and the caller, for 120 seconds', async () => {
+    const h = liveHarness();
+    const ticket = unwrapOk(await h.join.execute({ principal: student, sessionId: SESSION }));
+    expect(JOIN_TOKEN_TTL_SECONDS).toBe(120);
+    expect(h.rtc.issued[0]).toMatchObject({
+      roomName: SESSION,
+      identity: 'student-1',
+      ttlSeconds: 120,
+    });
+    expect(ticket.expiresInSeconds).toBe(120);
+  });
+
+  // The reconnect contract: /join is the re-entry path, and it always decides
+  // from the records as they are now — never from what an older token said.
+  it('decides afresh on every call: a granted hand re-joins as speaker, a revoked one as listener', async () => {
+    const h = liveHarness({ requests: [pending('req-1', 'student-1')] });
+    const moderator = principalOf(HOST, 'TEACHER');
+
+    expect(unwrapOk(await h.join.execute({ principal: student, sessionId: SESSION })).role).toBe(
+      'listener',
     );
+    await h.moderate.grant({ principal: moderator, requestId: 'req-1' });
+    const asSpeaker = unwrapOk(await h.join.execute({ principal: student, sessionId: SESSION }));
+    expect(asSpeaker.role).toBe('speaker');
+    expect(h.rtc.issued.at(-1)?.capabilities).toEqual(SPEAKER);
 
-    expect(rtc.issued).toHaveLength(1);
-    expect(rtc.issued[0]?.capabilities.canPublishAudio).toBe(false);
-    expect(rtc.issued[0]?.capabilities.canSubscribe).toBe(true);
-    expect(token.token).toContain('sub');
+    await h.moderate.revoke({ principal: moderator, requestId: 'req-1' });
+    const asListener = unwrapOk(await h.join.execute({ principal: student, sessionId: SESSION }));
+    expect(asListener.role).toBe('listener');
+    expect(h.rtc.issued.at(-1)?.capabilities).toEqual(LISTENER);
   });
 
-  it('does not let a host publish without live.speak', async () => {
-    const { useCase, rtc } = build({ authorization: joinOnly });
-
-    await useCase.execute({
-      principal: principal(HOST),
-      sessionId: SESSION_ID,
-      displayName: 'Teacher',
-    });
-
-    expect(rtc.issued[0]?.capabilities.canPublishAudio).toBe(false);
+  it('may be called again at any time — each call mints a fresh ticket and changes nothing else', async () => {
+    const h = liveHarness();
+    for (let i = 0; i < 3; i += 1) {
+      unwrapOk(await h.join.execute({ principal: student, sessionId: SESSION }));
+    }
+    expect(h.rtc.issued).toHaveLength(3);
+    expect(h.rtc.capabilityChanges).toHaveLength(0);
+    expect(h.rtc.removed).toHaveLength(0);
+    expect(h.audit.entries).toHaveLength(0);
   });
 
-  it('issues a publishing token to the host', async () => {
-    const { useCase, rtc } = build({});
+  it('refuses a session that is not live, and reports a missing one as not found', async () => {
+    const ended = liveHarness({ session: { ...liveSession, state: 'ended' } });
+    const notLive = await ended.join.execute({ principal: student, sessionId: SESSION });
+    expect(notLive.ok || notLive.error.code).toBe('live.session_not_live');
 
-    await useCase.execute({
-      principal: principal(HOST),
-      sessionId: SESSION_ID,
-      displayName: 'Teacher',
-    });
-
-    expect(rtc.issued[0]?.capabilities.canPublishAudio).toBe(true);
-  });
-
-  // A granted speaker who drops off must come back able to speak, or every
-  // reconnect would silently demote them.
-  it('restores publishing rights to a participant holding a grant', async () => {
-    const { useCase, rtc, requests } = build({});
-    await requests.save({
-      id: asId<'SpeakerRequest'>('req-1'),
-      sessionId: SESSION_ID,
-      userId: 'student-1',
-      displayName: 'Student',
-      state: 'granted',
-      requestedAt: new Date(0),
-      decidedAt: new Date(0),
-      decidedBy: HOST,
-    });
-
-    await useCase.execute({
-      principal: principal('student-1'),
-      sessionId: SESSION_ID,
-      displayName: 'Student',
-    });
-
-    expect(rtc.issued[0]?.capabilities.canPublishAudio).toBe(true);
-  });
-
-  it('does not restore rights from a revoked grant', async () => {
-    const { useCase, rtc, requests } = build({});
-    await requests.save({
-      id: asId<'SpeakerRequest'>('req-1'),
-      sessionId: SESSION_ID,
-      userId: 'student-1',
-      displayName: 'Student',
-      state: 'revoked',
-      requestedAt: new Date(0),
-      decidedAt: new Date(0),
-      decidedBy: HOST,
-    });
-
-    await useCase.execute({
-      principal: principal('student-1'),
-      sessionId: SESSION_ID,
-      displayName: 'Student',
-    });
-
-    expect(rtc.issued[0]?.capabilities.canPublishAudio).toBe(false);
-  });
-
-  it('refuses to mint a token for a session that is not live', async () => {
-    const { useCase, rtc } = build({
-      session: { ...liveSession, state: 'ended', endedAt: new Date(1) },
-    });
-
-    const result = await useCase.execute({
-      principal: principal('student-1'),
-      sessionId: SESSION_ID,
-      displayName: 'Student',
-    });
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('live.session_not_live');
-    expect(rtc.issued).toHaveLength(0);
-  });
-
-  it('reports a missing session as not found', async () => {
-    const { useCase } = build({});
-    const result = await useCase.execute({
-      principal: principal('student-1'),
-      sessionId: 'nope',
-      displayName: 'Student',
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.kind).toBe('not_found');
-  });
-
-  it('scopes the token to the session and the caller', async () => {
-    const { useCase, rtc } = build({});
-    await useCase.execute({
-      principal: principal('student-9'),
-      sessionId: SESSION_ID,
-      displayName: 'Student',
-    });
-    expect(rtc.issued[0]?.roomName).toBe(SESSION_ID);
-    expect(rtc.issued[0]?.identity).toBe('student-9');
+    const h = liveHarness();
+    const missing = await h.join.execute({ principal: student, sessionId: 'nope' });
+    expect(missing.ok || missing.error.code).toBe('live.session_not_found');
+    expect(h.rtc.issued).toHaveLength(0);
   });
 });

@@ -20,7 +20,9 @@ export const LiveEvents = {
   sessionEnded: 'live.session.ended',
   speakerRequested: 'live.speaker.requested',
   speakerGranted: 'live.speaker.granted',
+  speakerDeclined: 'live.speaker.declined',
   speakerRevoked: 'live.speaker.revoked',
+  speakerWithdrawn: 'live.speaker.withdrawn',
 } as const;
 
 export type LiveSessionStarted = DomainEvent<
@@ -43,7 +45,22 @@ export type SpeakerPermissionGranted = DomainEvent<
   { readonly sessionId: string; readonly userId: string; readonly grantedBy: string }
 >;
 
+export type SpeakerRequestDeclined = DomainEvent<
+  typeof LiveEvents.speakerDeclined,
+  { readonly sessionId: string; readonly userId: string; readonly declinedBy: string }
+>;
+
 export type SpeakerPermissionRevoked = DomainEvent<
   typeof LiveEvents.speakerRevoked,
   { readonly sessionId: string; readonly userId: string; readonly revokedBy: string }
+>;
+
+/**
+ * The requester lowered their own hand: a pending hand withdrawn, or a
+ * speaker yielding the floor (`from: 'granted'`). Not audited — it is the
+ * person's own act, not moderation.
+ */
+export type SpeakerRequestWithdrawn = DomainEvent<
+  typeof LiveEvents.speakerWithdrawn,
+  { readonly sessionId: string; readonly userId: string; readonly from: 'pending' | 'granted' }
 >;

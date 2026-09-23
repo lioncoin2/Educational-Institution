@@ -51,7 +51,69 @@ Q40 and [Q69](open-questions.md#q69--who-records-and-who-views-snapshots).
 
 ---
 
+> **P1 landed (2026-09-23).** The existing module is hardened in place —
+> still halaqa-bound and in memory, with no start or end route (those come
+> with community-scoped sessions, P6). What changed, and where the code is:
+>
+> - **Total capabilities, applied as the full set.** `RtcCapabilities` states
+>   audio, screen, screen audio, subscribe, data and `hidden` every time; the
+>   adapter sends an explicit source list with `canPublish` true exactly when
+>   it is non-empty (an empty list means *every* source), and the camera is
+>   never listed. **Listeners no longer carry the data channel**
+>   (`domain/rtc-provider.ts`, `infrastructure/livekit-rtc-provider.ts`).
+> - **Narrow RTC ports** (`RTC_ROOMS`, `RTC_TOKENS`, `RTC_PARTICIPANTS`,
+>   `RTC_OBSERVER`, each `useExisting` the one provider): join can only mint
+>   tokens; moderation can only change participants; raising a hand touches
+>   no provider at all.
+> - **Adapter hardening.** `createRoom` errors are reported, not swallowed;
+>   LiveKit "not found" becomes `not_connected` (or null, or success for an
+>   ended room); a 5xx, a refused connection or a timeout becomes
+>   `RtcUnavailableError`; rejected credentials are a fault. Logs carry an
+>   error's class, status and code, never its message, a token or the secret.
+>   The chosen provider is logged at startup.
+> - **Names from the account directory.** `/join` takes no body; the token's
+>   name is the directory's, never the client's.
+> - **Idempotent hands and decisions.** Raise answers 201 for a new hand and
+>   200 with the hand already up (was 202 / 409); `DELETE …/hand` withdraws a
+>   pending hand or yields the floor; `POST …/decline` is new; repeating a
+>   grant, revoke or decline answers 200 with `media: 'unchanged'` (or the
+>   request as it is) and records nothing.
+> - **One audit action per act** (`live.speaker.granted`, `.declined`,
+>   `.revoked`) through `LiveJournal`, which audits then publishes, and never
+>   on a repeat. `live.speaker.declined` and `live.speaker.withdrawn` are new
+>   events.
+> - **Indexed repository methods**: no port returns all of a session's
+>   requests; the cap is checked in the same atomic step as the grant.
+> - **`LiveParticipantRole`** (`'moderator' | 'speaker' | 'listener'`)
+>   replaces live's `ParticipantRole`.
+> - **The 120-second join token, and reconnection.** Verified in LiveKit's
+>   own source (server v1.13.7 `pkg/service/roommanager.go` `refreshToken`;
+>   `pkg/rtc/participant.go` `SetPermission`; Flutter SDK
+>   `lib/src/core/engine.dart:1578-1580`): the server sends a connected
+>   client a fresh token as soon as it joins and every five minutes, valid
+>   for ten minutes and carrying its **current** permissions, and re-sends one
+>   the moment its permissions change; the SDK reconnects with the newest
+>   one; token expiry never disconnects anyone. So 120 s bounds only the
+>   first connection; `/join` is the re-entry path, decides afresh every time
+>   and is safe to call again.
+> - **`CapabilityConvergence`** — pulled forward from the reconciler's
+>   targeted watch (§11.4), scoped to people whose floor just changed, and
+>   the one place live pushes a participant's rights to LiveKit. A grant,
+>   revoke or yield pushes at once, then for twelve minutes, every ten
+>   seconds, it re-applies the permissions their **current** standing calls
+>   for, recomputed by `LiveStanding` (the question `/join` asks) rather
+>   than taken from the act: a host whose own hand is revoked keeps the
+>   microphone hosting gives them. A grant made while LiveKit was down, or
+>   refused, lands on a later tick; a revoked speaker who returns with an
+>   older refreshed token is corrected within one tick; it never removes
+>   anyone. It never throws either: a provider or lookup failure is logged
+>   by class and retried, never a 500 after the decision is stored, so every
+>   stored decision is audited and announced. Moderation reports
+>   `media: 'applied' | 'not_connected' | 'pending'` honestly.
+
 ## 1. What exists today
+
+*This section describes the module as it was before P1, and is kept as the record the P1 changes answer; the note above says what P1 changed.*
 
 ### 1.1 Inventory
 

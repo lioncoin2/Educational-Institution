@@ -488,6 +488,12 @@ and the media plane disagree, and we would rather be *more* restrictive on
 record than have a silent grant. Reconciliation of that divergence is
 [open question Q5](open-questions.md).
 
+> **Resolved in P1 (2026-09-23):** moderation now reports the media outcome
+> (`applied`, `not_connected`, `pending`) instead of failing after saving,
+> and every change is re-applied until the media plane agrees
+> (`CapabilityConvergence`, [live.md](live.md#1-what-exists-today)). The note
+> below records the defect.
+>
 > **Correction (2026-09-23):** for a grant it is the other way round. The
 > grant is saved before the provider is called
 > (`moderate-speaker.use-case.ts:98-99`). If `updateCapabilities` throws, the
@@ -535,6 +541,14 @@ configuration rather than from the client.
 A leaked join token is worth one room, one identity, ten minutes, and — for a
 listener — no ability to publish anything.
 
+> **Resolved in P1 (2026-09-23):** the join token lives **120 seconds**,
+> listeners no longer carry the data channel, and the name in the token
+> comes from the account directory. What 120 s means for reconnection —
+> LiveKit's own refresh keeps connected clients connected — and the
+> convergence watch that corrects a returning participant are in
+> [live.md](live.md#1-what-exists-today) (the P1 note). The note below
+> records what was wrong before.
+>
 > **Correction (2026-09-23):** the token is still bound to one room and one
 > identity, but the other two limits are wrong.
 >

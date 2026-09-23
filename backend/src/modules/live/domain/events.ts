@@ -5,6 +5,8 @@ import {
   type LiveSessionStarted,
   type SpeakerPermissionGranted,
   type SpeakerPermissionRevoked,
+  type SpeakerRequestDeclined,
+  type SpeakerRequestWithdrawn,
   type SpeakerRequested,
 } from '../contracts/events';
 
@@ -17,6 +19,8 @@ export type {
   LiveSessionStarted,
   SpeakerPermissionGranted,
   SpeakerPermissionRevoked,
+  SpeakerRequestDeclined,
+  SpeakerRequestWithdrawn,
   SpeakerRequested,
 } from '../contracts/events';
 
@@ -68,4 +72,22 @@ export function speakerPermissionRevoked(
   at: Date,
 ): SpeakerPermissionRevoked {
   return domainEvent(LiveEvents.speakerRevoked, sessionId, { sessionId, userId, revokedBy }, at);
+}
+
+export function speakerRequestDeclined(
+  sessionId: string,
+  userId: string,
+  declinedBy: string,
+  at: Date,
+): SpeakerRequestDeclined {
+  return domainEvent(LiveEvents.speakerDeclined, sessionId, { sessionId, userId, declinedBy }, at);
+}
+
+export function speakerRequestWithdrawn(
+  sessionId: string,
+  userId: string,
+  from: 'pending' | 'granted',
+  at: Date,
+): SpeakerRequestWithdrawn {
+  return domainEvent(LiveEvents.speakerWithdrawn, sessionId, { sessionId, userId, from }, at);
 }

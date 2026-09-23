@@ -277,21 +277,29 @@ moderation of who may speak.
 **Owned entities.** `LiveRoom`, `LiveSession`, `Participant`, `SpeakerRequest`,
 `SpeakerPermission`, `ModerationAction`.
 
-**Use cases.**
-- `JoinLiveSessionUseCase` — authorize, then mint a short-lived,
-  capability-scoped join token. Listeners get a token that **cannot publish
-  audio**; hosts and existing grant-holders get one that can.
-- `RequestSpeakerUseCase` — enqueue a raise-hand. Deliberately does **not**
+**Use cases** (as of P1).
+- `JoinLiveSessionUseCase` — authorize, then mint a 120-second,
+  capability-scoped join ticket, named from the account directory. Listeners
+  get a token that **can publish nothing** (no audio, no screen, no data);
+  the host and grant-holders get the microphone. Decides afresh on every call.
+- `RaiseHandUseCase` — raise a hand, idempotently. Deliberately does **not**
   touch the RTC provider; a raised hand is application state, not media state.
-- `ModerateSpeakerUseCase` — grant or revoke speaking permission. Updates own
-  state, then the provider, then audit, then raises an event.
+- `LowerHandUseCase` — withdraw one's own hand, or yield the floor.
+- `ModerateSpeakerUseCase` — grant, decline or revoke, idempotently. Own
+  state first, then the provider (outcome reported), then audit and event
+  through `LiveJournal`.
+- `CapabilityConvergence` — the one place live pushes a participant's rights
+  to the provider: at once after a grant, revoke or yield, then re-applied
+  from the person's current standing until the media plane agrees. Never
+  throws, never removes anyone.
 
-**Public contract.** `ParticipantRole`, and the event names and payload
-types (`LiveEvents`, in `live/contracts/events.ts` since Phase 0).
+**Public contract.** `LiveParticipantRole` (P1), and the event names and
+payload types (`LiveEvents`, in `live/contracts/events.ts` since Phase 0).
 
 **Events.** `live.speaker.requested`, `live.speaker.granted`,
-`live.speaker.revoked`, `live.session.started`, `live.session.ended` (the last
-two declared, not yet raised).
+`live.speaker.declined`, `live.speaker.revoked`, `live.speaker.withdrawn`,
+`live.session.started`, `live.session.ended` (the last two declared, not yet
+raised).
 
 **Depends on.** `identity/contracts` (authorization), `shared`, `platform`.
 

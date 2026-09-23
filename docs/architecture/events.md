@@ -197,6 +197,8 @@ events are grandfathered). Since Phase 0 that includes live's events
 | `live.speaker.requested` | live — a hand is raised. *Correction (2026-09-23): raised today by `RequestSpeakerUseCase` (`request-speaker.use-case.ts:90`) and missing from this table until now* | none subscribed |
 | `live.speaker.granted` | live | reporting, audit |
 | `live.speaker.revoked` | live | reporting, audit |
+| `live.speaker.declined` | live — a moderator passed over a pending hand (P1) | reporting, audit |
+| `live.speaker.withdrawn` | live — the requester lowered their own hand or yielded the floor, `from: 'pending' \| 'granted'` (P1; not audited — the person's own act) | reporting |
 | `live.session.started` | live | operations, notifications |
 | `live.session.ended` | live | reporting. *Not attendance: live-session presence is an attendance-module snapshot taken through live's contracts (ADR 0020, implementation held), not a reaction to this event* |
 | `identity.user.created` | identity | people, notifications |
