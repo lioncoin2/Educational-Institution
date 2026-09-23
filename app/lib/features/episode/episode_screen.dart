@@ -17,6 +17,7 @@ import '../../core/widgets/patterns/info_row.dart';
 import '../../core/widgets/patterns/lesson_tile.dart';
 import '../../data/models/learning.dart';
 import '../../providers/app_providers.dart';
+import '../auth/sign_in_prompt.dart';
 
 /// One حلقة: who teaches it, when it runs, attendance, and its lessons — as
 /// far as they are known. Against the backend only the halaqa itself, the
@@ -42,6 +43,14 @@ class EpisodeScreen extends ConsumerWidget {
         appBar: AppBar(title: const Text('الحلقة')),
         body: const Center(child: CircularProgressIndicator()),
       ),
+      onRetry: () => ref.invalidate(halaqaProvider(halaqaId)),
+      errorBuilder: (context, error) => switch (SignInPrompt.forError(error)) {
+        final prompt? => Scaffold(
+          appBar: AppBar(title: const Text('الحلقة')),
+          body: prompt,
+        ),
+        null => null,
+      },
       builder: (context, data) {
         if (data == null) {
           return Scaffold(

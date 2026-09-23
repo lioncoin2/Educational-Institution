@@ -13,6 +13,7 @@ class AsyncView<T> extends StatelessWidget {
     required this.builder,
     this.loading,
     this.onRetry,
+    this.errorBuilder,
   });
 
   final AsyncValue<T> value;
@@ -20,12 +21,17 @@ class AsyncView<T> extends StatelessWidget {
   final Widget? loading;
   final VoidCallback? onRetry;
 
+  /// For an error that deserves more than "try again" (a sign-in, say);
+  /// returning null falls back to the shared error state.
+  final Widget? Function(BuildContext context, Object error)? errorBuilder;
+
   @override
   Widget build(BuildContext context) {
     return value.when(
       data: (data) => builder(context, data),
       loading: () => loading ?? const _CenteredSpinner(),
-      error: (error, _) => _ErrorState(onRetry: onRetry),
+      error: (error, _) =>
+          errorBuilder?.call(context, error) ?? _ErrorState(onRetry: onRetry),
     );
   }
 }

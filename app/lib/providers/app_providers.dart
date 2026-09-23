@@ -63,11 +63,19 @@ final Provider<InstitutionRepository> institutionRepositoryProvider =
           : const MockInstitutionRepository(),
     );
 
-/// Always read through the academic repository — the server's structure, or
-/// the profile's in the demo.
-final catalogRepositoryProvider = Provider<CatalogRepository>(
-  (ref) => AcademicCatalogRepository(ref.watch(academicRepositoryProvider)),
-);
+/// Always read through an academic repository. Against the backend, the
+/// structure is the institution's records for whoever is signed in; to a
+/// visitor who is not (the server answers nobody), it is the printed
+/// profile's — the structure the demo shows, marked with its pages — so the
+/// home and programs screens still say what the institution offers.
+final catalogRepositoryProvider = Provider<CatalogRepository>((ref) {
+  final signedIn =
+      ref.watch(backendModeProvider) &&
+      ref.watch(sessionUserProvider.select((session) => session.value != null));
+  return AcademicCatalogRepository(
+    signedIn ? ref.watch(academicRepositoryProvider) : MockAcademicRepository(),
+  );
+});
 
 /// Against the backend: the learner's real enrollments and no progress (none
 /// is recorded). In the demo: the placeholder path, lessons and progress.

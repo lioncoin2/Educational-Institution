@@ -345,6 +345,40 @@ void main() {
       },
     );
 
+    group('to a visitor who has not signed in', () {
+      testWidgets(
+        'home still shows what the institution offers — the printed profile’s',
+        (tester) async {
+          server.section('dep-literacy')['name'] = 'اسم في السجلات فقط';
+          await open(tester, '/home', signedIn: false);
+          expect(find.text('قسم محو الأمية'), findsWidgets);
+          expect(find.text('اسم في السجلات فقط'), findsNothing);
+          expect(find.text('45'), findsOneWidget);
+          expect(
+            server.calls.where((c) => c.startsWith('GET /academic')),
+            isEmpty,
+          );
+        },
+      );
+
+      testWidgets(
+        'a program’s halaqat and a halaqa ask to sign in — not to retry',
+        (tester) async {
+          await open(tester, '/programs/dep-letters/levels', signedIn: false);
+          expect(find.text('سجّلي الدخول للمتابعة'), findsOneWidget);
+          expect(find.text('إعادة المحاولة'), findsNothing);
+          container
+              .read(routerProvider)
+              .go('/programs/dep-letters/levels/h:dep-letters-h1');
+          await tester.pumpAndSettle();
+          expect(find.text('سجّلي الدخول للمتابعة'), findsOneWidget);
+          await tester.tap(find.text('تسجيل الدخول'));
+          await tester.pumpAndSettle();
+          expect(location(), '/sign-in');
+        },
+      );
+    });
+
     testWidgets('hides what it does not know how to show', (tester) async {
       server.sections.add({
         ...server.section('sec-kids'),

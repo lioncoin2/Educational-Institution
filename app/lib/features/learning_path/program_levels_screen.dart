@@ -15,6 +15,7 @@ import '../../core/widgets/patterns/halaqa_card.dart';
 import '../../data/models/data_origin.dart';
 import '../../data/models/learning.dart';
 import '../../providers/app_providers.dart';
+import '../auth/sign_in_prompt.dart';
 
 /// The levels of one program: its halaqat, in order, with the learner's
 /// position. In the demo the number of halaqat matches the profile exactly
@@ -58,6 +59,7 @@ class ProgramLevelsScreen extends ConsumerWidget {
           value: halaqat,
           loading: const Center(child: CircularProgressIndicator()),
           onRetry: () => ref.invalidate(halaqatProvider(programId)),
+          errorBuilder: (context, error) => SignInPrompt.forError(error),
           builder: (context, list) {
             if (list.isEmpty) {
               return program.value?.origin == DataOrigin.records

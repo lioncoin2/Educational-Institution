@@ -7,13 +7,13 @@ import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/foundations/app_card.dart';
 import '../../core/widgets/foundations/async_view.dart';
-import '../../core/widgets/foundations/empty_state.dart';
 import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/foundations/section_header.dart';
 import '../../core/widgets/layout/app_screen.dart';
 import '../../core/widgets/patterns/path_stepper.dart';
 import '../../data/models/learning.dart';
 import '../../providers/app_providers.dart';
+import '../auth/sign_in_prompt.dart';
 import 'widgets/path_continue_card.dart';
 import 'widgets/path_hero_band.dart';
 import 'widgets/path_overview_card.dart';
@@ -80,13 +80,8 @@ class LearningPathScreen extends ConsumerWidget {
                 ),
 
                 if (signedOut)
-                  SliverGutter(
-                    child: EmptyState(
-                      icon: Icons.lock_outline_rounded,
-                      title: 'سجّلي الدخول لعرض مسارك',
-                      actionLabel: 'تسجيل الدخول',
-                      onAction: () => context.push(Routes.signIn),
-                    ),
+                  const SliverGutter(
+                    child: SignInPrompt(title: 'سجّلي الدخول لعرض مسارك'),
                   )
                 else ...[
                   SliverGutter(
