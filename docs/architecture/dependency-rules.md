@@ -82,13 +82,26 @@ LiveKit credentials and the use case can no longer be run against a fake.
 ### `application-has-no-vendor-sdks`
 
 Use cases must not import `livekit-server-sdk`, `drizzle-orm`, `pg`, `ioredis`,
-`express`, `nestjs-pino` or `pino`.
+`express`, `nestjs-pino`, `pino`, or a WebSocket library (`ws`, socket.io,
+`@nestjs/websockets`, `@nestjs/platform-ws`, `@nestjs/platform-socket.io`).
 
 `@nestjs/common` **is** permitted, for `@Injectable()` and `@Inject()`. That is a
 considered exception: it buys constructor injection, which is what keeps the
 ports injectable in the first place, and Nest's decorators do not impose a data
 model the way an ORM or an SFK SDK does. It is the one framework concession in
 the application layer.
+
+### `websocket-library-only-in-the-realtime-adapter`
+
+No file under `src/` may import a WebSocket library — `ws`, socket.io and its
+client, engine.io, `@nestjs/websockets`, `@nestjs/platform-ws`,
+`@nestjs/platform-socket.io`, or their type packages — except
+`modules/realtime/infrastructure/`. Realtime delivery is one adapter behind the
+realtime module; this is what keeps it replaceable, and what stops messaging,
+identity or notifications from ever growing a dependency on how bytes reach a
+client. `test/architecture/realtime-boundaries.spec.ts` states the same
+properties one by one, and checks the rule is not vacuous (the adapter really
+does import `ws`).
 
 ### `api-does-not-touch-adapters`
 

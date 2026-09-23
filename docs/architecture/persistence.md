@@ -263,6 +263,13 @@ and say so on stderr; CI always sets it.
   are unique.
 - **The use cases end to end over Drizzle** — a group, text, an image with a
   verified upload, read state and the list.
+- **Realtime end to end on PostgreSQL** — the production application booted
+  against a migrated database, real WebSocket clients: a message stored, then
+  delivered with its stored id and sequence; three sent while a member was
+  disconnected, recovered by `after` paging; a removed member receiving
+  nothing more; a lost event filled from the database; nobody — the owner
+  included — receiving a conversation they are not in. Fan-out's "who can see
+  this sequence" is also tested on the read model directly.
 
 ---
 
@@ -273,6 +280,10 @@ gets violated under deadline.
 
 **Redis may hold:** cache entries, ephemeral realtime state, **rate-limit
 counters** (the production home of the `RateLimiter` port), job queues.
+
+Realtime V1 did not need it: live connections are per instance, in memory,
+and the database stays the only record of any message (realtime.md §M10
+says what changes with several instances).
 
 **Redis must never hold permanent business truth.** Sessions are in Postgres,
 not Redis. A session is a security record, and "who was signed in when" must

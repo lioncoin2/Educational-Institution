@@ -77,9 +77,14 @@ and read state. No other module reads or writes its tables — dependency-cruise
 forbids importing `messaging/infrastructure/`, and an architecture test states
 it by name. Other modules learn about messaging through:
 
-- **events** (`messaging.*`, §9), and
-- **`MESSAGE_RECIPIENTS`** — the current members of a conversation, paged, for
-  delivery modules (notifications today, a realtime gateway later).
+- **events** (`messaging.*`, §9),
+- **`MESSAGE_RECIPIENTS`** — the current members of a conversation, paged,
+  optionally only those who can see a given sequence, for delivery modules
+  (notifications and realtime), and
+- **`MESSAGE_DELIVERY`** — a stored message rendered exactly as the timeline
+  renders it (its `clientMessageId` only in the sender's copy), and "may this
+  principal follow this conversation?" answered by the same use case that
+  opens one over HTTP — for realtime (§14).
 
 ---
 
@@ -367,18 +372,24 @@ template and a recipient count.
 
 ---
 
-## 14. Realtime — the extension point
+## 14. Realtime
 
-Not built (Q7). Persistence is separate from delivery by construction:
+Built — Realtime Messaging V1, [realtime.md Part M](realtime.md) and
+[ADR 0012](decisions/0012-realtime-messaging-transport.md). Persistence is
+still separate from delivery by construction:
 
 - a message is **stored** by the send use case, and
-- its existence is **announced** by `messaging.message.sent`.
+- its existence is **announced** by `messaging.message.sent`;
+- the realtime module **delivers** it: a subscriber that asks messaging's
+  contracts who may receive it (`MESSAGE_RECIPIENTS`, current members whose
+  history window includes the sequence) and what they see
+  (`MESSAGE_DELIVERY`, the timeline's own rendering), then hands it to the
+  connections those people have open.
 
-A realtime transport (WebSocket gateway, SSE, a separate push service) is a
-subscriber to that event plus `MESSAGE_RECIPIENTS` for who to tell, living
-behind an adapter; the use cases do not change. Until then the Flutter client
-catches up with `?after=<newest sequence>` on refresh and after each send,
-filling any gap that others' messages left below its own.
+Messaging did not change shape for it: two contracts were added for delivery
+modules, and messaging still imports no socket library and nothing of
+realtime (architecture tests). When realtime is down, nothing here notices;
+clients catch up with `?after=<sequence>`, as they did before it existed.
 
 ---
 
@@ -465,7 +476,9 @@ the API suite asserts the full transcript.
   mocks and says so on screen.
 - State: Riverpod controllers — the list (cursor pages), and one per open
   conversation (older pages, catch-up, optimistic sends with retry under the
-  same key, read marking that clears the list badge).
+  same key, read marking that clears the list badge). Both are kept current
+  by the live connection (`RealtimeClient`), merging by id, ordering by
+  sequence and filling any gap over HTTP — [realtime.md §M6](realtime.md).
 - Screens: the conversation list (previews, unread badges, 99+), the
   conversation (bubbles, sender names in groups, a "new messages" divider,
   older pages on scroll, a read-only notice in channels), a composer, and
@@ -473,7 +486,10 @@ the API suite asserts the full transcript.
 
 ### Client dependencies
 
-Only `package:http` (dart.dev, BSD-3, all six platforms) was added. Device
+`package:http` (dart.dev, BSD-3, all six platforms), and for the live
+connection `package:web_socket` 1.0 (dart.dev, BSD-3, all six platforms —
+the browser's own WebSocket on the web, `dart:io`'s elsewhere; its only
+dependency, `package:web`, was already in the app). Device
 capabilities sit behind seams with "unavailable" defaults, and the composer
 shows their buttons disabled with an explanatory tooltip:
 

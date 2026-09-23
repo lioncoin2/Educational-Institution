@@ -7,11 +7,11 @@ that actually does the work — **what it must not know**.
 A module is a unit of ownership, not a folder. If two modules need the same
 table, one of them is wrong.
 
-**Implementation state** is marked on every module. Of the eleven business
-modules, four are implemented (identity, live, files, messaging) and one in
-part (notifications); the other six are deliberately empty: contracts and a
-Nest module, no implementation. Deciding the boundary before the code arrives
-is cheap; retrofitting one is not.
+**Implementation state** is marked on every module. Of the twelve business
+modules, five are implemented (identity, live, files, messaging, realtime) and
+one in part (notifications); the other six are deliberately empty: contracts
+and a Nest module, no implementation. Deciding the boundary before the code
+arrives is cheap; retrofitting one is not.
 
 ---
 
@@ -40,8 +40,12 @@ read accounts); owner bootstrap; per-request principal resolution.
 (`RequirePermission`, `Authenticated`, `PublicRoute`), `Principal`,
 `systemPrincipal`, and `AccountDirectory` — who an account is (id, display
 name, active) and whether it may take part in something, for modules that
-reference accounts they did not create. The module exports exactly two
-providers: `AUTHORIZATION_SERVICE` and `ACCOUNT_DIRECTORY`.
+reference accounts they did not create; and `AccessTokenAuthenticator` —
+the HTTP guard's own authentication (`ResolvePrincipalUseCase`), for a
+connection that is not a request, plus `revalidate` to re-check a live
+session without holding its token. The module exports exactly three
+providers: `AUTHORIZATION_SERVICE`, `ACCOUNT_DIRECTORY` and
+`ACCESS_TOKEN_AUTHENTICATOR`.
 
 **Events.** `identity.user.created`, `identity.role.assigned`,
 `identity.role.revoked`, `identity.account.status_changed`. Payloads carry ids
@@ -161,9 +165,13 @@ list members; mark read; add and remove people; leave; get an attachment link.
 
 **Public contract** (`messaging/contracts/`): the vocabulary
 (`ConversationType`, `MessageType`, `ParticipantRole`), the event names and
-payload types, `MESSAGE_RECIPIENTS` (current members, paged — for delivery
-modules), and `MessageSearch` (an extension point nothing implements yet). It
-exports one provider: `MESSAGE_RECIPIENTS`.
+payload types, `MessageView` (what a member sees of a message),
+`MESSAGE_RECIPIENTS` (current members, paged, optionally only those who can
+see a sequence — for delivery modules), `MESSAGE_DELIVERY` (a stored message
+rendered for delivery; a principal's position in a conversation they may
+read — for realtime), and `MessageSearch` (an extension point nothing
+implements yet). It exports two providers: `MESSAGE_RECIPIENTS` and
+`MESSAGE_DELIVERY`.
 
 **Events.** `messaging.conversation.created`, `messaging.participant.added`,
 `messaging.participant.removed`, `messaging.message.sent`,
@@ -174,8 +182,8 @@ exports one provider: `MESSAGE_RECIPIENTS`.
 
 **Must not know.** How notifications are delivered, how anything is pushed in
 real time, how bytes are stored, or LiveKit. Architecture tests assert each:
-nothing in messaging reaches `notifications`, `live`, a push or object-store
-SDK, the filesystem, or files' internals.
+nothing in messaging reaches `notifications`, `realtime`, `live`, a WebSocket
+library, a push or object-store SDK, the filesystem, or files' internals.
 
 ---
 
@@ -258,12 +266,59 @@ any calling module learning about batching.
 **Depends on.** `messaging/contracts` (its events and recipients),
 `shared`, `platform`.
 
+**Independent of realtime.** Both subscribe to `messaging.message.sent`;
+neither knows the other exists (architecture test). A connected app is told
+by realtime; push, once a provider exists, reaches it when it is not.
+
 **Must not know — refined in Messaging V1.** The Foundation said
 notifications receives templates, never domain events. The brief for
 Messaging V1 asked for `MessageSent → EventBus → Notifications`, so the rule
 now holds at the right layer: one **translator per source module** knows that
 module's events and turns them into requests; the dispatcher and the delivery
 port know templates and recipients, never why.
+
+---
+
+## realtime
+
+**State:** implemented — Realtime Messaging V1. See
+[realtime.md Part M](realtime.md) and
+[ADR 0012](decisions/0012-realtime-messaging-transport.md).
+
+**Responsibility.** Delivering messaging's facts to the people entitled to
+them while they are connected — nothing else. It stores nothing and decides
+no messaging rule.
+
+**Owned state.** In memory, per instance: authenticated connections
+(connection id, account, session, expiry, last seen — no roles, memberships
+or content) and connections still authenticating.
+
+**Parts.** `domain/` — the wire protocol v1 (frames, error and close codes),
+the `ClientLink` port, provisional limits. `application/` —
+`ConnectionManager` (register, unregister, per-account lookup, send to one
+or many accounts, drop dead connections), `RealtimeSessions` (authenticate,
+re-authenticate, subscribe, ping, sweep), `MessagingRealtimeRelay` (the
+event subscriber: recipients, render once, fan out). `infrastructure/` —
+`WebSocketTransport`, the only code that knows a socket library (`ws`).
+
+**Public contract.** None: nothing depends on realtime, and only the
+composition root imports it (architecture test). Its API is the wire
+protocol at `/realtime`.
+
+**Events.** Subscribes to `messaging.conversation.created`,
+`messaging.message.sent`, `messaging.message.read`,
+`messaging.participant.added`, `messaging.participant.removed`. Publishes
+none.
+
+**Depends on.** `identity/contracts` (`ACCESS_TOKEN_AUTHENTICATOR`,
+`AUTHORIZATION_SERVICE`, the `messaging.read` permission),
+`messaging/contracts` (events, `MESSAGE_RECIPIENTS`, `MESSAGE_DELIVERY`,
+`MessageView`), `shared` (event subscriber, rate limiter, clock, ids),
+`platform` (configuration, for the handshake's origins and proxy trust).
+
+**Must not know.** Messaging's tables or rules, identity's internals,
+notifications. Architecture tests assert each, and that no module but this
+one's infrastructure imports a WebSocket library.
 
 ---
 

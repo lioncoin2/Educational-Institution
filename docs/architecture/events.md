@@ -111,7 +111,8 @@ interface EventSubscriber {
 Until Messaging V1 a module could publish facts but could not react to anyone
 else's without importing platform's concrete bus. Now a subscriber registers in
 `onModuleInit` and unsubscribes in `onModuleDestroy` (notifications'
-`MessageSentNotifier` is the first).
+`MessageSentNotifier` was the first; realtime's `MessagingRealtimeRelay` is
+the second, and neither knows the other exists).
 
 ### A subscriber must not hold up the publisher
 
@@ -119,7 +120,9 @@ The bus awaits each handler in turn, so a slow handler delays the request that
 published. Work that scales with audience size — fanning a channel post out to
 10,000 people — is **detached** by the subscriber: the handler schedules it and
 returns, and the detached work logs its own failures. A send returns when its
-message is stored, never when everyone has been notified.
+message is stored, never when everyone has been notified. The realtime relay
+also chains its detached work per conversation (the event's `aggregateId`),
+so one conversation's events leave in the order they were published.
 
 ---
 
@@ -163,20 +166,21 @@ by a real broker and subscribers become consumers. Again the port is unchanged.
 | `identity.role.revoked` | identity | reporting |
 | `identity.account.status_changed` | identity | people, notifications |
 | `operations.attendance.recorded` | operations | reporting, notifications |
-| `messaging.conversation.created` | messaging | reporting |
-| `messaging.participant.added` | messaging | notifications (future), realtime (future) |
-| `messaging.participant.removed` | messaging | realtime (future) |
-| `messaging.message.sent` | messaging | **notifications — subscribed**, realtime (future), search indexing (future) |
-| `messaging.message.read` | messaging | realtime read receipts (future) |
+| `messaging.conversation.created` | messaging | **realtime — subscribed**, reporting |
+| `messaging.participant.added` | messaging | **realtime — subscribed**, notifications (future) |
+| `messaging.participant.removed` | messaging | **realtime — subscribed** |
+| `messaging.message.sent` | messaging | **notifications — subscribed**, **realtime — subscribed**, search indexing (future) |
+| `messaging.message.read` | messaging | **realtime — subscribed** (the reader's own devices; read receipts are Q25) |
 
 The `live.speaker.*`, `identity.*` and `messaging.*` events are raised by
-implemented code today, and `messaging.message.sent` has the first real
-subscriber. The rest are declared so the vocabulary is settled before the
+implemented code today; messaging's have two real subscribers, notifications
+and realtime. The rest are declared so the vocabulary is settled before the
 modules arrive. Messaging's payloads, like identity's, carry ids and codes
 only — never message text, file names or display names: an event reaches every
 subscriber, some log it, and an outbox will store it. A subscriber that needs
 more asks the publishing module's contract, which applies that module's rules
-(notifications asks messaging for the current members, a page at a time). Identity's payloads carry ids and codes only. The Foundation's
+(notifications asks messaging for the current members, a page at a time;
+realtime also asks for the message as a member sees it). Identity's payloads carry ids and codes only. The Foundation's
 `userCreated` carried the email address, which would have copied personal data
 into every subscriber's storage.
 

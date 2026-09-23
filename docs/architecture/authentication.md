@@ -183,6 +183,28 @@ token that outlives the decision to revoke it is the failure mode this exists to
 prevent. If this cost ever matters, a short cache belongs behind the repository
 ports — not in the token.
 
+### The same decision for a realtime connection
+
+A WebSocket is not a request, so the guard does not see it. Identity exports
+`ACCESS_TOKEN_AUTHENTICATOR` — implemented by this same use case — so the
+realtime module authenticates with exactly the checks above, not a second
+implementation:
+
+- the access token arrives in the connection's **first frame**, never in the
+  URL (URLs end up in proxy and server logs, and a browser cannot set a
+  header on a WebSocket);
+- `authenticate(token)` returns the principal and the token's expiry, or
+  `null` for invalid, expired, revoked and suspended alike — the connection
+  is refused (close 4401);
+- the client re-authenticates on the same connection before the token
+  expires; a connection that does not is closed at expiry;
+- `revalidate({userId, sessionId})` re-runs everything after the signature —
+  session, account, roles — without the token. Realtime calls it every 60
+  seconds and before every `subscribe`, so logout, revocation, suspension and
+  a lost permission reach an open connection too.
+
+See [realtime.md §M3](realtime.md).
+
 ---
 
 ## 6. Provisioning — accounts are created by staff

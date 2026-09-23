@@ -45,6 +45,7 @@ backend/src/
     live/          realtime audio rooms, raise-hand queue, moderation
     files/         upload policy, storage keys, signed access
     notifications/ delivery of events to people
+    realtime/      messaging events to connected clients, over WebSocket
     automation/    scheduled and triggered actions
     reporting/     read models, KPIs, Owner Command Center widgets
 ```
@@ -58,6 +59,7 @@ Depth of implementation varies deliberately:
 | `files` | **Messaging V1**: allow-listed, verified uploads; signed links; local adapter with its transfer routes. On Postgres, tested |
 | `messaging` | **Messaging V1**: DMs, groups, channels; server-ordered, idempotent sends; read state; keyset pages; membership-first authorization. On Postgres, tested |
 | `notifications` | The pipeline from `messaging.message.sent` to a delivery port; no push provider yet |
+| `realtime` | **Realtime Messaging V1**: authenticated WebSocket at `/realtime`; messaging events to current members' connections, per event; multi-device; heartbeat; limits. Single instance, tested on Postgres |
 | the other six | Contracts and a Nest module only — deliberately empty |
 
 The near-empty modules exist so that the boundary is decided before the
@@ -159,9 +161,11 @@ Named, so that absence reads as a decision rather than an oversight:
 - **No confirmed role→permission matrix.** What a Supervisor may actually do is
   an institutional decision. The matrix in force is provisional, in one file,
   and in the database. Q1.
-- **No realtime delivery and no push notifications.** Messages are stored and
-  announced by event; delivery transports are extension points (Q7, Q24). See
-  [messaging.md](messaging.md).
+- **No push notifications, and realtime on one instance.** A connected app
+  receives messages over the realtime WebSocket (ADR 0012); nothing reaches an
+  app that is not connected until a push provider is chosen (Q24). Several
+  API instances need a broker-backed event bus first. See
+  [realtime.md](realtime.md) Part M.
 - **No load testing.** The design is *arranged to be* load-testable; it has not
   been load-tested. See [realtime.md](realtime.md), "What is proven and what is
   not."
@@ -180,6 +184,11 @@ Messaging V1 used that seam for the first time. `MessagingRepository` and
 so the GitHub Pages demo is unchanged. The rest of the prototype's screens were
 not touched beyond one added entry in the profile.
 
+Realtime Messaging V1 added the live connection the same way: a
+`RealtimeClient` abstraction, a WebSocket implementation when a backend is
+configured and a disabled one otherwise. No screen touches a socket; the
+messaging state listens to the client's events and connection states.
+
 The Flutter side holds **no secrets**. It never sees the LiveKit API secret; it
 receives a short-lived, capability-scoped join token minted server-side.
 
@@ -193,7 +202,7 @@ receives a short-lived, capability-scoped join token minted server-side.
 - [session-management.md](session-management.md) — devices, rotation, revocation
 - [authorization.md](authorization.md) — how permission decisions are made
 - [events.md](events.md) — how modules stay decoupled
-- [realtime.md](realtime.md) — the 2500-participant design
+- [realtime.md](realtime.md) — messaging in real time, and the 2500-participant audio design
 - [messaging.md](messaging.md) — messaging V1: model, ordering, idempotency, authorization
 - [storage.md](storage.md) — files and binaries
 - [persistence.md](persistence.md) — database strategy

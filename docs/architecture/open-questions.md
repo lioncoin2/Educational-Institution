@@ -161,27 +161,6 @@ context, the mechanism from Q1. No contract changes.
 
 ---
 
-## Q7 — How are new messages pushed to connected clients?
-
-**Question.** A WebSocket gateway in this process; the LiveKit data channel;
-or a dedicated push channel (SSE or a separate service)?
-
-**Why not guessed.** The load profile decides it, and the load profile is not
-known. A channel with 2500 members behaves nothing like direct messages between
-two people, and option 2 would couple messaging to the RTC provider —
-contradicting the separation the rest of this design maintains.
-
-**Built instead (Messaging V1).** Persistence is separated from delivery: the
-send use case stores; `messaging.message.sent` announces; `MESSAGE_RECIPIENTS`
-says who is currently in a conversation. The Flutter client catches up with
-`?after=<newest sequence>` on refresh and after each send. No transport.
-
-**When answered.** A subscriber to `messaging.message.sent` plus a transport
-adapter (gateway or push service) behind it. Messaging's use cases do not
-change.
-
----
-
 ## Q8 — Who may amend attendance, and is a reason mandatory?
 
 **Question.** Attendance is the record most likely to be quietly edited after
@@ -471,9 +450,11 @@ to every student — a privacy decision, especially for minors.
 
 **Built instead.** Groups and DMs: members see members. Channels: only the
 owner and publishers may list members; readers get
-`messaging.members_hidden`.
+`messaging.members_hidden`. Realtime tells only the person added or removed —
+announcing membership changes to the other members waits on this answer.
 
-**When answered.** One condition in `ListParticipantsUseCase`.
+**When answered.** One condition in `ListParticipantsUseCase`, and the
+matching audience for realtime's `participant.*` events.
 
 ---
 
@@ -512,11 +493,58 @@ lock-screen previews of children's messages are a safeguarding decision.
 **Built instead.** The whole pipeline except the provider:
 `messaging.message.sent` → notifications' translator → dispatcher → delivery
 port, with a logging placeholder at the end. Notifications carry ids only,
-never text. No preferences.
+never text. No preferences. A connected app already receives new messages
+over the realtime connection ([ADR 0012](decisions/0012-realtime-messaging-transport.md));
+push is what would reach it when it is not connected.
 
 **When answered.** A delivery adapter; a template that may include a preview
 if allowed; preference and quiet-hour filters in the dispatcher, where every
 source of notifications passes.
+
+---
+
+## Q25 — May members see how far others have read?
+
+**Question.** Read receipts: should a teacher see which students have read an
+announcement? Should the two people in a direct conversation see "seen"? And
+in a group?
+
+**Why not guessed.** Read state is behaviour data about individuals, many of
+them children. In a channel it would also reveal who the readers are, which
+Q22 already withholds; "seen" in a DM puts pressure on the person who read
+and did not reply.
+
+**Built instead.** Each person's read mark is stored and moves only forward.
+Realtime delivers it to that person's own devices, so a badge cleared on one
+clears on the others — and to nobody else. No API exposes another member's
+mark.
+
+**When answered.** A per-conversation-type audience for `message.read` in the
+realtime relay, and a read-model query for "seen by", gated by whatever this
+answer allows.
+
+---
+
+## Q26 — Realtime limits
+
+**Question.** How many live connections may one account hold? How often may
+a client reconnect, and how many handshakes may come from one address (a
+school's NAT)? How long may a revoked session keep receiving before the
+server notices?
+
+**Why not guessed.** The right numbers depend on how the app is really used —
+shared classroom tablets, many tabs, a whole school behind one address — and
+on load that has not been measured.
+
+**Built instead.** Development-safe defaults, generous to honest clients, in
+one file (`realtime/domain/realtime-policy.ts`), each with its reasoning in
+[realtime.md §M8](realtime.md): 10 connections per account; 30 new
+connections per account per minute; 300 handshakes per address per minute;
+60 frames per connection per minute; 4 KiB frames; a 25-second heartbeat;
+revalidation every 60 seconds; 10,000 connections per instance.
+
+**When answered.** Constants in that file — after a load test on the
+production topology, not before.
 
 ---
 
