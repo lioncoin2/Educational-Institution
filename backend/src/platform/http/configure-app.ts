@@ -21,5 +21,18 @@ export function configureApp(app: INestApplication, config: AppConfig): void {
     }),
   );
   app.useGlobalFilters(new AllExceptionsFilter());
+
+  // Browsers only: an explicit allow-list, or nothing. Credentials travel as a
+  // bearer header, never a cookie, so no origin is ever allowed credentials.
+  if (config.http.corsOrigins.length > 0) {
+    app.enableCors({
+      origin: [...config.http.corsOrigins],
+      methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE'],
+      allowedHeaders: ['authorization', 'content-type', 'range', 'x-request-id'],
+      exposedHeaders: ['content-range', 'content-disposition', 'retry-after', 'x-request-id'],
+      credentials: false,
+      maxAge: 600,
+    });
+  }
   app.enableShutdownHooks();
 }

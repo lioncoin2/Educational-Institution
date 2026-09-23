@@ -3,6 +3,7 @@ import '../models/certificate.dart';
 import '../models/feed.dart';
 import '../models/institution.dart';
 import '../models/learning.dart';
+import '../models/messaging.dart';
 import '../models/progress.dart';
 import '../models/program.dart';
 import '../models/student.dart';
@@ -93,4 +94,68 @@ abstract interface class AuthRepository {
 
   /// Signs one of the user's devices out.
   Future<void> endSession(String sessionId);
+}
+
+/// Messaging — conversations the signed-in person takes part in.
+///
+/// Every method throws [MessagingException] with the server's code on
+/// refusal. The contract mirrors the backend's typed use cases: one method
+/// per message type, never "send(type, anything)".
+///
+/// Sends take a `clientMessageId` generated once per message and resent
+/// verbatim on every retry; the server stores each message exactly once.
+/// Media methods upload the file first (declare → PUT → verify) and only
+/// then send the message referencing it.
+abstract interface class MessagingRepository {
+  /// Whose conversations these are — to tell "mine" from "theirs".
+  Future<String> viewerId();
+
+  Future<ConversationPage> conversations({String? cursor});
+
+  Future<Conversation> conversation(String conversationId);
+
+  /// Newest page when neither cursor is given; [before]/[after] are sequences.
+  Future<MessagePage> messages(
+    String conversationId, {
+    int? before,
+    int? after,
+    int limit = 30,
+  });
+
+  Future<Message> sendText(
+    String conversationId, {
+    required String clientMessageId,
+    required String body,
+  });
+
+  Future<Message> sendVoice(
+    String conversationId, {
+    required String clientMessageId,
+    required OutgoingFile recording,
+  });
+
+  Future<Message> sendImage(
+    String conversationId, {
+    required String clientMessageId,
+    required OutgoingFile image,
+    String? caption,
+  });
+
+  /// A document or an audio file.
+  Future<Message> sendFile(
+    String conversationId, {
+    required String clientMessageId,
+    required OutgoingFile file,
+    String? caption,
+  });
+
+  /// Returns the watermark after the call — never lower than before.
+  Future<int> markRead(String conversationId, int sequence);
+
+  /// A short-lived URL to an attachment the viewer may see.
+  Future<Uri> attachmentUrl(
+    String conversationId,
+    String messageId,
+    String fileAssetId,
+  );
 }

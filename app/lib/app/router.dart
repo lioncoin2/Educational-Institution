@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/widgets/layout/adaptive_nav_shell.dart';
 import '../features/announcements/announcements_screen.dart';
+import '../features/auth/sign_in_screen.dart';
 import '../features/certificates/certificate_detail_screen.dart';
 import '../features/certificates/certificates_screen.dart';
 import '../features/episode/episode_screen.dart';
@@ -10,6 +11,8 @@ import '../features/home/home_screen.dart';
 import '../features/learning_path/learning_path_screen.dart';
 import '../features/learning_path/program_levels_screen.dart';
 import '../features/lesson/lesson_screen.dart';
+import '../features/messaging/conversation_screen.dart';
+import '../features/messaging/conversations_screen.dart';
 import '../features/notifications/notifications_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/programs/program_detail_screen.dart';
@@ -51,6 +54,28 @@ GoRouter buildRouter() {
         name: 'progress',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const ProgressScreen(),
+      ),
+      GoRoute(
+        path: Routes.messages,
+        name: 'messages',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const ConversationsScreen(),
+        routes: [
+          GoRoute(
+            path: ':conversationId',
+            name: 'conversation',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) => ConversationScreen(
+              conversationId: state.pathParameters['conversationId']!,
+            ),
+          ),
+        ],
+      ),
+      GoRoute(
+        path: Routes.signIn,
+        name: 'sign-in',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const SignInScreen(),
       ),
 
       StatefulShellRoute.indexedStack(

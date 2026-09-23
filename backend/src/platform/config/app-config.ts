@@ -20,6 +20,12 @@ export interface AppConfig {
      * rate limits.
      */
     readonly trustProxy: boolean | number;
+    /**
+     * Browser origins allowed to call the API (CORS) — e.g. the Flutter web
+     * app's. Empty means no cross-origin browser access at all; native apps
+     * are unaffected either way. Never a wildcard.
+     */
+    readonly corsOrigins: readonly string[];
   };
   readonly database: {
     readonly url: string;
@@ -92,6 +98,25 @@ function readInt(raw: string | undefined, fallback: number): number {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+/** An origin is scheme + host (+ port): nothing more, and never "*". */
+const ORIGIN_SHAPE = /^https?:\/\/[A-Za-z0-9.-]+(:\d{1,5})?$/;
+
+function readOrigins(raw: string | undefined, problems: string[]): readonly string[] {
+  if (raw === undefined || raw.trim() === '') return Object.freeze([]);
+  const origins = raw
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+  for (const origin of origins) {
+    if (!ORIGIN_SHAPE.test(origin)) {
+      problems.push(
+        `CORS_ORIGINS entry ${JSON.stringify(origin)} is not an origin (https://host[:port])`,
+      );
+    }
+  }
+  return Object.freeze(origins);
+}
+
 function readTrustProxy(raw: string | undefined): boolean | number {
   if (raw === undefined || raw.trim() === '' || raw === 'false') return false;
   if (raw === 'true') return true;
@@ -146,7 +171,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     nodeEnv,
     port: readInt(env.PORT, 3000),
     logLevel: env.LOG_LEVEL ?? (isProduction ? 'info' : 'debug'),
-    http: Object.freeze({ trustProxy: readTrustProxy(env.TRUST_PROXY) }),
+    http: Object.freeze({
+      trustProxy: readTrustProxy(env.TRUST_PROXY),
+      corsOrigins: readOrigins(env.CORS_ORIGINS, problems),
+    }),
     database: Object.freeze({
       url: required('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/institution'),
       configured: (env.DATABASE_URL ?? '').trim() !== '',

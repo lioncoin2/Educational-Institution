@@ -65,6 +65,17 @@ describe('loadConfig', () => {
     expect(loadConfig({ TRUST_PROXY: 'true' }).http.trustProxy).toBe(true);
   });
 
+  it('allows no browser origin unless one is listed, and never a wildcard', () => {
+    expect(loadConfig({}).http.corsOrigins).toEqual([]);
+    expect(
+      loadConfig({ CORS_ORIGINS: 'https://app.example.org, http://localhost:8080' }).http
+        .corsOrigins,
+    ).toEqual(['https://app.example.org', 'http://localhost:8080']);
+    for (const bad of ['*', 'https://app.example.org/path', 'app.example.org', 'ftp://x.org']) {
+      expect(() => loadConfig({ CORS_ORIGINS: bad })).toThrow(/CORS_ORIGINS entry/);
+    }
+  });
+
   it('runs locally with no configuration at all, and says no database is configured', () => {
     const config = loadConfig({});
     expect(config.database.configured).toBe(false);

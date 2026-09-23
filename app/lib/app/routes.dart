@@ -10,6 +10,8 @@ abstract final class Routes {
   static const String progress = '/progress';
   static const String notifications = '/notifications';
   static const String announcements = '/announcements';
+  static const String messages = '/messages';
+  static const String signIn = '/sign-in';
 
   static String program(String programId) => '$programs/$programId';
 
@@ -20,6 +22,9 @@ abstract final class Routes {
 
   static String lesson(String programId, String halaqaId, String lessonId) =>
       '$programs/$programId/levels/$halaqaId/lessons/$lessonId';
+
+  static String conversation(String conversationId) =>
+      '$messages/${Uri.encodeComponent(conversationId)}';
 
   static String certificate(String certificateId) =>
       '$certificates/$certificateId';

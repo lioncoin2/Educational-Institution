@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+
+import '../app/backend_config.dart';
+import '../data/api/api_client.dart';
+import '../data/api/token_store.dart';
+import '../data/media/media_seams.dart';
+import '../data/models/auth.dart';
 
 import '../data/models/certificate.dart';
 import '../data/models/feed.dart';
@@ -8,7 +15,10 @@ import '../data/models/learning.dart';
 import '../data/models/progress.dart';
 import '../data/models/program.dart';
 import '../data/models/student.dart';
+import '../data/repositories/http/http_auth_repository.dart';
+import '../data/repositories/http/http_messaging_repository.dart';
 import '../data/repositories/mock/mock_auth_repository.dart';
+import '../data/repositories/mock/mock_messaging_repository.dart';
 import '../data/repositories/mock/mock_repositories.dart';
 import '../data/repositories/repositories.dart';
 
@@ -34,9 +44,62 @@ final feedRepositoryProvider = Provider<FeedRepository>(
   (ref) => const MockFeedRepository(),
 );
 
-/// Not yet read by any screen: the seam the sign-in flow will build on.
-final authRepositoryProvider = Provider<AuthRepository>(
-  (ref) => MockAuthRepository(),
+/// The real backend when API_BASE_URL is set at build time; the in-memory
+/// mock otherwise (the demo build, widget tests).
+final Provider<AuthRepository> authRepositoryProvider = Provider<AuthRepository>(
+  (ref) => BackendConfig.isConfigured
+      ? HttpAuthRepository(ref.watch(apiClientProvider))
+      : MockAuthRepository(),
+);
+
+// ── Backend access ─────────────────────────────────────────────────────────
+// Overridden in tests with package:http's MockClient.
+
+final httpClientProvider = Provider<http.Client>((ref) {
+  final client = http.Client();
+  ref.onDispose(client.close);
+  return client;
+});
+
+/// In memory until a secure-storage implementation is added (see TokenStore).
+final tokenStoreProvider = Provider<TokenStore>((ref) => InMemoryTokenStore());
+
+final Provider<ApiClient> apiClientProvider = Provider<ApiClient>(
+  (ref) => ApiClient(
+    baseUri: BackendConfig.baseUri,
+    httpClient: ref.watch(httpClientProvider),
+    tokenStore: ref.watch(tokenStoreProvider),
+    onSignedOut: () => ref.invalidate(sessionUserProvider),
+  ),
+);
+
+/// Who is signed in on this device, if anyone.
+final FutureProvider<CurrentUser?> sessionUserProvider =
+    FutureProvider<CurrentUser?>(
+  (ref) => ref.watch(authRepositoryProvider).currentUser(),
+  retry: (_, _) => null,
+);
+
+// ── Messaging ──────────────────────────────────────────────────────────────
+
+final messagingRepositoryProvider = Provider<MessagingRepository>(
+  (ref) => BackendConfig.isConfigured
+      ? HttpMessagingRepository(
+          ref.watch(apiClientProvider),
+          ref.watch(authRepositoryProvider),
+        )
+      : MockMessagingRepository(),
+);
+
+/// Device capabilities, unbound in this milestone (see media_seams.dart).
+final attachmentPickerProvider = Provider<AttachmentPicker>(
+  (ref) => const UnavailableAttachmentPicker(),
+);
+final voiceRecorderProvider = Provider<VoiceRecorder>(
+  (ref) => const UnavailableVoiceRecorder(),
+);
+final voicePlayerProvider = Provider<VoicePlayer>(
+  (ref) => const UnavailableVoicePlayer(),
 );
 
 // ── Institution & learner ──────────────────────────────────────────────────

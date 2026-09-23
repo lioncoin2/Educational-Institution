@@ -127,6 +127,12 @@ class ProfileScreen extends ConsumerWidget {
                       label: 'الإشعارات',
                       onTap: () => context.push(Routes.notifications),
                     ),
+                    const Divider(indent: Insets.giant),
+                    _NavRow(
+                      icon: Icons.forum_outlined,
+                      label: 'الرسائل',
+                      onTap: () => context.push(Routes.messages),
+                    ),
                   ],
                 ),
               ),
