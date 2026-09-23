@@ -37,10 +37,13 @@ instruction to inspect the existing authorization system before choosing.
   decides by deny-overrides (`policy.ts:50`).
 - `POLICY_RULES` is provided inside identity and not exported
   (`identity.module.ts:150`, `:181`). The only rule is `host-only-moderation`
-  (`provisional-policy.ts:139-141`). It applies whenever a caller supplies
-  `ownerUserId` and denies everyone else (`policy.ts:82-85`), OWNER included.
-  Q1's provisional answer records it: nobody but the room's host moderates,
-  "including the owner".
+  (`provisional-policy.ts:139-141`). It applies whenever a caller asks
+  `live.moderate` with an `ownerUserId` (the room's host, as
+  `moderate-speaker.use-case.ts:163-167` passes it), and then denies everyone
+  else (`policy.ts:82-85`), OWNER included. `live.speak` is not covered, so
+  `join-live-session.use-case.ts:85-91`, which passes `ownerUserId` only with
+  `live.speak`, never triggers it. Q1's provisional answer records the rule:
+  nobody but the room's host moderates, "including the owner".
 - ADR 0005 rejected per-resource ACLs (`0005-authorization-architecture.md:86-88`).
 - Academic and messaging already scope access as a role-wide ceiling AND a
   relationship the module owns (`academic-access.ts:68-84`;
@@ -90,8 +93,12 @@ Everything below is proposed. None of it exists today.
    - Participation acts, satisfied only by an ACTIVE stint:
      `community.view`, `community.chat.read`, `community.live.join`,
      `community.live.raise_hand`.
-   - One derived act, `community.live.host`, backed by
-     `community.live.start`: the host's moderation of their own session.
+   - Two derived acts: `community.live.host`, backed by
+     `community.live.start`: the host's moderation of their own session; and
+     `community.live.remain` (P6), staying in a running session: the ceiling
+     and basis of `community.live.join`, allowed while `runningLiveContinues`
+     instead of `liveJoinOpen`. Live's reconciler asks it through
+     `permittedAmong` (decision 6).
    - Reserved: `community.attendance.record` and `community.attendance.view`,
      added in P9 by a CHECK migration, with ceilings that use no
      `attendance.*` permission ([Q69]); `community.messages.moderate`, until
@@ -129,12 +136,13 @@ Everything below is proposed. None of it exists today.
    | `members.invite` | `communities.moderate` | yes | none | no |
    | `members.remove` | `communities.moderate` | yes | `communities.manage` | yes |
    | `lock` | `communities.moderate` | yes | `communities.manage` | never blocked |
-   | `chat.read` | `communities.read` + `messaging.read` | as a member | none | yes |
+   | `chat.read` | `communities.read` + `messaging.read` (`COMMUNITY_CHAT_READ_CEILING`, P4) | as a member | none | yes |
    | `chat.post` | `communities.moderate` + `messaging.send` | yes | none | no |
    | `live.start` | `communities.moderate` + `live.moderate` | yes | none | no |
    | `live.host` | as `live.start` | as `live.start` | none | while `runningLiveContinues` |
    | `live.moderate` | `communities.moderate` + `live.moderate` | yes | none | yes |
    | `live.join` | `communities.read` + `live.join` | as a member | none | yes |
+   | `live.remain` (P6) | as `live.join` | as a member | none | while `runningLiveContinues` |
    | `live.raise_hand` | `communities.read` + `live.raise_hand` | as a member | none | yes |
 
    The columns are answered by [Q43] (oversight), [Q44] (ceilings), [Q46]
@@ -149,11 +157,16 @@ Everything below is proposed. None of it exists today.
    `CommunityPermit` names the principal, community, scope, act, basis, stint
    (`membershipId`, `joinedAt`, `version`; null only for oversight), grant
    (non-null only for the grant basis) and the ceiling held. The acting module
-   copies it into its audit metadata.
+   copies it into its audit metadata. From P6, principal-less callers (Live's
+   reconciler and `LIVE_AUDIENCE`) ask `permittedAmong(communityId, userIds
+   ≤ 1,000, act) → userIds`: trusted in-process, it runs the same evaluation
+   per user with the ceiling taken from `ACCOUNT_DIRECTORY.withPermission`
+   instead of a `Principal`, and never takes the oversight basis. No consumer
+   keeps a copy of the act rules.
 
 7. **Evaluation invariants.**
-   - Ceilings are checked in memory **before any read**. If neither the
-     standing nor the oversight ceiling is held: `forbidden
+   - For a principal, ceilings are checked in memory **before any read**. If
+     neither the standing nor the oversight ceiling is held: `forbidden
      identity.permission_denied`, and nothing is read.
    - One statement on the primary reads status, stint and grant.
    - No basis and no ACTIVE stint: `not_found communities.community_not_found`,
@@ -256,8 +269,10 @@ If accepted:
   unscoped role answer.
 - **Five names and shapes for the one question** "may P do this in C": a
   standings batch, a permit, a principal-less standing, a three-valued check,
-  and an internal gate, one per decision record. Rejected for one contract. The
-  three-valued answer maps as granted = ok, denied = `forbidden
+  and an internal gate, each from a different part of an earlier draft of this
+  design. Rejected for one contract (decision 6), whose principal-less
+  `permittedAmong` runs the same evaluation. The three-valued answer maps as
+  granted = ok, denied = `forbidden
   communities.capability_required`, not found = `not_found
   communities.community_not_found`.
 - **A boolean `holds(userId, communityId, capability)`.** Rejected: it cannot

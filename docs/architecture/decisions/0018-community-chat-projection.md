@@ -77,13 +77,18 @@ Everything below is proposed. None of it exists today.
 4. **Rules for a linked conversation override its type.**
    - Reading needs a `community.chat.read` permit and an active projected row.
      Posting needs a `community.chat.post` permit; otherwise the existing 403
-     `messaging.posting_not_allowed`.
+     `messaging.posting_not_allowed`. After the post permit comes the capacity
+     switch (decision 12): if the conversation's `member_count` is above
+     `communityChatMaxServedMembers`, 412
+     `messaging.community_chat_over_capacity`.
    - Listing participants: the existing 403 `messaging.members_hidden`. The
      roster is Communities' (`community.members.view`, [Q22]).
    - Add, remove (the owner route and the `messaging.manage` route) and leave:
      412 `messaging.membership_managed_by_community`, evaluated after the
      membership check, so a non-member still gets 404.
-   - No messaging member cap. `canManageMembers` is false; `myRole` is
+   - No messaging member cap. `canPost` is whether the `community.chat.post`
+     permit is granted and `member_count` is within
+     `communityChatMaxServedMembers`. `canManageMembers` is false; `myRole` is
      `MEMBER`.
    - History for newcomers: `COMMUNITY_HISTORY = 'FULL'` (PROVISIONAL, [Q52]).
      A rejoin starts a new window and a new watermark.
@@ -91,8 +96,13 @@ Everything below is proposed. None of it exists today.
 
 5. **The rows are a named, non-authoritative projection.** For a linked
    conversation, `conversation_participants` rows project Communities' ACTIVE
-   members. Each row is a last-writer-wins register keyed by the authority's
-   per-community version (`source_version`, `source_joined_at`), with
+   members. Three new columns carry the source: `source_version`,
+   `source_membership_id` (the stint id, which decides rejoins; timestamps are
+   never compared) and `source_joined_at` (provenance only), under the shape
+   CHECK `conversation_participants_source_shape` (the three are all NULL or
+   all set, `source_version > 0`, and such rows are `MEMBER` with `added_by`
+   NULL). Each row is a last-writer-wins register keyed by the authority's
+   per-community version (`source_version`), with
    tombstones, so a late, older ACTIVE can never bring access back. The
    database repeats the version guard (`ON CONFLICT … DO UPDATE … WHERE
    coalesce(source_version, 0) < excluded.source_version`).
@@ -127,8 +137,17 @@ Everything below is proposed. None of it exists today.
    community chat, "current members" means messaging's named projection. While
    the projected version differs from the head's `membershipVersion`, each
    page is narrowed to the members `statesOf` reports ACTIVE, and a sync is
-   scheduled (the lag filter). An unknown community, or one whose
-   `chatReadable` effect is false, yields an empty page.
+   scheduled (the lag filter). Every page, lagging or not and whatever
+   `readersOnly` says, is then narrowed to the accounts holding every
+   permission of `COMMUNITY_CHAT_READ_CEILING`: two
+   `ACCOUNT_DIRECTORY.withPermission` calls per non-empty page. Communities
+   exports that constant from `communities/contracts/capabilities.ts`, and its
+   own act table uses the same constant, so the permit path and this
+   principal-less path cannot drift. It is the one addition to Communities'
+   contracts that P4 needs
+   ([community-chat.md §7.3](../community-chat.md#73-who-receives-a-message-the-lag-filter)).
+   An unknown community, or one whose `chatReadable` effect is false, yields
+   an empty page.
 
 10. **Events.** For a linked conversation messaging raises only
     `message.sent` and `message.read` (with `conversationType 'CHANNEL'`),
@@ -148,6 +167,17 @@ Everything below is proposed. None of it exists today.
     - **G3**: load profile 4 has run;
     - **G4**: [Q27] and [Q28] are answered, or the cost of one notification
       row per reader per message is explicitly accepted.
+
+    **The capacity switch.** A messaging deployment setting,
+    `communityChatMaxServedMembers` (PROVISIONAL, [Q26]; default 250, the
+    largest fan-out any test exercises), compared with messaging's own
+    `conversations.member_count`, the projection's count. Above it, a send to
+    the community chat returns 412 `messaging.community_chat_over_capacity`,
+    and `canPost` is false. Reading, marking read and the projection are
+    unaffected; with no new post there is no `message.sent`, so the relay and
+    the notification translator have nothing to fan out. The value is raised
+    only when G1–G4 hold for the new size
+    ([community-chat.md §11.2](../community-chat.md#112-gates-g1g4)).
 
 13. **No outbox for this projection.** Outbox trigger T1 of
     [0021](0021-cross-cutting-rules-for-new-modules.md) (a projection used for
@@ -239,12 +269,15 @@ If accepted:
 - **Inline repair when the permit says LEFT.** Rejected: a refused read would
   take a busy conversation's lock. The refusal comes from the authority alone.
 - **Filter every recipient page through Communities.** Rejected: it doubles
-  fan-out reads in steady state. The version comparison gives the same safety.
+  fan-out reads in steady state. The version comparison gives the same
+  membership safety; the read ceiling is applied on every page anyway,
+  through identity (decision 9).
 - **A `communities.membership.changed` hint, one per transaction.** Dropped:
   the per-member events carry `membershipVersion` and serve as wake-ups.
 - **Messaging's caps for community chats** (a 30,000-member chat would be
   blocked by `CHANNEL`'s 10,000). Rejected: the caps apply to conversations
-  messaging owns. Capacity is handled by gates G1–G4, and any community size
+  messaging owns. Capacity is handled by gates G1–G4 and the switch
+  (decision 12), and any community size
   limit is Communities configuration ([Q20]).
 - **An outbox for `communities.member.removed` now.** Rejected: decision 13.
   The outbox stays deferred until T2, T3 or T4.

@@ -54,7 +54,7 @@ second. "Group" stays the brief's product word only.
 >
 > **Yes for the architecture. Not yet for all of the code.**
 
-Reconciled, the six decision records form one acyclic modular monolith.
+This package forms one acyclic modular monolith.
 `A ◀── B` means "B depends on A", the brief's notation:
 
 ```
@@ -82,10 +82,10 @@ Reconciled, the six decision records form one acyclic modular monolith.
 | --- | --- | --- | --- |
 | **Communities core** (aggregate, membership, invitation links, OPEN/LOCKED) | Yes, after corrections | The module imports `IdentityModule` only, like `academic.module.ts:76`, and exports only contract tokens, so it cannot close a cycle. The database enforces every invariant: partial unique indexes (one ACTIVE stint per pair, one OWNER), an owner-is-active CHECK, conditional UPDATEs under one lock order, versions allocated under the community row lock. Every pattern is reused from academic and messaging. | Phase 0 guards (vendor-SDK regex, LiveKit rule, rules-match spec, derived module lists) and `migrateTo(scratch.db, 9)`; then the §13 step or the user's ruling on [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules). |
 | **Delegated community permissions** | Yes, after corrections | identity ceiling AND Communities standing AND the lifecycle gate: the existing ceiling-plus-relationship pattern (`academic-access.ts:68-84`, `conversation-access.ts:58-72`). No identity ACL (ADR 0005 stands), no foreign `PolicyRule` (`POLICY_RULES` is internal, `identity.module.ts:150`). Acts are a closed `community.*` vocabulary that identity never catalogues. `community.view` and `community.lock` have two segments and would pass identity's CHECK `^[a-z]+[.][a-z_]+$` (`identity/infrastructure/schema.ts:36`), so disjointness rests on three tested guards ([§7.3](#73-communities)), not on segment count. **Blocker:** `host-only-moderation` (`provisional-policy.ts:139-141`) deny-overrides every delegated moderator, OWNER included (`policy.ts:50`, `:85`). | After Q40 (P2, P3): four catalogue leaves with data migration 0009 (P2, the 0008 pattern); role.spec invariants; `PROVISIONAL_POLICY_RULES = []` in the **same change** that ships Live's `LiveAccess` (P6); ADR 0017. |
-| **Community chat** (messaging integration) | Yes, after corrections | Messaging pulls decisions from Communities and never exports a write port. A community chat is an ordinary `CHANNEL` conversation plus an additive `community_id`, so `ConversationType`, the DB CHECK (`schema.ts:53`), payloads, notification copy and the Flutter enum are untouched. Access asks Communities on every request, so removal takes effect when it commits. **Capacity is the constraint:** fan-out walks 30 recipient pages per message per instance at 30,000 (`messaging-relay.ts:207-219`), and each post writes one notification row per reader ([Q28](open-questions.md#q28--what-deserves-a-notification-and-how-loudly)). | Build after P2, so after Q40. Keep community chats disabled above the load-tested size until gates G1–G4 hold ([§20.3](#203-capacity-gates-g1g4)). |
+| **Community chat** (in messaging) | Yes, after corrections | Messaging pulls decisions from Communities and never exports a write port. A community chat is an ordinary `CHANNEL` conversation plus an additive `community_id`, so `ConversationType`, the DB CHECK (`schema.ts:53`), payloads, notification copy and the Flutter enum are untouched. Access asks Communities on every request, so removal takes effect when it commits. **Capacity is the constraint:** fan-out walks 30 recipient pages per message per instance at 30,000 (`messaging-relay.ts:207-219`), and each post writes one notification row per reader ([Q28](open-questions.md#q28--what-deserves-a-notification-and-how-loudly)). | Build after P2, so after Q40. Keep community chats disabled above the load-tested size until gates G1–G4 hold: the capacity switch refuses a send above it with 412 `messaging.community_chat_over_capacity` ([§20.3](#203-capacity-gates-g1g4)). |
 | **Live voice, raise hand, speakers** | Yes, after corrections | Hardening the existing module needs nothing from Communities. Community-scoped sessions are blocked by what exists today: `LiveRoom` is bound to a halaqa (`live-room.ts:10-18`); join checks only `live.join` (`join-live-session.use-case.ts:61`); repositories are in memory (`live.module.ts:51-57`); the client supplies `displayName` (`join-session.dto.ts:3-8`); `ensureRoom` swallows errors (`livekit-rtc-provider.ts:34-45`); LiveKit's `auto_create` defaults to true, so a still-valid token can re-create an ended room. | P1 hardening first, once this design is accepted and its visible behaviour changes (listener data off, raise 202/409 → 201/200, TTL 600 → 120 s) are approved; Q40 does not gate P1. P6 after P2/P3, so after Q40: `LiveSession.communityId`, `COMMUNITY_AUTHORIZATION` for every act, retire the identity rule in the same change, `room.auto_create=false`, the adapter contract suite, the reconciler. |
 | **Screen sharing** | Yes, after corrections | Impossible today by construction: sources are MICROPHONE only (`livekit-rtc-provider.ts:61`, `:81`) and `RtcCapabilities` has no screen flag (`rtc-provider.ts:11-17`). The port is widened additively (ADR 0003's stated path). Screen share is one `PresenterGrant` per session; the stream is never in Postgres. The app has no `livekit_client`. | Total `RtcCapabilities` and an explicit source list on every token and update (P1); after Q40, the presenter slot in P6; `LiveMediaClient` bound to Unavailable until P7b. |
-| **Attendance snapshots** | **No** | Three independent blockers. (1) The user's hold: "Attendance … do not start until this reconciliation has been reviewed" (`academic-reconciliation.md:19-21`), and the §13 gate applies to any new module. (2) Nothing can be observed before community-scoped, persisted sessions exist (P6); `RtcProvider` has no participant listing (`rtc-provider.ts:56-79`). (3) Viewer scoping must not exercise the unscoped `attendance.*` grants ([Q31](open-questions.md#q31--teaching-scope-and-what-staff-may-see)). The design itself is ready and creates no spaghetti. | The user's ruling on [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules); §13's Attendance row ([Q8](open-questions.md#q8--who-may-amend-attendance-and-is-a-reason-mandatory), [Q12](open-questions.md#q12--timezone-and-academic-calendar), not TE-04) met, or ruled by the user not to apply to snapshots; reviewer acceptance of community standing as the scoping relationship ([Q69](open-questions.md#q69--who-records-and-who-views-snapshots)); then P9. |
+| **Attendance snapshots** | **No** | Three independent blockers. (1) The user's hold: "Attendance … do not start until this reconciliation has been reviewed" (`academic-reconciliation.md:19-21`), and the §13 gate applies to any new module. (2) Nothing can be observed before community-scoped, persisted sessions exist (P6); `RtcProvider` has no participant listing (`rtc-provider.ts:56-79`). (3) Viewer scoping must not exercise the unscoped `attendance.*` grants ([Q31](open-questions.md#q31--teaching-scope-and-what-staff-may-see)). The design itself is ready and creates no spaghetti. | The §13 step (Q35/Q36 and ADR 0015) and the reconciliation review, or the user's ruling on [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules); §13's Attendance row ([Q8](open-questions.md#q8--who-may-amend-attendance-and-is-a-reason-mandatory), [Q12](open-questions.md#q12--timezone-and-academic-calendar), not TE-04) met, or ruled by the user not to apply to snapshots; reviewer acceptance of community standing as the scoping relationship ([Q69](open-questions.md#q69--who-records-and-who-views-snapshots)); then P9. |
 | **Realtime application events** | Yes, after corrections | One socket. The app ignores unknown frame types (`realtime_frames.dart:70`) and drops frames whose version is not 1 (`:56`), so new server frames are additive and the version is never bumped. `OnlineAudience` needs no contract change: `MESSAGE_RECIPIENTS` already has `onlyUserIds` (`message-recipients.ts:40-44`). The connection gate stays `messaging.read` (`realtime-sessions.ts:443`). | The gate-coupling test (P0). After Q40 (P5, P7): `ConnectionManager.onlineUserIds()` and `OnlineAudience`; one relay per source module; golden frame fixtures. |
 | **Flutter client** | Yes, after corrections | The repository-and-seam pattern exists: abstract repositories bound only in `app_providers.dart`, media seams with Unavailable defaults (`media_seams.dart`). Capability booleans come from the server (the `Conversation.canPost` precedent). Real live audio and screen capture cannot be built or verified here: `livekit_client` pulls in the native `flutter_webrtc`, and a dependency is never added blind (`media_seams.dart:5-13`). | A Flutter guard against LiveKit and WebRTC (P0). After Q40 (P5, P7): repositories with HTTP and mock implementations; frame families; `LiveMediaClient` Unavailable until P7b. |
 | **Scale to 30,000+ members** | Yes, after corrections | Every membership access is a point lookup, a keyset page, a maintained counter or an ordered changefeed. No code path loads a whole community, and nothing sizes a live room from membership. One instance holds 10,000 connections (`realtime-policy.ts:42`) and the event bus is in-process (`event-bus.ts:43-56`), so 30,000 members online at once is **not** promised. | After Q40: 30k and 100k Postgres fixtures with EXPLAIN and query counts (P2); load profiles 1–5 (P8) before any capacity figure is configured or promised; broker, outbox and Redis only in P11, on evidence. |
@@ -293,7 +293,7 @@ The brief's §20 table. No concept has two authoritative owners.
 | Message | messaging | `messages` | `MESSAGE_DELIVERY`; `messaging.message.sent` |
 | Attachment | messaging (reference), files (bytes) | `message_attachments`; file storage | `FILE_ASSETS`; the attachment link route |
 | Community → chat link | messaging | `conversations.community_id` (partial UNIQUE, plain text) | `GET /messaging/communities/:communityId/conversation`; `ConversationResponse.communityId` |
-| Community chat audience | messaging (derived; only the projection applier writes it) | projected `conversation_participants` rows; `conversations.projected_membership_version` | `MESSAGE_RECIPIENTS` (signature unchanged; lag-filtered through the authority) |
+| Community chat audience | messaging (derived; only the projection applier writes it) | projected `conversation_participants` rows with `source_version`, `source_membership_id` (the stint id; decides rejoins) and `source_joined_at`, under a shape CHECK over the three; `conversations.projected_membership_version`; `conversations.member_count`, the projection's count, which the capacity switch compares with `communityChatMaxServedMembers` | `MESSAGE_RECIPIENTS` (signature unchanged; lag-filtered through the authority; every page narrowed by `COMMUNITY_CHAT_READ_CEILING`, two `withPermission` calls per non-empty page) |
 | Read watermark, history window | messaging | `conversation_participants` | `ConversationResponse.unreadCount`; `MESSAGE_DELIVERY` |
 | LiveSession | live | `live_sessions` | `LIVE_SESSIONS.describe`; `live.session.*` events and frames; `/live/…` |
 | Media room | live/infrastructure | LiveKit only, ephemeral | none |
@@ -348,12 +348,12 @@ cycle is possible.
 | `live/infrastructure/livekit-rtc-provider.ts` | `livekit-server-sdk` | the only SDK importer; enforced from P0 by `livekit-sdk-only-in-the-live-adapter` | existing |
 | communities | identity | `CommunitiesModule` imports `IdentityModule` only. Code imports `identity/contracts/{authorization,account-directory,permissions}.ts`, never the barrel. Ceilings with context `{resourceType 'communities.community', resourceId, attributes {act}}`; eligibility and holder filtering through `ACCOUNT_DIRECTORY` | **new** |
 | communities | shared, platform | `AUDIT_LOG`, `EVENT_PUBLISHER`, `RATE_LIMITER`, `CLOCK`, `ID_GENERATOR`, `Result`, `Principal`; `DATABASE`, `APP_CONFIG` in wiring | **new** |
-| messaging (application only) | communities | `COMMUNITY_AUTHORIZATION` (`community.chat.read`, `community.chat.post`); `COMMUNITY_MEMBERSHIP` (`heads`, `listHeads`, `statesOf`, `changesSince`, `members`); `COMMUNITY_DIRECTORY`; subscribes to `communities.member.added` / `.removed` as wake-ups. Never from `messaging/domain` | **new** |
+| messaging (application only) | communities | `COMMUNITY_AUTHORIZATION` (`community.chat.read`, `community.chat.post`); `COMMUNITY_MEMBERSHIP` (`heads`, `listHeads`, `statesOf`, `changesSince`, `members`); `COMMUNITY_DIRECTORY`; the constant `COMMUNITY_CHAT_READ_CEILING` (P4); subscribes to `communities.member.added` / `.removed` as wake-ups. Never from `messaging/domain` | **new** |
 | live (application) | communities | `COMMUNITY_AUTHORIZATION` (`community.live.start`, `.host`, `.moderate`, `.join`, `.raise_hand` per request; `permittedAmong` for `.join`, `.remain`, `.moderate` and `.host` in batches of 1,000 for the reconciler and `LIVE_AUDIENCE`); `COMMUNITY_MEMBERSHIP` (`heads` for session-wide effects); `COMMUNITY_CAPABILITY_HOLDERS` (moderators); subscribes to `communities.member.removed`, `communities.capability.revoked`, `communities.community.locked`/`unlocked` as accelerators | **new** |
 | realtime | communities | `CommunitiesRealtimeRelay`: `COMMUNITY_MEMBERSHIP.members` (`OnlineAudience`), `CommunityEvents` | **new** |
 | realtime | live | `LiveRealtimeRelay`: `LIVE_AUDIENCE`, `LiveEvents` | **new** |
 | attendance (P9) | live | `LIVE_SESSIONS.describe`, `LIVE_PRESENCE.observe` | **new** |
-| attendance (P9) | communities | `COMMUNITY_AUTHORIZATION` (`community.attendance.record`, `.view`, added in P9) | **new** |
+| attendance (P9) | communities | `COMMUNITY_AUTHORIZATION` (`community.attendance.record`, `.view`, added in P9; then, in the fallback order of [attendance.md §11.3](attendance.md#113-attendanceaccess-how-refusals-map), `community.live.moderate`, `community.live.host` and `community.view`) | **new** |
 | attendance (P9) | identity | `ACCOUNT_DIRECTORY.describe`; route-access decorators | **new** |
 | `app.module.ts` | communities, attendance | registration (P2, P9) | **new** |
 | notifications (P10) | communities, live, attendance contracts | translators import only `contracts/`; recipients from `COMMUNITY_MEMBERSHIP` or `COMMUNITY_CAPABILITY_HOLDERS` | future |
@@ -415,8 +415,8 @@ because every Nest import is a file import between `*.module.ts` files.
 | anything → attendance except `app.module` | new `attendance-boundaries.spec` |
 | identity → communities | identity stays ignorant of communities (the same spec family) |
 
-**Candidate edges from the decision records that would have closed a cycle,
-all rejected:**
+**Candidate edges from an earlier draft of this design that would have
+closed a cycle, all rejected:**
 
 - `GET /groups/:id` carrying `activeLiveSessionId` needs Communities → Live;
   with Live → Communities that is a cycle. The client composes
@@ -440,10 +440,10 @@ smoke test (AppModule compiles; `MessagingModule` and `LiveModule` resolve
  communities                                         messaging
  ───────────                                         ─────────
  Community 1──n MembershipStint 1──n CapabilityGrant   Conversation (CHANNEL, community_id)
-   │  status OPEN|LOCKED   │ status ACTIVE|LEFT|REMOVED     1──n projected participant rows
-   │  lifecycle_version    │ standing OWNER|MEMBER             (source_version, source_joined_at)
-   │  membership_version   │ source ADDED|INVITATION
-   │  member_count         │ version (unique per community)
+   │  status OPEN|LOCKED   │ status ACTIVE|LEFT|REMOVED     │ member_count: the capacity switch
+   │  lifecycle_version    │ standing OWNER|MEMBER          1──n projected participant rows
+   │  membership_version   │ source ADDED|INVITATION             (source_version, source_membership_id,
+   │  member_count         │ version (unique per community)       source_joined_at; shape CHECK)
    └─1──n InvitationLink ──admits──▶ stint (source INVITATION)
           token_hash, expires_at, max_uses, uses, revoked_*; state derived
 
@@ -462,7 +462,7 @@ smoke test (AppModule compiles; `MessagingModule` and `LiveModule` resolve
 | Module | Aggregates and entities | State machines | Detail |
 | --- | --- | --- | --- |
 | communities | `Community` (small; never holds its members); `MembershipStint` (entity; consistency boundary is the (community, user) pair); `Invitation` (aggregate; state derived: REVOKED, else EXPIRED, else EXHAUSTED, else ACTIVE); `CapabilityGrant` (separate small aggregate keyed to a stint, so a grant never locks the community row); `CommunityPermit` (a value, never stored) | Community OPEN ⇄ LOCKED (a repeat is "unchanged"). Stint ∅ → ACTIVE → LEFT or REMOVED (terminal; a rejoin is a new stint). Grant ACTIVE → ENDED (`revoked`, `membership_ended`, `ownership_changed`). Standing MEMBER ⇄ OWNER only by transfer | [communities.md](communities.md) |
-| messaging | Unchanged aggregates. NEW: the link and the projection rows, applied as a last-writer-wins register keyed by the authority's version, with tombstones | none new | [community-chat.md](community-chat.md) |
+| messaging | Unchanged aggregates. NEW: the link and the projection rows, applied as a last-writer-wins register keyed by the authority's version, with tombstones; `source_membership_id` decides rejoins; `member_count` feeds the capacity switch | none new | [community-chat.md](community-chat.md) |
 | live | `LiveSession` (replaces `LiveRoom`; `scheduled` is dropped); `SpeakerRequest`; `PresenterGrant`; `ModerationAction`; `capabilitiesFor` (total) | Session live → ended. Request pending → granted / declined / withdrawn / expired; granted → revoked / withdrawn / expired. Presenter open → closed (`stopped`, `revoked`, `session_ended`, `ineligible`) | [live.md](live.md) |
 | attendance | `AttendanceSnapshot` (header plus entries; immutable) | none: created once, never changed | [attendance.md](attendance.md) |
 
@@ -489,7 +489,10 @@ smoke test (AppModule compiles; `MessagingModule` and `LiveModule` resolve
 
 ### 5.2 The global lock order (communities)
 
-1. per-pair advisory locks, sorted by user id;
+1. per-pair advisory locks, sorted by the computed lock key and deduplicated
+   (not by user id: two pairs whose 32-bit hashes collide would otherwise be
+   taken in opposite orders by two batch adds, and deadlock;
+   [communities.md §4](communities.md#the-global-lock-order));
 2. the invitation row;
 3. existing stint rows, in ascending id;
 4. grant rows;
@@ -543,7 +546,7 @@ In-memory adapters implement the same ports for mock mode. No Redis.
 | communities | `community_invitations` | `token_hash` UNIQUE with a 64-hex shape CHECK; `expires_at > created_at`; `0 ≤ uses ≤ max_uses`; no status column (state derived) | P2 |
 | communities | `communities_capability_grants` | closed-vocabulary CHECK; no-self-grant CHECK; terminal-consistency CHECKs; composite FK (stint id, community, user) to the stint; partial unique ACTIVE per (stint, capability) | P3 |
 | messaging | `conversations` + `community_id`, `projected_membership_version` | partial UNIQUE on `community_id`; shape CHECK (both null or both set; never DIRECT); the title CHECK changes (a community chat stores no title); **the type CHECK is unchanged** | P4 |
-| messaging | `conversation_participants` + `source_version`, `source_joined_at` | shape CHECK; new partial index on current participants (**G2**) | P4 |
+| messaging | `conversation_participants` + `source_version`, `source_membership_id` (the stint id; decides rejoins), `source_joined_at` (provenance only) | shape CHECK `conversation_participants_source_shape` over the three `source_*` columns (all NULL or all set; `source_version > 0`; such rows are MEMBER with `added_by` NULL); new partial index on current participants (**G2**) | P4 |
 | live | `live_sessions` | `community_id`, `host_user_id`, state (`live`, `ended`), `state_version`, end reason (`moderator`, `idle`, `community_closed`), `participant_cap`, `moderator_reserve`, `media_room_epoch`, reconciler bookkeeping; partial unique one live session per community | P6 |
 | live | `live_speaker_requests` | six-state CHECK; partial unique one open request per (session, user); FCFS queue, speaker and floor-closed indexes | P6 |
 | live | `live_presenter_grants` | partial unique one open grant per session; end-reason CHECK | P6 |
@@ -568,6 +571,7 @@ lands. Details: [communities.md](communities.md),
 | Permission catalogue + `PROVISIONAL_ROLE_PERMISSIONS` + migration 0009 | identity | extend | P2 | communities (ceilings, eligibility); `@RequirePermission` on routes |
 | `PROVISIONAL_POLICY_RULES` → `[]` | identity (internal) | modify | P6 | identity only; Live stops passing `ownerUserId` |
 | `capabilities.ts` (acts, guards) | communities | new | P2 | messaging, live, attendance, realtime (types), Flutter (wire strings) |
+| `COMMUNITY_CHAT_READ_CEILING` (in `capabilities.ts`): the one Communities contract addition P4 needs | communities | extend | P4 | messaging (`MESSAGE_RECIPIENTS`, two `withPermission` calls per non-empty community-chat page); Communities' own act table |
 | `COMMUNITY_AUTHORIZATION` | communities | new | P2 (grant basis P3; `permittedAmong` P6) | messaging, live, attendance, communities' own use cases |
 | `COMMUNITY_MEMBERSHIP` | communities | new | P2 | messaging, live, realtime, notifications (P10) |
 | `COMMUNITY_DIRECTORY` | communities | new | P2 | messaging |
@@ -576,7 +580,7 @@ lands. Details: [communities.md](communities.md),
 | `MessagingModule` wiring | messaging | extend | P4 | Nest composition |
 | `MESSAGE_RECIPIENTS` (comment only) | messaging | modify | P4 | realtime, notifications (unchanged) |
 | `ConversationResponse.communityId` + new route | messaging | extend | P4 | Flutter |
-| Failure vocabulary for community chats | messaging | modify | P4 | clients |
+| Failure vocabulary for community chats (412 `messaging.membership_managed_by_community`; 412 `messaging.community_chat_over_capacity` from the capacity switch, the deployment setting `communityChatMaxServedMembers`) | messaging | modify | P4 | clients |
 | `LiveEvents` (moved to contracts, then extended) | live | modify | P0, P6 | realtime, attendance, notifications later |
 | `LiveParticipantRole` | live | modify | P1 | live views, Flutter |
 | `LIVE_AUDIENCE` | live | new | P6 | realtime |
@@ -645,6 +649,11 @@ export type CommunityAct =
   | (typeof COMMUNITY_DERIVED_ACTS)[number];
 export function isCommunityCapability(v: string): v is CommunityCapability;
 export function isCommunityAct(v: string): v is CommunityAct;
+/** P4. The identity permissions of the community.chat.read ceiling (PROVISIONAL, §8.2). The act rules use it,
+ *  and Messaging narrows every community-chat page of MESSAGE_RECIPIENTS with it, one
+ *  ACCOUNT_DIRECTORY.withPermission call per permission, so the two paths cannot drift. The one Communities
+ *  contract addition P4 needs. */
+export const COMMUNITY_CHAT_READ_CEILING: readonly Permission[] = ['communities.read', 'messaging.read'];
 // Disjoint from identity: isPermission(act) is false for every act, no identity namespace is `community`,
 // and CommunityAct and Permission share no member (each tested). Segment count is not the guard:
 // community.view and community.lock have two segments and would match identity's CHECK.
@@ -760,12 +769,15 @@ exports: [MESSAGE_RECIPIENTS, MESSAGE_DELIVERY]   // UNCHANGED. No forwardRef, n
 // for a community chat, "current members" means messaging's named projection of Communities' ACTIVE members.
 // - projected_membership_version ≠ heads().membershipVersion → each page is narrowed to the members
 //   statesOf reports ACTIVE, and a sync is scheduled (the lag filter);
+// - every page, whatever readersOnly says, is then narrowed to the accounts holding every permission of
+//   COMMUNITY_CHAT_READ_CEILING: two ACCOUNT_DIRECTORY.withPermission calls per non-empty page;
 // - unknown community, or effects.chatReadable false → { userIds: [], nextCursor: null }.
 
 // ConversationResponse += { communityId: string | null }   (additive)
 // For a community chat: type 'CHANNEL' (PROVISIONAL, Q51); title from COMMUNITY_DIRECTORY;
-// canPost = the community.chat.post permit is ok; canManageMembers = false; myRole 'MEMBER';
-// memberCount = the projection count.
+// canPost = the community.chat.post permit is granted and member_count is within communityChatMaxServedMembers
+//   (the capacity switch); canManageMembers = false; myRole 'MEMBER';
+// memberCount = the projection count (display, and the capacity switch; never an access answer).
 ```
 
 For community chats, messaging's own membership routes refuse with
@@ -773,8 +785,14 @@ For community chats, messaging's own membership routes refuse with
 evaluated after the membership check, so non-members still get 404); the
 participant list returns the existing `403 messaging.members_hidden`; a send
 without the `community.chat.post` permit returns the existing
-`403 messaging.posting_not_allowed`. `messaging.conversation.created` and
-`messaging.participant.*` are raised only for conversations messaging manages.
+`403 messaging.posting_not_allowed`; and a send to a community chat whose
+`member_count` is above `communityChatMaxServedMembers` (the capacity switch,
+PROVISIONAL default 250, [Q26](open-questions.md#q26--realtime-limits))
+returns `412 messaging.community_chat_over_capacity`, after the post permit.
+Reading, marking read and the projection are unaffected
+([community-chat.md §11.2](community-chat.md#112-gates-g1g4)).
+`messaging.conversation.created` and `messaging.participant.*` are raised
+only for conversations messaging manages.
 `ConversationType` stays closed (`'DIRECT' | 'GROUP' | 'CHANNEL'`).
 
 ### 7.5 Live
@@ -810,7 +828,9 @@ export interface LiveAudience {
 
 // live/contracts/live-sessions.ts (P6) — Live's own record only; never calls the provider; no principal
 export const LIVE_SESSIONS = Symbol('LIVE_SESSIONS');
-export interface LiveSessionScope { readonly liveSessionId: string; readonly communityId: string; readonly active: boolean }
+export interface LiveSessionScope {
+  readonly liveSessionId: string; readonly communityId: string; readonly hostUserId: string; readonly active: boolean;
+}
 export interface LiveSessions { describe(liveSessionId: string): Promise<LiveSessionScope | null> }
 
 // live/contracts/presence.ts (P9) — importable only by attendance
@@ -945,7 +965,7 @@ column are PROVISIONAL under Q41–Q46 and
 | `community.members.invite` | `communities.moderate` | yes | none | no |
 | `community.members.remove` | `communities.moderate` | yes | `communities.manage` | yes |
 | `community.lock` (lock and unlock) | `communities.moderate` | yes | `communities.manage` | never blocked |
-| `community.chat.read` | `communities.read` + `messaging.read` | participation | none | yes |
+| `community.chat.read` | `communities.read` + `messaging.read` (`COMMUNITY_CHAT_READ_CEILING`) | participation | none | yes |
 | `community.chat.post` | `communities.moderate` + `messaging.send` | yes | none | no |
 | `community.live.start` | `communities.moderate` + `live.moderate` | yes | none | no |
 | `community.live.host` (derived) | as `live.start` | as `live.start` | none | while `runningLiveContinues` |
@@ -982,8 +1002,11 @@ is audited.
 
 - **What exists today:** `host-only-moderation`
   (`provisional-policy.ts:139-141`) denies `live.moderate` to everyone but a
-  room's host whenever the caller passes `ownerUserId`
-  (`moderate-speaker.use-case.ts:163-167`, `join-live-session.use-case.ts:85-91`).
+  room's host whenever the caller passes `ownerUserId` with it
+  (`restrictToResourceOwner`, `policy.ts:82-83`), as
+  `moderate-speaker.use-case.ts:163-167` does.
+  `join-live-session.use-case.ts:85-91` passes `ownerUserId` only for
+  `live.speak`, which the rule does not cover, so it never fires there.
   Deny overrides (`policy.ts:50`), so it would refuse every delegated
   moderator, OWNER included.
 - **The change (P6):** `PROVISIONAL_POLICY_RULES = []`, in the **same change**
@@ -1025,10 +1048,13 @@ base64url, shown once; only its SHA-256 is stored and state is derived.
 Redemption is `POST /communities/join {token}`: one READ COMMITTED
 transaction of conditional UPDATEs under the per-pair advisory lock —
 idempotent for existing members, linearizable against `max_uses`, revocation
-and lock, never creating an account, and re-checking, from P3, that the
-link's creator still holds `community.members.invite`
-([Q48](open-questions.md#q48--invitation-links)); in P2 a link outlives its
-creator's demotion until it expires or is revoked. Terms, races and refusals:
+and lock, never creating an account, and re-checking that the link's creator
+still holds `community.members.invite`
+([Q48](open-questions.md#q48--invitation-links)): from P2, the creator's
+identity ceiling (`withPermission`) and that the creator's stint is the
+ACTIVE OWNER; P3 adds only the grant lookup, for a creator who holds the act
+by delegation. From P2, a demoted creator's link fails as 404
+`communities.invitation_invalid`. Terms, races and refusals:
 [communities.md](communities.md). Sequence:
 [Appendix A1](#a1-join-through-an-invitation-link-then-open-the-chat).
 
@@ -1061,8 +1087,12 @@ is one presenter slot per session. Detail: [live.md](live.md). Sequence:
 
 ## 13. Attendance snapshot model
 
-**HELD.** One provider read through `LIVE_PRESENCE` when a holder of
-`community.attendance.record` presses Record (who that is: PROVISIONAL,
+**HELD.** One provider read through `LIVE_PRESENCE` when someone who may
+record presses Record: the community's owner, the session's host, a
+moderator of the session or a `community.attendance.record` grantee, asked in
+the fallback order of
+[attendance.md §11.3](attendance.md#113-attendanceaccess-how-refusals-map)
+(PROVISIONAL,
 [Q69](open-questions.md#q69--who-records-and-who-views-snapshots)); entries CONNECTED or CONNECTING under `provider_registry_v1`;
 no "present" label, no absentees, no durations; idempotent by a UNIQUE key;
 immutable. Detail: [attendance.md](attendance.md). Sequence:
@@ -1095,9 +1125,9 @@ immutable. Detail: [attendance.md](attendance.md). Sequence:
   cannot be re-derived. None holds in v1: messaging's projection has a
   sweeper, a reconciler and repair on access (so T1 does not fire).
 
-### 14.2 The brief's names and the integrated names
+### 14.2 The brief's names and this design's names
 
-| Brief | Integrated | Note |
+| Brief | This design | Note |
 | --- | --- | --- |
 | `group.created` | `communities.community.created` | Community, not Group |
 | `group.locked`, `group.unlocked` | `communities.community.locked`, `.unlocked` | |
@@ -1130,7 +1160,7 @@ immutable. Detail: [attendance.md](attendance.md). Sequence:
 | `live.speaker.withdrawn` / `.declined` / `.granted` / `.revoked` / `.expired` | live | `{sessionId, communityId, requestId, userId, stateVersion}` + `declinedBy \| grantedBy \| revokedBy`; withdrawn and expired add `from`; expired adds `cause: 'ineligible'` and is never published for session end | sessionId | R | realtime relay; notifications later | `live.session.changed`; grant and revoke also act on LiveKit (full permission set) |
 | `live.screen_share.started` / `.stopped` | live | started `{sessionId, communityId, userId, grantedBy, stateVersion}`; stopped `{…, stoppedBy, reason: 'stopped' \| 'revoked' \| 'ineligible', stateVersion}`; never for session end | sessionId | R | realtime relay | `live.session.changed`; the track travels on LiveKit only |
 | `attendance.snapshot.recorded` (HELD) | attendance | `{snapshotId, communityId, liveSessionId, recordedBy, observedAt, connectedCount, connectingCount}` — never participant ids or names | liveSessionId | R | none built (future: notifications Q67, reporting, operations Q70) | in-process only; no frame |
-| `messaging.message.sent` (existing) | messaging | unchanged; `conversationType` is `'CHANNEL'` for community chats | conversationId | R | realtime, notifications through `MESSAGE_RECIPIENTS` (projection + lag filter) | existing `message.sent`, OnlineAudience-bounded |
+| `messaging.message.sent` (existing) | messaging | unchanged; `conversationType` is `'CHANNEL'` for community chats | conversationId | R | realtime, notifications through `MESSAGE_RECIPIENTS` (projection + lag filter + `COMMUNITY_CHAT_READ_CEILING`) | existing `message.sent`, OnlineAudience-bounded; none above the capacity switch, which refuses the post |
 | `messaging.conversation.created`, `messaging.participant.added` / `.removed` (existing) | messaging | unchanged | conversationId | unchanged | unchanged for conversations messaging owns | **never raised for community chats**: a 30,000-member import produces 0 messaging events, 0 frames, 0 `ADDED_TO_CONVERSATION` notifications |
 
 **Not events, by design:** token issuance; LiveKit joins, leaves and track
@@ -1144,7 +1174,10 @@ Audited (brief §26): community creation, lock and unlock; invitation creation a
 revocation; member added (by a manager), joined (by a link), removed and left;
 capability granted and revoked; ownership transferred; live session started
 and ended; speaker declined, granted and revoked; screen share started, and
-stopped when a moderator revoked it; attendance snapshot recorded;
+stopped when a moderator revoked it; the automatic media-room reset
+(`live.session.media_reset`, null actor; PROVISIONAL,
+[Q63](open-questions.md#q63--losing-standing-during-a-running-session));
+attendance snapshot recorded;
 oversight-basis reads (PROVISIONAL, Q43). Not audited: a raised hand, a
 withdrawal (the requester's own act), an expiry (its cause is audited by the
 module that owns it), and transport noise. Crash-after-commit can lose an
@@ -1200,7 +1233,7 @@ answering a question changes a row, not the route.
 | `POST /communities/:communityId/invitations {expiresInSeconds?, maxUses?}` | `communities.read` | `community.members.invite` | 201 `{invitation, token}` — the token appears in this response only | 412 `communities.community_locked`; 422 `communities.invitation_terms_invalid`; 429 |
 | `GET /communities/:communityId/invitations?cursor&limit` | `communities.read` | `community.members.invite` or oversight | 200 page; state derived; never the token or hash | 404; 403 |
 | `POST /communities/:communityId/invitations/:invitationId/revoke` | `communities.read` | `community.members.invite` or oversight; the community is authorized before the invitation is loaded | 200; a repeat is 200 with no audit or event | 404 `communities.invitation_not_found` |
-| `POST /communities/join {token}` | `communities.read` + per-IP `@RateLimit` | per-user limit; the token only in the body (redacted by the logger); community id never taken from the client | 201 joined; 200 already a member (no use consumed) | 404 `communities.invitation_invalid`; 412 `communities.invitation_revoked`, `invitation_expired`, `invitation_exhausted`, `community_locked`; 403 `communities.rejoin_requires_manager` (Q49); 429 `communities.too_many_attempts`; a link whose creator lost `community.members.invite` fails closed as 404 `communities.invitation_invalid` (P3, Q48) |
+| `POST /communities/join {token}` | `communities.read` + per-IP `@RateLimit` | per-user limit; the token only in the body (redacted by the logger); community id never taken from the client | 201 joined; 200 already a member (no use consumed) | 404 `communities.invitation_invalid`; 412 `communities.invitation_revoked`, `invitation_expired`, `invitation_exhausted`, `community_locked`; 403 `communities.rejoin_requires_manager` (Q49); 429 `communities.too_many_attempts`; a link whose creator lost `community.members.invite` fails closed as 404 `communities.invitation_invalid` (from P2: the creator's ceiling and ACTIVE OWNER stint; P3 adds the grant lookup; Q48) |
 | `GET /communities/:communityId/grants?userId&capability&cursor&limit` (P3) | `communities.read` | the owner sees all ACTIVE grants (dormant marked); others only their own | 200 page | 404 |
 | `POST /communities/:communityId/grants {userId, capabilities[1..7]}` (P3) | `communities.moderate` | owner only (Q44); the owner's and grantee's ceilings | 201 `{created, unchanged}`; atomic batch | 404; 403 `communities.not_community_owner`; 403 `identity.permission_denied` (a missing ceiling); 422 `communities.grantee_ineligible` |
 | `DELETE /communities/:communityId/grants/:grantId` (P3) | `communities.moderate` | owner only (Q44) | 204, idempotent | 404 `communities.grant_not_found` |
@@ -1218,9 +1251,9 @@ Full DTO rules: [communities.md](communities.md).
 | Route | Declared | Use-case authorization | Success | Refusals |
 | --- | --- | --- | --- | --- |
 | `GET /messaging/communities/:communityId/conversation` (new) | `messaging.read` | `community.chat.read`; per-user limit | 200 `ConversationResponse`; the conversation is materialized idempotently on the first positive permit | 404 `messaging.conversation_not_found`, identical for an unknown community, a non-member and an unreadable community |
-| `GET /messaging/conversations` (existing) | unchanged | community rows filtered through one `authorizeEach` and one `COMMUNITY_DIRECTORY` call per page | a page may be short; the keyset continues | — |
+| `GET /messaging/conversations` (existing) | unchanged | community rows filtered through three calls per page, none when there are none: `authorizeEach` for `community.chat.read`, `authorizeEach` for `community.chat.post` (for `canPost`) and `COMMUNITY_DIRECTORY.describe` ([community-chat.md §7.4](community-chat.md#74-list-views)) | a page may be short; the keyset continues | — |
 | Reads, mark-read, attachment link, `subscribe` (existing) | unchanged | `ConversationAccess` gains the community branch | unchanged | 404 as soon as the removal commits |
-| `POST …/messages/{text\|voice\|image\|file}` (existing) | `messaging.send` | + `community.chat.post` | unchanged | 403 `messaging.posting_not_allowed` |
+| `POST …/messages/{text\|voice\|image\|file}` (existing) | `messaging.send` | + `community.chat.post`; then the capacity switch (`member_count` against `communityChatMaxServedMembers`) | unchanged | 403 `messaging.posting_not_allowed`; 412 `messaging.community_chat_over_capacity` |
 | `GET …/participants` (existing) | unchanged | — | — | 403 `messaging.members_hidden` for a community chat |
 | add, remove, leave on a community chat (existing) | unchanged | after the membership check | — | 412 `messaging.membership_managed_by_community` |
 
@@ -1256,14 +1289,22 @@ LiveKit webhook route, any load-test or debug route.
 
 | Route | Declared | Use-case authorization | Success | Refusals |
 | --- | --- | --- | --- | --- |
-| `POST /attendance/live-sessions/:liveSessionId/snapshots {clientRequestId}` | authenticated | `LIVE_SESSIONS.describe` → `community.attendance.record` on its `communityId`; `recordedBy` = the principal; the whitelist rejects any other body field | 201 `SnapshotView` (counts only); 200 the stored snapshot for a replayed key | 400; 422 `attendance.client_request_id_invalid`; 404 `attendance.session_not_found`; 403 `attendance.not_allowed`; 412 `attendance.session_not_live`, `attendance.community_not_open`; 429 `attendance.too_many_snapshots`; **503 `attendance.observation_unavailable`, nothing stored**; 503 `unavailable` (the Communities store) |
-| `GET /attendance/communities/:communityId/snapshots?liveSessionId&cursor&limit` | authenticated | `community.attendance.view` | 200 headers, newest first (max 200); never calls Live | 404 `attendance.community_not_found`; 403 `attendance.not_allowed`; 412 `attendance.community_not_open`; 422 `attendance.cursor_invalid`; 503 `unavailable` |
-| `GET /attendance/snapshots/:snapshotId` | authenticated | `community.attendance.view` on the header's community | 200 `SnapshotView` | 404 `attendance.snapshot_not_found` for unknown, invisible and forbidden alike; 412 `attendance.community_not_open`; 503 `unavailable` |
+| `POST /attendance/live-sessions/:liveSessionId/snapshots {clientRequestId}` | authenticated | `LIVE_SESSIONS.describe` → the record bases on its `communityId`, in the fallback order of [attendance.md §11.3](attendance.md#113-attendanceaccess-how-refusals-map) (`community.attendance.record`, then `community.live.moderate`, then `community.live.host` for the session's host); `recordedBy` = the principal; the whitelist rejects any other body field | 201 `SnapshotView` (counts only); 200 the stored snapshot for a replayed key | 400; 422 `attendance.client_request_id_invalid`; 404 `attendance.session_not_found`; 403 `attendance.not_allowed`; 412 `attendance.session_not_live`, `attendance.community_not_open`; 429 `attendance.too_many_snapshots`; **503 `attendance.observation_unavailable`, nothing stored**; 503 `unavailable` (the Communities store) |
+| `GET /attendance/communities/:communityId/snapshots?liveSessionId&cursor&limit` | authenticated | `community.attendance.view` on the path's community; without it, only a `liveSessionId` the caller hosted or recorded in (attendance.md §11.3) | 200 headers, newest first (max 200); never calls Live | 404 `attendance.community_not_found`; 403 `attendance.not_allowed`; 412 `attendance.community_not_open`; 422 `attendance.cursor_invalid`; 503 `unavailable` |
+| `GET /attendance/snapshots/:snapshotId` | authenticated | load the header, then the view bases of attendance.md §11.3 on its community (`community.attendance.view`; then, for the session's host or a recorder of it, `community.view` with the membership basis) | 200 `SnapshotView` | 404 `attendance.snapshot_not_found` for unknown, invisible and forbidden alike; 412 `attendance.community_not_open`; 503 `unavailable` |
 | `GET /attendance/snapshots/:snapshotId/participants?connection&cursor&limit` | authenticated | as above | 200 `{items: [{userId, displayName, connection}], nextCursor}`; no "present" field | as above; 422 `attendance.cursor_invalid` |
 
 A caller with no standing, or with no ceiling on any path, gets the same 404 as
-an unknown session or community; only a member without the act gets 403
+an unknown session or community. A member gets 403 `attendance.not_allowed`
+only when no basis in the fallback order permits, and on one snapshot even
+then 404
 ([attendance.md §11.3](attendance.md#113-attendanceaccess-how-refusals-map)).
+Who holds each basis is PROVISIONAL
+([Q69](open-questions.md#q69--who-records-and-who-views-snapshots)).
+Record: the owner, the session's host and moderators, and a
+`community.attendance.record` grantee. View: the owner, a
+`community.attendance.view` grantee, and the host or a recorder for the
+sessions they hosted or recorded in.
 
 ### 15.6 Realtime
 
@@ -1296,7 +1337,7 @@ measured.
 | in-room roster | — | — | — | LiveKit; visible to all participants until [Q59](open-questions.md#q59--visibility-inside-a-live-session) | — | |
 | join credential | — | — | — | — | — | HTTP `POST …/join` response only |
 | attendance snapshot recorded | — | — | — | — | later (Q67) | v1: no frame |
-| community chat message | existing `message.sent` | existing: `MESSAGE_RECIPIENTS` (projection + lag filter) through `OnlineAudience` with `visibleSequence` | today 30 queries per message per instance at 30,000 (`messaging-relay.ts:207-219`); ≤ 11 with `OnlineAudience` | — | existing: one row per reader (Q28; gate G4) | |
+| community chat message | existing `message.sent` | existing: `MESSAGE_RECIPIENTS` (projection + lag filter + `COMMUNITY_CHAT_READ_CEILING`) through `OnlineAudience` with `visibleSequence` | today 30 queries per message per instance at 30,000 (`messaging-relay.ts:207-219`); ≤ 11 with `OnlineAudience` | — | existing: one row per reader (Q28; gate G4) | |
 | data channel | — | — | — | **unused**; `canPublishData = false` for everyone | — | |
 
 Relays chain per aggregate id, do nothing when this instance has no
@@ -1395,10 +1436,10 @@ the messaging sweeper every 60 s
 | **Invitation revoked while being used** | Both serialize on the invitation row. Revoke first → the redeem's UPDATE re-evaluates `revoked_at IS NULL`, rolls back and answers 412 `communities.invitation_revoked`, nothing consumed. Redeem first → the member stays; revocation stops future use, and removal is a separate audited act. |
 | **Concurrent community lock** | `UPDATE … WHERE status = 'OPEN'` lets exactly one change happen: one audit row, one event, `lifecycle_version` +1. The other caller gets 200 unchanged. Lock racing unlock: the last commit wins; each real change is versioned, and clients keep the highest version. Lock racing a redeem: joins committed before stand; later ones roll back with 412 and consume no use. |
 | **Session ended twice** | The session row `FOR UPDATE` serializes them. The second sees `ended` and returns 200 with the same view: no audit, event or provider call. `endRoom` treats NotFound as success. |
-| **Speaker revoked while publishing** | The compare-and-set commits `revoked`; `updateCapabilities` sends the full set without the microphone, and LiveKit unpublishes it at once. If the call fails, the sweep converges within 60 s. If the client rejoins with an earlier refreshed speaker token, the targeted watch demotes it within 10 s; a second violation inside the window resets the media room (P6, [live.md §11.4](live.md#114-targeted-watch--every-10-s)). |
+| **Speaker revoked while publishing** | The compare-and-set commits `revoked`; `updateCapabilities` sends the full set without the microphone, and LiveKit unpublishes it at once. If the call fails, the sweep converges within 60 s. If the client rejoins with an earlier refreshed speaker token, the targeted watch demotes it within 10 s; a second violation inside the window resets the media room (P6; PROVISIONAL, Q63; [live.md §11.4](live.md#114-targeted-watch--every-10-s)). |
 | **Backend restart** | All truth is in Postgres (in-memory adapters only without a database). Invitation state is derived, so no timers resume. LiveKit media and token refresh carry on. In-flight frames and events are lost (no outbox); clients reconnect with jitter and refetch over HTTP. The reconciler resumes; the in-memory watch set and rate-limit counters reset. A restart is never relied on to eject anyone. |
 
-### 18.2 Further cases from the decision records
+### 18.2 Further cases
 
 | Case | Semantics |
 | --- | --- |
@@ -1406,7 +1447,7 @@ the messaging sweeper every 60 s
 | A subscriber throws, or is slow | Isolated and logged (`event-bus.ts:49-53`). Every new subscriber schedules its work and returns; tests assert `publish()` resolves first. |
 | Communities store unavailable | `authorize` rejects; Messaging, Live and Attendance fail closed with 503 and never fall back to a role-only answer. Sweeps skip the tick and never eject on unknown state. Media already flowing continues. |
 | Removal racing a send or a join | Only a request whose permit was read before the removal committed can land (one message ordered before the removal, or one token). Every later request is refused. The event path, or at worst the 60 s sweep, ejects from the room. |
-| Removed participant rejoins the room in a loop with refreshed tokens | Each rejoin earns a fresh token of at least 10 minutes, so removal alone never ends the loop. The first return is removed within 10–60 s; a second violation inside the enforcement window resets the media room automatically (P6, [live.md §11.4](live.md#114-targeted-watch--every-10-s)): every token the violator holds names a deleted room. Residual: the first removal plus at most one 10 s watch tick of listening; everyone else reconnects briefly. |
+| Removed participant rejoins the room in a loop with refreshed tokens | Each rejoin earns a fresh token of at least 10 minutes, so removal alone never ends the loop. The first return is removed within 10–60 s; a second violation inside the enforcement window resets the media room automatically (P6; PROVISIONAL, Q63; [live.md §11.4](live.md#114-targeted-watch--every-10-s)): every token the violator holds names a deleted room. Residual: the first removal plus at most one 10 s watch tick of listening; everyone else reconnects briefly. |
 | Join racing end | A token minted before the end is useless after `endRoom`, because `auto_create=false`. A join that re-created a missing room re-reads `ended` and deletes it (ensure-then-recheck) → 412. |
 | Concurrent starts | The partial unique index keeps one row; the loser ends its own room and returns the winner (200). An orphan room from a crashed start is deleted by the room sweep after a 60 s grace. |
 | Grants beyond the speaker cap | Serialized on the session row, counted, then compare-and-set: exactly 4 (Q4). The loser gets 412 `live.speaker_slots_full`. |
@@ -1441,11 +1482,11 @@ attendance list, display name, capability booleans.
 
 | Threat | Mitigation | Residual risk |
 | --- | --- | --- |
-| **Leaked invitation link** | 256-bit bearer secret; mandatory expiry (PROVISIONAL default 7 days, maximum 30, Q48); optional `maxUses`; revocation immediate and linearized with redemption; only signed-in accounts holding `communities.read`; REMOVED members cannot rejoin by link; locking suspends every link; an index lists who joined through a link, and each redemption is audited with its invitation id; the link dies with its creator's authority (P3) | Any eligible account that obtains the link before revocation can join, bounded by expiry and `maxUses`. Under the PROVISIONAL full-history rule ([Q52](open-questions.md#q52--community-chat-history-for-newcomers-and-returners)) it sees the chat archive until removed |
+| **Leaked invitation link** | 256-bit bearer secret; mandatory expiry (PROVISIONAL default 7 days, maximum 30, Q48); optional `maxUses`; revocation immediate and linearized with redemption; only signed-in accounts holding `communities.read`; REMOVED members cannot rejoin by link; locking suspends every link; an index lists who joined through a link, and each redemption is audited with its invitation id; the link dies with its creator's authority (from P2; the grant lookup from P3) | Any eligible account that obtains the link before revocation can join, bounded by expiry and `maxUses`. Under the PROVISIONAL full-history rule ([Q52](open-questions.md#q52--community-chat-history-for-newcomers-and-returners)) it sees the chat archive until removed |
 | **Invitation brute force** | A 2^256 space; per-user limit and a per-IP limit sized for a school NAT; shape check before hashing; an unknown token costs one indexed lookup | Rate limits are per process until a Redis limiter exists; guessing is infeasible anyway |
 | **Unauthorized community access** | Every route authorizes server-side: ceiling, then the stored stint, grant or oversight, then the gate. `me.capabilities` is display only. The principal is rebuilt from storage on every request | None known for the acts designed |
 | **Unauthorized LiveKit token** | Tokens only from `/join`, after the ceiling, the `community.live.join` permit (community id from the stored session) and the gate. A token holds `roomJoin` for one room only — never `roomCreate`, `roomAdmin` or `roomList`. `auto_create=false` | Depends on the correctness of Communities' membership |
-| **Token reuse** | TTL 120 s; the reconciler's 60 s sweep and 10 s targeted watch; violations shown to moderators; the automatic media-room reset at the second violation (P6) invalidates every old token; `revokeTokensIssuedBefore` passed for providers that honour it; tokens never logged or put in events or frames | Media until the second violation: the first removal (10–60 s) plus at most one 10 s watch tick; the reset reconnects everyone else briefly |
+| **Token reuse** | TTL 120 s; the reconciler's 60 s sweep and 10 s targeted watch; violations shown to moderators; the automatic media-room reset at the second violation (P6; PROVISIONAL, Q63) invalidates every old token; `revokeTokensIssuedBefore` passed for providers that honour it; tokens never logged or put in events or frames | Media until the second violation: the first removal (10–60 s) plus at most one 10 s watch tick; the reset reconnects everyone else briefly |
 | **Teacher privilege escalation** | No authority from a role or from teaching a halaqa: acts need ownership, a grant or `communities.manage`, re-checked on every request and sweep. `communities.manage` never grants entry. The host rule is replaced, not bypassed ([§8.3](#83-the-fate-of-the-host-only-rule)) | Who may delegate is Q44's |
 | **Speaker privilege escalation** | The total capability set always lists explicit sources; `canPublishData` and metadata updates are false for everyone; CAMERA is never granted; screen share needs a presenter grant; the speaker cap is enforced by the database; a speaker gains no community act; adapter contract tests assert every mapping | The convergence window after a rejoin with an old token |
 | **Attendance spoofing** | The body carries only `clientRequestId`; entries come only from the server-side provider read through Live; only STANDARD participants with account-shaped identities; no route writes entries; nothing is updated after creation | "Connected" is not "listening": the system records connections, not engagement (Q68) |
@@ -1458,7 +1499,7 @@ attendance list, display name, capability booleans.
 | Threat | Mitigation | Residual risk |
 | --- | --- | --- |
 | **Token refresh.** The server sends a connected participant a refreshed token every 5 minutes, valid for at least 10 minutes. The 120 s TTL bounds only the first connection. *realtime.md claims a leaked token is worth "ten minutes" (`:505-510`); this package added a correction note there.* | The reconciler is the enforcement, not the TTL: every connected identity is re-checked against the record and Communities each sweep | A removed participant's client holds a valid token for about 10 minutes after its last connection, and each rejoin earns another; the automatic reset ends that loop (token reuse, above) |
-| **`revoke_token_ts` is ignored** by the open-source server, so `removeParticipant` does not stop a rejoin | Targeted watch after every ejection, the participant sweep, violation counting; the automatic epoch reset at the second violation (P6) ends the loop because old tokens name a deleted room | As token reuse, above ([Q63](open-questions.md#q63--losing-standing-during-a-running-session)) |
+| **`revoke_token_ts` is ignored** by the open-source server, so `removeParticipant` does not stop a rejoin | Targeted watch after every ejection, the participant sweep, violation counting; the automatic epoch reset at the second violation (P6; PROVISIONAL, Q63) ends the loop because old tokens name a deleted room | As token reuse, above ([Q63](open-questions.md#q63--losing-standing-during-a-running-session)) |
 | **`auto_create` defaults to true**, so any valid token can re-create an ended or deleted room | `room.auto_create=false` in a LiveKit config kept in the repository and verified by an adapter contract test; ensure-then-recheck; the orphan sweep; no `roomCreate` grant ever issued | A deployment misconfiguration a server self-check cannot see; covered by a staging contract test and a runbook item |
 | **`DUPLICATE_IDENTITY`**: a second connection with the same identity evicts the first | Identity = account id; the newest device wins; the app does not auto-rejoin on that reason (Q60); attendance keeps one entry per account | A stolen valid token lets its holder take the owner's seat. Refresh keeps it valid while connected, and the reconciler sees an eligible identity, so each side's rejoin evicts the other until a moderator-initiated media reset (P12, [Q64](open-questions.md#q64--removing-a-participant-from-a-session)) |
 | **Data channel.** *Today `LISTENER.canPublishData` is true (`rtc-provider.ts:19-23`).* | `canPublishData = false` for everyone (P1; a visible behaviour change that needs approval); no feature uses the data channel | None once P1 lands |
@@ -1558,7 +1599,14 @@ logic:
 ### 20.3 Capacity gates G1–G4
 
 Community chats stay **disabled above the load-tested size** until all four
-hold:
+hold. The capacity switch is messaging's deployment setting
+`communityChatMaxServedMembers` (PROVISIONAL default 250,
+[Q26](open-questions.md#q26--realtime-limits)), compared with the
+projection's `member_count`: above it a send is refused with 412
+`messaging.community_chat_over_capacity` and `canPost` is false, while
+reading, marking read and the projection are unaffected
+([community-chat.md §11.2](community-chat.md#112-gates-g1g4)). It is raised
+only when the gates hold for the new size:
 
 | Gate | What | Phase |
 | --- | --- | --- |
@@ -1642,7 +1690,7 @@ institutional cap is Q57's.
 | Reconciler | With a fake provider seeded with participants: a member removed while connected is ejected within one tick even when no event was published; a divergent grant is re-applied; a revoked speaker still publishing loses the right; corrective acts audited with a null actor; a consistent session produces nothing; the regression where a speaker demoted 12 minutes earlier rejoins with a refreshed token; a repeated violation → exactly one media reset | P6 |
 | Events and journals | Payload keys equal the contract type's keys, values are flat scalars; audit before event; a no-op writes neither; a failed audit publishes nothing; `publish()` resolves before relay or reaction work | each phase |
 | Realtime | `OnlineAudience` property test (members 0–30,000, online 0–10,000): result = members ∩ online within 1 + ⌈A/1000⌉ calls, and messaging results equal the existing walk; relay audiences match the matrix; frames equal the golden fixtures; over a real WebSocket, a removed member receives `community.member.removed` and nothing about the community after it; existing messaging relay specs unchanged | P5, P7 |
-| Messaging projection | Permutation, duplication and loss converge; the `greatest()` regression; a removed member is refused as soon as the removal commits; existing `security.spec` and `membership.spec` pass unmodified | P4 |
+| Messaging projection | Permutation, duplication and loss converge; the `greatest()` regression; a missed leave then a rejoin is detected by `source_membership_id`; a removed member is refused as soon as the removal commits; a member whose role loses `communities.read` gets no frame and no notification (`COMMUNITY_CHAT_READ_CEILING`); above `communityChatMaxServedMembers` a send gets 412 `messaging.community_chat_over_capacity` and `canPost` is false; existing `security.spec` and `membership.spec` pass unmodified | P4 |
 | Flutter | Repository parsing against `MockClient` (unknown enums → unknown, missing booleans → false); capability-driven UI (every action shown iff its server boolean is true; no role reads); frame parsing from the golden fixtures, version ≠ 1 dropped; `LiveSessionController` state machine with fakes; `CommunityController` version handling; the `/invite` flow never logs the token; mock parity; architecture tests; the layout table at every viewport; attendance screens never compute a ratio | P0, P5, P7, P9 |
 
 **Brief §27 coverage:** community authorization, membership isolation,
@@ -1706,13 +1754,13 @@ decided.
 | [Q60](open-questions.md#q60--one-account-on-several-devices-in-a-session) | One account on several devices in a session | No; newest device wins; no auto-rejoin |
 | [Q61](open-questions.md#q61--ending-abandoned-live-sessions) | Ending abandoned live sessions | `idle` after 900 s observed empty; never for host absence; no maximum |
 | [Q62](open-questions.md#q62--floor-rules-beyond-first-come-first-served) | Floor rules beyond first come, first served | Grants only from a raised hand; a speaker may yield; no timeouts; cap 4 |
-| [Q63](open-questions.md#q63--losing-standing-during-a-running-session) | Losing standing during a running session | Immediate on the event, ≤ 60 s by the sweep; hand, floor, presenter close |
-| [Q64](open-questions.md#q64--removing-a-participant-from-a-session) | Removing a participant from a session | Not built; seams only; a moderator-initiated media reset planned for P12 (the automatic reset on a repeated violation is P6) |
+| [Q63](open-questions.md#q63--losing-standing-during-a-running-session) | Losing standing during a running session | Immediate on the event, ≤ 60 s by the sweep; hand, floor, presenter close; a second violation inside the enforcement window resets the media room automatically, and every participant reconnects briefly (P6) |
+| [Q64](open-questions.md#q64--removing-a-participant-from-a-session) | Removing a participant from a session | Not built; seams only; a moderator-initiated media reset planned for P12 (the automatic reset on a repeated violation is Q63's, P6) |
 | [Q65](open-questions.md#q65--media-hosting-and-operations) | Media hosting and operations | Self-hosted LiveKit, `auto_create=false`, no webhooks, no recording; TURN before the first class; never load-test production |
 | [Q66](open-questions.md#q66--realtime-without-messagingread) | Realtime without messaging.read | The gate stays `messaging.read`; a test pins the coupling |
 | [Q67](open-questions.md#q67--notifications-for-community-live-and-attendance-facts) | Notifications for community, live and attendance facts | None; events are published for later translators |
 | [Q68](open-questions.md#q68--what-counts-as-present-in-a-snapshot) | What counts as present in a snapshot? | Nothing labelled present; CONNECTED and CONNECTING stored separately under a versioned rule |
-| [Q69](open-questions.md#q69--who-records-and-who-views-snapshots) | Who records and who views snapshots? | `community.attendance.record` / `.view` by owner or grant; no `attendance.*`; recording does not imply viewing |
+| [Q69](open-questions.md#q69--who-records-and-who-views-snapshots) | Who records and who views snapshots? | Record: the owner, the session's host and moderators, a `community.attendance.record` grantee; view: the owner, a `community.attendance.view` grantee, and the host or a recorder for their own sessions; asked in the fallback order of [attendance.md §11.3](attendance.md#113-attendanceaccess-how-refusals-map); no `attendance.*`. Named alternative, not the default: owner or grant only; recording does not imply viewing |
 | [Q70](open-questions.md#q70--is-a-snapshot-the-attendance-record) | Is a snapshot the attendance record? | Observation only; nothing derived; operations may depend on attendance later, never the reverse |
 | [Q71](open-questions.md#q71--correcting-retaining-and-erasing-snapshots) | Correcting, retaining and erasing snapshots | Immutable; kept like the audit log until Q3 |
 | [Q72](open-questions.md#q72--when-and-how-often-snapshots-are-taken) | When and how often snapshots are taken | Only on a press; 6 per 60 s per recorder; concurrency 4; 15 s; 10,000 entries |
@@ -1757,15 +1805,15 @@ read, or a join without its membership check.
 | --- | --- | --- | --- | --- |
 | **P0** Corrections and guards (no feature code) | All of [§25.1](#251-phase-0-corrections) | This design accepted | depcruise 0 errors; every forbidden rule proven non-vacuous; the only production diffs are the byte-identical Live event move and the additive `FailureKind` | nothing |
 | **P1** Live hardening (no Communities) | `LiveParticipantRole` rename; total `RtcCapabilities`, listeners `canPublishData=false`; narrow RTC ports; adapter hardening (explicit sources, full permission set, `createRoom` errors surfaced, NotFound → outcome, network → `RtcUnavailableError`); names from `ACCOUNT_DIRECTORY`, DTO field removed; an explicit audit action per moderation act (fixes `moderate-speaker.use-case.ts:193`); views; idempotent raise, withdraw, yield, decline; indexed repository methods. Still in memory and halaqa-bound | P0 | Live suites green with approved behaviour changes; no port returns all of a session's requests; no secret or JWT in logs | approval of visible changes: listener data off, raise 202 → 201 for a new hand and 409 → 200 for an open one, TTL 600 → 120 s |
-| **P2** Communities core | The module (domain, Postgres and in-memory adapters, `/communities`, journal, events); stints, invitations, lock/unlock; `COMMUNITY_AUTHORIZATION` (membership, owner, oversight bases), `COMMUNITY_MEMBERSHIP`, `COMMUNITY_DIRECTORY`; catalogue + migration 0009; boundary spec; 30k/100k fixtures | P0; the §13 step complete (Q35/Q36 answered, ADR 0015 landed), or the user's ruling on Q40; Q41–Q49 defaults recorded; Q42 (one owner or several) put to the institution, and its answer or an explicit acceptance of the one-owner default recorded, because P2 builds the one-owner index | The Postgres concurrency suite; EXPLAIN index scans at 30k and 100k; one audit and one event per effective change; the TEACHER-without-standing refusal matrix; mock parity | **Q40** (the §13 step, or the user's ruling) |
-| **P3** Delegation | Grants table; grant, revoke, transfer; the grant basis; `COMMUNITY_CAPABILITY_HOLDERS`; capability and ownership events; basis re-verified under lock; redemption re-checks the creator | P2 | The truth table; the grant races; dormancy on ceiling loss; holders keyset under churn | P2 |
-| **P4** Community chat | Additive columns and CHECKs; projection, applier, materialization, sync, sweeper, reconciler (both adapters); the `ConversationAccess` branch; posting via permit; 412 and 403 refusals; lag filter; `authorizeEach` list views; the new route; the G2 index | P2 (P3 only for delegated posting) | A removed member refused at commit; projection property tests; 20 materializations → 1; existing security and membership specs unmodified; exports unchanged; chats disabled above the tested size until G1, G3, G4 | P2 |
+| **P2** Communities core | The module (domain, Postgres and in-memory adapters, `/communities`, journal, events); stints, invitations (redemption re-checks the creator's ceiling and ACTIVE OWNER stint), lock/unlock; `COMMUNITY_AUTHORIZATION` (membership, owner, oversight bases), `COMMUNITY_MEMBERSHIP`, `COMMUNITY_DIRECTORY`; catalogue + migration 0009; boundary spec; 30k/100k fixtures | P0; the §13 step complete (Q35/Q36 answered, ADR 0015 landed), or the user's ruling on Q40; Q41–Q49 defaults recorded; Q42 (one owner or several) put to the institution, and its answer or an explicit acceptance of the one-owner default recorded, because P2 builds the one-owner index | The Postgres concurrency suite; EXPLAIN index scans at 30k and 100k; one audit and one event per effective change; the TEACHER-without-standing refusal matrix; mock parity | **Q40** (the §13 step, or the user's ruling) |
+| **P3** Delegation | Grants table; grant, revoke, transfer; the grant basis; `COMMUNITY_CAPABILITY_HOLDERS`; capability and ownership events; basis re-verified under lock; redemption's creator re-check gains the grant lookup | P2 | The truth table; the grant races; dormancy on ceiling loss; holders keyset under churn | P2 |
+| **P4** Community chat | Additive columns and CHECKs (`source_version`, `source_membership_id`, `source_joined_at` under the shape CHECK); projection, applier, materialization, sync, sweeper, reconciler (both adapters); the `ConversationAccess` branch; posting via permit; the capacity switch; 412 and 403 refusals; lag filter; the `COMMUNITY_CHAT_READ_CEILING` narrowing (the constant added to Communities' `capabilities.ts`); `authorizeEach` list views; the new route; the G2 index | P2 (P3 only for delegated posting) | A removed member refused at commit; projection property tests; 20 materializations → 1; existing security and membership specs unmodified; exports unchanged; chats disabled above the tested size until G1, G3, G4 | P2 |
 | **P5** Community realtime and Flutter communities | `onlineUserIds`, `OnlineAudience` (messaging relay swaps onto it: G1); `CommunitiesRealtimeRelay`; `community.*` frames; golden fixtures; Flutter `CommunityRepository`, frame families, capability-driven screens, `/invite`, `conversationForCommunity` | P2 (P3 for `access.changed`) | `OnlineAudience` property test; relay and WebSocket API tests; existing relay specs; Flutter parsing, golden, parity, boundary and layout tests | P2 |
 | **P6** Community-scoped live sessions (backend) | `LiveSession` replaces `LiveRoom`; Postgres adapters with the start/end routes; `LiveAccess`; stop passing `ownerUserId` and retire `host-only-moderation` in the same change; join and raise through `COMMUNITY_AUTHORIZATION`; idempotent start and end; ensure-then-recheck; presenter slot; reconciler, with `RtcParticipantObserver.listParticipants` and the automatic media reset on a repeated violation; `COMMUNITY_AUTHORIZATION.permittedAmong` and `community.live.remain` in Communities; `ProtectLiveSessions`; soft and hard caps; `LIVE_AUDIENCE`, `LIVE_SESSIONS`; `AppConfig.live`; pinned LiveKit config and the adapter contract suite in CI | P1, P2, P3; LiveKit in CI | Contract suite green against a real server; lifecycle, cap and presenter concurrency; reconciler tests including the refreshed-token regression; no token without the permit; an all-permission principal without standing cannot moderate; no `ownerUserId` passed | P2, P3, LiveKit in CI |
 | **P7** Live realtime and Flutter live | `LiveRealtimeRelay` with coalescing; `LiveRepository`; `LiveEvent` families; `LiveSessionController`; `LiveMediaClient` bound to Unavailable; screens that say live audio is unavailable | P5, P6 | State-machine tests with fakes; mock mode never yields a usable media grant | P5, P6 |
 | **P7b** Media binding | `LiveKitLiveMediaClient` as the only `livekit_client` importer; Android foreground service and iOS broadcast extension | An ADR; devices or CI for Android, iOS and web | Device evidence recorded | a device-capable environment |
-| **P8** Load tests | Profiles 1–5 ([§21](#21-load-testing-plan)) on the target topology with non-production keys | SFU profiles: a LiveKit server on the target topology; API profiles: P7; profile 4: P2, P4 | Results filed; three runs each; invariants hold; Q26, Q57, Q65 updated; capacity config from the knees; nothing above them enabled | matching hardware |
-| **P9** Attendance (**HELD**) | The module; `LIVE_PRESENCE` (`LivePresenceService` over the `listParticipants` port that P6's reconciler already uses); the attendance acts added by CHECK migration with ceilings using no `attendance.*`; `attendance-boundaries.spec`; Flutter `AttendanceRepository` | The reconciliation review, or the user's ruling on Q40; §13's Attendance row met (Q8, Q12, not TE-04), or ruled by the user not to apply to snapshots; reviewer acceptance of Q69; P6 | 20 same-key presses → 1 snapshot; churn tests equal the provider list; mid-read end → 412, nothing stored; attendance never imports LiveKit | **Q40, Q69**, §13's Attendance row (Q8, Q12), P6 |
+| **P8** Load tests | Profiles 1–5 ([§21](#21-load-testing-plan)) on the target topology with non-production keys | SFU profiles: a LiveKit server on the target topology; API profiles: P7; profile 4: P2, P4 and P5 | Results filed; three runs each; invariants hold; Q26, Q57, Q65 updated; capacity config from the knees; nothing above them enabled | matching hardware |
+| **P9** Attendance (**HELD**) | The module; `LIVE_PRESENCE` (`LivePresenceService` over the `listParticipants` port that P6's reconciler already uses); the attendance acts added by CHECK migration with ceilings using no `attendance.*`; `attendance-boundaries.spec`; Flutter `AttendanceRepository` | The §13 step (Q35/Q36 and ADR 0015) and the reconciliation review, or the user's ruling on Q40; §13's Attendance row met (Q8, Q12, not TE-04), or ruled by the user not to apply to snapshots; reviewer acceptance of Q69; P6 | 20 same-key presses → 1 snapshot; churn tests equal the provider list; mid-read end → 412, nothing stored; attendance never imports LiveKit | **Q40, Q69**, §13's Attendance row (Q8, Q12), P6 |
 | **P10** Notification translators | Translators importing only contracts; recipients at delivery time; Q28's collapse seam | Q67 and Q28 answered; the outbox first if T2 | Translator tests; a notification never grants access | Q67, Q28 |
 | **P11** Horizontal scale | Outbox via the journals' unit of work; broker with every-instance and one-instance delivery; Redis `RateLimiter`; reconciler lease | Evidence that one instance is not enough (T3), or T2/T4 | Multi-instance tests: no duplicate reactions; relays deliver on every instance | P8 evidence |
 | **P12** Policy-gated Live features | A moderator-initiated media-room reset; kick and re-entry; delegated or audio screen share; hidden listeners; webhook accelerators; `community.messages.moderate` | Q64, Q56, Q59, Q51/Q23 as each needs | Per feature | policy answers |
@@ -1785,8 +1833,8 @@ read, or a join without its membership check.
 | 9 | Pin the academic upgrade test: `migrateTo(scratch.db)` → `migrateTo(scratch.db, 9)`; 0009 gets its own upgrade test asserting its exact grant delta | The test migrates to the latest and asserts the seven academic grants exactly, so 0009 would break it. `upTo` counts journal entries (9: 0000–0008), so 9 is correct | `backend/test/integration/academic-postgres.spec.ts:580` |
 | 10 | Flutter live guard: no `livekit_client`, `flutter_webrtc` or `dart_webrtc` in pubspec or `lib/`; extend the screen import bans to the new feature directories | "A dependency is never added blind" (`media_seams.dart:5-13`) must be executable before any live UI | `app/test/live/live_boundaries_test.dart` (new); `app/test/academic/academic_boundaries_test.dart:51-94` |
 | 11 | Correct the code comments stating the retired or false design. The documents stating it (`module-boundaries.md:57-60`, `:146-149`, `:241-243`; `realtime.md:573`; `overview.md:146-148`) already carry this package's labelled correction notes or proposed-change pointers; their rewrites are §25.2's P0 rows | Otherwise two modules appear to own attendance, and a new module could be misled about how permissions are added | `backend/src/modules/operations/contracts/index.ts:1-6`; `backend/src/modules/live/domain/events.ts:3-7` |
-| 12 | Reserve numbering: Q40–Q72 in open-questions.md; ADRs 0016–0021 with status Proposed; ADR 0015 stays reserved | All six records numbered from Q40 independently; 0015 is reserved at `academic-reconciliation.md:410`, `:490`, `:506` | `docs/architecture/open-questions.md`; `docs/architecture/decisions/0016`–`0021` (new); `docs/architecture/decisions/README.md` |
-| 13 | Governance: before P2, the §13 step or the user's ruling on Q40; before P9, the reconciliation review (with §13's Attendance row) or that ruling | A design must not lift a user constraint on its own | `docs/architecture/academic-reconciliation.md:19-21`, `:483-493` (read, not edited) |
+| 12 | Reserve numbering: Q40–Q72 in open-questions.md; ADRs 0016–0021 with status Proposed; ADR 0015 stays reserved | Earlier drafts of this design numbered their questions from Q40 independently; 0015 is reserved at `academic-reconciliation.md:410`, `:490`, `:506` | `docs/architecture/open-questions.md`; `docs/architecture/decisions/0016`–`0021` (new); `docs/architecture/decisions/README.md` |
+| 13 | Governance: before P2, the §13 step (Q35/Q36 and ADR 0015) or the user's ruling on Q40; before P9, also the reconciliation review (with §13's Attendance row) or that ruling | A design must not lift a user constraint on its own | `docs/architecture/academic-reconciliation.md:19-21`, `:483-493` (read, not edited) |
 
 ### 25.2 Documents this package asks to change later
 
@@ -1850,12 +1898,14 @@ each diagram.
   │                    │                           │                   │                   │                   │
   │ 1 POST /communities/join {token}               │                   │                   │                   │
   │───────────────────▶│                           │                   │                   │                   │
-  │                    │ 2 ceiling communities.read; per-IP and per-user limits; token shape; h = SHA-256(token)
-  │                    │ 3 BEGIN; SELECT invitation by h; pair advisory lock (C,U); latest stint of (C,U)
+  │                    │ 2 ceiling communities.read; per-IP and per-user limits; token shape; h = SHA-256(token);
+  │                    │   lookup by h → {L, C, creator K}; creator ceiling withPermission([K]) (before BEGIN)
+  │                    │ 3 BEGIN; pair advisory lock (C,U); latest stint of (C,U)
   │                    │──────────────────────────▶│                   │                   │                   │
   │                    │ 4 UPDATE invitation SET uses+1 WHERE not revoked, not expired, uses < max_uses
   │                    │──────────────────────────▶│                   │                   │                   │
-  │                    │ 5 (P3) the link's creator still holds community.members.invite: stint, grant FOR SHARE (Q48)
+  │                    │ 5 (P2 owner stint; P3 + grant) the creator still holds community.members.invite:
+  │                    │   K's ACTIVE stint FOR SHARE (P2: must be OWNER); P3: or K's grant FOR SHARE (Q48)
   │                    │ 6 UPDATE community SET member_count+1, membership_version+1 → v WHERE status accepts
   │                    │──────────────────────────▶│                   │                   │                   │
   │                    │ 7 INSERT stint (ACTIVE, INVITATION, version v); COMMIT
@@ -1877,14 +1927,17 @@ each diagram.
   │                    │──────────────────────────────────────────────────────────────────▶│ 17 materialize if missing
   │                    │                           │                   │                   │    (ON CONFLICT); repair own
   │                    │                           │                   │                   │    row if the projection lags
-  │ 18 200 ConversationResponse (CHANNEL, communityId, canPost from the community.chat.post permit)             │
+  │ 18 200 ConversationResponse (CHANNEL, communityId, canPost: community.chat.post permit + capacity switch)  │
   │◀───────────────────────────────────────────────────────────────────────────────────────│                   │
 ```
 
-Refusals at 3–7 roll back everything and consume no use: 404
-`communities.invitation_invalid` (an unknown token at step 3, or — from P3 —
-a creator who lost the right to invite, step 5); 200 when already a member
-(step 3, no use consumed, no audit, no event); 403
+Refusals consume no use. Step 2 refusals happen before any transaction;
+refusals at 3–7 roll back everything. 404 `communities.invitation_invalid`:
+an unknown or malformed token or a creator without the ceiling (step 2), or a
+creator who lost the right to invite (step 5: from P2 no longer the ACTIVE
+OWNER, from P3 also a delegate whose grant ended), as in
+[communities.md S3](communities.md#s3--redeem-a-link-p2);
+200 when already a member (step 3, no use consumed, no audit, no event); 403
 `communities.rejoin_requires_manager`; 412 `communities.invitation_revoked`,
 `invitation_expired`, `invitation_exhausted` (step 4) or `community_locked`
 (step 6). Steps 3–7 follow the global lock order of
@@ -1989,11 +2042,15 @@ the room and cap checks fail open to the SFU's hard cap.
   │ 1 POST /attendance/live-sessions/S/snapshots {clientRequestId K}     │                   │                      │
   │───────────────────▶│                        │                        │                   │                      │
   │                    │ 2 validate K (else 422)│                        │                   │                      │
-  │                    │ 3 LIVE_SESSIONS.describe(S) → {S, C, active} (null → 404 attendance.session_not_found)     │
+  │                    │ 3 LIVE_SESSIONS.describe(S) → {S, C, hostUserId, active}                                   │
+  │                    │   (null → 404 attendance.session_not_found)                                                │
   │                    │───────────────────────▶│                        │                   │                      │
-  │                    │ 4 authorize(T, C, community.attendance.record): not_found or identity.permission_denied →  │
-  │                    │   404 attendance.session_not_found; capability_required → 403 attendance.not_allowed;      │
-  │                    │   community_locked → 412 attendance.community_not_open                                     │
+  │                    │ 4 AttendanceAccess, in the fallback order of attendance.md §11.3: authorize(T, C,          │
+  │                    │   community.attendance.record); on forbidden, community.live.moderate; on forbidden, if    │
+  │                    │   T = hostUserId, community.live.host. The first permit wins (into the audit metadata).    │
+  │                    │   None: not_found or identity.permission_denied → 404 attendance.session_not_found;        │
+  │                    │   capability_required → 403 attendance.not_allowed; community_locked → 412                 │
+  │                    │   attendance.community_not_open                                                            │
   │                    │────────────────────────────────────────────────▶│                   │                      │
   │                    │ 5 replay lookup (S, T, K) → found: 200 stored snapshot; nothing else happens              │
   │                    │─────────────────────────────────────────────────────────────────────────────────────────▶│
@@ -2014,7 +2071,7 @@ the room and cap checks fail open to the SFU's hard cap.
   │                    │    statements of ≤ 1,000 rows; COMMIT (conflict → ROLLBACK, return the stored one: 200)    │
   │                    │─────────────────────────────────────────────────────────────────────────────────────────▶│
   │                    │ 15 audit attendance.snapshot.recorded; publish {snapshotId, C, S, recordedBy, observedAt, counts}
-  │ 16 201 SnapshotView (counts only; recording does not imply viewing) │                   │                      │
+  │ 16 201 SnapshotView (counts only; entries are viewed separately)    │                   │                      │
   │◀───────────────────│                        │                        │                   │                      │
 ```
 

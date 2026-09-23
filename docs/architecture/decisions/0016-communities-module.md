@@ -30,7 +30,8 @@ group is not a LiveKit room, and 30,000 members is not 30,000 live
 participants. The brief rules out messaging owning group membership, academic
 owning generic group infrastructure, and a god service.
 
-**What exists today** (commit `9670c47`):
+**What exists today** (commit `9670c47`; every `file:line` citation in this
+record refers to that commit):
 
 - No module owns such a thing. Messaging owns conversation membership: one row
   per (conversation, user) that also carries read state, with caps of 500 for
@@ -124,7 +125,11 @@ Everything below is proposed. None of it exists today.
    - `maxUses` is optional;
    - joining is immediate, for signed-in accounts holding `communities.read`;
    - redemption re-checks that the link's creator still holds
-     `community.members.invite`, and fails if not.
+     `community.members.invite`, and fails if not (404
+     `communities.invitation_invalid`). From P2 it re-checks the creator's
+     identity ceiling (`withPermission`) and that the creator's stint is the
+     ACTIVE OWNER; P3 adds only the grant lookup. A demoted creator's link
+     fails from P2.
 
    A person whose latest stint is REMOVED cannot rejoin by link; a manager may
    re-add them directly (PROVISIONAL, [Q49]).
@@ -157,7 +162,10 @@ Everything below is proposed. None of it exists today.
    [0017](0017-community-scoped-authorization.md).
 
 9. **One global lock order.**
-   1. per-pair advisory locks, sorted by user id;
+   1. per-pair advisory locks, sorted by the computed lock key and
+      deduplicated (not by user id: two pairs whose 32-bit hashes collide
+      would otherwise be taken in opposite orders by two batch adds, and
+      deadlock; [communities.md §4](../communities.md#the-global-lock-order));
    2. the invitation row;
    3. existing stint rows, in ascending id;
    4. grant rows;
@@ -183,11 +191,11 @@ Everything below is proposed. None of it exists today.
     capability-source seam inside Communities. No contract changes.
 
 12. **The governance gate applies (PROVISIONAL, [Q40]).** Implementing this
-    module (P2 onwards) waits until the §13 step is complete or the user rules
-    explicitly. Phase 0 corrections and the hardening of the existing live
-    module (P1) change only existing modules and are not held by that gate;
-    they start only after this design is accepted and, for P1, after its
-    visible behaviour changes are approved. Meanwhile, the name
+    module (P2 onwards) waits for the §13 step (Q35/Q36 and ADR 0015) or the
+    user's ruling on Q40. Phase 0 corrections and the hardening of the
+    existing live module (P1) change only existing modules and are not held by
+    that gate; they start only after this design is accepted and, for P1,
+    after its visible behaviour changes are approved. Meanwhile, the name
     (decision 1) and the absence of a halaqa link (decision 11) keep this design
     from answering Q36. ADR 0015 stays reserved for the academic structure
     change (`academic-reconciliation.md:410`, `:490`, `:506`), which is why
@@ -218,8 +226,8 @@ If accepted:
   ([0017](0017-community-scoped-authorization.md)).
 - Mock mode keeps working: an in-memory adapter is chosen when no database is
   configured, as academic does.
-- This module is not implemented until the §13 step is complete or the user
-  rules on Q40.
+- This module is not implemented until the §13 step (Q35/Q36 and ADR 0015) is
+  complete or the user rules on Q40.
 
 ## Alternatives considered
 
@@ -230,8 +238,8 @@ If accepted:
   state and history windows; lock and invitation concepts would enter
   messaging's domain.
 - **Name the module and aggregate `groups`**, the brief's word and the name
-  most of the decision records this package reconciles used. Rejected for
-  decision 1: it collides with messaging's `GROUP` and would pre-answer Q36.
+  an earlier draft of this design used. Rejected for decision 1: it collides
+  with messaging's `GROUP` and would pre-answer Q36.
 - **A `kind` field** (group, channel, announcement). Rejected: no Communities
   behaviour depends on it, who may post is decided per act
   ([0017](0017-community-scoped-authorization.md)), and it would pre-answer
@@ -261,9 +269,9 @@ If accepted:
 - **Gate with `SELECT … FOR SHARE`, then update the counters.** Rejected: two
   transactions upgrading shared locks deadlock. The conditional UPDATE is both
   the gate and the increment.
-- **Three lock orders**, one per decision record. Rejected for the single order
-  in decision 9: versions stay unique and in commit order because they are
-  allocated under the community row lock, held until commit.
+- **Three lock orders**, as an earlier draft of this design had. Rejected for
+  the single order in decision 9: versions stay unique and in commit order
+  because they are allocated under the community row lock, held until commit.
 - **A link stays valid after its creator loses the right to invite.** Rejected:
   the brief says an invitation must never bypass authorization, so redemption
   fails closed (PROVISIONAL, [Q48]).

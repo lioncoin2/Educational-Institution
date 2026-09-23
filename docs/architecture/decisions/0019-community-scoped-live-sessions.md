@@ -119,7 +119,7 @@ Everything below is proposed. None of it exists today.
      loses their hand, floor and presenter grant and is removed; a divergent
      permission set is re-applied;
    - **targeted watch, every 10 s**, for recent demotions;
-   - **automatic media reset (P6)**: an identity's second violation inside its
+   - **automatic media reset (P6; PROVISIONAL, [Q63](../open-questions.md#q63--losing-standing-during-a-running-session))**: an identity's second violation inside its
      enforcement window (back while not eligible, or holding a source it is
      not entitled to) bumps `mediaRoomEpoch` by compare-and-set, with a
      `reset_media` row and a null actor, and moves the session to a new room.

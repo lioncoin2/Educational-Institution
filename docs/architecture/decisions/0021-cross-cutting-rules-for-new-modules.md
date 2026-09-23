@@ -82,7 +82,9 @@ Everything below is proposed. None of it exists today.
    emails, invitation tokens or hashes, LiveKit tokens or URLs. Transport noise
    is logs and metrics, never audit or events: token issuance, LiveKit joins,
    leaves and track publications, sweep corrections, authorization denials,
-   failed redemptions.
+   failed redemptions. The one exception is the automatic media-room reset
+   (PROVISIONAL, [Q63]): it is audited as `live.session.media_reset` with a
+   null actor, and is never an event.
 
 4. **Durability classes.**
    - **R**: loss is tolerable, because the fact is in the owner's table.
@@ -131,12 +133,25 @@ Everything below is proposed. None of it exists today.
    audience fits one page of 1,000; otherwise at most 1 + ⌈A/1000⌉, where
    A ≤ 10,000 is the number of accounts connected to this instance. Each call
    runs a fixed number k of statements that depends on the source (a
-   community chat's `MESSAGE_RECIPIENTS` page adds `heads`, and `statesOf`
-   while lagging), so the statement bound is k × (1 + ⌈A/1000⌉).
+   community chat's `MESSAGE_RECIPIENTS` page adds one `heads`, one
+   `statesOf` while lagging, and, on every non-empty page, two
+   `ACCOUNT_DIRECTORY.withPermission` calls for the `community.chat.read`
+   ceiling, `COMMUNITY_CHAT_READ_CEILING`, exported from
+   `communities/contracts/capabilities.ts`: the one Communities contract
+   addition P4 needs), so the statement bound is k × (1 + ⌈A/1000⌉).
    `ConnectionManager` gains `onlineUserIds()`, and the messaging relay moves
    onto the resolver (gate G1 of [0018](0018-community-chat-projection.md))
    with no contract change, because `MESSAGE_RECIPIENTS` already has
-   `onlyUserIds`.
+   `onlyUserIds`. A community chat's audience is messaging's named
+   projection ([0018](0018-community-chat-projection.md)): rows carrying
+   `source_version`, `source_membership_id` (the stint id, which decides
+   rejoins) and `source_joined_at`, under the shape CHECK
+   `conversation_participants_source_shape` over the three `source_*`
+   columns. Above `communityChatMaxServedMembers` the capacity switch refuses
+   a send with 412 `messaging.community_chat_over_capacity`, and `canPost`
+   (the `community.chat.post` permit is granted and `member_count` is within
+   `communityChatMaxServedMembers`) is false, so there is no `message.sent`
+   to fan out.
 
 8. **Protocol v1 grows only by additive server frames**, and the version is
    never bumped. New frames: `community.member.added`,
@@ -263,5 +278,6 @@ If accepted:
   "unavailable" default is used until P7b.
 
 [Q28]: ../open-questions.md#q28--what-deserves-a-notification-and-how-loudly
+[Q63]: ../open-questions.md#q63--losing-standing-during-a-running-session
 [Q66]: ../open-questions.md#q66--realtime-without-messagingread
 [Q67]: ../open-questions.md#q67--notifications-for-community-live-and-attendance-facts

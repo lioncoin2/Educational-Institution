@@ -213,7 +213,7 @@ export interface LivePresence { observe(liveSessionId: string): Promise<Presence
 ```
 
 - **No principal.** The caller is a trusted in-process module that has already
-  authorized, as with `MESSAGE_RECIPIENTS` (`message-recipients.ts:13-21`).
+  authorized, as with `MESSAGE_RECIPIENTS` (`message-recipients.ts:13-20`).
   Because a principal-less presence question is sensitive, an architecture test
   lets only attendance (and `app.module`, for wiring) import `presence.ts`.
   `LIVE_SESSIONS` is benign and open to any module.
@@ -641,7 +641,7 @@ permits, the table below maps the answer to the attendance act.
 | a permit | continue; the permit (basis, stint, grant, ceiling) is copied into the audit metadata | continue | continue |
 | `not_found` `communities.community_not_found` (unknown, or no ACTIVE stint) | 404 `attendance.session_not_found`, the same body as an unknown session | 404 `attendance.community_not_found` | 404 `attendance.snapshot_not_found` |
 | `forbidden` `identity.permission_denied` (no ceiling on any path) | 404 `attendance.session_not_found` | 404 `attendance.community_not_found` | 404 `attendance.snapshot_not_found` |
-| `forbidden` `communities.capability_required` (a member without the act) | 403 `attendance.not_allowed` | 403 `attendance.not_allowed` | 404 `attendance.snapshot_not_found` |
+| `forbidden` `communities.capability_required` (a member, and no act in the fallback order permits) | 403 `attendance.not_allowed` | 403 `attendance.not_allowed` | 404 `attendance.snapshot_not_found` |
 | `precondition_failed` `communities.community_locked` (only if the act table refuses while LOCKED, Q46) | 412 `attendance.community_not_open` | 412 `attendance.community_not_open` | 412 `attendance.community_not_open` |
 | the promise rejects (store unavailable) | 503 `unavailable`: fail closed, never a role-only answer | 503 | 503 |
 
@@ -798,7 +798,7 @@ routes.
 | `attendance.session_not_found` | not_found → 404 | POST: an unknown session, or a caller with no standing in its community (identical bodies) |
 | `attendance.community_not_found` | not_found → 404 | list: an unknown community, or one the caller has no standing in |
 | `attendance.snapshot_not_found` | not_found → 404 | one snapshot: unknown, invisible or not permitted, all identical |
-| `attendance.not_allowed` | forbidden → 403 | a member without the act |
+| `attendance.not_allowed` | forbidden → 403 | a member whom no basis in the fallback order of [§11.3](#113-attendanceaccess-how-refusals-map) permits |
 | `attendance.session_not_live` | precondition_failed → 412 | POST: the session is not live, or ended during the observation. Nothing stored |
 | `attendance.community_not_open` | precondition_failed → 412 | Communities' lifecycle gate refused the act (only if its table says so, Q46) |
 | `attendance.too_many_snapshots` | rate_limited → 429, `retryAfterSeconds` | the PROVISIONAL per-recorder limit (Q72) |
@@ -1057,7 +1057,7 @@ token issuance: each is a weaker, different observation.
 | **A client-supplied list** | The body carries only `clientRequestId`; the ValidationPipe rejects `participants`, `communityId` or `recordedBy` with 400 (`configure-app.ts:17-18`) | None |
 | Spoofing the recorder or the community | `recordedBy` = the principal. The community comes from Live's record and must equal the observation's. Reads take it from the stored header | Only the correctness of Live's session-to-community record |
 | Escalation through the unscoped `attendance.read` | Never consulted; a grep test. Every action asks `COMMUNITY_AUTHORIZATION` for that community, and views re-check every request | The correctness of Communities' act rules (Q69, Q43) |
-| Probing session, community or snapshot ids | Random UUIDs; identical 404 bodies ([§11.3](#113-attendanceaccess-how-refusals-map)); an unauthorized caller never reaches LiveKit | A member without the act learns a session exists in their own community (403). Timing is not addressed, as in existing modules |
+| Probing session, community or snapshot ids | Random UUIDs; identical 404 bodies ([§11.3](#113-attendanceaccess-how-refusals-map)); an unauthorized caller never reaches LiveKit | A member with no basis learns a session exists in their own community (403). Timing is not addressed, as in existing modules |
 | Denial of service by spamming the button | The per-recorder limit, charged after authorization, the key lookup and the active check; Live's concurrency limit, deadline and ceiling. A replay costs one indexed read | The in-memory limiter multiplies by the number of instances (`rate-limit.ts:1-9`); acceptable with one instance until P11 |
 | Replaying a key to read someone else's snapshot | The key is scoped by recorder, and a replay passes the record check first | None |
 | Presence data about minors leaking | The event, audit and logs carry ids, a timestamp and counts, never the list. Lists go only to those with a view basis ([§11.3](#113-attendanceaccess-how-refusals-map)), paged, names per page, no emails. The POST returns counts only. The app never labels anyone present | Who may see presence at all is policy (Q69; the Q22/Q25 reasoning); retention is Q3/Q71 |
@@ -1142,17 +1142,18 @@ One use case per act and no `AttendanceService`. The repository port is
 
 ## 23. Before P9 can start
 
-P9's entry condition is exactly three things: Q40 settled by the user, with
-§13's Attendance row (rows 1 and 2); Q69 settled by the reviewers and the user
-(rows 3a and 3b); and P6 done (hub
+P9's entry condition is exactly three things: Q40's gates cleared, that is the
+§13 step (Q35/Q36 and ADR 0015) and the reconciliation review with §13's
+Attendance row, or the user's ruling on Q40 (rows 1 and 2); Q69 settled by the
+reviewers and the user (rows 3a and 3b); and P6 done (hub
 [§25](communities-live-attendance.md#25-implementation-phases)).
 
 **Must be answered.** Nothing else moves the module out of HELD.
 
 | # | Question | Answered by | Recorded in |
 | --- | --- | --- | --- |
-| 1 | [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules)(b): an explicit ruling that live-presence snapshots are outside the Attendance hold and §13's Attendance row, **or** the hold is lifted after the reconciliation review (`academic-reconciliation.md:19-21`) **and** §13's Attendance row (`academic-reconciliation.md:504`) is met: scoping through row 3a, and [Q8](open-questions.md#q8--who-may-amend-attendance-and-is-a-reason-mandatory) and [Q12](open-questions.md#q12--timezone-and-academic-calendar) answered or ruled by the user not to apply to snapshots. The case for "outside" is [§13](#13-snapshots-and-operations-attendancerecord)'s table; this document does not decide it | the user | ADR 0020 |
-| 2 | Q40(a): §13's "before any new module" step (Q35 and Q36 answered, ADR 0015 landed; `academic-reconciliation.md:483-493`) completed, **or** ruled not to apply to attendance | the user | ADR 0020 |
+| 1 | [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules)(b): an explicit ruling that live-presence snapshots are outside the Attendance hold and §13's Attendance row, **or** the hold is lifted after the reconciliation review (`academic-reconciliation.md:19-21`) **and** §13's Attendance row (`academic-reconciliation.md:504`) is met: scoping through row 3a, and [Q8](open-questions.md#q8--who-may-amend-attendance-and-is-a-reason-mandatory) and [Q12](open-questions.md#q12--timezone-and-academic-calendar) answered or ruled by the user not to apply to snapshots. The case for "outside" is [§13](#13-snapshots-and-operations-attendancerecord)'s table; this document does not decide it | the reconciliation review (with §13's Attendance row), or the user's ruling | ADR 0020 |
+| 2 | Q40(a): §13's "before any new module" step (Q35 and Q36 answered, ADR 0015 landed; `academic-reconciliation.md:483-493`) completed, **or** ruled not to apply to attendance | the §13 step (Q35/Q36 and ADR 0015), or the user's ruling | ADR 0015 (the step); ADR 0020 (a ruling) |
 | 3a | [Q69](open-questions.md#q69--who-records-and-who-views-snapshots): community standing (`community.attendance.record` / `.view`) accepted as the scoping relationship instead of `ACADEMIC_RELATIONSHIPS` (`academic-reconciliation.md:504`; `open-questions.md:824-826`) | reviewers | ADR 0020; open-questions.md |
 | 3b | Q69's record and view defaults ([§11.1](#111-the-two-acts), the brief §9/§13/§15 default) confirmed or replaced | the user (the institution) | ADR 0020; open-questions.md (Q69) |
 
@@ -1165,8 +1166,8 @@ P9's entry condition is exactly three things: Q40 settled by the user, with
 | 6 | A persisted, community-scoped `LiveSession` with start and end; `ended` saved before `endRoom`; `LIVE_SESSIONS`, including `hostUserId`; `RtcParticipantObserver.listParticipants`, with the adapter contract suite green against a pinned LiveKit in CI | P6 |
 
 **Must be on record, not answered.** The provisional defaults of Q43, Q67, Q68,
-Q70, Q71 and Q72 ([§24](#24-open-questions)) are written into
-open-questions.md (P0), so P9 builds against recorded defaults. Each is the
+Q70, Q71 and Q72 ([§24](#24-open-questions)) are recorded in
+open-questions.md, so P9 builds against recorded defaults. Each is the
 conservative choice: it stores the raw fact, derives nothing, edits nothing and
 notifies no one, and a later answer changes code or adds a rule id without
 rewriting a stored snapshot. None of them blocks P9.

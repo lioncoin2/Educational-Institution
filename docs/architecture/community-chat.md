@@ -24,12 +24,16 @@ module, and whether the "before any new module" step of
 [academic-reconciliation.md §13](academic-reconciliation.md#13-minimal-recommended-changes-before-the-next-milestone)
 covers it is
 [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules).
-The provisional default is that it does. Nothing here lifts that gate.
+The provisional default is that it does, so P2, and with it P4, waits for the
+§13 step (Q35/Q36 and ADR 0015) or the user's ruling on Q40. Nothing here
+lifts that gate.
 
 **How to read it.** "Today" means the repository at commit `9670c47`; every
-such statement says so and cites `file:line`. Line numbers into other
-documents refer to them as they stand with this package, which added notes to
-several. Everything else is a proposal.
+such statement says so and cites `file:line`. Every `file:line` is at that
+commit, documents included (`messaging.md`, `events.md`,
+`module-boundaries.md`, `open-questions.md` and the rest): this package's
+notes have since moved lines in several of them. The code has not changed
+since `9670c47`. Everything else is a proposal.
 Every institutional default is labelled PROVISIONAL and names its open
 question. Every engineering bound that must be measured is labelled
 PROVISIONAL too.
@@ -61,7 +65,7 @@ Messaging V1 owns membership outright. All of the following is today's code:
 
 | Today | Evidence |
 | --- | --- |
-| One `conversation_participants` row per (conversation, user) holds the role, join and leave times, `addedBy`, the read watermark and the history window | `participant.ts:20-30`; `schema.ts:71-110`; `module-boundaries.md:214-220` |
+| One `conversation_participants` row per (conversation, user) holds the role, join and leave times, `addedBy`, the read watermark and the history window | `participant.ts:20-30`; `schema.ts:71-110`; `module-boundaries.md:176-182` |
 | Membership is checked in four places: the `ConversationAccess.member` chokepoint; the summary query, scoped to `left_at is null`; a re-check under the conversation row lock in `appendMessage`; and the `markRead` UPDATE, which takes no conversation lock | `conversation-access.ts:58-72`; `drizzle-messaging-read-model.ts:47,69`; `drizzle-messaging-repository.ts:121-124,307-318` |
 | One row lock (`SELECT … FOR UPDATE` on `conversations`) serializes the sends, adds and removes of a conversation | `drizzle-messaging-repository.ts:113-117,195-199` |
 | Three closed conversation types. Posting follows type and role; the history window follows type | `vocabulary.ts:11`; `schema.ts:53`; `participant.ts:64-67`; `messaging-policy.ts:43-45` |
@@ -71,7 +75,7 @@ Messaging V1 owns membership outright. All of the following is today's code:
 | `MessagingModule` imports identity and files, and exports exactly `MESSAGE_RECIPIENTS` and `MESSAGE_DELIVERY`. It subscribes to no event | `messaging.module.ts:62,108`; no `EVENT_SUBSCRIBER` under `src/modules/messaging/` |
 | `MESSAGE_RECIPIENTS` pages members by user id, at most 1,000, with `visibleSequence`, `readersOnly` and `onlyUserIds`. Its comment forbids delivery modules to keep a copy of membership | `message-recipients.ts:11-49` |
 | For every `message.sent`, the realtime relay walks every recipient page on every instance with a connection. The notifications translator walks every reader and stores one row per reader | `messaging-relay.ts:97-99,207-219`; `messaging-notification.translator.ts:182-205`; `notification-dispatcher.ts:141-161` |
-| The event bus is in-process and awaits each handler. An event is lost if the process dies between commit and publish | `event-bus.ts:43-56`; `events.md:154` |
+| The event bus is in-process and awaits each handler. An event is lost if the process dies between commit and publish | `event-bus.ts:43-56`; `events.md:141` |
 | Member pages scan the primary key and filter on `left_at`. No index covers a conversation's current members | `drizzle-messaging-read-model.ts:174-180`; `schema.ts:88-94` |
 | Fan-out is tested at 250 members. No load test exists | `messaging-persistence.spec.ts:522-551` |
 
@@ -195,7 +199,7 @@ is messaging's own, and six rules keep it honest:
 | **A provisioning port**: Communities pushes membership into a messaging contract (`provision`, `apply`) | Needs Communities → messaging. Messaging must still ask Communities about posting and readability, so the two edges close a cycle. The port would take no principal and would be injectable into realtime and notifications (`realtime.module.ts:34`; `notifications.module.ts:64`), guarded only by a test on who imports it. Posting rights, lock state and the title would each become a copy. Removal would fail open until the apply ran, and the removal response would wait on a busy conversation's lock |
 | **Dependency inversion**: a membership port declared in `messaging/contracts` and implemented by communities | Today no token is provided outside the module that declares it (`messaging.module.ts:105-106`; `identity.module.ts:150-152`). It becomes a Nest cycle the first time Communities needs anything from messaging. Its answer arrives outside messaging's transaction, so the re-check under the lock is lost, or a second pool connection is taken while holding the lock (the pool has 10, `database.ts:28`). Watermarks still need rows |
 | **A new conversation kind with no rows**: access and recipients asked of Communities each time | Watermarks and windows are per member (`participant.ts:20-30`). The conversation list and unread counts are SQL over those rows (`drizzle-messaging-read-model.ts:206-244`). `visibleSequence` cannot be served without `hidden_through_sequence` (`:156-159`). It rebuilds a projection without its guarantees, gives up atomicity under the lock, and needs keyset streams merged across modules |
-| **Pure event sync**: messaging applies `communities.member.*` deltas | The bus is in-process with no outbox; a crash between commit and publish loses the event (`event-bus.ts:43-56`; `events.md:154`). Without versions, drift cannot be detected. Events are kept only as wake-ups; the truth is pulled |
+| **Pure event sync**: messaging applies `communities.member.*` deltas | The bus is in-process with no outbox; a crash between commit and publish loses the event (`event-bus.ts:43-56`; `events.md:141`). Without versions, drift cannot be detected. Events are kept only as wake-ups; the truth is pulled |
 | **A new `ConversationType` `'COMMUNITY'`** | Widens a closed vocabulary shared by the DB CHECK (`schema.ts:53`), the event payloads, the notification copy (`notification_copy.dart:69-74`) and the Flutter enum; current apps would show the chat as `unknown` (`messaging.dart:11-23`). The behaviour branches are needed either way, and key on `community_id` instead |
 | **One transaction across both modules**, or in-process two-phase commit | No unit of work exists; each repository opens its own transaction. It would hold the community row and the conversation row together, inviting deadlocks under join storms |
 | **A shared table or a cross-module SQL view** | Forbidden: messaging's tables are private (`messaging-boundaries.spec.ts:72-77`), no module imports another's internals (`.dependency-cruiser.cjs:140-161`), and no foreign key crosses modules (`schema.ts:17-23`) |
@@ -242,7 +246,7 @@ Conversations whose `community_id` is NULL behave exactly as today.
 ### 5.3 Materialization
 
 Messaging creates the conversation itself, idempotently, with the pattern the
-DM pair already uses (`messaging.md:41-45`):
+DM pair already uses (`messaging.md:31-35`):
 
 ```sql
 INSERT INTO conversations (id, type, title, created_by, community_id, projected_membership_version)
@@ -447,7 +451,7 @@ grant, with the ceiling `communities.moderate` + `messaging.send`, and is
 refused while LOCKED. Grants arrive in P3, so before P3 only the owner posts.
 
 Sends to one conversation serialize on its row lock, as channels do today.
-That is adequate for a few posters (`messaging.md:463-466`). If Q51 lets
+That is adequate for a few posters (`messaging.md:444-447`). If Q51 lets
 thousands post, allocating sequences without the row lock is a later
 redesign.
 
@@ -520,9 +524,10 @@ their row at once.
 
 - Sync and sweeper together use at most two connections in the background
   (PROVISIONAL, Q26), because the pool has 10 per process (`database.ts:28`).
-- D1's one-per-transaction hint `communities.membership.changed` was dropped
-  in the integration. The per-member events carry `membershipVersion`, a batch
-  add is at most 200 per request, and each handler does O(1) work.
+- An earlier draft of this design had a one-per-transaction hint,
+  `communities.membership.changed`; it was dropped. The per-member events
+  carry `membershipVersion`, a batch add is at most 200 per request, and each
+  handler does O(1) work.
 - **Correctness never depends on the in-process bus.** The per-access check,
   the lag filter and the sweeper close every window a lost wake-up leaves.
   That is why `communities.member.removed`, the only S-class event, needs no
@@ -684,7 +689,7 @@ Membership churn:
 
 Community chats stay **disabled above the load-tested size** until all four
 gates hold. No size is load-tested today; even the 10,000-member `CHANNEL`
-figure is untested (`messaging.md:463-466`; `messaging-persistence.spec.ts:522-551`).
+figure is untested (`messaging.md:444-447`; `messaging-persistence.spec.ts:522-551`).
 
 | Gate | What | Where | Phase |
 | --- | --- | --- | --- |
@@ -798,7 +803,8 @@ MessagingReadModel += {
 };
 ```
 
-The names follow the integration's naming rule (D1 wrote them with "Group").
+The names follow this package's naming rule (an earlier draft of this design
+wrote them with "Group").
 `addParticipants` and `removeParticipant` are untouched. Both the Drizzle
 adapters and `InMemoryMessagingStore` implement the new methods with the same
 semantics, so mock mode keeps working (`messaging.module.ts:65-83`).
@@ -852,7 +858,7 @@ and `left_after_joined` accepts `left_at = joined_at` (`schema.ts:101-108`).
   and [Q27](open-questions.md#q27--how-long-are-notifications-kept).
 - **Later (P10, only after Q28).** The collapse seam Q28 already documents: a
   translator key, one unread notification per conversation updated in place
-  (`open-questions.md:697-701`). An additive `memberCount` on `message.sent`
+  (`open-questions.md:651-653`). An additive `memberCount` on `message.sent`
   only if Q28's answer depends on audience size. Notifications about
   community facts themselves (added, removed) are
   [Q67](open-questions.md#q67--notifications-for-community-live-and-attendance-facts);
@@ -922,8 +928,9 @@ uses (§7.3). Two properties it relies on:
 | The same, on realtime `subscribe` | — | — | frame `SERVER_ERROR` | the default branch of `realtime-sessions.ts:339-340` |
 | Too many requests to the new route | `rate_limited` | 429 | set in P4 | PROVISIONAL limit, Q26 |
 
-D1 spelled the 412 code `messaging.membership_managed_by_group`. The
-integration renamed it under its rule that code says Community, never Group
+An earlier draft of this design spelled the 412 code
+`messaging.membership_managed_by_group`. It was renamed under this package's
+rule that code says Community, never Group
 (the hub's opening,
 [communities-live-attendance.md](communities-live-attendance.md)).
 
@@ -968,7 +975,8 @@ and [A5](communities-live-attendance.md#a5-a-removed-member-loses-chat-and-live-
     │                 │               │                 │                       │ 12 repair: apply [U ACTIVE m v]
     │                 │               │                 │                       │    alone, under K's row lock
     │                 │               │                 │                       │──────────────────────▶│
-    │                 │ 13 authorize(U, C, community.chat.post) → canPost;      │                       │
+    │                 │ 13 authorize(U, C, community.chat.post) and the capacity│                       │
+    │                 │    switch (§7.2) → canPost;                             │                       │
     │                 │    COMMUNITY_DIRECTORY.describe([C]) → title            │                       │
     │                 │◀────────────────────────────────────────────────────────│                       │
     │ 14 200 ConversationResponse {type CHANNEL, communityId C, title, canPost, canManageMembers false} │
@@ -980,7 +988,7 @@ and [A5](communities-live-attendance.md#a5-a-removed-member-loses-chat-and-live-
 - If the wake-up at step 5 is lost, step 12 serves U anyway, and the sweeper
   applies the rest of the community's changes (S3).
 - The redemption itself (the token, the use count, the lock gate) is
-  [communities.md S3](communities.md#s3--redeem-a-link-p2-step-7-in-p3).
+  [communities.md S3](communities.md#s3--redeem-a-link-p2).
 
 ### S2. A member is removed while sending
 
@@ -1150,7 +1158,7 @@ act rule when a question is answered.
 
 | Question | What it decides here | Provisional default |
 | --- | --- | --- |
-| [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules) | Whether P2, and so P4, may start | The §13 gate applies; nothing is implemented until the user rules |
+| [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules) | Whether P2, and so P4, may start | The §13 gate applies; P2, and so P4, waits for the §13 step (Q35/Q36 and ADR 0015) or the user's ruling on Q40 |
 | [Q51](open-questions.md#q51--the-community-chat-who-may-post) | One chat per community; who posts | At most one chat, stored as `CHANNEL`; `chat.post` = the owner or a grant, refused while LOCKED; no message moderation in v1 |
 | [Q52](open-questions.md#q52--community-chat-history-for-newcomers-and-returners) | History for joiners and returners | `COMMUNITY_HISTORY = 'FULL'`; a rejoin starts a new window and watermark |
 | [Q53](open-questions.md#q53--system-notices-in-a-community-chat) | System notices in the chat | None; the chat is written by people only |
@@ -1186,7 +1194,7 @@ lag filter, the ceiling narrowing, G1–G4, the new route); the
 `MESSAGE_RECIPIENTS` comment (`message-recipients.ts:13-20`); the
 `MessagingModule` header, which says it depends "on nothing else"
 (`messaging.module.ts:50-60`); and the messaging section of
-`module-boundaries.md`. This pass added only a Proposed-change pointer to
+`module-boundaries.md`. This package added only a Proposed-change pointer to
 `messaging.md` and to that section, plus a correction note in `messaging.md`
 §11; the rewrites land with P4. If accepted, ADR 0018 would supersede ADR 0011
 §4–5 in part, because messaging would no longer own membership for

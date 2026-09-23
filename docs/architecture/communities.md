@@ -572,16 +572,16 @@ Participation acts are satisfied only by ACTIVE membership, never by a grant.
 Screen share and the speaker grant are per-session Live state and are never
 community acts ([live.md](live.md)).
 
-**The two vocabularies are disjoint, and a verification note.** The integrated
-design states that every act has three segments and so can never pass
-identity's shape CHECK. That holds for eleven acts but **not** for
+**The two vocabularies are disjoint, and a verification note.** An earlier
+draft of this design stated that every act has three segments and so can never
+pass identity's shape CHECK. That holds for eleven acts but **not** for
 `community.view` and `community.lock`, which have two segments and match
 `^[a-z]+[.][a-z_]+$`. Disjointness therefore rests on three guards, each
 tested: `isPermission(act)` is false for every act (no act is catalogued, and
 `can()` denies an uncatalogued permission); no identity namespace is
 `community` (singular); and the TypeScript unions `CommunityAct` and
 `Permission` share no member, so passing an act to `AuthorizationService` does
-not compile. The names stay as the integrated design fixed them.
+not compile. The names stay as this package fixes them.
 
 ### 6.4 Act rules — PROVISIONAL
 
@@ -596,7 +596,7 @@ required.
 | `members.invite` | `communities.moderate` | yes | none | no |
 | `members.remove` | `communities.moderate` | yes | `communities.manage` | yes |
 | `lock` | `communities.moderate` | yes | `communities.manage` | never blocked |
-| `chat.read` | `communities.read` + `messaging.read` | as a member | none | yes |
+| `chat.read` | `communities.read` + `messaging.read` (`COMMUNITY_CHAT_READ_CEILING`, [§10](#10-public-contracts)) | as a member | none | yes |
 | `chat.post` | `communities.moderate` + `messaging.send` | yes | none | no |
 | `live.start` | `communities.moderate` + `live.moderate` | yes | none | no |
 | `live.host` | as `live.start` | as `live.start` | none | while `runningLiveContinues` |
@@ -665,8 +665,8 @@ audit metadata. Invariants:
 | List, create, end grants (P3) | owner standing (R1) | owner; a holder may list their own |
 | Transfer ownership (P3) | owner standing, or `communities.manage` | owner, oversight (not to oneself) |
 
-**Reconciliation note.** The integrated act table gives
-`community.members.invite` no oversight path and refuses it while LOCKED,
+**Reconciliation note.** The act rules of [§6.4](#64-act-rules--provisional)
+give `community.members.invite` no oversight path and refuse it while LOCKED,
 while [Q43](open-questions.md#q43--institutional-oversight-of-communities),
 [Q46](open-questions.md#q46--what-does-locked-mean-and-who-may-lock) and
 [Q48](open-questions.md#q48--invitation-links) let a `communities.manage`
@@ -791,12 +791,12 @@ and [attendance.md](attendance.md)
 
 | Consumer | Edge permission | Asks | Notes |
 | --- | --- | --- | --- |
-| Messaging, read a community chat | `messaging.read` | `community.chat.read` | Every request; list views through `authorizeEach` ([community-chat.md](community-chat.md)) |
-| Messaging, post | `messaging.send` | `community.chat.post` | Refusal is the existing 403 `messaging.posting_not_allowed` |
+| Messaging, read a community chat | `messaging.read` | `community.chat.read` | Every request; list views through `authorizeEach` ([community-chat.md](community-chat.md)). Principal-less recipient pages are narrowed by `COMMUNITY_CHAT_READ_CEILING`: two `withPermission` calls per community-chat page ([community-chat.md §7.3](community-chat.md#73-who-receives-a-message-the-lag-filter)) |
+| Messaging, post | `messaging.send` | `community.chat.post` | Refusal is the existing 403 `messaging.posting_not_allowed`. Then Messaging's capacity switch: above `communityChatMaxServedMembers`, 412 `messaging.community_chat_over_capacity`. `canPost` is the permit and the switch together ([community-chat.md §7.2](community-chat.md#72-may-this-principal-send)) |
 | Live, start | `live.moderate` | `community.live.start` | The starter becomes host ([live.md](live.md)) |
 | Live, join / raise hand | `live.join` / `live.raise_hand` | `community.live.join` / `community.live.raise_hand` | Non-member → 404 `live.session_not_found` |
 | Live, moderate | `live.moderate` | `community.live.moderate`; else, if P is the host, `community.live.host` | Replaces the identity call with `ownerUserId`; `PROVISIONAL_POLICY_RULES` becomes `[]` in the same change (P6, ADR 0017) |
-| Attendance, record / view (P9, HELD) | per [attendance.md](attendance.md) | `community.attendance.record` / `.view` | Ceilings use no `attendance.*` permission ([Q69](open-questions.md#q69--who-records-and-who-views-snapshots)) |
+| Attendance, record / view (P9, HELD) | per [attendance.md](attendance.md) | record: `community.attendance.record`, then `community.live.moderate`, then (the session's host) `community.live.host`; view: `community.attendance.view`, then (the host or a recorder of that session) `community.view` | The fallback order of [attendance.md §11.3](attendance.md#113-attendanceaccess-how-refusals-map), PROVISIONAL ([Q69](open-questions.md#q69--who-records-and-who-views-snapshots)): a `forbidden` answer moves to the next act, so `communities.capability_required` is not mapped to 403 while a fallback remains. Ceilings use no `attendance.*` permission |
 
 No consumer reads a community's raw status. Principal-less consumers (sync,
 reconcilers, relays) read `CommunityHead.effects`; one that must know which
@@ -1175,7 +1175,26 @@ export type CommunityAct = CommunityCapability
   | (typeof COMMUNITY_PARTICIPATION)[number] | (typeof COMMUNITY_DERIVED_ACTS)[number];
 export function isCommunityCapability(v: string): v is CommunityCapability;
 export function isCommunityAct(v: string): v is CommunityAct;
+
+/** P4. The identity permissions of the community.chat.read ceiling (PROVISIONAL, §6.4). The act rules use it,
+ *  and Messaging narrows every community-chat page of MESSAGE_RECIPIENTS with it, one
+ *  ACCOUNT_DIRECTORY.withPermission call per permission, so the two paths cannot drift. */
+export const COMMUNITY_CHAT_READ_CEILING: readonly Permission[] = ['communities.read', 'messaging.read'];
 ```
+
+`COMMUNITY_CHAT_READ_CEILING` is the one addition to Communities' contracts
+that the community chat (P4) needs
+([community-chat.md §12.6](community-chat.md#126-what-communities-provides)):
+with it, each community-chat recipient page costs two `withPermission` calls
+([community-chat.md §7.3](community-chat.md#73-who-receives-a-message-the-lag-filter)).
+The rest of P4 is Messaging's own: the projection's three `source_*` columns
+(`source_version`, `source_membership_id`, which decides rejoins, and
+`source_joined_at`) under the shape CHECK
+`conversation_participants_source_shape`
+([community-chat.md §6.1](community-chat.md#61-shape-and-invariants)), and the
+capacity switch `communityChatMaxServedMembers`, above which a send answers
+412 `messaging.community_chat_over_capacity` and `canPost` is false
+([community-chat.md §7.2](community-chat.md#72-may-this-principal-send)).
 
 ### `COMMUNITY_AUTHORIZATION` (`authorization.ts`)
 
@@ -1304,10 +1323,10 @@ overseers. Trusted in-process, no principal.
 
 | Consumer | Uses |
 | --- | --- |
-| Messaging (P4, application layer only) | `COMMUNITY_AUTHORIZATION` (`chat.read`, `chat.post`); `COMMUNITY_MEMBERSHIP` (`heads`, `listHeads`, `statesOf`, `changesSince`, `members`); `COMMUNITY_DIRECTORY`; `member.*` events as wake-ups |
+| Messaging (P4, application layer only) | `COMMUNITY_AUTHORIZATION` (`chat.read`, `chat.post`); `COMMUNITY_MEMBERSHIP` (`heads`, `listHeads`, `statesOf`, `changesSince`, `members`); `COMMUNITY_DIRECTORY`; `COMMUNITY_CHAT_READ_CEILING`; `member.*` events as wake-ups |
 | Live (P6) | `COMMUNITY_AUTHORIZATION` (`live.start`, `live.host`, `live.moderate`, `live.join`, `live.raise_hand` per request; `permittedAmong` for `live.join`, `live.remain`, `live.moderate` and `live.host` in batches of 1,000 for the reconciler and `LIVE_AUDIENCE`); `COMMUNITY_MEMBERSHIP` (`heads` for session-wide effects); `COMMUNITY_CAPABILITY_HOLDERS` (moderators); `member.removed`, `capability.revoked`, `community.locked/unlocked` as accelerators |
 | Realtime (P5) | `COMMUNITY_MEMBERSHIP.members` (OnlineAudience); `CommunityEvents` |
-| Attendance (P9, HELD) | `COMMUNITY_AUTHORIZATION` (attendance acts) |
+| Attendance (P9, HELD) | `COMMUNITY_AUTHORIZATION` (the attendance acts, then the fallbacks `live.moderate`, `live.host` and `view` of [§6.12](#612-how-live-messaging-and-attendance-ask)) |
 | Notifications (P10, after Q67/Q28) | `COMMUNITY_MEMBERSHIP` or `COMMUNITY_CAPABILITY_HOLDERS` for recipients |
 
 **What Communities must not know**: conversations, chat data (no last message
@@ -1400,8 +1419,9 @@ unwrap Results; no business logic.
 | `DELETE /communities/:communityId/grants/:grantId` (P3) | owner | 204 (idempotent) | 404 `communities.grant_not_found` |
 | `PUT /communities/:communityId/owner {userId}` (P3) | owner, or `communities.manage` | 200 `CommunityResponse` | 409 `communities.owner_conflict`, 422 `communities.owner_ineligible`, 403 `communities.owner_self_assignment` |
 
-`communities.not_community_owner` is the delegation design's `not_group_owner`
-under the Community naming rule; `communities.grant_not_found` is named here. Any route
+`communities.not_community_owner` follows the Community naming rule
+([§1](#1-terminology)); an earlier draft of this design spelled it
+`not_group_owner`. `communities.grant_not_found` is named here. Any route
 may also answer 409 `communities.conflict` (a deadlock victim after one retry)
 and 503 `unavailable` (a store or directory failure, once P0 adds the kind).
 
@@ -1967,7 +1987,7 @@ Every PROVISIONAL default above is one of these. Full text in
 
 | Question | Provisional default used here |
 | --- | --- |
-| [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules) Governance gates | The §13 gate applies; P2 waits for the user's ruling |
+| [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules) Governance gates | The §13 gate applies; P2 waits for the §13 step (Q35/Q36 and ADR 0015) or the user's ruling on Q40 |
 | [Q41](open-questions.md#q41--what-is-a-community-and-who-may-create-one) What a community is; who creates | `create`: OWNER, ADMIN; `read`: all six roles; no kind; PARENT inactive |
 | [Q42](open-questions.md#q42--community-ownership) Ownership | One owner; implicit capabilities; cannot leave or be removed; transfer by owner or overseer, not to oneself; no recovery without an eligible member |
 | [Q43](open-questions.md#q43--institutional-oversight-of-communities) Oversight | [§6.11](#611-oversight-communitiesmanage); oversight reads audited |

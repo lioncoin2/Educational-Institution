@@ -10,7 +10,7 @@
 ("`operations` records attendance when a live session ends",
 `0006-event-architecture.md:9-10`) and module-boundaries.md's statement that
 operations derives attendance from `live.session.ended`
-(`module-boundaries.md:175-178`, `:288-290`). The rest of 0006 stands.
+(`module-boundaries.md:146-149`, `:241-243`). The rest of 0006 stands.
 Operations' contract types (`AttendanceState`, `SessionRef`,
 `AttendanceAmendment`) are unchanged. Builds on
 [0016](0016-communities-module.md), [0017](0017-community-scoped-authorization.md)
@@ -29,7 +29,8 @@ thresholds. The teacher, the owner and explicitly authorized managers can view
 the record. An `attendance.snapshot.recorded` event with ids and minimal
 metadata is defined; no notification is delivered.
 
-**What exists today:**
+**What exists today** (commit `9670c47`; every `file:line` citation in this
+record, documents included, refers to that commit):
 
 - There is no attendance module. Operations is contract-only: `AttendanceState
   = 'present' | 'absent' | 'late' | 'excused'`, a halaqa-keyed `SessionRef` and
@@ -41,7 +42,7 @@ metadata is defined; no notification is delivered.
 - Identity grants `attendance.read` and `attendance.manage` role-wide. The
   precondition recorded under [Q31] is that a module must scope them through
   `ACADEMIC_RELATIONSHIPS` or leave them unexercised
-  (`open-questions.md:870-876`).
+  (`open-questions.md:817-826`).
 - **The hold**: "Assignments, Attendance, Progress and Promotion do not start
   until this reconciliation has been reviewed"
   (`academic-reconciliation.md:19-21`), and §13's "before any new module" step
@@ -114,10 +115,19 @@ Everything below is proposed. None of it exists today.
    `COMMUNITY_AUTHORIZATION` for `community.attendance.record` or
    `community.attendance.view`, acts reserved in
    [0017](0017-community-scoped-authorization.md) and added in P9 by a CHECK
-   migration, with ceilings that use no `attendance.*` permission. The
-   community and the host come from `LIVE_SESSIONS.describe` when recording
-   and from the stored header when reading; the client never supplies
-   `recordedBy`, the participants or the recording community. Brief
+   migration, with ceilings that use no `attendance.*` permission. It asks in
+   the fixed fallback order of
+   [attendance.md §11.3](../attendance.md#113-attendanceaccess-how-refusals-map)
+   and moves to the next act only on a `forbidden` answer: to record,
+   `community.attendance.record`, then `community.live.moderate`, then
+   `community.live.host` for the session's host; to view,
+   `community.attendance.view`, then `community.view` with the membership
+   basis for the session's host or a recorder of it. So
+   `communities.capability_required` becomes 403 `attendance.not_allowed` only
+   when no act in that order permits (and on one snapshot, 404 even then).
+   The community and the host come from `LIVE_SESSIONS.describe` when
+   recording and from the stored header when reading; the client never
+   supplies `recordedBy`, the participants or the recording community. Brief
    §9/§13/§15 default, PROVISIONAL ([Q69]): the owner, the session's host
    (while `community.live.host` holds), its moderators
    ([live.md §7.2](../live.md#72-liveaccess-host-and-moderators)) and a
@@ -140,14 +150,16 @@ Everything below is proposed. None of it exists today.
     derivation, and nothing fills the app's halaqa attendance figures
     (PROVISIONAL, [Q70]).
 
-11. **Implementation is HELD.** It waits for three things: the user's ruling
-    on [Q40], (a) that §13's "before any new module" step
-    (`academic-reconciliation.md:483-493`) is complete or does not apply to
-    attendance, and (b) that live-presence snapshots are outside the
-    Attendance hold, or that the hold is lifted (the PROVISIONAL default is
-    that both apply); reviewers accepting community standing, instead of
-    `ACADEMIC_RELATIONSHIPS`, as the scoping relationship §13 requires
-    ([Q69]); and community-scoped, persisted live sessions (P6). If the hold
+11. **Implementation is HELD.** It waits for three things. First, [Q40]'s
+    two gates (the PROVISIONAL default is that both apply): (a) the §13 step
+    (Q35/Q36 and ADR 0015; `academic-reconciliation.md:483-493`) or the
+    user's ruling on Q40 that it does not apply to attendance, and (b) the
+    reconciliation review (`academic-reconciliation.md:19-21`) or the user's
+    ruling on Q40 that live-presence snapshots are outside the Attendance
+    hold. Second, [Q69] settled: reviewers accepting community standing,
+    instead of `ACADEMIC_RELATIONSHIPS`, as the scoping relationship §13
+    requires, and the user confirming or replacing its record and view
+    defaults. Third, community-scoped, persisted live sessions (P6). If the hold
     is lifted by the review rather than by a ruling that snapshots are outside
     it, P9 also waits for §13's Attendance row
     (`academic-reconciliation.md:504`): [Q8] and [Q12] answered, or ruled by
@@ -176,7 +188,7 @@ If accepted:
 ## Alternatives considered
 
 - **Operations owns snapshots.** Rejected: operations' charter is
-  delivery-agnostic (`module-boundaries.md:175-178`); its `SessionRef` is
+  delivery-agnostic (`module-boundaries.md:146-149`); its `SessionRef` is
   keyed on a halaqa and a schedule; it would start the held work; and the
   event would not be the brief's `attendance.snapshot.recorded`.
 - **Live owns and stores snapshots.** Rejected: the brief says Live does not

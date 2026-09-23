@@ -466,7 +466,10 @@ and `messaging-settings.ts`: 4,000 characters; groups ≤ 500 members; channels
 **Proposed design (Q40–Q72).** This also covers community size.
 PROVISIONAL (this question): no member limit as policy, and messaging's caps
 would not apply to community chats
-([communities.md §5.4](communities.md#54-no-ceiling-as-policy)).
+([communities.md §5.4](communities.md#54-no-ceiling-as-policy)). Posting in
+a community chat closes above `communityChatMaxServedMembers` (250), an
+engineering switch, until gates G1–G4 hold
+([community-chat.md §11.2](community-chat.md#112-gates-g1g4)).
 
 ---
 
@@ -656,8 +659,10 @@ change to the model or the API.
 
 **Proposed design (Q40–Q72).** Under today's rules one post in a
 30,000-member community chat would write 30,000 rows, kept forever. The
-design keeps community chats above the load-tested size disabled until this
-and Q28 are answered, or the cost is accepted (gate G4).
+design keeps community chats above the load-tested size disabled (a send
+returns 412 `messaging.community_chat_over_capacity`) until gates G1–G4
+hold; G4 is this question and Q28 answered, or the cost accepted
+([community-chat.md §11.2](community-chat.md#112-gates-g1g4)).
 
 ---
 
@@ -1310,7 +1315,9 @@ audiences.
 > [Q36](#q36--tahajji-دورة-التهجي-وإعداد-المعلمات-مدينة-التهجي-and-the-40-groups).
 > A community's membership is not a live audience: 30,000 members is not
 > 30,000 live participants. LiveKit facts below come from its server and SDK
-> source; LiveKit's documentation site could not be read from here.
+> source; LiveKit's documentation site could not be read from here. Every
+> `file:line` below is at commit `9670c47`, documents included, as in the
+> hub.
 
 ## Q40 — Governance: which gates apply to the new modules?
 
@@ -1340,13 +1347,15 @@ PROVISIONAL default: both apply. P0 (guards and corrections) and P1
 (hardening the existing live module) change only existing modules, and so
 are not gated by this question; they start only after the design is
 accepted and, for P1, after its visible behaviour changes are approved. The
-communities and attendance modules are not implemented until the user rules
-or the gate is complete. The module is named `communities` and has no
-halaqa link, so nothing answers Q36 in the meantime.
+communities module waits for the §13 step (Q35/Q36 and ADR 0015) or the
+user's ruling on Q40; the attendance module also waits for the
+reconciliation review (with §13's Attendance row) or that ruling. The module
+is named `communities` and has no halaqa link, so nothing answers Q36 in the
+meantime.
 
 **When answered.** No design changes either way; only phase entry does. If
-both apply, P2 waits for the §13 step, and P9 for the reconciliation review
-and for §13's Attendance row (scoping through
+both apply, P2 waits for the §13 step (Q35/Q36 and ADR 0015), and P9 also
+for the reconciliation review and for §13's Attendance row (scoping through
 [Q69](#q69--who-records-and-who-views-snapshots); Q8 and Q12 answered, or
 ruled not to apply). If either does not apply, the ruling is recorded in an
 ADR, and P2 or P9 may start once its other entry conditions hold (P9 also
@@ -1621,7 +1630,10 @@ grantee.
   only; no account is ever created;
 - there is no preview endpoint;
 - redemption re-checks that the creator currently holds
-  `community.members.invite`; if not, the link fails;
+  `community.members.invite`: from P2, the creator's identity ceiling and an
+  ACTIVE OWNER stint; P3 adds only the grant lookup. If not, the link fails
+  (404 `communities.invitation_invalid`), so a demoted creator's links stop
+  admitting from P2;
 - per-user and per-IP rate limits are development-safe defaults.
 
 **When answered.** Lifetimes and limits are constants (P2). Eligibility is
@@ -1716,6 +1728,11 @@ default:
 - posting is `community.chat.post`: the owner implicitly, or an explicit
   grant, with the ceiling `communities.moderate` + `messaging.send`;
   refused while LOCKED;
+- size: no policy rule, but an engineering switch. Above
+  `communityChatMaxServedMembers` (250) a send returns 412
+  `messaging.community_chat_over_capacity` and `canPost` is false, until
+  gates G1–G4 hold; reading is unaffected
+  ([community-chat.md §11.2](community-chat.md#112-gates-g1g4));
 - no moderation of messages in v1 (`community.messages.moderate` is
   reserved).
 
@@ -1742,7 +1759,8 @@ joined.
 ([community-chat.md §9](community-chat.md#9-read-watermarks-and-history-windows);
 [ADR 0018](decisions/0018-community-chat-projection.md)). PROVISIONAL
 default: `COMMUNITY_HISTORY = 'FULL'`, following Q21's channel rule. A
-rejoin starts a new window and watermark.
+rejoin (a new stint, told apart by `source_membership_id`) starts a new
+window and watermark.
 
 **When answered.** One constant (P4). Windows are stored per participant
 row, so a change applies to future joins only, without a migration.
@@ -2026,7 +2044,8 @@ visible cost. The open-source LiveKit server keeps refreshing a connected
 participant's token, so a token's lifetime does not bound access.
 
 **Built instead.** Nothing — design only
-([live.md §11.3](live.md#113-participant-sweep--every-60-s-per-live-session-staggered);
+([live.md §11.3](live.md#113-participant-sweep--every-60-s-per-live-session-staggered),
+[§11.4](live.md#114-targeted-watch--every-10-s);
 [ADR 0019](decisions/0019-community-scoped-live-sessions.md)). PROVISIONAL
 default:
 
@@ -2037,11 +2056,19 @@ default:
 - a host who loses standing loses moderation, but the session continues for
   the others;
 - only the affected person's client sees `PARTICIPANT_REMOVED`;
-- repeated rejoin attempts are counted and shown to moderators.
+- repeated rejoin attempts are counted and shown to moderators;
+- a second violation inside the enforcement window (an identity already
+  removed or demoted is observed again not eligible to stay, or holding a
+  source it is not entitled to publish) resets the media room automatically
+  (P6): every token the violator holds names a deleted room, and every
+  participant reconnects briefly. The audit `live.session.media_reset` has a
+  null actor.
 
 **When answered.** A different latency bound is the sweep interval (P6).
 Letting a session finish before ejecting someone is one condition in the
-event handler and the sweep.
+event handler and the sweep. Dropping the automatic media reset is one
+condition in the targeted watch, but removal alone is then not final on
+self-hosted LiveKit ([live.md §9](live.md#9-livekit-hardening)).
 
 ---
 

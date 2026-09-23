@@ -29,7 +29,9 @@ which is unanswered. "Group" stays the brief's product word only.
 [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules)
 (provisional default); it waits for acceptance of this design and approval of
 its visible changes (§2). P6 needs the Communities core and delegation (P2, P3),
-which wait for the user's ruling on Q40. The observation side (P9) is HELD by
+which wait for the
+[§13 step](academic-reconciliation.md#13-minimal-recommended-changes-before-the-next-milestone)
+(Q35/Q36 and ADR 0015) or the user's ruling on Q40. The observation side (P9) is HELD by
 Q40 and [Q69](open-questions.md#q69--who-records-and-who-views-snapshots).
 
 **How to read it.**
@@ -240,7 +242,7 @@ rows; never stored, never cached across requests.
 | Standing | Definition |
 | --- | --- |
 | `moderator` | `COMMUNITY_AUTHORIZATION` answers `community.live.moderate`; or the principal is `hostUserId` and it answers `community.live.host` (§7) |
-| `publishesByRight` | `moderator` and identity `live.speak`. PROVISIONAL ([Q54](open-questions.md#q54--who-starts-ends-and-moderates-a-live-session)): this extends today's host-only rule (`join-live-session.use-case.ts:83-91`) to every session moderator |
+| `publishesByRight` | `moderator` and identity `live.speak`. PROVISIONAL ([Q54](open-questions.md#q54--who-starts-ends-and-moderates-a-live-session)): this extends to every session moderator what today only the host has, through a host check in the use case itself (`join-live-session.use-case.ts:83-91`; not the `host-only-moderation` rule, §7.4) |
 | `speakerGrant` | holds a `granted` request in this session |
 | `presenter` | holds the open `PresenterGrant` |
 | `eligible` (to join) | a `community.live.join` permit, or `moderator` |
@@ -574,7 +576,7 @@ reconciler, `LIVE_AUDIENCE`) it asks a trusted batch,
 userIds`, which applies the act's ceiling (through
 `ACCOUNT_DIRECTORY.withPermission`), the owner, grant or membership basis
 (never oversight) and `statePermits`. Staying in a running session is the
-derived participation act `community.live.remain`: the ceiling and basis of
+derived act `community.live.remain` (in `COMMUNITY_DERIVED_ACTS`, like `community.live.host`): the ceiling and basis of
 `community.live.join`, allowed while `runningLiveContinues`. Both are
 additions to Communities that this design needs (P6). Only the session as a
 whole reads `CommunityHead.effects` (§11.3, step 2). The table is
@@ -592,10 +594,13 @@ its consequences for Live:
 
 ### 7.4 Retiring `host-only-moderation`
 
-**Today:** Live passes `ownerUserId` (`moderate-speaker.use-case.ts:163-167`,
-`join-live-session.use-case.ts:85-91`), and `restrictToResourceOwner` denies
+**Today:** Live passes `ownerUserId` with `live.moderate`
+(`moderate-speaker.use-case.ts:163-167`), and `restrictToResourceOwner` denies
 every non-host (`policy.ts:82-85`) with deny overriding (`policy.ts:50`).
 Delegated moderators, OWNER included, are refused.
+`join-live-session.use-case.ts:85-91` passes `ownerUserId` only for
+`live.speak`, which `host-only-moderation` does not cover, so the rule never
+fires there.
 
 **The change, in one P6 change set** (ADR 0017):
 
@@ -980,9 +985,11 @@ clients follow `ROOM_DELETED` → refetch → `/join` (§17) and receive tokens 
 the new room computed from Postgres. If LiveKit fails midway, the room sweep
 ensures the new room and deletes the old as an orphan. A capability observed
 below its desired set (a grant not yet applied) is never a violation. The
-cost is a brief reconnect for everyone in the room (measured in §21). This
-enforces decisions already taken (Q63); a reset or kick that a moderator
-chooses stays with Q64 (P12).
+cost is a brief reconnect for everyone in the room (measured in §21). The
+automatic reset is PROVISIONAL under
+[Q63](open-questions.md#q63--losing-standing-during-a-running-session), whose
+decisions it enforces; a reset or kick that a moderator chooses stays with
+Q64 (P12).
 
 ### 11.5 After a restart or a LiveKit outage
 
@@ -1096,7 +1103,7 @@ any of them.
 | --- | --- | --- | --- | --- |
 | `LiveEvents` + payload types (`contracts/events.ts`) | P0 move, byte-identical; P6 payloads | the event vocabulary (§14) | the domain factories import it | realtime relay; attendance (optional); notifications later (Q67) |
 | `LiveParticipantRole` (`contracts/participant-role.ts`) | P1 | `'moderator' \| 'speaker' \| 'listener'`, replacing `'host' \| 'speaker' \| 'listener'` with no alias (only `app.module` imports live; it also ends the name clash with messaging's `ParticipantRole`) | — | views; Flutter |
-| `LIVE_SESSIONS.describe(id)` (`contracts/live-sessions.ts`) | P6 | `{liveSessionId, communityId, active}` or null. Live's own record only; never calls the provider; no principal — the caller authorizes its own act | `LiveSessionsReader` | attendance; any future reader of session scope |
+| `LIVE_SESSIONS.describe(id)` (`contracts/live-sessions.ts`) | P6 | `LiveSessionScope` `{liveSessionId, communityId, hostUserId, active}` or null. Live's own record only; never calls the provider; no principal — the caller authorizes its own act | `LiveSessionsReader` | attendance; any future reader of session scope |
 | `LIVE_AUDIENCE` (`contracts/live-audience.ts`) | P6 | `participantsAmong(sessionId, ≤ 1,000 ids)`: those who may take part now, ignoring session state (`COMMUNITY_AUTHORIZATION.permittedAmong(C, ids, 'community.live.join')`, or a moderator); unknown session → `[]`. `moderators(sessionId, page ≤ 1,000)`: holders of `community.live.moderate` (`COMMUNITY_CAPABILITY_HOLDERS`, which applies the act's ceiling), plus the host while `permittedAmong(C, [hostUserId], 'community.live.host')` accepts them; `[]` once ended | `LiveAudienceService` over `COMMUNITY_AUTHORIZATION.permittedAmong` and `COMMUNITY_CAPABILITY_HOLDERS` | realtime `LiveRealtimeRelay` |
 | `LIVE_PRESENCE.observe(id)` (`contracts/presence.ts`) | P9 (HELD) | exactly one provider read, normalized under `provider_registry_v1` → `observed {…participants}` \| `not_found` \| `not_active` \| `unavailable` | `LivePresenceService` over `RTC_OBSERVER` | **attendance only** — an allow-list test fails any other importer |
 
@@ -1657,7 +1664,7 @@ is PROVISIONAL.
 | [Q5](open-questions.md#q5--what-happens-when-the-media-provider-and-our-record-disagree) | provider vs record | the record wins; the reconciler converges; `media` reported per call |
 | [Q12](open-questions.md#q12--timezone-and-academic-calendar) | scheduled sessions | none in Live; a schedule calls Start |
 | [Q26](open-questions.md#q26--realtime-limits) | rate limits, frame coalescing | §3.8 |
-| [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules) | P6 (through Communities) and P9 | P0 and P1 are not gated by Q40 (acceptance and approval still apply); the rest waits |
+| [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules) | P6 (through Communities) and P9 | P0 and P1 are not gated by Q40 (acceptance and approval still apply); P6 waits, through P2, for the §13 step (Q35/Q36 and ADR 0015) or the user's ruling on Q40; P9 also for the reconciliation review |
 | [Q46](open-questions.md#q46--what-does-locked-mean-and-who-may-lock) | LOCKED during a session | §7.3 |
 | [Q54](open-questions.md#q54--who-starts-ends-and-moderates-a-live-session) | start, host, moderators, acting on the host | §7.2 |
 | [Q55](open-questions.md#q55--parallel-live-sessions-in-one-community) | parallel sessions | one per community |
@@ -1669,7 +1676,7 @@ is PROVISIONAL.
 | [Q61](open-questions.md#q61--ending-abandoned-live-sessions) | abandoned sessions | `idle` after 900 s observed empty |
 | [Q62](open-questions.md#q62--floor-rules-beyond-first-come-first-served) | invitations to speak, yield, timeouts | hand only; yield allowed; no timeouts |
 | [Q63](open-questions.md#q63--losing-standing-during-a-running-session) | losing standing mid-session | event path, ≤ 60 s by the sweep; a media reset at a second violation (§11.4) |
-| [Q64](open-questions.md#q64--removing-a-participant-from-a-session) | kick, re-entry, media reset | seams only; the automatic reset at a second violation is enforcement (§11.4); a moderator's reset or kick waits (P12) |
+| [Q64](open-questions.md#q64--removing-a-participant-from-a-session) | kick, re-entry, media reset | seams only; the automatic reset at a second violation is Q63's (§11.4); a moderator's reset or kick waits (P12) |
 | [Q65](open-questions.md#q65--media-hosting-and-operations) | hosting, TURN, load-test safety | self-hosted, `auto_create=false`; TURN before the first class |
 | [Q66](open-questions.md#q66--realtime-without-messagingread) | frames without `messaging.read` | the gate stays; a coupling test |
 | [Q67](open-questions.md#q67--notifications-for-community-live-and-attendance-facts) | notifying session starts, grants | none; events published for later |
