@@ -12,6 +12,8 @@
  * share no member — passing an act to identity's `AuthorizationService` does
  * not compile.
  */
+import { Permissions, type Permission } from '../../identity/contracts/permissions';
+
 export const COMMUNITY_RESOURCE = 'communities.community';
 
 /**
@@ -33,6 +35,20 @@ export const COMMUNITY_CAPABILITIES = [
 ] as const;
 
 export type CommunityCapability = (typeof COMMUNITY_CAPABILITIES)[number];
+
+/**
+ * The identity permissions `community.chat.read` needs — its standing
+ * ceiling (PROVISIONAL, Q44). Published because two paths must agree on it:
+ * the act table, for every request a person makes, and messaging's recipient
+ * pages, which have no principal and narrow each page to the accounts that
+ * hold ALL of these (community-chat.md §7.3). One constant, so a member whose
+ * role lost part of it is refused on HTTP and receives nothing in the
+ * background either.
+ */
+export const COMMUNITY_CHAT_READ_CEILING: readonly Permission[] = Object.freeze([
+  Permissions.communities.read,
+  Permissions.messaging.read,
+]);
 
 /** Participation: satisfied by ACTIVE membership alone, never by a grant. */
 export const COMMUNITY_PARTICIPATION = [

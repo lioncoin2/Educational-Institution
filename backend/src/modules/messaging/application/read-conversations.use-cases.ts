@@ -5,6 +5,8 @@ import { Permissions } from '../../identity/contracts/permissions';
 import type { ConversationId } from '../domain/conversation';
 import { canManageMembers } from '../domain/participant';
 import { MESSAGING_READ_MODEL, type MessagingReadModel } from '../domain/ports';
+import { COMMUNITY_CHAT_MEMBERS_HIDDEN } from './community-chat-settings';
+import { CommunityChats } from './community-chats';
 import { CONVERSATION_NOT_FOUND, ConversationAccess } from './conversation-access';
 import {
   decodeConversationCursor,
@@ -20,6 +22,11 @@ import type { ConversationView, MessagePage, ParticipantView } from './views';
  * The caller's own conversations, most recently active first. There is no
  * parameter that widens this to anyone else's — the query starts from the
  * caller's memberships and never leaves them.
+ *
+ * A community chat on the page is shown only if Communities still lets the
+ * caller read it — its row is a projection, never an answer on its own — so
+ * a page may hold fewer items than its limit; the cursor still continues
+ * after the last row examined.
  */
 @Injectable()
 export class ListConversationsUseCase {
@@ -27,6 +34,7 @@ export class ListConversationsUseCase {
     private readonly access: ConversationAccess,
     @Inject(MESSAGING_READ_MODEL) private readonly readModel: MessagingReadModel,
     private readonly views: MessagingViews,
+    private readonly communityChats: CommunityChats,
   ) {}
 
   async execute(query: {
@@ -43,38 +51,56 @@ export class ListConversationsUseCase {
       limit: pageLimit(query.limit, PAGE_LIMITS.conversations),
       after: after.value,
     });
+    const readable = await this.communityChats.readable(query.principal, page.items);
+    if (!readable.ok) return readable;
+    const details = await this.communityChats.details(query.principal, readable.value);
+    if (!details.ok) return details;
     return ok({
-      items: await this.views.conversations(page.items),
+      items: await this.views.conversations(readable.value, details.value),
       nextCursor: page.next === null ? null : encodeConversationCursor(page.next),
     });
   }
 }
 
+/**
+ * One conversation as its member sees it — also what realtime `subscribe`
+ * asks, through MESSAGE_DELIVERY.position. It passes the access checkpoint
+ * first, so a community chat is asked of Communities (and the caller's row
+ * repaired if behind) before the summary is read.
+ */
 @Injectable()
 export class GetConversationUseCase {
   constructor(
     private readonly access: ConversationAccess,
     @Inject(MESSAGING_READ_MODEL) private readonly readModel: MessagingReadModel,
     private readonly views: MessagingViews,
+    private readonly communityChats: CommunityChats,
   ) {}
 
   async execute(query: {
     readonly principal: Principal;
     readonly conversationId: string;
   }): Promise<Result<ConversationView>> {
-    const allowed = this.access.authorize(
+    const membership = await this.access.member(
       query.principal,
-      Permissions.messaging.read,
       query.conversationId,
+      Permissions.messaging.read,
     );
-    if (!allowed.ok) return allowed;
+    if (!membership.ok) return membership;
+    return this.view(query.principal, membership.value.conversation.id);
+  }
+
+  /** The summary of a conversation the caller was just admitted to. */
+  async view(
+    principal: Principal,
+    conversationId: ConversationId,
+  ): Promise<Result<ConversationView>> {
     // The summary query itself is scoped to the caller's current membership.
-    const row = await this.readModel.conversationSummary(
-      query.conversationId as ConversationId,
-      query.principal.userId,
-    );
+    const row = await this.readModel.conversationSummary(conversationId, principal.userId);
     if (row === null) return err(CONVERSATION_NOT_FOUND);
-    const [view] = await this.views.conversations([row]);
+    const details = await this.communityChats.details(principal, [row]);
+    if (!details.ok) return details;
+    const [view] = await this.views.conversations([row], details.value);
     return view === undefined ? err(CONVERSATION_NOT_FOUND) : ok(view);
   }
 }
@@ -144,7 +170,9 @@ export class ListMessagesUseCase {
 /**
  * Who is in a conversation. In a channel, subscribers do not see one another
  * — a notice board does not publish its readers — so only its owner and
- * publishers may list them (provisional, Q22).
+ * publishers may list them (provisional, Q22). A community chat's members
+ * are never listed here, by anyone: the roster is Communities'
+ * (`community.members.view`).
  */
 @Injectable()
 export class ListParticipantsUseCase {
@@ -167,6 +195,7 @@ export class ListParticipantsUseCase {
     );
     if (!membership.ok) return membership;
     const { conversation, participant } = membership.value;
+    if (conversation.communityId !== null) return err(COMMUNITY_CHAT_MEMBERS_HIDDEN);
     if (
       conversation.type === 'CHANNEL' &&
       !canManageMembers(conversation.type, participant.role) &&

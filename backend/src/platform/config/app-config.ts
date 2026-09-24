@@ -62,6 +62,15 @@ export interface AppConfig {
      */
     readonly signingSecret: string;
   };
+  readonly messaging: {
+    /**
+     * The community-chat capacity switch (community-chat.md §11.2): above
+     * this many projected members a community chat refuses new posts until
+     * gates G1–G4 hold for a larger size. An engineering bound (PROVISIONAL,
+     * Q26), never a limit on a community's membership.
+     */
+    readonly communityChatMaxServedMembers: number;
+  };
 }
 
 export class ConfigurationError extends Error {
@@ -161,6 +170,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     problems.push('STORAGE_SIGNING_SECRET must differ from JWT_SECRET');
   }
 
+  const communityChatMaxServedMembers = readInt(
+    env.MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS,
+    250,
+  );
+  if (communityChatMaxServedMembers < 0) {
+    problems.push('MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS must not be negative');
+  }
+
   const accessTtlSeconds = readInt(env.JWT_ACCESS_TTL, 900);
   const refreshSessionTtlSeconds = readInt(env.REFRESH_SESSION_TTL_SECONDS, 30 * DAY);
   if (accessTtlSeconds <= 0 || refreshSessionTtlSeconds <= accessTtlSeconds) {
@@ -197,6 +214,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       localRoot: env.STORAGE_LOCAL_ROOT ?? './.storage',
       signingSecret: storageSigningSecret,
     }),
+    messaging: Object.freeze({ communityChatMaxServedMembers }),
   });
 
   if (problems.length > 0) throw new ConfigurationError(problems);

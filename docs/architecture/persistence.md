@@ -150,6 +150,12 @@ transcribed, and a test asserts the database and the constants agree.
 | --- | --- | --- |
 | `0011_communities_grants` | generated, **additive only** (plus a header comment) | `communities_capability_grants`: one row per grant, never deleted; the composite foreign key `(membership_id, community_id, user_id)` onto the stint's own triple (`community_members_stint_key`, from 0010), so a grant is bound to one stint of one community; CHECKs for the closed capability vocabulary, no self-grant and a consistent, one-way end; the partial unique "one ACTIVE grant per stint and capability" index and two ACTIVE-only lookup indexes |
 
+### Community chat (P4)
+
+| Migration | Kind | Does |
+| --- | --- | --- |
+| `0012_community_chat` | generated, **additive** (plus a header comment) | messaging's link to a community: `conversations.community_id` and `projected_membership_version`, and `conversation_participants.source_version`, `source_membership_id`, `source_joined_at` — all nullable, NULL on every existing row; CHECKs `conversations_community_chat_shape` and `conversation_participants_source_shape`; the partial unique `conversations_community_unique` (one chat per community) and the partial `conversation_participants_current_idx` (current members by conversation, gate G2). `conversations_title_shape` is replaced under its own name by a CHECK that also admits a community chat's NULL title and is identical for every row that existed; the drop and re-add run in the migration's one transaction ([community-chat.md §12.3](community-chat.md#123-persistence-proposal-one-additive-migration-in-p4)) |
+
 Each has its own upgrade test (`test/integration/communities-migrations.spec.ts`)
 asserting exactly its delta on a database already in use; the academic upgrade
 test stays pinned to 0007–0008.

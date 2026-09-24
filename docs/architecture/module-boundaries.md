@@ -264,21 +264,30 @@ a path, not a URL, not bytes.
 
 ## messaging
 
-**State:** implemented — Messaging V1. Domain, use cases, Postgres and
-in-memory adapters, HTTP, events, tests on real Postgres. See
-[messaging.md](messaging.md) and [ADR 0011](decisions/0011-messaging-v1.md).
+**State:** implemented — Messaging V1, plus community chats (P4). Domain,
+use cases, Postgres and in-memory adapters, HTTP, events, tests on real
+Postgres. See [messaging.md](messaging.md),
+[ADR 0011](decisions/0011-messaging-v1.md), and for community chats
+[community-chat.md](community-chat.md) and
+[ADR 0018](decisions/0018-community-chat-projection.md).
 
 **Responsibility.** Direct conversations, groups and channels: membership,
 server-decided ordering, idempotent sends, read state, and who may read an
-attachment.
+attachment. For a community's chat, everything but membership: messages,
+order, idempotency, attachments, read state, pagination and delivery — who
+belongs, reads and posts is Communities' answer.
 
-**Owned entities.** `Conversation`, `Participant` (membership, role, read
-watermark, visibility window), `Message`, `MessageAttachment` (a file
-reference).
+**Owned entities.** `Conversation` (with `communityId` for a community's
+chat), `Participant` (membership, role, read watermark, visibility window;
+for a community chat, a row of the named projection with its `source_*`
+provenance), `Message`, `MessageAttachment` (a file reference).
 
 **Use cases.** Start a DM; create a group or channel; send text, voice, image
 or file (four typed use cases); list conversations; open one; page messages;
-list members; mark read; add and remove people; leave; get an attachment link.
+list members; mark read; add and remove people; leave; get an attachment
+link; open a community's chat (`GetCommunityChatUseCase`). Background, for
+community chats: `CommunityChatSync`, `CommunityChatSweeper`,
+`CommunityChatReconciler` — the projection's only writers.
 
 **Public contract** (`messaging/contracts/`): the vocabulary
 (`ConversationType`, `MessageType`, `ParticipantRole`), the event names and
@@ -294,24 +303,28 @@ implements yet). It exports two providers: `MESSAGE_RECIPIENTS` and
 
 **Events.** `messaging.conversation.created`, `messaging.participant.added`,
 `messaging.participant.removed`, `messaging.message.sent`,
-`messaging.message.read` — ids and codes only.
+`messaging.message.read` — ids and codes only. A community chat raises only
+`message.sent` and `message.read`. **Subscribes to** `communities.member.added`
+and `communities.member.removed` as wake-ups for its projection, reading
+nothing from them but the community id.
 
 **Depends on.** `identity/contracts` (authorization, account directory),
-`files/contracts` (attachable uploads, download links), `shared`, `platform`.
+`files/contracts` (attachable uploads, download links),
+`communities/contracts` (`COMMUNITY_AUTHORIZATION`, `COMMUNITY_MEMBERSHIP`,
+`COMMUNITY_DIRECTORY`, `COMMUNITY_CHAT_READ_CEILING`, the event names — from
+the application layer only), `shared`, `platform`. `MessagingModule` imports
+`CommunitiesModule`; the edge points one way: Communities never reaches
+messaging, so no cycle can close.
 
 **Must not know.** How notifications are delivered, how anything is pushed in
-real time, how bytes are stored, or LiveKit. Architecture tests assert each:
-nothing in messaging reaches `notifications`, `realtime`, `live`, a WebSocket
-library, a push or object-store SDK, the filesystem, or files' internals.
-
-> **Proposed change:** see [community-chat.md](community-chat.md) (approved
-> design, [ADR 0018](decisions/0018-community-chat-projection.md) Accepted). A
-> community's chat would be a `CHANNEL` conversation linked by
-> `community_id`, and its participant rows a named, versioned projection of
-> Communities membership. Messaging's application layer would depend on
-> `communities/contracts` and ask Communities who may read and post. It would
-> refuse its own add, remove and leave for that conversation, and still
-> export the same two providers.
+real time, how bytes are stored, LiveKit, or Communities' tables, rules and
+internals. Architecture tests assert each: nothing in messaging reaches
+`notifications`, `realtime`, `live`, a WebSocket library, a push or
+object-store SDK, the filesystem, files' internals, or anything of
+Communities but its contracts (and its module file, for wiring); Communities
+reaches nothing of messaging; `MessagingModule` still exports exactly
+`MESSAGE_RECIPIENTS` and `MESSAGE_DELIVERY` — no way to write a
+conversation's members (`messaging-boundaries.spec.ts`).
 
 ---
 

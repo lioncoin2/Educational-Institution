@@ -2,10 +2,22 @@ import { Module } from '@nestjs/common';
 
 import { APP_CONFIG, type AppConfig } from '../../platform/config/app-config';
 import { DATABASE, type Database } from '../../platform/database';
+import { CommunitiesModule } from '../communities/communities.module';
 import { FilesModule } from '../files/files.module';
 import { IdentityModule } from '../identity/identity.module';
+import { CommunityChatController } from './api/community-chat.controller';
 import { ConversationsController } from './api/conversations.controller';
 import { GetAttachmentLinkUseCase } from './application/attachment-link.use-case';
+import { CommunityChatReconciler } from './application/community-chat-reconciler';
+import {
+  COMMUNITY_CHAT_SETTINGS,
+  DEFAULT_COMMUNITY_CHAT_SETTINGS,
+  type CommunityChatSettings,
+} from './application/community-chat-settings';
+import { CommunityChatSweeper } from './application/community-chat-sweeper';
+import { CommunityChatSync } from './application/community-chat-sync';
+import { GetCommunityChatUseCase } from './application/community-chat.use-case';
+import { CommunityChats } from './application/community-chats';
 import { ConversationAccess } from './application/conversation-access';
 import {
   ConversationFactory,
@@ -51,16 +63,24 @@ import { InMemoryMessagingStore } from './infrastructure/in-memory-messaging-sto
  * Messaging — conversations, membership, messages, ordering and read state.
  *
  * It depends on identity's contracts (may this principal…? who is this
- * account?) and files' contract (is this upload attachable? a link to it,
- * please), and on nothing else. It never imports a push provider or a
- * realtime transport: it publishes `messaging.*` events, and delivery
- * modules subscribe. It exports two things for those delivery modules —
- * `MESSAGE_RECIPIENTS` (who, as of now) and `MESSAGE_DELIVERY` (what they
- * see, and whether someone may follow a conversation).
+ * account?), files' contract (is this upload attachable? a link to it,
+ * please) and Communities' contracts (may this principal read, or post in,
+ * this community's chat? who belongs to it? what is it called?), and on
+ * nothing else. The last edge points one way only: Communities knows
+ * nothing of messaging, and a community's chat is an ordinary conversation
+ * whose participant rows are messaging's NAMED PROJECTION of Communities'
+ * membership, pulled — never pushed — and never an access answer on its own
+ * (community-chat.md).
+ *
+ * It never imports a push provider or a realtime transport: it publishes
+ * `messaging.*` events, and delivery modules subscribe. It exports two
+ * things for those delivery modules — `MESSAGE_RECIPIENTS` (who, as of now)
+ * and `MESSAGE_DELIVERY` (what they see, and whether someone may follow a
+ * conversation) — and no way at all to write a conversation's membership.
  */
 @Module({
-  imports: [IdentityModule, FilesModule],
-  controllers: [ConversationsController],
+  imports: [IdentityModule, FilesModule, CommunitiesModule],
+  controllers: [ConversationsController, CommunityChatController],
   providers: [
     // Without a database, one in-memory store serves both ports, so what is
     // written is what is read.
@@ -82,7 +102,20 @@ import { InMemoryMessagingStore } from './infrastructure/in-memory-messaging-sto
           : memory) satisfies MessagingReadModel,
     },
 
+    {
+      provide: COMMUNITY_CHAT_SETTINGS,
+      inject: [APP_CONFIG],
+      useFactory: (config: AppConfig): CommunityChatSettings => ({
+        ...DEFAULT_COMMUNITY_CHAT_SETTINGS,
+        maxServedMembers: config.messaging.communityChatMaxServedMembers,
+      }),
+    },
+
     ConversationAccess,
+    CommunityChatSync,
+    CommunityChatReconciler,
+    CommunityChatSweeper,
+    CommunityChats,
     MessagingViews,
     ConversationFactory,
     MessageSender,
@@ -102,6 +135,7 @@ import { InMemoryMessagingStore } from './infrastructure/in-memory-messaging-sto
     RemoveParticipantUseCase,
     LeaveConversationUseCase,
     GetAttachmentLinkUseCase,
+    GetCommunityChatUseCase,
     { provide: MESSAGE_RECIPIENTS, useClass: MessageRecipientsService },
     { provide: MESSAGE_DELIVERY, useClass: MessageDeliveryService },
   ],

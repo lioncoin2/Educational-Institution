@@ -9,6 +9,7 @@ import {
 import { asSeen, type Message } from '../domain/message';
 import { canManageMembers, canPost, type Participant } from '../domain/participant';
 import type { ConversationSummaryRow, MessageHead } from '../domain/ports';
+import type { CommunityChatDetails } from './community-chats';
 import type {
   ConversationView,
   MessagePreview,
@@ -32,27 +33,43 @@ export class MessagingViews {
     @Inject(FILE_ASSETS) private readonly files: FileAssets,
   ) {}
 
-  async conversations(rows: readonly ConversationSummaryRow[]): Promise<ConversationView[]> {
+  /**
+   * `communityChats` carries what Communities says about the community chats
+   * among the rows (title, posting); a community chat without an entry shows
+   * no title and cannot be posted to — the fail-closed default.
+   */
+  async conversations(
+    rows: readonly ConversationSummaryRow[],
+    communityChats: ReadonlyMap<string, CommunityChatDetails> = new Map(),
+  ): Promise<ConversationView[]> {
     const names = await this.names(
       rows.flatMap((row) => [row.counterpartUserId, row.lastMessage?.senderId ?? null]),
     );
     return rows.map((row) => {
       const { conversation, me } = row;
       const counterpart = row.counterpartUserId;
+      const community =
+        conversation.communityId === null
+          ? null
+          : (communityChats.get(conversation.id) ?? { title: null, canPost: false });
       return {
         id: conversation.id,
         type: conversation.type,
+        communityId: conversation.communityId,
         title:
-          conversation.type === 'DIRECT'
-            ? counterpart === null
-              ? null
-              : (names.get(counterpart) ?? null)
-            : conversation.title,
+          community !== null
+            ? community.title
+            : conversation.type === 'DIRECT'
+              ? counterpart === null
+                ? null
+                : (names.get(counterpart) ?? null)
+              : conversation.title,
         counterpartUserId: counterpart,
         memberCount: conversation.memberCount,
-        myRole: me.role,
-        canPost: canPost(conversation.type, me.role),
-        canManageMembers: canManageMembers(conversation.type, me.role),
+        // A community chat's row is always a plain MEMBER: roles there are Communities'.
+        myRole: community !== null ? 'MEMBER' : me.role,
+        canPost: community !== null ? community.canPost : canPost(conversation.type, me.role),
+        canManageMembers: community !== null ? false : canManageMembers(conversation.type, me.role),
         lastSequence: conversation.lastSequence,
         lastReadSequence: me.lastReadSequence,
         unreadCount: row.unreadCount,

@@ -62,6 +62,8 @@ export interface MessagePreviewResponse {
 export interface ConversationResponse {
   readonly id: string;
   readonly type: ConversationType;
+  /** Set for a community's chat (additive: older apps ignore it). */
+  readonly communityId: string | null;
   readonly title: string | null;
   readonly counterpartUserId: string | null;
   readonly memberCount: number;

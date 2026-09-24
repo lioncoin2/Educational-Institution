@@ -89,6 +89,7 @@ describe('route authorization', () => {
       'modules/identity/api/admin-users.controller.ts#AdminUsersController',
       'modules/identity/api/auth.controller.ts#AuthController',
       'modules/live/api/live.controller.ts#LiveController',
+      'modules/messaging/api/community-chat.controller.ts#CommunityChatController',
       'modules/messaging/api/conversations.controller.ts#ConversationsController',
       'modules/notifications/api/notifications.controller.ts#NotificationsController',
       'platform/health/health.controller.ts#HealthController',
@@ -240,6 +241,20 @@ describe('route authorization', () => {
       'CommunityGrantsController.grant': 'communities.moderate',
       'CommunityGrantsController.revoke': 'communities.moderate',
     });
+  });
+
+  // A community's chat is opened with messaging.read at the edge — never
+  // public, never merely authenticated — and the use case asks Communities for
+  // community.chat.read before anything is read or created. It is the only
+  // route messaging adds for community chats: nothing in messaging adds,
+  // removes or lists their members.
+  it('holds the community chat route to messaging.read, and adds no other', () => {
+    const communityChat = Object.fromEntries(
+      routes
+        .filter((route) => route.name.startsWith('CommunityChatController.'))
+        .map((route) => [route.name, route.permission]),
+    );
+    expect(communityChat).toEqual({ 'CommunityChatController.conversation': 'messaging.read' });
   });
 
   it('puts every administrative route behind a permission, never mere authentication', () => {

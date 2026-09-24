@@ -21,6 +21,8 @@ export function toConversation(row: ConversationRow): Conversation {
     lastSequence: row.lastSequence,
     lastMessageAt: row.lastMessageAt,
     memberCount: row.memberCount,
+    communityId: row.communityId,
+    projectedMembershipVersion: row.projectedMembershipVersion,
   };
 }
 
@@ -36,6 +38,8 @@ export function conversationRow(conversation: Conversation): ConversationRow {
     lastSequence: conversation.lastSequence,
     lastMessageAt: conversation.lastMessageAt,
     memberCount: conversation.memberCount,
+    communityId: conversation.communityId,
+    projectedMembershipVersion: conversation.projectedMembershipVersion,
   };
 }
 
@@ -49,6 +53,9 @@ export function toParticipant(row: ParticipantRow): Participant {
     addedBy: row.addedBy,
     lastReadSequence: row.lastReadSequence,
     hiddenThroughSequence: row.hiddenThroughSequence,
+    sourceVersion: row.sourceVersion,
+    sourceMembershipId: row.sourceMembershipId,
+    sourceJoinedAt: row.sourceJoinedAt,
   };
 }
 
@@ -62,6 +69,9 @@ export function participantRow(participant: Participant): ParticipantRow {
     addedBy: participant.addedBy,
     lastReadSequence: participant.lastReadSequence,
     hiddenThroughSequence: participant.hiddenThroughSequence,
+    sourceVersion: participant.sourceVersion,
+    sourceMembershipId: participant.sourceMembershipId,
+    sourceJoinedAt: participant.sourceJoinedAt,
   };
 }
 
@@ -102,6 +112,10 @@ export function date(value: unknown): Date {
 
 export function dateOrNull(value: unknown): Date | null {
   return value === null || value === undefined ? null : date(value);
+}
+
+export function numOrNull(value: unknown): number | null {
+  return value === null || value === undefined ? null : num(value);
 }
 
 export function str(value: unknown): string {

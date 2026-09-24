@@ -32,6 +32,18 @@ export interface Conversation {
   readonly lastSequence: number;
   readonly lastMessageAt: Date | null;
   readonly memberCount: number;
+  /**
+   * The community whose chat this is (community-chat.md §5), or null for
+   * every conversation whose membership messaging manages. Set once, when
+   * the chat is materialized; it survives renames, locks, owner transfers
+   * and every membership change, because it is the community's stable id.
+   */
+  readonly communityId: string | null;
+  /**
+   * A community chat's projection reflects every membership change of its
+   * community up to this version (§6.1, C6). Null exactly when `communityId` is.
+   */
+  readonly projectedMembershipVersion: number | null;
 }
 
 export interface NewConversation {
@@ -67,7 +79,14 @@ function conversation(
   fields: Pick<Conversation, 'id' | 'type' | 'title' | 'createdBy' | 'createdAt' | 'directPair'>,
   memberCount: number,
 ): Conversation {
-  return { ...fields, lastSequence: 0, lastMessageAt: null, memberCount };
+  return {
+    ...fields,
+    lastSequence: 0,
+    lastMessageAt: null,
+    memberCount,
+    communityId: null,
+    projectedMembershipVersion: null,
+  };
 }
 
 export function newDirectConversation(input: {

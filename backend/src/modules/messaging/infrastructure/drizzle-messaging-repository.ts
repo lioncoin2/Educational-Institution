@@ -1,13 +1,21 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import { DATABASE, isUniqueViolation, type Database } from '../../../platform/database';
-import type { ConversationId, NewConversation } from '../domain/conversation';
+import {
+  checkApplyBatch,
+  newCommunityChat,
+  projectMember,
+  type CommunityMemberState,
+  type ProjectionTransition,
+} from '../domain/community-chat';
+import type { Conversation, ConversationId, NewConversation } from '../domain/conversation';
 import { sameContent, type Message, type MessageDraft, type MessageId } from '../domain/message';
 import { isActive, newParticipant, type Participant } from '../domain/participant';
 import type {
   AddParticipantsOutcome,
   AppendOutcome,
+  ApplyMembershipOutcome,
   CreateDirectOutcome,
   MarkReadOutcome,
   MessagingRepository,
@@ -324,6 +332,195 @@ export class DrizzleMessagingRepository implements MessagingRepository {
     return isActive(current)
       ? { kind: 'unchanged', lastReadSequence: current.lastReadSequence }
       : { kind: 'not_participant' };
+  }
+
+  async materializeCommunityChat(input: {
+    readonly id: ConversationId;
+    readonly communityId: string;
+    readonly at: Date;
+  }): Promise<Conversation> {
+    // The partial unique index arbitrates: a concurrent materialization of the
+    // same community waits here for the other transaction, then does nothing.
+    await this.db
+      .insert(conversations)
+      .values(conversationRow(newCommunityChat(input)))
+      .onConflictDoNothing({
+        target: conversations.communityId,
+        where: sql`${conversations.communityId} is not null`,
+      });
+    const rows = await this.db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.communityId, input.communityId))
+      .limit(1);
+    const row = rows[0];
+    if (row === undefined) throw new Error('A community chat vanished during materialization.');
+    return toConversation(row);
+  }
+
+  async applyCommunityMembership(input: {
+    readonly conversationId: ConversationId;
+    readonly states: readonly CommunityMemberState[];
+    readonly advance: { readonly from: number; readonly to: number } | null;
+    readonly override?: true;
+    readonly at: Date;
+  }): Promise<ApplyMembershipOutcome> {
+    checkApplyBatch(input.states);
+    return this.db.transaction(async (tx) => {
+      // The lock appendMessage takes: an apply and a send never interleave.
+      const locked = await tx
+        .select()
+        .from(conversations)
+        .where(eq(conversations.id, input.conversationId))
+        .for('update');
+      const row = locked[0];
+      if (row === undefined) return { kind: 'conversation_not_found' } as const;
+      const conversation = toConversation(row);
+      if (conversation.communityId === null) return { kind: 'not_community_chat' } as const;
+
+      // The members' rows too, in key order: markRead moves a watermark
+      // without the conversation lock, and must not be overwritten by a value
+      // read a moment before it. One array parameter, however many members.
+      const userIds = input.states.map((state) => state.userId);
+      const current =
+        userIds.length === 0
+          ? []
+          : await tx
+              .select()
+              .from(conversationParticipants)
+              .where(
+                and(
+                  eq(conversationParticipants.conversationId, conversation.id),
+                  sql`${conversationParticipants.userId} = any(${sql.param(userIds)}::text[])`,
+                ),
+              )
+              .orderBy(asc(conversationParticipants.userId))
+              .for('update');
+      const before = new Map(current.map((found) => [found.userId, toParticipant(found)]));
+
+      const transitions = new Map<string, ProjectionTransition>();
+      const writes: Participant[] = [];
+      for (const state of input.states) {
+        const projected = projectMember(
+          before.get(state.userId) ?? null,
+          state,
+          conversation,
+          input.at,
+          { override: input.override },
+        );
+        if (projected.transition === 'ignored' || projected.next === null) continue;
+        transitions.set(state.userId, projected.transition);
+        writes.push(projected.next);
+      }
+
+      const counts = { joined: 0, rejoined: 0, left: 0, tombstoned: 0 };
+      let delta = 0;
+      if (writes.length > 0) {
+        const written = await this.upsertProjected(tx, writes, input.override === true);
+        // C5, from what was really written: rows read under the lock, before
+        // and after.
+        for (const after of written) {
+          const was = before.get(after.userId);
+          delta += Number(after.current) - Number(was !== undefined && was.leftAt === null);
+          const transition = transitions.get(after.userId);
+          if (transition !== undefined && transition !== 'bumped' && transition !== 'ignored') {
+            counts[transition] += 1;
+          }
+        }
+      }
+
+      const advance = input.advance;
+      if (delta === 0 && advance === null) {
+        return {
+          kind: 'applied',
+          ...counts,
+          projectedVersion: conversation.projectedMembershipVersion ?? 0,
+          memberCount: conversation.memberCount,
+        } as const;
+      }
+      // Contiguous and monotonic (C6): the version moves only if everything
+      // up to `from` was already reflected, and `greatest` never moves it
+      // back. The check sits in a CASE, so it never skips the count (C5).
+      const updated = await tx
+        .update(conversations)
+        .set({
+          memberCount: sql`${conversations.memberCount} + ${delta}`,
+          projectedMembershipVersion:
+            advance === null
+              ? sql`${conversations.projectedMembershipVersion}`
+              : sql`case when ${conversations.projectedMembershipVersion} >= ${advance.from} then greatest(${conversations.projectedMembershipVersion}, ${advance.to}) else ${conversations.projectedMembershipVersion} end`,
+        })
+        .where(eq(conversations.id, conversation.id))
+        .returning({
+          memberCount: conversations.memberCount,
+          projectedVersion: conversations.projectedMembershipVersion,
+        });
+      const after = updated[0];
+      if (after === undefined) throw new Error('A locked conversation vanished during an apply.');
+      return {
+        kind: 'applied',
+        ...counts,
+        projectedVersion: after.projectedVersion ?? 0,
+        memberCount: after.memberCount,
+      } as const;
+    });
+  }
+
+  /**
+   * The projection rows, written in ONE statement of eleven array parameters
+   * — a batch of 1,000 is not 11,000 bind values to build and serialize while
+   * the conversation lock is held. The register's guard is repeated here, in
+   * the database: only a newer version writes, whatever the code decided.
+   * The reconciler's override is the one writer allowed past it.
+   */
+  private async upsertProjected(
+    tx: Transaction,
+    writes: readonly Participant[],
+    override: boolean,
+  ): Promise<{ readonly userId: string; readonly current: boolean }[]> {
+    const column = <T>(pick: (participant: Participant) => T) => sql.param(writes.map(pick));
+    const result = await tx.execute(sql`
+      insert into ${conversationParticipants} (
+        conversation_id, user_id, role, joined_at, left_at, added_by, last_read_sequence,
+        hidden_through_sequence, source_version, source_membership_id, source_joined_at)
+      select * from unnest(
+        ${column((p) => p.conversationId)}::text[],
+        ${column((p) => p.userId)}::text[],
+        ${column((p) => p.role)}::text[],
+        ${column((p) => p.joinedAt)}::timestamptz[],
+        ${column((p) => p.leftAt)}::timestamptz[],
+        ${column((p) => p.addedBy)}::text[],
+        ${column((p) => p.lastReadSequence)}::bigint[],
+        ${column((p) => p.hiddenThroughSequence)}::bigint[],
+        ${column((p) => p.sourceVersion)}::bigint[],
+        ${column((p) => p.sourceMembershipId)}::text[],
+        ${column((p) => p.sourceJoinedAt)}::timestamptz[])
+      on conflict (conversation_id, user_id) do update set
+        role = excluded.role,
+        joined_at = excluded.joined_at,
+        left_at = excluded.left_at,
+        added_by = excluded.added_by,
+        last_read_sequence = excluded.last_read_sequence,
+        hidden_through_sequence = excluded.hidden_through_sequence,
+        source_version = excluded.source_version,
+        source_membership_id = excluded.source_membership_id,
+        source_joined_at = excluded.source_joined_at
+      ${override ? sql`` : sql`where coalesce(${conversationParticipants.sourceVersion}, 0) < excluded.source_version`}
+      returning user_id, left_at is null as current`);
+    return result.rows.map((row) => ({
+      userId: String(row.user_id),
+      current: row.current === true,
+    }));
+  }
+
+  async resetProjectedVersion(conversationId: ConversationId, to: number): Promise<void> {
+    if (!Number.isSafeInteger(to) || to < 0) {
+      throw new RangeError('A projected version is a whole number from 0.');
+    }
+    await this.db
+      .update(conversations)
+      .set({ projectedMembershipVersion: to })
+      .where(and(eq(conversations.id, conversationId), isNotNull(conversations.communityId)));
   }
 
   private async participant(

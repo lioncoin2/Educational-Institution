@@ -9,6 +9,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
@@ -25,9 +26,13 @@ import type { ConversationType, MessageType, ParticipantRole } from '../contract
  * The guarantees the brief asks the DATABASE to make are here, by name:
  *
  *   conversations_direct_pair_unique   one direct conversation per pair
+ *   conversations_community_unique     one chat per community
  *   conversation_participants_pkey     one membership row per person
  *   messages_conversation_sequence_unique   one message per position
  *   messages_idempotency_unique        one message per client retry key
+ *
+ * `community_id` is Communities' id, as plain text: like account ids, no
+ * foreign key crosses into another module's tables.
  *
  * Sequences are bigint (mode "number": exact to 2^53, far beyond any chat).
  */
@@ -47,17 +52,31 @@ export const conversations = pgTable(
     lastMessageAt: timestamp('last_message_at', { withTimezone: true }),
     /** Current members, maintained in the same transactions as membership. */
     memberCount: integer('member_count').notNull().default(0),
+    /** A community chat's community (community-chat.md §5); null for every other conversation. */
+    communityId: text('community_id'),
+    /** How far a community chat's projection reaches (§6.1, C6); null exactly when community_id is. */
+    projectedMembershipVersion: bigint('projected_membership_version', { mode: 'number' }),
   },
   (table) => [
     unique('conversations_direct_pair_unique').on(table.directUserLow, table.directUserHigh),
+    // Decides racing materializations: one chat per community (C3).
+    uniqueIndex('conversations_community_unique')
+      .on(table.communityId)
+      .where(sql`${table.communityId} is not null`),
     check('conversations_type_valid', sql`${table.type} in ('DIRECT', 'GROUP', 'CHANNEL')`),
     check(
       'conversations_direct_pair_shape',
       sql`(${table.directUserLow} is null) = (${table.directUserHigh} is null) and (${table.type} = 'DIRECT') = (${table.directUserLow} is not null) and (${table.directUserLow} is null or ${table.directUserLow} < ${table.directUserHigh})`,
     ),
+    // A community chat's title is Communities', read when viewed: NULL here (C4).
     check(
       'conversations_title_shape',
-      sql`(${table.type} = 'DIRECT') = (${table.title} is null) and (${table.title} is null or char_length(${table.title}) between 1 and 100)`,
+      sql`(${table.type} = 'DIRECT' or ${table.communityId} is not null) = (${table.title} is null) and (${table.title} is null or char_length(${table.title}) between 1 and 100)`,
+    ),
+    // C1, C2: linked exactly when projected; never a DM; the version is a count.
+    check(
+      'conversations_community_chat_shape',
+      sql`(${table.communityId} is null) = (${table.projectedMembershipVersion} is null) and (${table.communityId} is null or ${table.type} <> 'DIRECT') and (${table.projectedMembershipVersion} is null or ${table.projectedMembershipVersion} >= 0)`,
     ),
     check('conversations_sequence_nonnegative', sql`${table.lastSequence} >= 0`),
     check('conversations_member_count_nonnegative', sql`${table.memberCount} >= 0`),
@@ -84,6 +103,14 @@ export const conversationParticipants = pgTable(
     hiddenThroughSequence: bigint('hidden_through_sequence', { mode: 'number' })
       .notNull()
       .default(0),
+    /**
+     * A community chat's row only — its provenance in the projection
+     * (community-chat.md §6): the authority's version, stint id and stint
+     * start. The stint id decides rejoins; the start is never compared.
+     */
+    sourceVersion: bigint('source_version', { mode: 'number' }),
+    sourceMembershipId: text('source_membership_id'),
+    sourceJoinedAt: timestamp('source_joined_at', { withTimezone: true }),
   },
   (table) => [
     // Also serves "members of this conversation, by user id" (fan-out paging).
@@ -91,6 +118,11 @@ export const conversationParticipants = pgTable(
     // "My conversations": a person's current memberships only.
     index('conversation_participants_user_current_idx')
       .on(table.userId)
+      .where(sql`${table.leftAt} is null`),
+    // A conversation's CURRENT members, by user id — member pages stay index
+    // range scans however much churn and how many tombstones pile up (G2).
+    index('conversation_participants_current_idx')
+      .on(table.conversationId, table.userId)
       .where(sql`${table.leftAt} is null`),
     check(
       'conversation_participants_role_valid',
@@ -105,6 +137,12 @@ export const conversationParticipants = pgTable(
     check(
       'conversation_participants_left_after_joined',
       sql`${table.leftAt} is null or ${table.leftAt} >= ${table.joinedAt}`,
+    ),
+    // A projected row carries its whole provenance, and is always a plain
+    // MEMBER nobody here added (C7).
+    check(
+      'conversation_participants_source_shape',
+      sql`(${table.sourceVersion} is null) = (${table.sourceMembershipId} is null) and (${table.sourceVersion} is null) = (${table.sourceJoinedAt} is null) and (${table.sourceVersion} is null or ${table.sourceVersion} > 0) and (${table.sourceVersion} is null or (${table.role} = 'MEMBER' and ${table.addedBy} is null))`,
     ),
   ],
 );

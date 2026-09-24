@@ -1,5 +1,6 @@
 import { Permissions, type Permission } from '../../identity/contracts/permissions';
 import {
+  COMMUNITY_CHAT_READ_CEILING,
   isCommunityCapability,
   isCommunityParticipationAct,
   type CommunityAct,
@@ -76,7 +77,9 @@ export const ACT_RULES: Readonly<Record<CommunityAct, ActRule>> = Object.freeze(
     [communities.manage],
   ),
   'community.lock': rule('community.lock', [communities.moderate], [communities.manage]),
-  'community.chat.read': rule('community.chat.read', [communities.read, messaging.read], null),
+  // The published constant, so messaging's principal-less recipient pages
+  // narrow by exactly the ceiling this rule asks of a person (§7.3).
+  'community.chat.read': rule('community.chat.read', COMMUNITY_CHAT_READ_CEILING, null),
   'community.chat.post': rule('community.chat.post', [communities.moderate, messaging.send], null),
   'community.live.start': rule('community.live.start', [communities.moderate, live.moderate], null),
   // Backed by live.start: the same ceiling and the same holders.

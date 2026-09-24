@@ -23,7 +23,13 @@ export interface MessagePreview {
 export interface ConversationView {
   readonly id: string;
   readonly type: ConversationType;
-  /** Group/channel: its title. Direct: the other person's name. */
+  /**
+   * The community whose chat this is (community-chat.md §12.1), or null.
+   * A community chat is typed CHANNEL; its title is the community's, its
+   * members are the community's, and posting is the community's to allow.
+   */
+  readonly communityId: string | null;
+  /** Group/channel: its title. Direct: the other person's name. Community chat: the community's. */
   readonly title: string | null;
   readonly counterpartUserId: string | null;
   readonly memberCount: number;

@@ -4,7 +4,10 @@
 API, events (which notifications and realtime consume), and the first
 backend-backed Flutter feature. Decisions are recorded in
 [ADR 0011](decisions/0011-messaging-v1.md), building on
-[ADR 0007](decisions/0007-messaging-architecture.md).
+[ADR 0007](decisions/0007-messaging-architecture.md). **Community chats
+(P4): implemented** — a community's chat is an ordinary conversation whose
+membership Communities decides (§21, [community-chat.md](community-chat.md),
+[ADR 0018](decisions/0018-community-chat-projection.md)).
 
 Messaging is a persistent, permission-aware subsystem, not a chat mock. Every
 property below is enforced in code, and the ones that must hold under
@@ -28,15 +31,15 @@ checked **in addition to** institutional permissions, never instead of them.
 `MODERATOR` and `ADMIN` conversation roles are the expected next members of
 that list; the column is text + CHECK, so adding one is a cheap migration.
 
-> **Proposed change:** see [community-chat.md](community-chat.md) (approved
-> design, [ADR 0018](decisions/0018-community-chat-projection.md) Accepted). A
-> community's chat would be a `CHANNEL` conversation linked to it by
-> `community_id`. Who belongs, reads and posts would be answered by the
-> communities module. Messaging would keep a named, versioned projection of
-> the community's active members and refuse its own add, remove and leave
-> for that conversation with a 412. None of the caps above would apply to
-> it, and it would be reached at `GET /messaging/communities/:id/conversation`.
-> Every other conversation is unchanged.
+> **Community chats (P4, implemented — §21).** A community's chat is a
+> `CHANNEL` conversation linked to it by `community_id`. Who belongs, reads
+> and posts is answered by Communities, on every request. Messaging keeps a
+> named, versioned projection of the community's active members and refuses
+> its own add, remove and leave for that conversation with a 412. None of
+> the caps above applies to it; posting is switched off above
+> `communityChatMaxServedMembers` (250) until gates G1–G4 hold. It is reached
+> at `GET /messaging/communities/:id/conversation`. Every other conversation
+> behaves exactly as before.
 
 At most **one direct conversation exists per pair of people**. The pair is
 stored ordered (`direct_user_low < direct_user_high`) under a unique
@@ -304,6 +307,13 @@ The role policy is **provisional** (Q1, Q6): teachers and supervisors may
 start conversations; students and assistants reply in conversations staff
 place them in but start none; owners and admins may create channels.
 
+**A community chat answers step 3 differently** (§21): Communities'
+`community.chat.read` permit, asked on every request with no cache, then
+the caller's projected row (repaired first when it is behind the permit's
+stint). A refusal is the same 404 as above. Step 4 for a send is
+Communities' `community.chat.post` permit, then the capacity switch —
+never the projected role.
+
 ---
 
 ## 10. Attachments
@@ -348,6 +358,13 @@ Ids and codes only — no text, no file names, no display names:
 survives a future partitioned transport. Initial members are implied by
 `conversation.created` — a 5,000-member channel does not emit 5,000 events.
 A read event is raised only when the watermark actually moved.
+
+For a **community chat** (§21) only `message.sent` (typed `CHANNEL`) and
+`message.read` are raised: materializing the chat and applying membership
+publish nothing, because membership facts are Communities'. Messaging
+subscribes to Communities' `communities.member.added` and `.removed` as
+wake-ups only — it reads nothing from them but the community id, and pulls
+the truth from `COMMUNITY_MEMBERSHIP.changesSince`.
 
 > **Correction (2026-09-23):** that holds only for the people named at
 > creation, and creation names at most 200 members and 200 publishers
@@ -465,6 +482,14 @@ for V1); a hot channel with many publishers is bounded by its row lock (a few
 milliseconds per send), which is adequate for broadcast channels with a
 handful of publishers.
 
+**Community chats at 30,000 members** (§21) are measured, not load-tested:
+the scale suite (`community-chat-scale.spec.ts`) shows that opening, paging,
+sending and one recipient page cost the same statements at 30,000 members as
+at 30, each on an index; that member pages use
+`conversation_participants_current_idx` with 50% churn; and that filling the
+projection holds the conversation lock for one batch of at most 1,000 at a
+time. It claims no capacity — that is gate G3 (load profile 4).
+
 ---
 
 ## 18. API
@@ -486,7 +511,11 @@ GET    /messaging/conversations/:id/participants    ?cursor&limit
 POST   /messaging/conversations/:id/participants    { userIds, role? }
 DELETE /messaging/conversations/:id/participants/:userId
 POST   /messaging/conversations/:id/leave
+GET    /messaging/communities/:communityId/conversation     a community's chat (§21)
 ```
+
+`ConversationResponse` carries `communityId` (null except for a community
+chat; additive — older apps ignore it).
 
 Errors are the API's single shape (`error.kind`, `error.code`); the codes are
 stable (`messaging.conversation_not_found`, `messaging.posting_not_allowed`,
@@ -549,3 +578,53 @@ archiving, ownership transfer, promoting members to publishers.
 End-to-end encryption in particular would change the model (the server could
 no longer search, moderate or render previews); it is a product decision,
 not an increment.
+
+---
+
+## 21. Community chats (P4)
+
+A community's chat is an ordinary conversation of this module — the same
+messages, ordering, idempotency, attachments, read state, pagination and
+realtime delivery — linked to its community by `conversations.community_id`
+under a partial unique index (one chat per community, however many
+materializations race). The full design is
+[community-chat.md](community-chat.md); what differs from the rest of this
+document is:
+
+| Concern | A conversation messaging manages | A community chat |
+| --- | --- | --- |
+| Who may read | current participants (§9) | Communities' `community.chat.read` permit on every request, **and** a current projected row |
+| Who may post | channel roles (§1) | Communities' `community.chat.post` permit (the owner, or a delegated poster; never while LOCKED — PROVISIONAL, Q46, Q51), then the capacity switch |
+| Members | messaging's rows are the membership | messaging's rows are a **named projection** of Communities' ACTIVE members — never an access answer on their own |
+| Add, remove (both routes), leave | as §9 | 412 `messaging.membership_managed_by_community` — even for an OWNER-role account |
+| Member list | as §9 (Q22) | 403 `messaging.members_hidden`, to everyone: the roster is Communities' |
+| Title | stored | NULL in storage; Communities' title when viewed |
+| Caps (Q20) | 2 / 500 / 10,000 | none in messaging; posting refused (412 `messaging.community_chat_over_capacity`) above `MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS` (default 250) until G1–G4 hold |
+| Events and audit raised by messaging | all of §11 and §12 | `message.sent` and `message.read` only; no audit for membership |
+| History for newcomers | Q21 by type | `COMMUNITY_HISTORY`, PROVISIONAL `'FULL'` (Q52) |
+
+**The projection.** Only one writer, `applyCommunityMembership`, touches a
+community chat's membership columns: one transaction under the conversation
+row lock, at most 1,000 member states, each through the pure register
+`projectMember` (a newer authority version wins; a rejoin is told by its
+stint id; a tombstone keeps a leave's version), with the same version guard
+repeated in the database and `member_count` moved by the rows really
+written. It is fed by `CommunityChatSync` (woken by Communities' member
+events, pulling `changesSince`), by repair on access (the caller's own row,
+from the permit), by `CommunityChatSweeper` (at boot and every 60 s) and,
+when the projection is ahead of the authority after a restore, by
+`CommunityChatReconciler`. None of it publishes an event or writes an audit
+entry.
+
+**Delivery.** `MESSAGE_RECIPIENTS` keeps its signature. For a community
+chat each page comes from the projection, is narrowed to the members
+Communities reports ACTIVE while the projection lags the community's head,
+and is always narrowed to the accounts holding every permission of
+`COMMUNITY_CHAT_READ_CEILING` — so a removed member, or one whose role lost
+part of the read ceiling, receives no frame and no notification row, exactly
+as they get 404 over HTTP. Realtime and notifications are unchanged.
+
+**When Communities cannot answer**, every community-chat request fails
+closed with 503 `unavailable` (realtime `subscribe`: `SERVER_ERROR`); the
+recipient walk throws for its caller to log; the sweeper skips the tick.
+Conversations messaging manages never call Communities.

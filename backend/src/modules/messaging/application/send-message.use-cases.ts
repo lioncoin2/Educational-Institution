@@ -32,6 +32,7 @@ import {
 } from '../domain/message';
 import { canPost, canSee } from '../domain/participant';
 import { MESSAGING_REPOSITORY, type MessagingRepository } from '../domain/ports';
+import { CommunityChats } from './community-chats';
 import { CONVERSATION_NOT_FOUND, ConversationAccess, type Membership } from './conversation-access';
 import { SENDS_PER_USER } from './messaging-settings';
 import { MessagingViews } from './messaging-views';
@@ -68,7 +69,8 @@ export type SendMediaCommand = CommonSend & {
  *   1. `messaging.send`, then the rate limit;
  *   2. the draft is well-formed (key, body, caption);
  *   3. the sender is a current member, and may post here (channels: owner
- *      and publishers only);
+ *      and publishers only; a community chat: whoever Communities permits
+ *      `community.chat.post` now, within the capacity switch);
  *   4. a reply points at a message in THIS conversation that the sender can see;
  *   5. an attachment is the sender's own, verified upload of an accepted kind;
  *   6. the append — which re-checks membership under the conversation lock,
@@ -88,6 +90,7 @@ export class MessageSender {
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
+    private readonly communityChats: CommunityChats,
   ) {}
 
   async send(
@@ -135,7 +138,11 @@ export class MessageSender {
     );
     if (!membership.ok) return membership;
     const { conversation, participant } = membership.value;
-    if (!canPost(conversation.type, participant.role)) {
+    if (conversation.communityId !== null) {
+      // Communities' rule, asked now; the projected role is never consulted.
+      const posting = await this.communityChats.mayPost(principal, conversation);
+      if (!posting.ok) return posting;
+    } else if (!canPost(conversation.type, participant.role)) {
       return err(
         failure(
           'forbidden',

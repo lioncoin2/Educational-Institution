@@ -33,6 +33,13 @@ The realtime endpoint is served by the same process, on the same port:
 `ws://localhost:3000/realtime`. Nothing to configure; with no one connected it
 costs nothing.
 
+A community's chat needs no configuration either: messaging keeps it in step
+with Communities in the background (a wake-up per membership change, and a
+sweep at boot and every minute). `MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS`
+(default 250) switches posting off in chats larger than load testing has
+covered — never a limit on who may join; see
+[community-chat.md §11.2](../docs/architecture/community-chat.md#112-gates-g1g4).
+
 Push notifications need no configuration either, because no provider is wired
 yet: the push port's only adapter logs, at debug level, that a push would have
 gone out — never the device token. Choosing FCM or APNs is open question Q24;

@@ -1,4 +1,5 @@
 import type { ParticipantRole } from '../contracts/vocabulary';
+import type { ApplyCounts, CommunityMemberState } from './community-chat';
 import type { Conversation, ConversationId, NewConversation } from './conversation';
 import type { Message, MessageDraft, MessageId } from './message';
 import type { Participant } from './participant';
@@ -31,6 +32,32 @@ export type MarkReadOutcome =
   | { readonly kind: 'advanced'; readonly lastReadSequence: number }
   | { readonly kind: 'unchanged'; readonly lastReadSequence: number }
   | { readonly kind: 'not_participant' };
+
+export type ApplyMembershipOutcome =
+  | (ApplyCounts & {
+      readonly kind: 'applied';
+      /** The projection's version after the apply (it may have been further already). */
+      readonly projectedVersion: number;
+      readonly memberCount: number;
+    })
+  | { readonly kind: 'conversation_not_found' }
+  | { readonly kind: 'not_community_chat' };
+
+/** Which conversation is a community's chat, and how far its projection reaches. */
+export interface CommunityChatRef {
+  readonly conversationId: ConversationId;
+  readonly communityId: string;
+  readonly projectedVersion: number;
+}
+
+/** One projection row as the reconciler compares it with the authority. */
+export interface ProjectionRow {
+  readonly userId: string;
+  readonly active: boolean;
+  readonly sourceVersion: number | null;
+  readonly sourceMembershipId: string | null;
+  readonly sourceJoinedAt: Date | null;
+}
 
 /**
  * The write side. Every method that changes a conversation's membership or
@@ -87,6 +114,39 @@ export interface MessagingRepository {
     userId: string,
     sequence: number,
   ): Promise<MarkReadOutcome>;
+
+  // ── Community chats (community-chat.md §5–§7). Silent: no event, no audit. ──
+
+  /**
+   * A community's chat — created, or the one that already exists. Any number
+   * of concurrent calls for one community return one conversation: the
+   * partial unique index on `community_id` decides.
+   */
+  materializeCommunityChat(input: {
+    readonly id: ConversationId;
+    readonly communityId: string;
+    readonly at: Date;
+  }): Promise<Conversation>;
+
+  /**
+   * The projection applier — the only writer of a community chat's
+   * membership columns. ONE transaction under the conversation's row lock:
+   * each state through `projectMember` (the version guard repeated in the
+   * database), `member_count` moved by the real transitions, and the
+   * projected version advanced only across a contiguous range. At most
+   * MAX_APPLY_BATCH states, one per member (a RangeError otherwise).
+   * `override` is the reconciler's alone.
+   */
+  applyCommunityMembership(input: {
+    readonly conversationId: ConversationId;
+    readonly states: readonly CommunityMemberState[];
+    readonly advance: { readonly from: number; readonly to: number } | null;
+    readonly override?: true;
+    readonly at: Date;
+  }): Promise<ApplyMembershipOutcome>;
+
+  /** The reconciler's alone: the projected version set to `to`, backwards if need be. */
+  resetProjectedVersion(conversationId: ConversationId, to: number): Promise<void>;
 }
 
 /** Enough of a message to show it as a conversation's latest. */
@@ -169,6 +229,21 @@ export interface MessagingReadModel {
       readonly onlyUserIds?: readonly string[];
     },
   ): Promise<{ readonly userIds: readonly string[]; readonly next: string | null }>;
+
+  /** The chat of each of these communities that has one — at most 1,000 ids. */
+  communityChatsFor(communityIds: readonly string[]): Promise<readonly CommunityChatRef[]>;
+
+  communityChat(communityId: string): Promise<CommunityChatRef | null>;
+
+  /**
+   * The reconciler's walk (§7.5), by user id: a chat's current members, and
+   * any other row whose source version is above `versionAbove` — the rows
+   * that could outrank what the authority will allocate next.
+   */
+  projectionRows(
+    conversationId: ConversationId,
+    page: { readonly limit: number; readonly afterUserId?: string; readonly versionAbove: number },
+  ): Promise<{ readonly items: readonly ProjectionRow[]; readonly next: string | null }>;
 }
 
 export const MESSAGING_REPOSITORY = Symbol('MESSAGING_REPOSITORY');

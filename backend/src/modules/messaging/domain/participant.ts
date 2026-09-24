@@ -23,10 +23,19 @@ export interface Participant {
   readonly role: ParticipantRole;
   readonly joinedAt: Date;
   readonly leftAt: Date | null;
-  /** Null only where no person added them (reserved for system provisioning). */
+  /** Null only where no person here added them: a community chat's rows, which Communities admits. */
   readonly addedBy: string | null;
   readonly lastReadSequence: number;
   readonly hiddenThroughSequence: number;
+  /**
+   * On a community chat's row only (community-chat.md §6): the Communities
+   * membership version, stint id and stint start this row reflects — its
+   * provenance in the projection. Null on every row of a conversation
+   * messaging manages itself.
+   */
+  readonly sourceVersion: number | null;
+  readonly sourceMembershipId: string | null;
+  readonly sourceJoinedAt: Date | null;
 }
 
 /**
@@ -54,6 +63,9 @@ export function newParticipant(
     addedBy,
     lastReadSequence: conversation.lastSequence,
     hiddenThroughSequence: historyHiddenThrough(conversation.type, conversation.lastSequence),
+    sourceVersion: null,
+    sourceMembershipId: null,
+    sourceJoinedAt: null,
   };
 }
 

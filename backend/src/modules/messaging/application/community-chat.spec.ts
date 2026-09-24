@@ -1,0 +1,812 @@
+import { Logger } from '@nestjs/common';
+
+import { err, failure, type Principal } from '../../../shared';
+import { expectErr, expectOk } from '../../../../test/support/identity-harness';
+import {
+  META,
+  messagingHarness,
+  type MessagingHarness,
+} from '../../../../test/support/messaging-harness';
+import type { CommunityHead } from '../../communities/contracts/membership';
+import { Permissions } from '../../identity/contracts/permissions';
+import { Roles } from '../../identity/domain/role';
+import type { ConversationId } from '../domain/conversation';
+import { COMMUNITY_CHATS_OPENED_PER_USER } from './community-chat-settings';
+
+const NOT_FOUND = 'messaging.conversation_not_found';
+
+/**
+ * Community chats over the real authorization and contracts of both modules
+ * (community-chat.md §17, application level): who may read, who may post,
+ * how membership changes reach the chat, and what happens when Communities
+ * cannot answer. Communities' wake-ups reach messaging only when a test
+ * delivers them, so each test says whether the projection has caught up.
+ */
+describe('community chats', () => {
+  let h: MessagingHarness;
+  let admin: Principal; // creates the community, so owns it
+  let teacher: Principal; // may be delegated `community.chat.post`
+  let student: Principal; // a plain member: reads, never posts
+  let outsider: Principal; // a member of nothing
+  let communityId: string;
+  let keys = 0;
+
+  const send = (principal: Principal, conversationId: string, body = 'السلام عليكم') =>
+    h.sendText.execute({
+      principal,
+      conversationId,
+      clientMessageId: `client-key-${(keys += 1).toString().padStart(6, '0')}`,
+      body,
+      meta: META,
+    });
+
+  /** Every current member the projection holds, walked a page at a time. */
+  async function projected(conversationId: string): Promise<string[]> {
+    const ids: string[] = [];
+    let afterUserId: string | undefined;
+    for (;;) {
+      const page = await h.readModel.listMemberIds(conversationId as ConversationId, {
+        limit: 2,
+        afterUserId,
+      });
+      ids.push(...page.userIds);
+      if (page.next === null) return ids;
+      afterUserId = page.next;
+    }
+  }
+
+  /** Every ACTIVE member Communities holds. */
+  async function authority(community: string): Promise<string[]> {
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page: { userIds: readonly string[]; nextCursor: string | null } =
+        await h.communities.membership.members(community, { cursor, limit: 2 });
+      ids.push(...page.userIds);
+      cursor = page.nextCursor;
+    } while (cursor !== null);
+    return ids;
+  }
+
+  async function head(community: string): Promise<CommunityHead> {
+    const [found] = await h.communities.membership.heads([community]);
+    if (found === undefined) throw new Error('no such community');
+    return found;
+  }
+
+  beforeEach(async () => {
+    h = await messagingHarness();
+    admin = h.person(Roles.admin, 'المشرفة');
+    teacher = h.person(Roles.teacher, 'المعلمة');
+    student = h.person(Roles.student, 'الطالبة');
+    outsider = h.person(Roles.student, 'غريبة');
+    communityId = await h.community(admin, [teacher, student]);
+    await h.deliverCommunityEvents();
+  });
+  afterEach(async () => {
+    jest.restoreAllMocks();
+    await h.cleanup();
+  });
+
+  describe('opening one from its community', () => {
+    it('gives a member the ordinary view: CHANNEL, the community’s id and title, no management', async () => {
+      const chat = await h.openCommunityChat(student, communityId);
+      expect(chat).toMatchObject({
+        type: 'CHANNEL',
+        communityId,
+        title: 'حلقة التجويد',
+        memberCount: 3,
+        myRole: 'MEMBER',
+        canPost: false,
+        canManageMembers: false,
+        counterpartUserId: null,
+      });
+      // The stored title stays NULL: the name is Communities', read when viewed.
+      const stored = await h.repository.findConversation(chat.id as ConversationId);
+      expect(stored).toMatchObject({ title: null, communityId, type: 'CHANNEL' });
+    });
+
+    it('is one conversation per community, however many open it at once', async () => {
+      const opened = await Promise.all(
+        Array.from({ length: 20 }, (_, i) =>
+          h.openCommunityChat([admin, teacher, student][i % 3], communityId),
+        ),
+      );
+      expect(new Set(opened.map((chat) => chat.id)).size).toBe(1);
+      expect(await h.readModel.communityChatsFor([communityId])).toHaveLength(1);
+    });
+
+    it('answers an unknown community, a non-member and an unreadable one alike — and creates nothing', async () => {
+      const other = await h.community(admin);
+      const asNonMember = expectErr(
+        await h.communityChat.execute({ principal: outsider, communityId: other }),
+      );
+      const unknown = expectErr(
+        await h.communityChat.execute({ principal: outsider, communityId: 'no-such-community' }),
+      );
+      jest
+        .spyOn(h.communities.authorization, 'authorize')
+        .mockResolvedValueOnce(
+          err(failure('precondition_failed', 'communities.community_locked', 'Not now.')),
+        );
+      const unreadable = expectErr(
+        await h.communityChat.execute({ principal: student, communityId }),
+      );
+      expect(asNonMember).toEqual(unknown);
+      expect(unreadable).toEqual(unknown);
+      expect(unknown).toMatchObject({ kind: 'not_found', code: NOT_FOUND });
+      expect(await h.readModel.communityChat('no-such-community')).toBeNull();
+    });
+
+    it('serves someone who joined a moment ago, before the projection has heard of it', async () => {
+      const newcomer = h.person(Roles.student, 'جديدة');
+      await h.communities.addPeople(admin, communityId, newcomer.userId);
+      // No wake-up delivered: the projection does not know them yet.
+      const chat = await h.openCommunityChat(newcomer, communityId);
+      const row = await h.repository.findParticipant(chat.id as ConversationId, newcomer.userId);
+      const [state] = await h.communities.membership.statesOf(communityId, [newcomer.userId]);
+      expect(row).toMatchObject({
+        leftAt: null,
+        role: 'MEMBER',
+        addedBy: null,
+        sourceVersion: state?.version,
+        sourceMembershipId: state?.membershipId,
+      });
+    });
+
+    it('limits how often one person may look a community’s chat up', async () => {
+      for (let i = 0; i < COMMUNITY_CHATS_OPENED_PER_USER.limit; i++) {
+        await h.openCommunityChat(student, communityId);
+      }
+      expect(
+        expectErr(await h.communityChat.execute({ principal: student, communityId })),
+      ).toMatchObject({
+        kind: 'rate_limited',
+        code: 'messaging.too_many_community_chat_lookups',
+      });
+    });
+  });
+
+  describe('reading — Communities is asked on every request', () => {
+    let chatId: string;
+
+    beforeEach(async () => {
+      chatId = (await h.openCommunityChat(admin, communityId)).id;
+      expectOk(await send(admin, chatId, 'أهلاً'));
+    });
+
+    it('lets a member through every conversation route', async () => {
+      expectOk(await h.getConversation.execute({ principal: student, conversationId: chatId }));
+      const page = expectOk(
+        await h.listMessages.execute({ principal: student, conversationId: chatId }),
+      );
+      expect(page.items.map((message) => message.body)).toEqual(['أهلاً']);
+      expectOk(
+        await h.markRead.execute({
+          principal: student,
+          conversationId: chatId,
+          sequence: 1,
+          meta: META,
+        }),
+      );
+      expectOk(await h.delivery.position(student, chatId));
+    });
+
+    it('refuses a non-member on every route with the 404 of a missing conversation', async () => {
+      const refusals = [
+        await h.getConversation.execute({ principal: outsider, conversationId: chatId }),
+        await h.listMessages.execute({ principal: outsider, conversationId: chatId }),
+        await h.markRead.execute({
+          principal: outsider,
+          conversationId: chatId,
+          sequence: 1,
+          meta: META,
+        }),
+        await h.listParticipants.execute({ principal: outsider, conversationId: chatId }),
+        await send(outsider, chatId),
+        await h.delivery.position(outsider, chatId),
+      ];
+      for (const refusal of refusals) expect(expectErr(refusal).code).toBe(NOT_FOUND);
+      const missing = expectErr(
+        await h.getConversation.execute({ principal: outsider, conversationId: 'no-such-chat' }),
+      );
+      expect(expectErr(refusals[0])).toEqual(missing);
+    });
+
+    it('creates nothing for a non-member, however often they try', async () => {
+      for (let i = 0; i < 100; i++) {
+        await h.getConversation.execute({ principal: outsider, conversationId: chatId });
+        await h.listMessages.execute({ principal: outsider, conversationId: chatId });
+      }
+      for (let i = 0; i < 50; i++) {
+        await h.communityChat.execute({ principal: outsider, communityId });
+      }
+      await h.sync.idle();
+      expect(
+        await h.repository.findParticipant(chatId as ConversationId, outsider.userId),
+      ).toBeNull();
+      expect(await projected(chatId)).not.toContain(outsider.userId);
+    });
+
+    it('refuses a removed member at once — before the projection hears of it — and syncs', async () => {
+      expectOk(
+        await h.communities.remove.execute({
+          principal: admin,
+          communityId,
+          userId: student.userId,
+          meta: META,
+        }),
+      );
+      // The wake-up is not delivered: the projection still says "member".
+      expect(
+        (await h.repository.findParticipant(chatId as ConversationId, student.userId))?.leftAt,
+      ).toBeNull();
+      expect(
+        expectErr(await h.getConversation.execute({ principal: student, conversationId: chatId }))
+          .code,
+      ).toBe(NOT_FOUND);
+      expect(expectErr(await send(student, chatId)).code).toBe(NOT_FOUND);
+      // The refusal scheduled a sync, which applied the removal.
+      await h.sync.idle();
+      expect(
+        (await h.repository.findParticipant(chatId as ConversationId, student.userId))?.leftAt,
+      ).not.toBeNull();
+      expect(await projected(chatId)).toEqual((await authority(communityId)).sort());
+    });
+
+    it('refuses a member who left, and lets them back by link with a new window and watermark', async () => {
+      expectOk(await h.communities.leave.execute({ principal: student, communityId, meta: META }));
+      await h.deliverCommunityEvents();
+      expect(
+        expectErr(await h.listMessages.execute({ principal: student, conversationId: chatId }))
+          .code,
+      ).toBe(NOT_FOUND);
+      const before = await h.repository.findParticipant(chatId as ConversationId, student.userId);
+
+      expectOk(await send(admin, chatId, 'بعد مغادرتها'));
+      const { token } = await h.communities.link(admin, communityId);
+      expectOk(await h.communities.redeem.execute({ principal: student, token, meta: META }));
+      await h.deliverCommunityEvents();
+
+      const after = await h.repository.findParticipant(chatId as ConversationId, student.userId);
+      expect(after?.leftAt).toBeNull();
+      expect(after?.sourceMembershipId).not.toBe(before?.sourceMembershipId);
+      // A new watermark at the last message; under FULL (Q52) the whole history is visible.
+      expect(after).toMatchObject({ lastReadSequence: 2, hiddenThroughSequence: 0 });
+      const page = expectOk(
+        await h.listMessages.execute({ principal: student, conversationId: chatId }),
+      );
+      expect(page.items.map((message) => message.body)).toEqual(['أهلاً', 'بعد مغادرتها']);
+    });
+
+    it('keeps a removed member out of the link path; re-added by the owner, they read again', async () => {
+      expectOk(
+        await h.communities.remove.execute({
+          principal: admin,
+          communityId,
+          userId: student.userId,
+          meta: META,
+        }),
+      );
+      const { token } = await h.communities.link(admin, communityId);
+      expect(
+        (await h.communities.redeem.execute({ principal: student, token, meta: META })).ok,
+      ).toBe(false);
+      expect(
+        expectErr(await h.getConversation.execute({ principal: student, conversationId: chatId }))
+          .code,
+      ).toBe(NOT_FOUND);
+      await h.communities.addPeople(admin, communityId, student.userId);
+      expectOk(await h.getConversation.execute({ principal: student, conversationId: chatId }));
+    });
+
+    it('keeps the projection equal to the authority once the wake-ups arrive — duplicated or reordered', async () => {
+      const more = [h.person(Roles.student), h.person(Roles.student), h.person(Roles.teacher)];
+      await h.communities.addPeople(admin, communityId, ...more.map((person) => person.userId));
+      expectOk(
+        await h.communities.remove.execute({
+          principal: admin,
+          communityId,
+          userId: more[0].userId,
+          meta: META,
+        }),
+      );
+      const events = h.communities.journal.events.slice();
+      await h.bus.publish([...events].reverse());
+      await h.bus.publish(events);
+      await h.deliverCommunityEvents();
+      expect(await projected(chatId)).toEqual((await authority(communityId)).sort());
+      const chat = await h.readModel.communityChat(communityId);
+      expect(chat?.projectedVersion).toBe((await head(communityId)).membershipVersion);
+      const stored = await h.repository.findConversation(chatId as ConversationId);
+      expect(stored?.memberCount).toBe((await authority(communityId)).length);
+    });
+  });
+
+  describe('posting — Communities’ rule, asked on every send', () => {
+    let chatId: string;
+
+    beforeEach(async () => {
+      chatId = (await h.openCommunityChat(admin, communityId)).id;
+    });
+
+    it('lets the owner post, and shows them canPost', async () => {
+      expectOk(await send(admin, chatId));
+      expect(
+        expectOk(await h.getConversation.execute({ principal: admin, conversationId: chatId }))
+          .canPost,
+      ).toBe(true);
+    });
+
+    it('refuses a member without the capability with 403 — the projected role is never asked', async () => {
+      expect(expectErr(await send(student, chatId))).toMatchObject({
+        kind: 'forbidden',
+        code: 'messaging.posting_not_allowed',
+      });
+    });
+
+    it('lets a delegated poster post, and stops them the moment the grant is revoked', async () => {
+      const [grantId] = await h.communities.delegate(
+        admin,
+        communityId,
+        teacher.userId,
+        'community.chat.post',
+      );
+      expectOk(await send(teacher, chatId));
+      expect(
+        expectOk(await h.getConversation.execute({ principal: teacher, conversationId: chatId }))
+          .canPost,
+      ).toBe(true);
+
+      expectOk(
+        await h.communities.revokeGrant.execute({
+          principal: admin,
+          communityId,
+          grantId: grantId ?? '',
+          meta: META,
+        }),
+      );
+      expect(expectErr(await send(teacher, chatId)).code).toBe('messaging.posting_not_allowed');
+      // Reading goes on: the grant was about posting only.
+      expectOk(await h.listMessages.execute({ principal: teacher, conversationId: chatId }));
+    });
+
+    it('stops all posting while LOCKED — reading goes on — and resumes on unlock (PROVISIONAL, Q46)', async () => {
+      const [grantId] = await h.communities.delegate(
+        admin,
+        communityId,
+        teacher.userId,
+        'community.chat.post',
+      );
+      expect(grantId).not.toBe('');
+      expectOk(
+        await h.communities.status.execute({
+          principal: admin,
+          communityId,
+          to: 'LOCKED',
+          meta: META,
+        }),
+      );
+      for (const poster of [admin, teacher]) {
+        expect(expectErr(await send(poster, chatId)).code).toBe('messaging.posting_not_allowed');
+      }
+      expectOk(await h.listMessages.execute({ principal: student, conversationId: chatId }));
+      expect(
+        expectOk(await h.getConversation.execute({ principal: admin, conversationId: chatId }))
+          .canPost,
+      ).toBe(false);
+
+      expectOk(
+        await h.communities.status.execute({
+          principal: admin,
+          communityId,
+          to: 'OPEN',
+          meta: META,
+        }),
+      );
+      expectOk(await send(admin, chatId));
+      expectOk(await send(teacher, chatId));
+    });
+
+    it('follows ownership: the new owner posts, the former owner no longer does', async () => {
+      const versionBefore = (await head(communityId)).membershipVersion;
+      expectOk(
+        await h.communities.transfer.execute({
+          principal: admin,
+          communityId,
+          userId: teacher.userId,
+          meta: META,
+        }),
+      );
+      expectOk(await send(teacher, chatId));
+      expect(expectErr(await send(admin, chatId)).code).toBe('messaging.posting_not_allowed');
+      // Belonging did not change, so neither did the projection.
+      expect((await head(communityId)).membershipVersion).toBe(versionBefore);
+      expect(await projected(chatId)).toEqual((await authority(communityId)).sort());
+    });
+
+    it('raises message.sent typed CHANNEL — and no other event, and no audit entry', async () => {
+      h.events.published.length = 0;
+      const sent = expectOk(await send(admin, chatId));
+      expect(h.events.published.map((event) => event.name)).toEqual(['messaging.message.sent']);
+      expect(h.events.published[0]?.payload).toMatchObject({
+        conversationId: chatId,
+        conversationType: 'CHANNEL',
+        messageId: sent.message.id,
+      });
+      expect(h.audit.entries).toEqual([]);
+    });
+  });
+
+  describe('the capacity switch (§11.2)', () => {
+    it('refuses posts above maxServedMembers with 412 and canPost false; reading goes on; at the switch, posts go through', async () => {
+      await h.cleanup();
+      h = await messagingHarness({ settings: { maxServedMembers: 3 } });
+      admin = h.person(Roles.admin);
+      teacher = h.person(Roles.teacher);
+      student = h.person(Roles.student);
+      const fourth = h.person(Roles.student);
+      communityId = await h.community(admin, [teacher, student, fourth]);
+      await h.deliverCommunityEvents();
+      const chatId = (await h.openCommunityChat(admin, communityId)).id;
+      h.events.published.length = 0;
+
+      expect(expectErr(await send(admin, chatId))).toMatchObject({
+        kind: 'precondition_failed',
+        code: 'messaging.community_chat_over_capacity',
+      });
+      expect(
+        expectOk(await h.getConversation.execute({ principal: admin, conversationId: chatId }))
+          .canPost,
+      ).toBe(false);
+      expectOk(await h.listMessages.execute({ principal: student, conversationId: chatId }));
+      expectOk(
+        await h.markRead.execute({
+          principal: student,
+          conversationId: chatId,
+          sequence: 0,
+          meta: META,
+        }),
+      );
+      expect(h.events.published.filter((event) => event.name === 'messaging.message.sent')).toEqual(
+        [],
+      );
+
+      expectOk(
+        await h.communities.remove.execute({
+          principal: admin,
+          communityId,
+          userId: fourth.userId,
+          meta: META,
+        }),
+      );
+      await h.deliverCommunityEvents();
+      expectOk(await send(admin, chatId));
+    });
+
+    it('refuses a non-poster with 403 first: only a poster learns the chat is over the switch', async () => {
+      await h.cleanup();
+      h = await messagingHarness({ settings: { maxServedMembers: 1 } });
+      admin = h.person(Roles.admin);
+      student = h.person(Roles.student);
+      communityId = await h.community(admin, [student]);
+      await h.deliverCommunityEvents();
+      const chatId = (await h.openCommunityChat(admin, communityId)).id;
+      expect(expectErr(await send(student, chatId)).code).toBe('messaging.posting_not_allowed');
+    });
+  });
+
+  describe('membership stays Communities’', () => {
+    it('refuses to add, remove or leave with 412 — even for an OWNER-role account holding every permission', async () => {
+      const owner = h.person(Roles.owner, 'المالكة');
+      const community = await h.community(owner, [student]);
+      await h.deliverCommunityEvents();
+      const chatId = (await h.openCommunityChat(owner, community)).id;
+      const MANAGED = 'messaging.membership_managed_by_community';
+
+      expect(
+        expectErr(
+          await h.addParticipants.execute({
+            principal: owner,
+            conversationId: chatId,
+            userIds: [outsider.userId],
+            meta: META,
+          }),
+        ),
+      ).toMatchObject({ kind: 'precondition_failed', code: MANAGED });
+      // The owner route and the messaging.manage route alike.
+      expect(
+        expectErr(
+          await h.removeParticipant.execute({
+            principal: owner,
+            conversationId: chatId,
+            userId: student.userId,
+            meta: META,
+          }),
+        ).code,
+      ).toBe(MANAGED);
+      expect(
+        expectErr(await h.leave.execute({ principal: student, conversationId: chatId, meta: META }))
+          .code,
+      ).toBe(MANAGED);
+      expect(
+        expectErr(await h.leave.execute({ principal: owner, conversationId: chatId, meta: META }))
+          .code,
+      ).toBe(MANAGED);
+      expect(await projected(chatId)).toContain(student.userId);
+    });
+
+    it('answers a moderator who is not a member with 404, not 412', async () => {
+      const chatId = (await h.openCommunityChat(admin, communityId)).id;
+      const moderator = h.person(Roles.owner, 'مشرفة المحادثات');
+      expect(moderator.permissions.has(Permissions.messaging.manage)).toBe(true);
+      expect(
+        expectErr(
+          await h.removeParticipant.execute({
+            principal: moderator,
+            conversationId: chatId,
+            userId: student.userId,
+            meta: META,
+          }),
+        ).code,
+      ).toBe(NOT_FOUND);
+    });
+
+    it('never lists a community chat’s members, not even to its owner', async () => {
+      const chatId = (await h.openCommunityChat(admin, communityId)).id;
+      for (const principal of [admin, student]) {
+        expect(
+          expectErr(await h.listParticipants.execute({ principal, conversationId: chatId })),
+        ).toMatchObject({ kind: 'forbidden', code: 'messaging.members_hidden' });
+      }
+    });
+
+    it('materializes and applies silently: no messaging event, no audit entry', async () => {
+      h.events.published.length = 0;
+      await h.openCommunityChat(admin, communityId);
+      await h.communities.addPeople(admin, communityId, h.person(Roles.student).userId);
+      await h.deliverCommunityEvents();
+      expect(h.events.published).toEqual([]);
+      expect(h.audit.entries).toEqual([]);
+    });
+  });
+
+  describe('the conversation list', () => {
+    it('shows a member their community chat with its title and their posting right', async () => {
+      const chatId = (await h.openCommunityChat(admin, communityId)).id;
+      const [item] = expectOk(await h.listConversations.execute({ principal: student })).items;
+      expect(item).toMatchObject({
+        id: chatId,
+        communityId,
+        title: 'حلقة التجويد',
+        canPost: false,
+      });
+      const [own] = expectOk(await h.listConversations.execute({ principal: admin })).items;
+      expect(own).toMatchObject({ id: chatId, canPost: true });
+    });
+
+    it('drops a chat Communities no longer lets them read, and syncs it', async () => {
+      const chatId = (await h.openCommunityChat(admin, communityId)).id;
+      expectOk(
+        await h.communities.remove.execute({
+          principal: admin,
+          communityId,
+          userId: student.userId,
+          meta: META,
+        }),
+      );
+      expect(expectOk(await h.listConversations.execute({ principal: student })).items).toEqual([]);
+      await h.sync.idle();
+      expect(await projected(chatId)).not.toContain(student.userId);
+    });
+
+    it('asks Communities three times per page, whatever the number of chats — and never for a page without one', async () => {
+      // Someone in no community: their page holds a direct conversation only.
+      const loner = h.person(Roles.student);
+      await h.direct(teacher, loner);
+      const authorizeEach = jest.spyOn(h.communities.authorization, 'authorizeEach');
+      const describe = jest.spyOn(h.communities.directory, 'describe');
+      expect(expectOk(await h.listConversations.execute({ principal: loner })).items).toHaveLength(
+        1,
+      );
+      expect(authorizeEach).not.toHaveBeenCalled();
+      expect(describe).not.toHaveBeenCalled();
+
+      for (let i = 0; i < 5; i++) {
+        await h.openCommunityChat(loner, await h.community(admin, [loner]));
+      }
+      await h.deliverCommunityEvents();
+      authorizeEach.mockClear();
+      describe.mockClear();
+      const page = expectOk(await h.listConversations.execute({ principal: loner }));
+      expect(page.items.filter((item) => item.communityId !== null)).toHaveLength(5);
+      expect(authorizeEach).toHaveBeenCalledTimes(2);
+      expect(authorizeEach.mock.calls.map((call) => call[2]).sort()).toEqual([
+        'community.chat.post',
+        'community.chat.read',
+      ]);
+      expect(describe).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('recipients for delivery (§7.3)', () => {
+    let chatId: string;
+
+    beforeEach(async () => {
+      chatId = (await h.openCommunityChat(admin, communityId)).id;
+    });
+
+    const recipients = async (options: { readersOnly?: boolean } = {}) =>
+      (await h.recipients.list(chatId, { limit: 1000, ...options })).userIds;
+
+    it('are the projection, when it is current', async () => {
+      expect([...(await recipients())].sort()).toEqual(
+        [admin.userId, teacher.userId, student.userId].sort(),
+      );
+    });
+
+    it('leave out a member Communities removed before the projection heard of it', async () => {
+      expectOk(
+        await h.communities.remove.execute({
+          principal: admin,
+          communityId,
+          userId: student.userId,
+          meta: META,
+        }),
+      );
+      expect(await recipients()).not.toContain(student.userId);
+      expect(await recipients({ readersOnly: true })).not.toContain(student.userId);
+      await h.sync.idle();
+      expect(await projected(chatId)).not.toContain(student.userId);
+    });
+
+    it('leave out a member whose role lost part of the read ceiling — whatever readersOnly says — as HTTP does', async () => {
+      const chat = await h.readModel.communityChat(communityId);
+      expect(chat?.projectedVersion).toBe((await head(communityId)).membershipVersion);
+      const lost = [...student.permissions].filter(
+        (permission) => permission !== Permissions.communities.read,
+      ) as (typeof Permissions.messaging.read)[];
+      h.directory.setPermissions(student.userId, lost);
+
+      expect(await recipients()).not.toContain(student.userId);
+      expect(await recipients({ readersOnly: true })).not.toContain(student.userId);
+      expect(await recipients()).toContain(teacher.userId);
+
+      const narrowed: Principal = { ...student, permissions: new Set(lost) };
+      expect(
+        expectErr(await h.getConversation.execute({ principal: narrowed, conversationId: chatId }))
+          .code,
+      ).toBe(NOT_FOUND);
+    });
+
+    it('are nobody for an unknown community, or one whose chat is not readable now', async () => {
+      const heads = jest.spyOn(h.communities.membership, 'heads');
+      heads.mockResolvedValueOnce([]);
+      expect(await recipients()).toEqual([]);
+      const current = await head(communityId);
+      heads.mockResolvedValueOnce([
+        { ...current, effects: { ...current.effects, chatReadable: false } },
+      ]);
+      expect(await h.recipients.list(chatId, { limit: 1000 })).toEqual({
+        userIds: [],
+        nextCursor: null,
+      });
+    });
+
+    it('are exactly today’s page for a conversation messaging owns — Communities is never asked', async () => {
+      const group = await h.group(teacher, [student]);
+      const heads = jest.spyOn(h.communities.membership, 'heads');
+      const page = await h.recipients.list(group.id, { limit: 1000 });
+      expect([...page.userIds].sort()).toEqual([teacher.userId, student.userId].sort());
+      expect(heads).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('when Communities cannot answer', () => {
+    let chatId: string;
+
+    beforeEach(async () => {
+      chatId = (await h.openCommunityChat(admin, communityId)).id;
+    });
+
+    it('fails every community-chat request closed with 503 — and leaves other conversations alone', async () => {
+      const group = await h.group(teacher, [student]);
+      jest
+        .spyOn(h.communities.authorization, 'authorize')
+        .mockRejectedValue(new Error('store down'));
+      jest
+        .spyOn(h.communities.authorization, 'authorizeEach')
+        .mockRejectedValue(new Error('store down'));
+
+      const refusals = [
+        await h.communityChat.execute({ principal: student, communityId }),
+        await h.getConversation.execute({ principal: student, conversationId: chatId }),
+        await h.listMessages.execute({ principal: student, conversationId: chatId }),
+        await send(admin, chatId),
+        await h.listConversations.execute({ principal: student }),
+        await h.delivery.position(student, chatId),
+      ];
+      for (const refusal of refusals) {
+        expect(expectErr(refusal)).toMatchObject({ kind: 'unavailable', code: 'unavailable' });
+      }
+      expectOk(await h.getConversation.execute({ principal: student, conversationId: group.id }));
+      expectOk(await send(teacher, group.id));
+    });
+
+    it('lets the recipient walk throw for the relay to log, and the sweeper skip its tick', async () => {
+      jest.spyOn(h.communities.membership, 'heads').mockRejectedValue(new Error('store down'));
+      jest.spyOn(h.communities.membership, 'listHeads').mockRejectedValue(new Error('store down'));
+      await expect(h.recipients.list(chatId, { limit: 1000 })).rejects.toThrow('store down');
+      await expect(h.sweeper.tick()).resolves.toBeNull();
+    });
+  });
+
+  describe('keeping the projection current (§7.5)', () => {
+    it('coalesces a storm of wake-ups: 100 during one pass cost at most two', async () => {
+      await h.openCommunityChat(admin, communityId);
+      const wakeUp = h.communities.journal.events.find(
+        (event) => event.name === 'communities.member.added',
+      );
+      if (wakeUp === undefined) throw new Error('expected a member.added event');
+      const before = h.sync.passes;
+      await Promise.all(Array.from({ length: 100 }, () => h.bus.publish([wakeUp])));
+      await h.sync.idle();
+      expect(h.sync.passes - before).toBeLessThanOrEqual(2);
+      expect(h.sync.passes - before).toBeGreaterThanOrEqual(1);
+    });
+
+    it('lets the sweeper materialize a chat whose every wake-up was lost, and converge it', async () => {
+      const lost = await h.community(admin, [student, teacher]);
+      // Nothing delivered: no chat exists for it yet.
+      expect(await h.readModel.communityChat(lost)).toBeNull();
+      const report = await h.sweeper.tick();
+      expect(report?.behind).toBeGreaterThanOrEqual(1);
+      await h.sync.idle();
+      const chat = await h.readModel.communityChat(lost);
+      expect(chat?.projectedVersion).toBe((await head(lost)).membershipVersion);
+      expect(await projected(chat?.conversationId ?? '')).toEqual((await authority(lost)).sort());
+    });
+
+    it('lets the sweeper hand a projection that is ahead to the reconciler, which rebuilds it', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const chat = await h.openCommunityChat(admin, communityId);
+      const { membershipVersion } = await head(communityId);
+      // As after Communities was restored from a backup: the projection holds
+      // a join the authority lost, and versions the authority will reuse.
+      await h.repository.applyCommunityMembership({
+        conversationId: chat.id as ConversationId,
+        states: [
+          {
+            userId: 'ghost',
+            membershipId: 'lost-stint',
+            active: true,
+            joinedAt: new Date(),
+            version: membershipVersion + 5,
+          },
+        ],
+        advance: { from: membershipVersion, to: membershipVersion + 5 },
+        at: h.clock.now(),
+      });
+
+      const report = await h.sweeper.tick();
+      expect(report).toMatchObject({ ahead: 1 });
+      await h.sync.idle();
+      expect(h.reconciler.reconciliations).toBe(1);
+      expect((await h.readModel.communityChat(communityId))?.projectedVersion).toBe(
+        membershipVersion,
+      );
+      expect(await projected(chat.id)).toEqual((await authority(communityId)).sort());
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({ communityId, head: membershipVersion }),
+        'community chat projection rebuilt from Communities',
+      );
+      expect(h.audit.entries).toEqual([]);
+
+      // The versions the authority allocates next are applied again.
+      const newcomer = h.person(Roles.student);
+      await h.communities.addPeople(admin, communityId, newcomer.userId);
+      await h.deliverCommunityEvents();
+      expect(await projected(chat.id)).toEqual((await authority(communityId)).sort());
+    });
+  });
+});

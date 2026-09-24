@@ -219,16 +219,19 @@ events are grandfathered). Since Phase 0 that includes live's events
 | `academic.teacher.assigned` · `academic.teacher.assignment_ended` | academic | a teacher's workspace, notifications (Q28); none subscribed |
 | `communities.community.created` | communities — always followed by `member.added` for the owner | none in v1 |
 | `communities.community.locked` · `.unlocked` | communities — a real status change only, with its `lifecycleVersion` | realtime relay (P5), Live's `ProtectLiveSessions` accelerator (P6); none subscribed yet — no consumer enforces a lock from the event |
-| `communities.member.added` | communities — a manager's add (`source: ADDED`) or a link redemption (`INVITATION`), with its `membershipVersion` | Messaging's projection wake-up (P4), realtime relay (P5); none subscribed yet |
-| `communities.member.removed` | communities — a leave (`reason: LEFT`) or a removal (`REMOVED`); class **S** | Live ejection (P6), Messaging wake-up (P4), realtime relay (P5); none subscribed yet |
+| `communities.member.added` | communities — a manager's add (`source: ADDED`) or a link redemption (`INVITATION`), with its `membershipVersion` | **messaging — subscribed** (P4): a wake-up for the community chat's projection, reading only `communityId`; realtime relay (P5) |
+| `communities.member.removed` | communities — a leave (`reason: LEFT`) or a removal (`REMOVED`); class **S** | **messaging — subscribed** (P4): the same wake-up — access already ends at the commit, because every request asks Communities; Live ejection (P6), realtime relay (P5) |
 | `communities.invitation.created` · `.revoked` | communities | none; never on any wire — revocation takes effect inside redemption |
 | `communities.capability.granted` · `.revoked` | communities — one per grant row the owner created, or revoked; a grant that ends with its stint is implied by `member.removed` | realtime relay (P5), Live re-evaluates a holder in a running session (P6); none subscribed yet |
 | `communities.ownership.transferred` | communities — with `basis` (`owner` \| `oversight`) and the new owner's `endedGrantIds` | realtime relay (P5); none subscribed yet |
 
 The `live.speaker.*`, `identity.*`, `messaging.*`, `notifications.*`,
 `academic.*` and `communities.*` events are raised by implemented code today; messaging's have two real subscribers,
-notifications and realtime, and notifications' have realtime and its own push
-delivery. The rest are declared so the vocabulary is settled before the
+notifications and realtime, notifications' have realtime and its own push
+delivery, and Communities' `member.added` and `member.removed` have messaging
+(P4) — as wake-ups only: messaging pulls the truth from
+`COMMUNITY_MEMBERSHIP.changesSince`, so a lost, repeated or reordered event
+changes nothing it would not also find by itself. The rest are declared so the vocabulary is settled before the
 modules arrive. Notifications' events carry ids, codes and channel flags — a
 notification's parameters (a sender's name) never travel in an event;
 realtime reads the stored notification through `NOTIFICATION_READER`. Their

@@ -1,3 +1,10 @@
+import {
+  advancedProjection,
+  checkApplyBatch,
+  newCommunityChat,
+  projectMember,
+  type CommunityMemberState,
+} from '../domain/community-chat';
 import type { ConversationId, Conversation, NewConversation } from '../domain/conversation';
 import { sameContent, type Message, type MessageDraft, type MessageId } from '../domain/message';
 import { UNREAD_COUNT_CAP } from '../domain/messaging-policy';
@@ -6,6 +13,8 @@ import { advancedWatermark } from '../domain/read-state';
 import type {
   AddParticipantsOutcome,
   AppendOutcome,
+  ApplyMembershipOutcome,
+  CommunityChatRef,
   ConversationCursor,
   ConversationSummaryRow,
   CreateDirectOutcome,
@@ -14,6 +23,7 @@ import type {
   MessageWindow,
   MessagingReadModel,
   MessagingRepository,
+  ProjectionRow,
 } from '../domain/ports';
 
 const key = (conversationId: string, userId: string) => `${conversationId}\u0000${userId}`;
@@ -177,6 +187,68 @@ export class InMemoryMessagingStore implements MessagingRepository, MessagingRea
     return { kind: 'advanced', lastReadSequence: target };
   }
 
+  async materializeCommunityChat(input: {
+    readonly id: ConversationId;
+    readonly communityId: string;
+    readonly at: Date;
+  }): Promise<Conversation> {
+    const existing = this.chatOf(input.communityId);
+    if (existing !== null) return existing;
+    const created = newCommunityChat(input);
+    this.conversations.set(created.id, created);
+    return created;
+  }
+
+  async applyCommunityMembership(input: {
+    readonly conversationId: ConversationId;
+    readonly states: readonly CommunityMemberState[];
+    readonly advance: { readonly from: number; readonly to: number } | null;
+    readonly override?: true;
+    readonly at: Date;
+  }): Promise<ApplyMembershipOutcome> {
+    checkApplyBatch(input.states);
+    const conversation = this.conversations.get(input.conversationId);
+    if (conversation === undefined) return { kind: 'conversation_not_found' };
+    if (conversation.communityId === null) return { kind: 'not_community_chat' };
+
+    const counts = { joined: 0, rejoined: 0, left: 0, tombstoned: 0 };
+    let delta = 0;
+    for (const state of input.states) {
+      const at = key(conversation.id, state.userId);
+      const projected = projectMember(
+        this.participants.get(at) ?? null,
+        state,
+        conversation,
+        input.at,
+        { override: input.override },
+      );
+      if (projected.transition === 'ignored' || projected.next === null) continue;
+      this.participants.set(at, projected.next);
+      delta += projected.delta;
+      if (projected.transition !== 'bumped') counts[projected.transition] += 1;
+    }
+    const projectedVersion = advancedProjection(
+      conversation.projectedMembershipVersion ?? 0,
+      input.advance,
+    );
+    const memberCount = conversation.memberCount + delta;
+    this.conversations.set(conversation.id, {
+      ...conversation,
+      memberCount,
+      projectedMembershipVersion: projectedVersion,
+    });
+    return { kind: 'applied', ...counts, projectedVersion, memberCount };
+  }
+
+  async resetProjectedVersion(conversationId: ConversationId, to: number): Promise<void> {
+    if (!Number.isSafeInteger(to) || to < 0) {
+      throw new RangeError('A projected version is a whole number from 0.');
+    }
+    const conversation = this.conversations.get(conversationId);
+    if (conversation === undefined || conversation.communityId === null) return;
+    this.conversations.set(conversationId, { ...conversation, projectedMembershipVersion: to });
+  }
+
   // ── MessagingReadModel ─────────────────────────────────────────────────
 
   async listConversations(
@@ -269,7 +341,52 @@ export class InMemoryMessagingStore implements MessagingRepository, MessagingRea
     };
   }
 
+  async communityChatsFor(communityIds: readonly string[]): Promise<readonly CommunityChatRef[]> {
+    if (communityIds.length > 1000) throw new RangeError('At most 1000 community ids per call.');
+    return [...new Set(communityIds)].flatMap((communityId) => {
+      const chat = this.chatOf(communityId);
+      return chat === null ? [] : [chatRef(chat)];
+    });
+  }
+
+  async communityChat(communityId: string): Promise<CommunityChatRef | null> {
+    const chat = this.chatOf(communityId);
+    return chat === null ? null : chatRef(chat);
+  }
+
+  async projectionRows(
+    conversationId: ConversationId,
+    page: { readonly limit: number; readonly afterUserId?: string; readonly versionAbove: number },
+  ): Promise<{ readonly items: readonly ProjectionRow[]; readonly next: string | null }> {
+    const rows = [...this.participants.values()]
+      .filter(
+        (participant) =>
+          participant.conversationId === conversationId &&
+          (page.afterUserId === undefined || participant.userId > page.afterUserId) &&
+          (participant.leftAt === null || (participant.sourceVersion ?? 0) > page.versionAbove),
+      )
+      .sort((a, b) => (a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0));
+    const items = rows.slice(0, page.limit).map((participant) => ({
+      userId: participant.userId,
+      active: participant.leftAt === null,
+      sourceVersion: participant.sourceVersion,
+      sourceMembershipId: participant.sourceMembershipId,
+      sourceJoinedAt: participant.sourceJoinedAt,
+    }));
+    return {
+      items,
+      next: rows.length > page.limit ? (items[items.length - 1]?.userId ?? null) : null,
+    };
+  }
+
   // ── internals ──────────────────────────────────────────────────────────
+
+  private chatOf(communityId: string): Conversation | null {
+    for (const conversation of this.conversations.values()) {
+      if (conversation.communityId === communityId) return conversation;
+    }
+    return null;
+  }
 
   private store(input: NewConversation): void {
     this.conversations.set(input.conversation.id, input.conversation);
@@ -330,6 +447,14 @@ export class InMemoryMessagingStore implements MessagingRepository, MessagingRea
       unreadCount: Math.min(unread, UNREAD_COUNT_CAP),
     };
   }
+}
+
+function chatRef(conversation: Conversation): CommunityChatRef {
+  return {
+    conversationId: conversation.id,
+    communityId: conversation.communityId ?? '',
+    projectedVersion: conversation.projectedMembershipVersion ?? 0,
+  };
 }
 
 function activityOf(row: ConversationSummaryRow): Date {

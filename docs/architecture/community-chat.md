@@ -1,6 +1,8 @@
 # Community chat
 
-**State: APPROVED (2026-09-23) — implemented in P4.** Until P4 lands, nothing here exists.
+**State: APPROVED (2026-09-23) — implemented in P4 (2026-09-24).** What was
+built, the choices made while building it, and the evidence are in
+[§20](#20-p4-as-implemented).
 
 How messaging carries a community's chat (phase **P4**). Communities decides
 who belongs and who may read or post; messaging stores the messages and
@@ -1200,3 +1202,240 @@ lag filter, the ceiling narrowing, G1–G4, the new route); the
 §4–5 in part, because messaging would no longer own membership for
 conversations linked to a community (`0011-messaging-v1.md:41-52`). ADRs are
 never edited.
+
+---
+
+## 20. P4 as implemented
+
+Landed 2026-09-24. Everything in §5–§13 is implemented as designed, on both
+adapters (Drizzle and `InMemoryMessagingStore`), with the one Communities
+contract addition of §12.6. Migration `0012_community_chat` is §12.3 exactly.
+Nothing in Live or Attendance changed, and there is no Flutter change (§12.7
+is P5).
+
+### 20.1 Where it is
+
+| Piece | File |
+| --- | --- |
+| The register, materialization shape, `COMMUNITY_HISTORY`, the batch rules | `messaging/domain/community-chat.ts` |
+| The applier, materialization, the reset; the chat lookups and the reconciler's walk | `messaging/infrastructure/drizzle-messaging-repository.ts`, `drizzle-messaging-read-model.ts`, `in-memory-messaging-store.ts` |
+| The read branch and repair on access | `messaging/application/conversation-access.ts` |
+| Posting, list filtering, titles and `canPost` | `messaging/application/community-chats.ts` |
+| Recipients: lag filter and read-ceiling narrowing | `messaging/application/message-recipients.service.ts` |
+| Sync, sweeper, reconciler | `messaging/application/community-chat-{sync,sweeper,reconciler}.ts` |
+| The route | `messaging/api/community-chat.controller.ts`, `application/community-chat.use-case.ts` |
+| Bounds and refusals | `messaging/application/community-chat-settings.ts`; `MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS` in `platform/config/app-config.ts` |
+| `COMMUNITY_CHAT_READ_CEILING` | `communities/contracts/capabilities.ts`, read by `communities/domain/act-rules.ts` |
+
+### 20.2 Choices made during implementation
+
+All technical; none decides a policy.
+
+- **The applier also locks the batch's rows.** Besides the conversation row,
+  the apply reads the batch's participant rows `FOR UPDATE`, in key order.
+  `markRead` moves a watermark without the conversation lock (§2), so without
+  this an apply could write back a watermark read a moment before. It cannot
+  deadlock: `markRead` holds one row lock and waits for nothing else.
+- **One statement per batch, with array parameters.** The upsert is
+  `INSERT … SELECT * FROM unnest(…eleven arrays…) ON CONFLICT … DO UPDATE …
+  WHERE coalesce(source_version, 0) < excluded.source_version`: the same
+  guard as §6.3, but 11 bind values instead of 11,000. Measured on the scale
+  fixture, the lock hold per 1,000-member batch fell from about 400 ms (almost
+  all of it building and serializing parameters while the lock was held) to
+  64 ms p50.
+- **`member_count` moves by what was really written.** The upsert returns
+  its rows, so the database guard, not the code alone, keeps C5.
+  `community-chat-db-guard.spec.ts` proves it with the code's own check
+  switched off.
+- **A `bumped` row takes the whole source** (version, stint id and start).
+  For an ACTIVE row this is the same stint. For a LEFT row it records the
+  latest stint's provenance. Watermark and window are untouched, as designed.
+- **The reconciler's walk** (§7.5):
+  - It reads the head H first.
+  - Pass 1 covers every current row, and every row above H: a row the
+    authority's next versions could not outrank.
+  - Pass 2 covers the authority's current members that the projection does
+    not show as current.
+  - Someone the authority no longer knows at all becomes a tombstone at H.
+  - Then the projected version is reset to H (`resetProjectedVersion`), and a
+    sync pulls whatever committed meanwhile.
+  - The read model gained `projectionRows` for pass 1.
+- **Opening the chat from its community schedules a sync** when the chat was
+  missing, or its projection is behind the caller's own stint, so the other
+  members follow within milliseconds, not at the next sweep.
+- **Oversight never reads the chat** (Q43). A permit whose basis carries no
+  stint is refused. `community.chat.read` has no oversight path, so this is
+  defence in depth.
+- **`GetConversationUseCase`, and so `MESSAGE_DELIVERY.position`, pass the
+  access checkpoint first** for every conversation. For a conversation
+  messaging manages this adds two primary-key lookups and changes no answer.
+- **`MESSAGE_RECIPIENTS` reads the conversation row once per page** to learn
+  its `community_id`, as §7.3 costs it. For a missing conversation it returns
+  an empty page, as before.
+- **Bounds**, all PROVISIONAL (Q26):
+  - The new route allows 60 lookups per minute per person; above that it
+    answers 429 `messaging.too_many_community_chat_lookups`.
+  - Sweep interval 60 s.
+  - One sync worker plus the sweeper: two background connections.
+  - `MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS`, default 250; a negative
+    value is refused at boot.
+- **The new controller opts into `DatabaseUnavailableInterceptor`** (a store
+  outage answers 503). The existing conversation routes are unchanged.
+- **Observability is logs only.** The sweeper logs when it finds lagging
+  chats, the reconciler logs a warning with its report, and the sync logs a
+  failed pass. No metrics system exists yet, so §7.6's metrics are deferred
+  (§20.8).
+
+### 20.3 What messaging's participant rows are (P4 brief §4)
+
+For a community chat they are **A: a named projection — a read model** of
+Communities' ACTIVE membership. They are never an authoritative membership
+list, and never an access answer on their own.
+
+- They are also where messaging keeps its own per-member state: the read
+  watermark and the history window (§3.2).
+- They are what delivery pages over, the B aspect, always narrowed as §7.3
+  describes.
+
+| Property | Semantics |
+| --- | --- |
+| Source of truth | Communities: `community_members`, through `COMMUNITY_MEMBERSHIP` and `COMMUNITY_AUTHORIZATION` only |
+| Direction | Communities → messaging, pulled (`changesSince`); Communities never calls messaging |
+| Consistency | Eventual, with bounded lag: the wake-up applies within milliseconds; a lost one is found by the next sweep (≤ 60 s) or repaired on access. Every request asks the authority, so lag never widens access |
+| Recovery | The sync; the sweeper (materializes missing chats, finds lag after a restart); repair on access (the caller's own row); the reconciler (projection ahead after a restore; on demand for divergence at equal versions) |
+| Duplicates | A version-keyed register per member (§6.2), with its guard repeated in the database. Replays and reordering are no-ops, and concurrent appliers converge |
+
+### 20.4 Membership changes and the chat (P4 brief §9)
+
+| Change (in Communities) | Chat access | Projection | Messages sent before | Coming back |
+| --- | --- | --- | --- | --- |
+| **Joins** — by link, or added by a manager | At once: the first request after Communities commits is served, repaired on access if the projection has not heard yet | Row `joined` on the wake-up (ms), or by the next sweep; watermark at the last message | Visible under `COMMUNITY_HISTORY = 'FULL'` (PROVISIONAL, **Q52**) | — |
+| **Leaves** | At once: every request answers 404 from Communities' commit | Row `left` (kept; `member_count` −1) on the wake-up | None while not a member | Yes, by link (PROVISIONAL, **Q49**). A new stint is a `rejoined` row: new watermark; history per **Q52** |
+| **Removed** | At once, as for leaving; a send in flight may land only if both permits were read before the commit (S2) | As for leaving | None | Not by link (REMOVED closes it — Communities' rule, PROVISIONAL **Q49**). A manager may add them again: a new stint |
+| **Delegated grant revoked** | Reading unchanged; posting refused from the next send (403) | None — grants are asked, never projected | Unchanged | A new grant restores posting |
+| **Locked** | Reading continues; posting refused to everyone, the owner included (403) (PROVISIONAL, **Q46**) | None | Unchanged | Joining by link refused while LOCKED (Communities: `acceptsMembers`) |
+| **Unlocked** | Posting follows the permits again | None | Unchanged | Joining reopens |
+| **Owner transferred** | Posting follows the permit: the new owner posts; the former owner only with a grant (**Q42**, **Q44**) | None — belonging did not change, so no version moved | Unchanged | — |
+
+Explicit open questions behind this table, none answered here:
+
+- **Q52** — history for newcomers and returners.
+- **Q49** — leaving, removal, rejoining.
+- **Q46** — what LOCKED switches off.
+- **Q51** — who posts.
+- **Q42** and **Q44** — owners and delegation.
+- **Q3** — the messages of someone who left are kept; retention is not decided.
+- **Q22** — who sees the roster: never messaging.
+- **Q53** — no system notice such as "X joined".
+- **Q67** — no notification of membership changes.
+
+### 20.5 Failure handling (P4 brief §19)
+
+| Case | Behaviour | Evidence |
+| --- | --- | --- |
+| Community exists, chat creation fails | The request fails (5xx); nothing half-made: materialization is one `INSERT … ON CONFLICT DO NOTHING`; the next open, wake-up or sweep retries | contract suite |
+| Chat exists, projection sync fails | The pass logs and stops; access stays right (permit per request, repair on access); fan-out narrowed by the lag filter; the sweeper retries | `community-chat.spec.ts` |
+| Member joins while the sync is unavailable | Served on first access by repair; list views may omit the chat until the sync runs | `community-chat.spec.ts` |
+| Removal races a send | S2: permits first then append first → lands, ordered before the projected removal; permits first then the removal applied first → the lock refuses; removal first → refused at the permit | `community-chat-postgres.spec.ts` (A, B, C, and 50 rounds of real concurrency) |
+| Concurrent chat creation | The partial unique index: 20 at once → 1 | Postgres suite, application suite |
+| Duplicate, replayed or reordered wake-ups | Wake-ups carry nothing used but the community id; the pulled states go through the version register | both suites |
+| Stale projection | Never an access answer; the lag filter while versions differ; the read ceiling on every page; the reconciler when ahead | application and Postgres suites |
+| Communities cannot answer | 503 on every community-chat request, `SERVER_ERROR` on `subscribe`; the recipient walk throws for its caller to log; the sweeper skips the tick; conversations messaging manages are unaffected | `community-chat.spec.ts`, `community-chat-relay.spec.ts` |
+
+When in doubt it denies:
+
+- any rejection from Communities → 503;
+- any refusal → 404, or 403 for posting;
+- a permit without a stint → 404;
+- a removed or ceiling-less member → no frame and no notification row.
+
+### 20.6 Evidence at 30,000 members (P4 brief §16)
+
+**What the fixture holds** (`community-chat-scale.spec.ts`):
+
+- Communities: 30,000 ACTIVE members and 30,000 who left.
+- The projection: 30,000 current rows and 30,000 tombstones, so 50% churn.
+- 22,000 other conversations (DMs, groups, small community chats), so the
+  planner sees production's shapes.
+- A 30-member community as the control.
+
+**What the numbers are.** Timings were measured on the development
+container, not production hardware. They show that cost does not grow with
+membership; they are **not** a capacity claim.
+
+**Fill** — the real sync, while the owner kept sending:
+
+- 60 applies of at most 1,000 states.
+- Lock hold per batch: p50 64 ms, max 95 ms.
+- 77 sends during the fill: p50 78 ms, max 179 ms. Each waits for at most the
+  batch holding the lock.
+
+**Delivery.** The `MESSAGE_RECIPIENTS` walk takes 30 pages and returns every
+member exactly once, in about 0.36 s.
+
+**p99, 30,000 against 30:**
+
+| Path | 30,000 | 30 |
+| --- | --- | --- |
+| Membership authorization (Communities' one statement) | 3.7 ms | 2.8 ms |
+| Chat access (open the chat) | 9.4 ms | 7.5 ms |
+| Message send, both permits included | 16.7 ms | 18.0 ms |
+| One recipient page | 18.2 ms (1,000 ids) | 5.9 ms (30 ids) |
+| Community-chat lookup | 1.0 ms | 0.9 ms |
+
+**What EXPLAIN and the statement counts show:**
+
+- Opening, paging, sending and a recipient page send the same number of
+  statements at 30,000 as at 30. None scans a membership table.
+- Member pages use `conversation_participants_current_idx` under 50% churn
+  (gate G2).
+- The chat lookup uses `conversations_community_unique`.
+- The lag filter adds exactly one statement per page (`statesOf`), whatever
+  the page size.
+- No N+1 anywhere.
+- One nuance on `statesOf`. At this fixture's 60,000-row `community_members`,
+  the planner answers Communities' `statesOf` for 1,000 people with one pass
+  of the table rather than 1,000 probes. At production volume it probes the
+  index (`communities-scale.spec.ts` pins that at 900,000 stints).
+
+**What is not claimed:**
+
+- Production readiness at 30,000.
+- The G3 load profile, which has not run.
+- Posting above 250 members: it stays switched off.
+
+### 20.7 Tests
+
+| Suite | Covers |
+| --- | --- |
+| `community-chat.spec.ts` (domain) | The full truth table: every row × incoming × version. Rejoin by stint id; tombstones; FULL and FROM_JOIN; the override; batch rules; the advance rule; 200 seeded convergence runs with 1–3 interleaved appliers |
+| `community-chat.spec.ts` (application) | Every item of the P4 brief's §15 that the in-memory adapters can show: access, refusals, repair, removal and leave, rejoin, delegated and revoked posting, LOCKED, owner transfer, capacity switch, 412 and 403, list views and their fixed call count, recipients (lag, ceiling, unknown, unreadable), failure (503), sync coalescing, sweeper, reconciler |
+| `community-chat-relay.spec.ts`, `community-chat-notifications.spec.ts` | No frame and no notification row for a removed member or one without the read ceiling. `subscribe` refused like a missing conversation; `SERVER_ERROR` when Communities is down |
+| `in-memory-community-chat.spec.ts` + the Postgres suite | The same store contract on both adapters (mock parity) |
+| `community-chat-postgres.spec.ts` | Schema guards; 20 concurrent materializations; the 10→20-after-50 regression; 1,000 concurrent applies never lowering the version; two appliers equal one; S2 A, B and C; 50 racing rounds; drift; a restarted process's sweeper; the lag filter; the reconciler after a simulated restore; divergence at equal versions |
+| `community-chat-db-guard.spec.ts` | The database guard with the code's check bypassed |
+| `community-chat-scale.spec.ts` | §20.6 |
+| `communities-migrations.spec.ts` | 0012's exact delta on a database already in use |
+| `community-chat.api.spec.ts` | The route over HTTP and the WebSocket endpoint, the 404 parity, 403, 412, 429, the wiring |
+| `messaging-boundaries.spec.ts`, `authorization.spec.ts`, `act-rules.spec.ts`, `app-config.spec.ts` | The dependency direction, exports unchanged, no cycle, the route map, the shared read ceiling, the setting |
+
+Unmodified and green: `security.spec.ts`, `membership.spec.ts` and every
+other existing messaging, realtime and notifications suite.
+
+### 20.8 Deferred
+
+Each item below is deliberately later, and none is needed for what P4 does:
+
+- **G1** `OnlineAudience` (P5), and the realtime `community.member.*` frames (P5).
+- **G3** load profile 4 (P8).
+- **G4** notification cost, which waits on Q27 and Q28.
+- **Flutter** (P5): parse `communityId`; `conversationForCommunity`.
+- **Metrics:** age of the oldest lag, lagging chats, repairs per minute,
+  reconciler runs and orphan chats. Logs only until a metrics system exists.
+- **An operator route to run the reconciler on demand.** It runs by itself
+  when a projection is ahead; on demand it is a method call.
+- **The rest of §19:**
+  - carrying the lag flag in the recipients cursor;
+  - sequence allocation without the row lock, if Q51 lets many post;
+  - `community.messages.moderate`, which waits on Q51 and Q23;
+  - the Q28 collapse seam.

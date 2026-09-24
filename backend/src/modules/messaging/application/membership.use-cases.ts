@@ -21,6 +21,7 @@ import { participantAdded, participantRemoved } from '../domain/events';
 import { MAX_PARTICIPANTS } from '../domain/messaging-policy';
 import { canManageMembers, isActive, type Participant } from '../domain/participant';
 import { MESSAGING_REPOSITORY, type MessagingRepository } from '../domain/ports';
+import { MEMBERSHIP_MANAGED_BY_COMMUNITY } from './community-chat-settings';
 import { CONVERSATION_NOT_FOUND, ConversationAccess } from './conversation-access';
 import { ConversationFactory } from './create-conversation.use-cases';
 import { CONVERSATION_RESOURCE, MessagingAudit } from './messaging-settings';
@@ -37,8 +38,13 @@ const NOT_OWNER = failure(
   "Only the conversation's owner may change who is in it.",
 );
 
-/** Membership changes are what the owner of a group or channel manages — never a DM's. */
+/**
+ * Membership changes are what the owner of a group or channel manages —
+ * never a DM's, and never a community chat's, whose members are the
+ * community's: they join, leave and are removed in Communities (Q49).
+ */
 function managing(conversation: Conversation, participant: Participant): Result<void> {
+  if (conversation.communityId !== null) return err(MEMBERSHIP_MANAGED_BY_COMMUNITY);
   if (conversation.type === 'DIRECT') return err(DIRECT_IS_FIXED);
   if (!canManageMembers(conversation.type, participant.role)) return err(NOT_OWNER);
   return ok(undefined);
@@ -249,20 +255,29 @@ export class RemoveParticipantUseCase {
     return ok(undefined);
   }
 
-  /** As the owner if they are one; otherwise as a moderator if they may; otherwise not at all. */
+  /**
+   * As the owner if they are one; otherwise as a moderator if they may;
+   * otherwise not at all. A community chat is refused on either route — a
+   * member hears why (412), anyone else hears what a non-member hears (404).
+   */
   private async route(
     principal: Principal,
     id: ConversationId,
   ): Promise<Result<{ conversation: Conversation; moderated: boolean }>> {
     const membership = await this.access.member(principal, id, Permissions.messaging.read);
+    if (membership.ok && membership.value.conversation.communityId !== null) {
+      return err(MEMBERSHIP_MANAGED_BY_COMMUNITY);
+    }
     if (membership.ok && membership.value.participant.role === 'OWNER') {
       return ok({ conversation: membership.value.conversation, moderated: false });
     }
     if (this.access.can(principal, Permissions.messaging.manage)) {
       const conversation = await this.repository.findConversation(id);
-      return conversation === null
-        ? err(CONVERSATION_NOT_FOUND)
-        : ok({ conversation, moderated: true });
+      if (conversation === null) return err(CONVERSATION_NOT_FOUND);
+      if (conversation.communityId !== null) {
+        return membership.ok ? err(MEMBERSHIP_MANAGED_BY_COMMUNITY) : membership;
+      }
+      return ok({ conversation, moderated: true });
     }
     if (!membership.ok) return membership;
     return membership.value.conversation.type === 'DIRECT' ? err(DIRECT_IS_FIXED) : err(NOT_OWNER);
@@ -293,6 +308,8 @@ export class LeaveConversationUseCase {
     );
     if (!membership.ok) return membership;
     const { conversation, participant } = membership.value;
+    // Leaving a community chat is leaving the community — in Communities.
+    if (conversation.communityId !== null) return err(MEMBERSHIP_MANAGED_BY_COMMUNITY);
     if (conversation.type === 'DIRECT') return err(DIRECT_IS_FIXED);
     if (participant.role === 'OWNER') {
       return err(

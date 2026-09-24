@@ -1,6 +1,6 @@
 # Communities
 
-**State: APPROVED (2026-09-23) — implemented in phases: P2 (core) and P3 (delegation).** What a phase has not delivered does not exist yet; [the hub's §25](communities-live-attendance.md#25-implementation-phases) records which phases have landed.
+**State: APPROVED (2026-09-23) — implemented in phases: P2 (core), P3 (delegation), and P4's one contract addition.** What a phase has not delivered does not exist yet; [the hub's §25](communities-live-attendance.md#25-implementation-phases) records which phases have landed.
 
 The design of the `communities` module: the Community aggregate, membership,
 invitation links, the OPEN/LOCKED lifecycle (phase **P2**), and delegated
@@ -196,6 +196,23 @@ decides it. Nothing here decides an institutional policy.
 > asserted zero); the delegate's authorization, holders and grant-list
 > `EXPLAIN`s beside 20,000 ended grants in `communities-scale.spec.ts`; the
 > 0011 upgrade test; and the API suite.
+
+> **P4 landed (2026-09-24): the community chat's side of Communities.**
+> Communities gained exactly the one contract addition
+> [community-chat.md §12.6](community-chat.md#126-what-communities-provides)
+> names: `COMMUNITY_CHAT_READ_CEILING` in `contracts/capabilities.ts`
+> (`communities.read` + `messaging.read`, frozen), which the act table's
+> `community.chat.read` rule now reads, so a person's permit and messaging's
+> principal-less recipient pages ask for the same ceiling
+> (`act-rules.spec.ts` pins both). Nothing else in this module changed: no
+> rule, no table, no event, no route. Messaging is the contracts' first
+> consumer — `COMMUNITY_AUTHORIZATION` (`chat.read`, `chat.post`,
+> `authorizeEach`), `COMMUNITY_MEMBERSHIP` (`heads`, `listHeads`, `statesOf`,
+> `changesSince`, `members`), `COMMUNITY_DIRECTORY` and the `member.*` events
+> as wake-ups — from its application layer only; Communities still imports
+> nothing but identity (`communities-boundaries.spec.ts`,
+> `messaging-boundaries.spec.ts`). What a community chat does is
+> [community-chat.md](community-chat.md).
 
 ---
 

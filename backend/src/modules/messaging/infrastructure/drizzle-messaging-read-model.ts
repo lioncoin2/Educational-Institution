@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 
 import { DATABASE, type Database } from '../../../platform/database';
 import type { MessageType, ParticipantRole } from '../contracts/vocabulary';
@@ -7,13 +7,24 @@ import type { ConversationId } from '../domain/conversation';
 import type { MessageAttachment, MessageId } from '../domain/message';
 import { UNREAD_COUNT_CAP } from '../domain/messaging-policy';
 import type {
+  CommunityChatRef,
   ConversationCursor,
   ConversationSummaryRow,
   MessageSlice,
   MessageWindow,
   MessagingReadModel,
+  ProjectionRow,
 } from '../domain/ports';
-import { date, dateOrNull, num, str, strOrNull, toMessage, toParticipant } from './row-mapping';
+import {
+  date,
+  dateOrNull,
+  num,
+  numOrNull,
+  str,
+  strOrNull,
+  toMessage,
+  toParticipant,
+} from './row-mapping';
 import { conversationParticipants, conversations, messageAttachments, messages } from './schema';
 
 /**
@@ -171,6 +182,67 @@ export class DrizzleMessagingReadModel implements MessagingReadModel {
     };
   }
 
+  async communityChatsFor(communityIds: readonly string[]): Promise<readonly CommunityChatRef[]> {
+    if (communityIds.length > COMMUNITY_CHAT_LOOKUP_MAX) {
+      throw new RangeError(`At most ${COMMUNITY_CHAT_LOOKUP_MAX} community ids per call.`);
+    }
+    if (communityIds.length === 0) return [];
+    const rows = await this.db
+      .select(COMMUNITY_CHAT_COLUMNS)
+      .from(conversations)
+      .where(inArray(conversations.communityId, [...new Set(communityIds)]));
+    return rows.flatMap(toChatRef);
+  }
+
+  async communityChat(communityId: string): Promise<CommunityChatRef | null> {
+    const rows = await this.db
+      .select(COMMUNITY_CHAT_COLUMNS)
+      .from(conversations)
+      .where(eq(conversations.communityId, communityId))
+      .limit(1);
+    return rows.flatMap(toChatRef)[0] ?? null;
+  }
+
+  async projectionRows(
+    conversationId: ConversationId,
+    page: { readonly limit: number; readonly afterUserId?: string; readonly versionAbove: number },
+  ): Promise<{ readonly items: readonly ProjectionRow[]; readonly next: string | null }> {
+    const rows = await this.db
+      .select({
+        userId: conversationParticipants.userId,
+        leftAt: conversationParticipants.leftAt,
+        sourceVersion: conversationParticipants.sourceVersion,
+        sourceMembershipId: conversationParticipants.sourceMembershipId,
+        sourceJoinedAt: conversationParticipants.sourceJoinedAt,
+      })
+      .from(conversationParticipants)
+      .where(
+        and(
+          eq(conversationParticipants.conversationId, conversationId),
+          page.afterUserId === undefined
+            ? undefined
+            : gt(conversationParticipants.userId, page.afterUserId),
+          or(
+            isNull(conversationParticipants.leftAt),
+            gt(conversationParticipants.sourceVersion, page.versionAbove),
+          ),
+        ),
+      )
+      .orderBy(asc(conversationParticipants.userId))
+      .limit(page.limit + 1);
+    const items = rows.slice(0, page.limit).map((row) => ({
+      userId: row.userId,
+      active: row.leftAt === null,
+      sourceVersion: row.sourceVersion,
+      sourceMembershipId: row.sourceMembershipId,
+      sourceJoinedAt: row.sourceJoinedAt,
+    }));
+    return {
+      items,
+      next: rows.length > page.limit ? (items[items.length - 1]?.userId ?? null) : null,
+    };
+  }
+
   private currentMembers(conversationId: string, afterUserId: string | undefined): SQL | undefined {
     return and(
       eq(conversationParticipants.conversationId, conversationId),
@@ -207,8 +279,9 @@ export class DrizzleMessagingReadModel implements MessagingReadModel {
     const result = await this.db.execute(sql`
       select
         c.id, c.type, c.title, c.created_by, c.created_at, c.direct_user_low, c.direct_user_high,
-        c.last_sequence, c.last_message_at, c.member_count,
+        c.last_sequence, c.last_message_at, c.member_count, c.community_id, c.projected_membership_version,
         p.user_id as member_user_id, p.role, p.joined_at, p.left_at, p.added_by, p.last_read_sequence, p.hidden_through_sequence,
+        p.source_version, p.source_membership_id, p.source_joined_at,
         counterpart.user_id as counterpart_user_id,
         latest.id as m_id, latest.sequence as m_sequence, latest.sender_id as m_sender_id,
         latest.type as m_type, latest.body as m_body, latest.created_at as m_created_at,
@@ -246,6 +319,31 @@ export class DrizzleMessagingReadModel implements MessagingReadModel {
   }
 }
 
+/** The most community ids one lookup takes — Communities' own page size. */
+const COMMUNITY_CHAT_LOOKUP_MAX = 1000;
+
+const COMMUNITY_CHAT_COLUMNS = {
+  id: conversations.id,
+  communityId: conversations.communityId,
+  projectedVersion: conversations.projectedMembershipVersion,
+};
+
+function toChatRef(row: {
+  readonly id: string;
+  readonly communityId: string | null;
+  readonly projectedVersion: number | null;
+}): CommunityChatRef[] {
+  return row.communityId === null
+    ? []
+    : [
+        {
+          conversationId: row.id as ConversationId,
+          communityId: row.communityId,
+          projectedVersion: row.projectedVersion ?? 0,
+        },
+      ];
+}
+
 function toSummaryRow(row: Record<string, unknown>): ConversationSummaryRow {
   const conversationId = str(row.id) as ConversationId;
   const low = strOrNull(row.direct_user_low);
@@ -261,6 +359,8 @@ function toSummaryRow(row: Record<string, unknown>): ConversationSummaryRow {
       lastSequence: num(row.last_sequence),
       lastMessageAt: dateOrNull(row.last_message_at),
       memberCount: num(row.member_count),
+      communityId: strOrNull(row.community_id),
+      projectedMembershipVersion: numOrNull(row.projected_membership_version),
     },
     me: {
       conversationId,
@@ -271,6 +371,9 @@ function toSummaryRow(row: Record<string, unknown>): ConversationSummaryRow {
       addedBy: strOrNull(row.added_by),
       lastReadSequence: num(row.last_read_sequence),
       hiddenThroughSequence: num(row.hidden_through_sequence),
+      sourceVersion: numOrNull(row.source_version),
+      sourceMembershipId: strOrNull(row.source_membership_id),
+      sourceJoinedAt: dateOrNull(row.source_joined_at),
     },
     counterpartUserId: strOrNull(row.counterpart_user_id),
     lastMessage:

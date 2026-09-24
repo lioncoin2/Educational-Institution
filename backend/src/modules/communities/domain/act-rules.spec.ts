@@ -2,6 +2,7 @@ import { ALL_PERMISSIONS, isPermission } from '../../identity/contracts/permissi
 import {
   COMMUNITY_ACTS,
   COMMUNITY_CAPABILITIES,
+  COMMUNITY_CHAT_READ_CEILING,
   COMMUNITY_PARTICIPATION,
   isCommunityAct,
   isCommunityCapability,
@@ -27,6 +28,12 @@ describe('the act rules (PROVISIONAL)', () => {
       ];
     }),
   );
+
+  it('asks a chat reader for exactly the published read ceiling — the one messaging narrows recipients by', () => {
+    expect(COMMUNITY_CHAT_READ_CEILING).toEqual(['communities.read', 'messaging.read']);
+    expect(ACT_RULES['community.chat.read'].standingCeiling).toEqual(COMMUNITY_CHAT_READ_CEILING);
+    expect(Object.isFrozen(COMMUNITY_CHAT_READ_CEILING)).toBe(true);
+  });
 
   it('is exactly the table the design states', () => {
     expect(table).toEqual({

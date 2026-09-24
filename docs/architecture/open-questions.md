@@ -469,7 +469,9 @@ would not apply to community chats
 ([communities.md §5.4](communities.md#54-no-ceiling-as-policy)). Posting in
 a community chat closes above `communityChatMaxServedMembers` (250), an
 engineering switch, until gates G1–G4 hold
-([community-chat.md §11.2](community-chat.md#112-gates-g1g4)).
+([community-chat.md §11.2](community-chat.md#112-gates-g1g4)). Built in P4:
+the caps above apply only to conversations messaging manages; the switch is
+the deployment setting `MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS`.
 
 ---
 
@@ -631,6 +633,19 @@ production topology, not before.
 fan-out and live capacity would also come from load tests (P8;
 [Q57](#q57--live-session-size-and-concurrency),
 [Q65](#q65--media-hosting-and-operations)).
+
+**Community chats (P4, built).** Engineering bounds of the same kind, all
+PROVISIONAL here ([community-chat.md §10](community-chat.md#10-caps-and-size),
+[§20.2](community-chat.md#202-choices-made-during-implementation)):
+
+- at most 1,000 member states per apply;
+- a sweep every 60 s;
+- two background connections (one sync worker and the sweeper);
+- 60 chat lookups per person per minute on
+  `GET /messaging/communities/:id/conversation`;
+- the capacity switch `MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS`,
+  default 250. Above it a community chat refuses new posts until gates G1–G4
+  hold. It is never a limit on a community's size.
 
 ---
 
@@ -1306,8 +1321,8 @@ audiences.
 > approved on 2026-09-23 and is implemented in phases; Q40 is answered. Each
 > **Built instead** below was written before implementation and reads
 > "nothing", followed by the default the design uses; the phase that builds a
-> default updates its entry (Q41–Q49 name the phase, P2 or P3, that built
-> theirs). Every such default is PROVISIONAL, belongs to the question it sits
+> default updates its entry (Q41–Q53 name the phase — P2, P3 or P4 — that
+> built theirs). Every such default is PROVISIONAL, belongs to the question it sits
 > under, and is not a decision — building it answered nothing.
 >
 > The brief's "group" is the **Community** aggregate here: "group" already
@@ -1428,7 +1443,7 @@ permission never substitutes for membership, although `messaging.manage` may
 remove members (Q23). Academic's `academic.manage` acts on any halaqa.
 Access to children's rosters is a privacy decision.
 
-**Built instead.** Implemented as the default below — P2 (view, members, lock, links, removal, the audited reads), P3 (transfer)
+**Built instead.** Implemented as the default below — P2 (view, members, lock, links, removal, the audited reads), P3 (transfer), P4 (oversight never reads a community's chat: a permit without a stint is refused)
 ([communities.md §6.11](communities.md#611-oversight-communitiesmanage);
 [ADR 0017](decisions/0017-community-scoped-authorization.md)). PROVISIONAL
 default: `communities.manage` is held by OWNER and ADMIN. It may view, list
@@ -1539,7 +1554,7 @@ grantee ([communities.md §6.14](communities.md#614-not-every-teacher-can-lock-e
 and adds `communities.manage` holders, which the brief does not name; both
 need institutional confirmation.
 
-**Built instead.** Implemented as the default below — P2 (P3 adds grant, revoke and transfer to management: never closed by LOCKED)
+**Built instead.** Implemented as the default below — P2 (P3 adds grant, revoke and transfer to management: never closed by LOCKED; P4 builds the chat's side: reading continues, posting stops for everyone, the owner included — [community-chat.md §20.4](community-chat.md#204-membership-changes-and-the-chat-p4-brief-9))
 ([communities.md §8.2](communities.md#82-what-locked-means--provisional);
 [ADR 0016](decisions/0016-communities-module.md)). PROVISIONAL default, as
 one Communities table (`statePermits` plus `LifecycleEffects`):
@@ -1636,7 +1651,7 @@ their creator's authority removes one check.
 **Why not guessed.** Removal is a moderation act with safeguarding weight.
 Announcing it discloses membership (Q22).
 
-**Built instead.** Implemented as the default below — P2
+**Built instead.** Implemented as the default below — P2 (P4: a community chat follows it — messaging refuses its own add, remove and leave there with 412 `messaging.membership_managed_by_community`, and a rejoin starts a new window and watermark)
 ([communities.md §3.2](communities.md#32-membership-stints)).
 PROVISIONAL default:
 
@@ -1699,8 +1714,9 @@ includes minors set the abuse surface and the moderation load (Q23). The
 only precedents are messaging's provisional GROUP and CHANNEL rules (Q6,
 Q20).
 
-**Built instead.** Nothing — design only
-([community-chat.md §5](community-chat.md#5-what-a-community-chat-is);
+**Built instead.** Implemented as the default below — P4
+([community-chat.md §5](community-chat.md#5-what-a-community-chat-is),
+[§20](community-chat.md#20-p4-as-implemented);
 [ADR 0018](decisions/0018-community-chat-projection.md)). PROVISIONAL
 default:
 
@@ -1717,8 +1733,8 @@ default:
 - no moderation of messages in v1 (`community.messages.moderate` is
   reserved).
 
-**When answered.** Posting rules change Communities' act rules only (P4);
-messaging does not change. Moderating messages adds
+**When answered.** Posting rules change Communities' act rules only;
+messaging does not change (it asks `community.chat.post` on every send). Moderating messages adds
 `community.messages.moderate` together with Q23's answer (P12).
 
 ---
@@ -1736,15 +1752,16 @@ messaging does not change. Moderating messages adds
 leaked link would expose the whole archive to someone who should never have
 joined.
 
-**Built instead.** Nothing — design only
+**Built instead.** Implemented as the default below — P4
 ([community-chat.md §9](community-chat.md#9-read-watermarks-and-history-windows);
 [ADR 0018](decisions/0018-community-chat-projection.md)). PROVISIONAL
 default: `COMMUNITY_HISTORY = 'FULL'`, following Q21's channel rule. A
 rejoin (a new stint, told apart by `source_membership_id`) starts a new
 window and watermark.
 
-**When answered.** One constant (P4). Windows are stored per participant
-row, so a change applies to future joins only, without a migration.
+**When answered.** One constant (`messaging/domain/community-chat.ts`).
+Windows are stored per participant row, so a change applies to future joins
+only, without a migration.
 
 ---
 
@@ -1758,7 +1775,7 @@ row, so a change applies to future joins only, without a migration.
 needs a sender who is a member allowed to post. Announcing to 30,000 people
 is notification policy (Q28).
 
-**Built instead.** Nothing — design only
+**Built instead.** Implemented as the default below — P4
 ([community-chat.md §5.2](community-chat.md#52-the-rules-that-override-the-type)).
 PROVISIONAL default: no. The chat is written by people only; other facts
 travel as their own ids-only events and frames.

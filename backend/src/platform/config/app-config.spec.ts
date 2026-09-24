@@ -76,6 +76,17 @@ describe('loadConfig', () => {
     }
   });
 
+  it('serves community-chat posts up to 250 members unless told otherwise, and never a negative bound', () => {
+    expect(loadConfig({}).messaging.communityChatMaxServedMembers).toBe(250);
+    expect(
+      loadConfig({ MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS: '1000' }).messaging
+        .communityChatMaxServedMembers,
+    ).toBe(1000);
+    expect(() => loadConfig({ MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS: '-1' })).toThrow(
+      /MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS/,
+    );
+  });
+
   it('runs locally with no configuration at all, and says no database is configured', () => {
     const config = loadConfig({});
     expect(config.database.configured).toBe(false);
