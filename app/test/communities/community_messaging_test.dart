@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:quran_institution_app/data/models/messaging.dart';
 import 'package:quran_institution_app/data/realtime/realtime_client.dart';
 import 'package:quran_institution_app/data/realtime/realtime_frames.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_community_repository.dart';
@@ -24,9 +27,7 @@ void main() {
   late FakeRealtimeClient realtime;
   late ProviderContainer container;
 
-  setUp(() {
-    repo = ScriptedMessaging();
-    realtime = FakeRealtimeClient();
+  void boot() {
     container = ProviderContainer(
       overrides: [
         messagingRepositoryProvider.overrideWithValue(repo),
@@ -34,6 +35,12 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
+  }
+
+  setUp(() {
+    repo = ScriptedMessaging();
+    realtime = FakeRealtimeClient();
+    boot();
   });
 
   group('an open community chat', () {
@@ -107,6 +114,73 @@ void main() {
         expect(current(chat).messages, isNotEmpty);
       },
     );
+
+    test(
+      'asks for canPost again once loaded, for a lock that came meanwhile',
+      () async {
+        // The conversation read takes its answer: the viewer may post...
+        final hold = repo.holdConversation = Completer<void>();
+        final keepAlive = container.listen(
+          conversationProvider(chat),
+          (_, _) {},
+        );
+        addTearDown(keepAlive.close);
+        final loading = container.read(conversationProvider(chat).future);
+        await pumpEventQueue();
+        repo.holdConversation = null;
+        // ...then the community is locked, and told so, before it lands.
+        repo.canPostOverride[chat] = false;
+        realtime.emit(locked(community, 2));
+        await pumpEventQueue();
+        hold.complete();
+        await loading;
+        await pumpEventQueue();
+        expect(current(chat).conversation.canPost, isFalse);
+        expect(repo.conversationRequests, [chat, chat]);
+      },
+    );
+
+    Future<Message> removeThenReadmit() async {
+      realtime.onSubscribe = (_) =>
+          const SubscriptionRefused(RealtimeErrorCode.conversationNotFound);
+      repo.leftCommunities.add(community);
+      realtime.emit(removed(community));
+      await pumpEventQueue();
+      expect(current(chat).removed, isTrue);
+      // Added back, and the server admits the viewer again: something was
+      // said meanwhile.
+      repo.leftCommunities.remove(community);
+      final said = await repo.sendText(
+        chat,
+        clientMessageId: 'c-after-rejoin',
+        body: 'أهلًا بعودتك',
+      );
+      realtime.onSubscribe = (_) =>
+          Subscribed(lastSequence: said.sequence, lastReadSequence: 0);
+      return said;
+    }
+
+    test('opens again when the viewer is added back', () async {
+      await load(chat);
+      final said = await removeThenReadmit();
+      realtime.emit(added(community));
+      await pumpEventQueue();
+      final state = await container.read(conversationProvider(chat).future);
+      expect(state.removed, isFalse);
+      expect(state.messages.map((m) => m.id), contains(said.id));
+    });
+
+    test('opens again on a reconnect the server admits', () async {
+      await load(chat);
+      final said = await removeThenReadmit();
+      // The frame never arrived; the connection came back.
+      realtime.setStatus(RealtimeStatus.reconnecting);
+      realtime.setStatus(RealtimeStatus.reconnected);
+      await pumpEventQueue();
+      final state = await container.read(conversationProvider(chat).future);
+      expect(state.removed, isFalse);
+      expect(state.messages.map((m) => m.id), contains(said.id));
+    });
 
     test('closes when the re-read says the chat is not the viewer’s', () async {
       await load(chat);
@@ -191,6 +265,37 @@ void main() {
       expect(repo.listRequests, 2);
       expect(ids(), contains(chat));
     });
+
+    test(
+      'never lets a next page asked for before a leave bring the chat back',
+      () async {
+        repo = ScriptedMessaging(conversationPageSize: 3);
+        boot();
+        await load();
+        expect(ids(), ['mock-direct', 'mock-group', 'mock-channel']);
+        // The next page takes its answer — with this community's chat...
+        final hold = repo.holdList = Completer<void>();
+        final more = container
+            .read(conversationListProvider.notifier)
+            .loadMore();
+        await pumpEventQueue();
+        repo.holdList = null;
+        // ...then the viewer leaves the community before that answer lands.
+        repo.leftCommunities.add(community);
+        realtime.emit(removed(community, reason: CommunityRemovalReason.left));
+        await pumpEventQueue();
+        hold.complete();
+        await more;
+        await pumpEventQueue();
+        expect(ids(), isNot(contains(chat)));
+        final notifier = container.read(conversationListProvider.notifier);
+        while (container.read(conversationListProvider).requireValue.hasMore) {
+          await notifier.loadMore();
+        }
+        expect(ids(), isNot(contains(chat)));
+        expect(ids(), contains(chatOf(MockCommunityRepository.openId)));
+      },
+    );
 
     test('ignores a community frame about someone else', () async {
       await load();

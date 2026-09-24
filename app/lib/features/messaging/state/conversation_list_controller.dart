@@ -60,6 +60,11 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
   String? _viewerId;
   Future<void>? _resyncing;
 
+  /// Moves on whenever what is shown stops being the pages [loadMore]
+  /// extends — the first page replaced, or a conversation taken out — so a
+  /// next page asked for before is dropped rather than spliced on.
+  int _generation = 0;
+
   @override
   Future<ConversationListState> build() async {
     final repository = ref.watch(messagingRepositoryProvider);
@@ -82,11 +87,19 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
     );
   }
 
-  /// The next page, appended. A failure keeps what is shown and offers retry.
+  /// The next page, appended — never while the first is on its way. A
+  /// failure keeps what is shown and offers retry; a page cut from a list no
+  /// longer shown is dropped.
   Future<void> loadMore() async {
     final current = state.value;
-    if (current == null || !current.hasMore || current.loadingMore) return;
+    if (current == null ||
+        state.isLoading ||
+        !current.hasMore ||
+        current.loadingMore) {
+      return;
+    }
     final repository = ref.read(messagingRepositoryProvider);
+    final generation = _generation;
     state = AsyncData(
       current.copyWith(loadingMore: true, loadMoreFailed: false),
     );
@@ -94,6 +107,10 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
       final page = await repository.conversations(cursor: current.nextCursor);
       if (!ref.mounted) return;
       final now = state.value ?? current;
+      if (generation != _generation) {
+        state = AsyncData(now.copyWith(loadingMore: false));
+        return;
+      }
       final seen = {for (final c in now.items) c.id};
       state = AsyncData(
         ConversationListState(
@@ -109,7 +126,7 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
       state = AsyncData(
         (state.value ?? current).copyWith(
           loadingMore: false,
-          loadMoreFailed: true,
+          loadMoreFailed: generation == _generation,
         ),
       );
     }
@@ -185,6 +202,7 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
       case CommunityMemberRemovedEvent() when event.userId == _viewerId:
         final current = state.value;
         if (current == null) return;
+        _generation += 1;
         state = AsyncData(
           current.copyWith(
             items: [
@@ -197,6 +215,7 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
       case ParticipantRemovedEvent() when event.userId == _viewerId:
         final current = state.value;
         if (current == null) return;
+        _generation += 1;
         state = AsyncData(
           current.copyWith(
             items: [
@@ -234,8 +253,14 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
     try {
       final page = await ref.read(messagingRepositoryProvider).conversations();
       if (!ref.mounted) return;
+      _generation += 1;
       state = AsyncData(
-        ConversationListState(items: page.items, nextCursor: page.nextCursor),
+        ConversationListState(
+          items: page.items,
+          nextCursor: page.nextCursor,
+          // A next page on its way stays on its way — to be dropped.
+          loadingMore: state.value?.loadingMore ?? false,
+        ),
       );
     } on MessagingException {
       // The next event or reconnect tries again.

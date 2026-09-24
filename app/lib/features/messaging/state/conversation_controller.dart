@@ -141,6 +141,11 @@ class ConversationController extends AsyncNotifier<ConversationState> {
   Future<void>? _refreshingConversation;
   bool _refreshConversationAgain = false;
 
+  /// Communities locked, unlocked or with changed access while the
+  /// conversation was loading: its read may have been answered before, so
+  /// a chat of one of them is read again once loaded.
+  final Set<String> _communitiesChangedWhileLoading = {};
+
   @override
   Future<ConversationState> build() async {
     final repository = ref.watch(messagingRepositoryProvider);
@@ -154,7 +159,14 @@ class ConversationController extends AsyncNotifier<ConversationState> {
     // Once the timeline is on screen, make sure nothing slipped past
     // between loading it and the live connection.
     listenSelf((previous, next) {
-      if (previous?.value == null && next.value != null) unawaited(_sync());
+      final loaded = next.value;
+      if (previous?.value != null || loaded == null) return;
+      unawaited(_sync());
+      final communityId = loaded.conversation.communityId;
+      if (_communitiesChangedWhileLoading.contains(communityId)) {
+        unawaited(_refreshConversation());
+      }
+      _communitiesChangedWhileLoading.clear();
     });
 
     final (conversation, viewer, page) = await (
@@ -211,8 +223,10 @@ class ConversationController extends AsyncNotifier<ConversationState> {
   }
 
   /// Fetches what arrived after the last complete point — the refresh
-  /// action, and whatever the live connection could not deliver.
-  Future<void> refreshNewer() => _catchUp();
+  /// action, and whatever the live connection could not deliver. A closed
+  /// chat asks the server instead whether the viewer is admitted again.
+  Future<void> refreshNewer() =>
+      (state.value?.removed ?? false) ? _sync() : _catchUp();
 
   Future<void> sendText(String text) async {
     final body = text.trim();
@@ -331,14 +345,25 @@ class ConversationController extends AsyncNotifier<ConversationState> {
 
   /// A community chat follows its community — and a community frame is a
   /// hint to ask again, never an answer. The viewer's removal is confirmed by
-  /// the server refusing the subscription (never by the frame alone); a
-  /// lock, an unlock or changed access shows in the conversation's `canPost`,
-  /// read again.
+  /// the server refusing the subscription (never by the frame alone), and
+  /// their return by the server admitting them again; a lock, an unlock or
+  /// changed access shows in the conversation's `canPost`, read again —
+  /// once loaded, for one that came while it loaded.
   void _onCommunityEvent(CommunityEvent event) {
     final current = state.value;
-    if (current == null || current.removed) return;
+    if (current == null) {
+      if (event is CommunityLifecycleEvent ||
+          event is CommunityAccessChangedEvent) {
+        _communitiesChangedWhileLoading.add(event.communityId);
+      }
+      return;
+    }
     if (event.communityId != current.conversation.communityId) return;
     switch (event) {
+      case CommunityMemberAddedEvent() when event.userId == current.viewerId:
+        unawaited(_sync());
+      case _ when current.removed:
+        return;
       case CommunityMemberRemovedEvent() when event.userId == current.viewerId:
         unawaited(_sync());
       case CommunityLifecycleEvent() || CommunityAccessChangedEvent():
@@ -386,7 +411,10 @@ class ConversationController extends AsyncNotifier<ConversationState> {
   }
 
   /// Confirms this conversation over the live connection and catches up
-  /// over HTTP if the server is ahead of what is held.
+  /// over HTTP if the server is ahead of what is held. A closed chat the
+  /// server admits the viewer to again is loaded anew: a new stint, whose
+  /// history and read mark are the server's to say — nothing of the old
+  /// one is carried into it.
   Future<void> _sync() async {
     final realtime = ref.read(realtimeConnectionProvider);
     if (!realtime.status.isLive || state.value == null) return;
@@ -395,6 +423,8 @@ class ConversationController extends AsyncNotifier<ConversationState> {
     final now = state.value;
     if (now == null) return;
     switch (result) {
+      case Subscribed() when now.removed:
+        ref.invalidateSelf();
       case Subscribed(:final lastSequence, :final lastReadSequence):
         if (lastReadSequence > now.lastReadSequence) {
           state = AsyncData(now.copyWith(lastReadSequence: lastReadSequence));

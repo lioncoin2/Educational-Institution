@@ -34,7 +34,6 @@ abstract final class CommunityCopy {
   static const standingLabel = 'صفتك في المجتمع';
   static const joinedLabel = 'تاريخ الانضمام';
   static const capabilitiesTitle = 'صلاحياتي';
-  static const delegated = 'مفوَّضة';
 
   static const openChat = 'فتح محادثة المجتمع';
   static const viewMembers = 'عرض الأعضاء';
@@ -106,10 +105,6 @@ abstract final class CommunityCopy {
         CommunityCapability.liveModerate => 'إدارة الجلسات المباشرة',
         CommunityCapability.unknown => 'صلاحية',
       };
-
-  /// A member's capabilities are theirs by delegation from the owner.
-  static String delegatedCapability(CommunityCapability capability) =>
-      '${CommunityCopy.capability(capability)} · $delegated';
 
   static String date(BuildContext context, DateTime at) =>
       MaterialLocalizations.of(context).formatMediumDate(at.toLocal());

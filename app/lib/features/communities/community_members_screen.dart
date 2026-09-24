@@ -64,8 +64,11 @@ class CommunityMembersScreen extends ConsumerWidget {
 
   List<Widget> _roster(CommunityMembersState state) {
     if (state.gone) {
-      return const [
-        SliverGutter(top: Insets.lg, child: CommunityGoneView(wasShown: true)),
+      return [
+        SliverGutter(
+          top: Insets.lg,
+          child: CommunityGoneView(wasShown: state.removed),
+        ),
       ];
     }
     if (state.forbidden) {

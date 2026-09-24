@@ -25,6 +25,7 @@ import 'community_test_support.dart';
 void main() {
   const open = MockCommunityRepository.openId;
   const owned = MockCommunityRepository.ownedId;
+  const delegated = MockCommunityRepository.delegatedId;
   const lockedOne = MockCommunityRepository.lockedId;
   const large = MockCommunityRepository.largeId;
 
@@ -136,15 +137,206 @@ void main() {
       },
     );
 
-    test('ignores frames until it has loaded', () async {
-      final future = load();
-      realtime.emit(locked(open, 9));
-      realtime.emit(added(owned));
-      await future;
-      await pumpEventQueue();
-      expect(repo.listRequests, 1);
-      expect(repo.communityRequests, isEmpty);
-    });
+    test(
+      'reads the first page once more for what came while it loaded',
+      () async {
+        // The first page takes its answer — with `open` in it...
+        final hold = repo.holdList = Completer<void>();
+        final loading = load();
+        await pumpEventQueue();
+        repo.holdList = null;
+        // ...then the viewer is removed from it, and a lock and a reconnect
+        // come too, all before that answer lands.
+        repo.endMembership(open);
+        realtime.emit(removed(open));
+        realtime.emit(locked(owned, 9));
+        realtime.setStatus(RealtimeStatus.reconnected);
+        await pumpEventQueue();
+        hold.complete();
+        await loading;
+        await pumpEventQueue();
+        // One read more, however much came meanwhile.
+        expect(repo.listRequests, 2);
+        expect(repo.communityRequests, isEmpty);
+        expect(list().items.map((c) => c.id), isNot(contains(open)));
+      },
+    );
+
+    test(
+      'reads the first page once more for what came during a refresh',
+      () async {
+        await load();
+        final hold = repo.holdList = Completer<void>();
+        final refreshing = container
+            .read(communityListProvider.notifier)
+            .refresh();
+        await pumpEventQueue();
+        repo.holdList = null;
+        repo.endMembership(open);
+        realtime.emit(removed(open));
+        await pumpEventQueue();
+        hold.complete();
+        await refreshing;
+        await pumpEventQueue();
+        expect(repo.listRequests, 3);
+        expect(list().items.map((c) => c.id), isNot(contains(open)));
+      },
+    );
+
+    test(
+      'drops a next page asked for before the first page was read again',
+      () async {
+        repo = ScriptedCommunities(communityPageSize: 2);
+        repo.endMembership(large);
+        boot();
+        await load();
+        final notifier = container.read(communityListProvider.notifier);
+        expect(list().items.map((c) => c.id), [open, owned]);
+
+        // The next page takes its answer, cut after `owned`...
+        final hold = repo.holdList = Completer<void>();
+        final more = notifier.loadMore();
+        await pumpEventQueue();
+        repo.holdList = null;
+        // ...then the viewer joins a community: the first page again.
+        repo.restoreMembership(large);
+        realtime.emit(added(large));
+        await pumpEventQueue();
+        expect(list().items.map((c) => c.id), [large, open]);
+        // The next page is still on its way: no second one starts.
+        expect(list().loadingMore, isTrue);
+        await notifier.loadMore();
+        expect(repo.listRequests, 3);
+
+        hold.complete();
+        await more;
+        await pumpEventQueue();
+        // Cut from a list no longer shown, it is dropped, not spliced on.
+        expect(list().items.map((c) => c.id), [large, open]);
+        expect(list().loadingMore, isFalse);
+        while (list().hasMore) {
+          await notifier.loadMore();
+        }
+        expect(list().items.map((c) => c.id), [
+          large,
+          open,
+          owned,
+          delegated,
+          lockedOne,
+        ]);
+      },
+    );
+
+    test(
+      'loads no next page while a refresh’s first page is on its way',
+      () async {
+        repo = ScriptedCommunities(communityPageSize: 2);
+        boot();
+        await load();
+        final hold = repo.holdList = Completer<void>();
+        final refreshing = container
+            .read(communityListProvider.notifier)
+            .refresh();
+        await pumpEventQueue();
+        final more = container.read(communityListProvider.notifier).loadMore();
+        await pumpEventQueue();
+        expect(repo.listRequests, 2);
+        hold.complete();
+        await refreshing;
+        await more;
+        expect(list().items.map((c) => c.id), [open, owned]);
+        expect(list().hasMore, isTrue);
+      },
+    );
+
+    test(
+      'never lets a next page asked for before a removal bring it back',
+      () async {
+        repo = ScriptedCommunities(communityPageSize: 2);
+        boot();
+        await load();
+        // The next page takes its answer — with `delegated` in it...
+        final hold = repo.holdList = Completer<void>();
+        final more = container.read(communityListProvider.notifier).loadMore();
+        await pumpEventQueue();
+        repo.holdList = null;
+        // ...then the viewer is removed from it before that answer lands.
+        repo.endMembership(delegated);
+        realtime.emit(removed(delegated));
+        await pumpEventQueue();
+        hold.complete();
+        await more;
+        await pumpEventQueue();
+        expect(list().items.map((c) => c.id), isNot(contains(delegated)));
+      },
+    );
+
+    test(
+      'never lets an older first page undo a newer read of one community',
+      () async {
+        await load();
+        expect(item(open).canViewMembers, isFalse);
+        // A reconnect read takes its answer...
+        final hold = repo.holdList = Completer<void>();
+        realtime.setStatus(RealtimeStatus.reconnected);
+        await pumpEventQueue();
+        repo.holdList = null;
+        // ...then the viewer's access changes, and that community is read
+        // again — answered first.
+        repo.delegate(open, {CommunityCapability.membersView});
+        realtime.emit(accessChanged(open));
+        await pumpEventQueue();
+        expect(item(open).canViewMembers, isTrue);
+        hold.complete();
+        await pumpEventQueue();
+        expect(item(open).canViewMembers, isTrue);
+      },
+    );
+
+    test(
+      'never lets an older first page drop a community a newer read kept',
+      () async {
+        await load();
+        // A reconnect read takes its answer while the viewer is out...
+        repo.endMembership(owned);
+        final hold = repo.holdList = Completer<void>();
+        realtime.setStatus(RealtimeStatus.reconnected);
+        await pumpEventQueue();
+        repo.holdList = null;
+        // ...then they are back, and that community, read again, says so.
+        repo.restoreMembership(owned);
+        realtime.emit(accessChanged(owned));
+        await pumpEventQueue();
+        hold.complete();
+        await pumpEventQueue();
+        expect(list().items.map((c) => c.id), contains(owned));
+        expect(list().items.map((c) => c.id).toSet(), hasLength(5));
+      },
+    );
+
+    test(
+      'never lets an older "not found" drop a community the viewer rejoined',
+      () async {
+        await load();
+        final version = repo.changeStatus(open, CommunityStatus.locked);
+        repo.endMembership(open);
+        // The re-read for the lock is refused — and the refusal is slow.
+        final hold = repo.holdCommunity = Completer<void>();
+        realtime.emit(locked(open, version));
+        await pumpEventQueue();
+        repo.holdCommunity = null;
+        realtime.emit(removed(open));
+        await pumpEventQueue();
+        // Added back meanwhile: the first page, read after, has it.
+        repo.restoreMembership(open);
+        realtime.emit(added(open));
+        await pumpEventQueue();
+        expect(list().items.first.id, open);
+        hold.complete();
+        await pumpEventQueue();
+        expect(list().items.first.id, open);
+      },
+    );
 
     test('asks the server again when the viewer is added somewhere', () async {
       repo.endMembership(open);
@@ -438,6 +630,48 @@ void main() {
       expect(detail(open).community!.isLocked, isTrue);
     });
 
+    test(
+      'reads once more after loading, for a lock that came meanwhile',
+      () async {
+        // The first read takes its answer: open...
+        final hold = repo.holdCommunity = Completer<void>();
+        final loading = load(open);
+        await pumpEventQueue();
+        repo.holdCommunity = null;
+        // ...then it is locked, and told so, before that answer lands.
+        final version = repo.changeStatus(open, CommunityStatus.locked);
+        realtime.emit(locked(open, version));
+        await pumpEventQueue();
+        hold.complete();
+        await loading;
+        await pumpEventQueue();
+        expect(detail(open).community!.isLocked, isTrue);
+        expect(detail(open).community!.lifecycleVersion, version);
+        expect(repo.communityRequests, [open, open]);
+      },
+    );
+
+    test(
+      'reads once more after a refresh, for a lock that came during it',
+      () async {
+        await load(open);
+        final hold = repo.holdCommunity = Completer<void>();
+        final refreshing = container
+            .read(communityProvider(open).notifier)
+            .refresh();
+        await pumpEventQueue();
+        repo.holdCommunity = null;
+        final version = repo.changeStatus(open, CommunityStatus.locked);
+        realtime.emit(locked(open, version));
+        await pumpEventQueue();
+        hold.complete();
+        await refreshing;
+        await pumpEventQueue();
+        expect(detail(open).community!.isLocked, isTrue);
+        expect(repo.communityRequests, [open, open, open]);
+      },
+    );
+
     test('keeps what is shown when a re-read fails', () async {
       await load(open);
       repo.failWith = 'network.unreachable';
@@ -524,7 +758,26 @@ void main() {
       realtime.emit(removed(owned));
       await pumpEventQueue();
       expect(roster(owned).gone, isTrue);
+      expect(roster(owned).removed, isTrue);
       expect(roster(owned).items, isEmpty);
+    });
+
+    test('says "not yours", not "removed", for a first "not found"', () async {
+      final never = await load('mock-community-nowhere');
+      expect(never.gone, isTrue);
+      expect(never.removed, isFalse);
+      // Asked again, it is still only "not yours".
+      realtime.setStatus(RealtimeStatus.reconnected);
+      await pumpEventQueue();
+      expect(roster('mock-community-nowhere').removed, isFalse);
+
+      // A refusal to show the roster says the community was theirs.
+      await load(open);
+      repo.endMembership(open);
+      realtime.emit(removed(open));
+      await pumpEventQueue();
+      expect(roster(open).gone, isTrue);
+      expect(roster(open).removed, isTrue);
     });
 
     test(
@@ -547,6 +800,102 @@ void main() {
       expect(roster(large).items, hasLength(50));
       expect(roster(large).loadMoreFailed, isTrue);
     });
+
+    test(
+      'reads the first page once more for a change that came while it loaded',
+      () async {
+        // The first page takes its answer: members shown...
+        final hold = repo.holdMembers = Completer<void>();
+        final loading = load(delegated);
+        await pumpEventQueue();
+        repo.holdMembers = null;
+        // ...then the roster is taken back before that answer lands.
+        repo.delegate(delegated, {});
+        realtime.emit(accessChanged(delegated));
+        await pumpEventQueue();
+        hold.complete();
+        await loading;
+        await pumpEventQueue();
+        expect(roster(delegated).forbidden, isTrue);
+        expect(roster(delegated).items, isEmpty);
+        expect(repo.memberCursors, [null, null]);
+      },
+    );
+
+    test(
+      'keeps a roster taken back closed when an older next page lands',
+      () async {
+        await load(delegated);
+        // The next page takes its answer while the roster is still theirs...
+        final hold = repo.holdMembers = Completer<void>();
+        final more = controller(delegated).loadMore();
+        await pumpEventQueue();
+        repo.holdMembers = null;
+        // ...then it is taken back, before that answer lands.
+        repo.delegate(delegated, {});
+        realtime.emit(accessChanged(delegated));
+        await pumpEventQueue();
+        expect(roster(delegated).forbidden, isTrue);
+        hold.complete();
+        await more;
+        await pumpEventQueue();
+        expect(roster(delegated).forbidden, isTrue);
+        expect(roster(delegated).items, isEmpty);
+        expect(roster(delegated).loadingMore, isFalse);
+      },
+    );
+
+    test(
+      'stays closed after a removal when an older next page lands',
+      () async {
+        await load(large);
+        final hold = repo.holdMembers = Completer<void>();
+        final more = controller(large).loadMore();
+        await pumpEventQueue();
+        repo.holdMembers = null;
+        repo.endMembership(large);
+        realtime.emit(removed(large));
+        await pumpEventQueue();
+        expect(roster(large).gone, isTrue);
+        hold.complete();
+        await more;
+        await pumpEventQueue();
+        expect(roster(large).gone, isTrue);
+        expect(roster(large).items, isEmpty);
+      },
+    );
+
+    test(
+      'drops a next page asked for before a reconnect read the first again',
+      () async {
+        await load(large);
+        await controller(large).loadMore();
+        expect(roster(large).items, hasLength(100));
+        // The third page takes its answer...
+        final hold = repo.holdMembers = Completer<void>();
+        final more = controller(large).loadMore();
+        await pumpEventQueue();
+        repo.holdMembers = null;
+        // ...then a reconnect puts the first page back, before it lands.
+        realtime.setStatus(RealtimeStatus.reconnected);
+        await pumpEventQueue();
+        expect(roster(large).items, hasLength(50));
+        // Still on its way: no second next page starts meanwhile.
+        expect(roster(large).loadingMore, isTrue);
+        hold.complete();
+        await more;
+        await pumpEventQueue();
+        expect(roster(large).items, hasLength(50));
+        expect(roster(large).loadingMore, isFalse);
+        // Walking on goes on from the first page, skipping nobody.
+        await controller(large).loadMore();
+        final ids = roster(large).items.map((m) => m.userId).toList();
+        expect(ids, hasLength(100));
+        expect(ids.toSet(), hasLength(100));
+        expect(ids, contains('$large-member-50'));
+        expect(ids, isNot(contains('$large-member-100')));
+      },
+    );
   });
 
   group('opening the community’s chat', () {

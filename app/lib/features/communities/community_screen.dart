@@ -160,15 +160,12 @@ class _Details extends StatelessWidget {
             spacing: Insets.sm,
             runSpacing: Insets.sm,
             children: [
+              // Named alike: the answer says what the viewer may do, never
+              // on what basis (an owner's grant, oversight, ownership).
               for (final c in capabilities)
                 AppPill(
-                  // A member holds a capability only by the owner's grant.
-                  label: me.standing == CommunityStanding.member
-                      ? CommunityCopy.delegatedCapability(c)
-                      : CommunityCopy.capability(c),
-                  dotColor: me.standing == CommunityStanding.member
-                      ? context.colors.tertiary
-                      : context.colors.primary,
+                  label: CommunityCopy.capability(c),
+                  dotColor: context.colors.primary,
                 ),
             ],
           ),

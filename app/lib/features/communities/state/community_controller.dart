@@ -36,9 +36,12 @@ class CommunityDetailState {
 ///                             it removed
 ///   community.member.added    (the viewer) one read
 ///
-/// Whenever the connection comes (back) up it is read again. A "not found"
-/// is the removed state, not an error: the server answers it alike for a
-/// community that does not exist and one that is not the viewer's.
+/// Whenever the connection comes (back) up it is read again. A frame or a
+/// reconnect that comes while the first read (or a refresh's) is on its way
+/// waits for it to land, then asks once more: that read may have been
+/// answered before the change. A "not found" is the removed state, not an
+/// error: the server answers it alike for a community that does not exist
+/// and one that is not the viewer's.
 class CommunityController extends AsyncNotifier<CommunityDetailState> {
   CommunityController(this.communityId);
 
@@ -46,6 +49,10 @@ class CommunityController extends AsyncNotifier<CommunityDetailState> {
 
   Future<void>? _reading;
   bool _readAgain = false;
+
+  /// A read was asked for while the build's was on its way: one runs once
+  /// that lands.
+  bool _readAfterLoad = false;
 
   /// The newest lifecycle version a frame announced.
   int _lifecycleSeen = 0;
@@ -59,6 +66,12 @@ class CommunityController extends AsyncNotifier<CommunityDetailState> {
     ref.onDispose(() {
       unawaited(events.cancel());
       unawaited(statuses.cancel());
+    });
+    listenSelf((_, next) {
+      if (_readAfterLoad && next is AsyncData && !next.isLoading) {
+        _readAfterLoad = false;
+        unawaited(_read());
+      }
     });
     try {
       return CommunityDetailState(
@@ -77,12 +90,15 @@ class CommunityController extends AsyncNotifier<CommunityDetailState> {
 
   void _onEvent(RealtimeEvent event) {
     if (event is! CommunityEvent || event.communityId != communityId) return;
-    final current = state.value;
-    if (current == null) return; // Loading: the read covers it.
+    // While the read is on its way nothing of it is shown to act on: a frame
+    // only asks for one read more, once it lands.
+    final loading = state.isLoading;
+    final current = loading ? null : state.value;
+    if (current == null && !loading) return; // Failed: a retry reads anew.
     switch (event) {
       case CommunityLifecycleEvent(:final lifecycleVersion):
         final known = max(
-          current.community?.lifecycleVersion ?? 0,
+          current?.community?.lifecycleVersion ?? 0,
           _lifecycleSeen,
         );
         if (lifecycleVersion <= known) return;
@@ -91,7 +107,7 @@ class CommunityController extends AsyncNotifier<CommunityDetailState> {
       case CommunityAccessChangedEvent():
         unawaited(_read());
       case CommunityMemberRemovedEvent() when concernsViewer(ref, event.userId):
-        if (!current.removed) {
+        if (current != null && !current.removed) {
           state = AsyncData(
             CommunityDetailState(community: current.community, removed: true),
           );
@@ -110,9 +126,14 @@ class CommunityController extends AsyncNotifier<CommunityDetailState> {
 
   /// GET /communities/:id again, quietly. One at a time; a read asked for
   /// meanwhile runs once more after it, so the last answer shown was asked
-  /// for after the last frame. A failure other than "not found" keeps what
-  /// is shown.
+  /// for after the last frame — and one asked for while the build's read is
+  /// on its way runs once that lands. A failure other than "not found"
+  /// keeps what is shown.
   Future<void> _read() {
+    if (state.isLoading) {
+      _readAfterLoad = true;
+      return Future.value();
+    }
     final running = _reading;
     if (running != null) {
       _readAgain = true;
@@ -124,7 +145,7 @@ class CommunityController extends AsyncNotifier<CommunityDetailState> {
   Future<void> _runRead() async {
     do {
       _readAgain = false;
-      if (state.value == null) return;
+      if (state.value == null) return; // Failed: a retry reads anew.
       final Community fresh;
       try {
         fresh = await ref

@@ -629,22 +629,39 @@ the truth. In the app (`app/lib/features/communities/state/`,
 - **`CommunityListController`**: the viewer added → the first page again; the
   viewer removed → the community leaves the list at once, then the first
   page again; a newer lock or unlock, or `access.changed` → that community
-  again (gone: it leaves the list).
+  again (gone: it leaves the list). The first page and a single community
+  are read side by side, so every read is numbered as it is sent, and an
+  answer about a community (a row, or "not found") older than the one
+  applied for it is dropped, whichever lands last.
 - **`CommunityMembersController`**: pages of 50, never walked to the end on
   its own; `access.changed` or the viewer's `member.*` for this community →
   the first page again, which also answers whether the roster is still
-  theirs (403 → "not yours to see").
+  theirs (403 → "not yours to see"; 404 after the roster was theirs →
+  "removed", a first 404 → the neutral "not available").
 - **Messaging's controllers**, for a community chat: the viewer's removal →
   the conversation subscribes and catches up again, and the server's
-  `CONVERSATION_NOT_FOUND` marks it removed, never the frame alone; a lock,
-  an unlock or `access.changed` → the conversation is read again (`canPost`).
+  `CONVERSATION_NOT_FOUND` marks it removed, never the frame alone; the
+  viewer's `member.added`, a reconnect or the refresh action → it subscribes
+  again, and a server that admits them reloads the chat from HTTP as a new
+  stint, carrying nothing of the old one over; a lock, an unlock or
+  `access.changed` → the conversation is read again (`canPost`).
   The list drops that community's chat when the viewer is removed and reads
   its first page again when they are added or removed.
 - **Whenever the connection comes up** (connected or reconnected), each open
   community view reads again over HTTP: a frame missed meanwhile is in the
   answer.
 - **One read at a time**, and a read asked for meanwhile runs once more after
-  it, so the last answer shown was asked for after the last frame.
+  it, so the last answer shown was asked for after the last frame. A frame
+  or a reconnect that comes while the first read (or a refresh) is on its
+  way is not dropped: one more read runs once it lands, since that answer
+  may predate the change.
+- **A next page is never spliced onto a list it was not cut from.** Each
+  list controller moves a generation on whenever the first page is replaced
+  or an entry is taken out; a next page asked for before is dropped, and it
+  never clears a roster's "not yours" or "removed" state.
+- **Capabilities are shown as the server lists them.** `me.capabilities`
+  says what the viewer may do, not on what basis (a grant, ownership or
+  oversight), so the app labels none of them "delegated".
 - **Only the account id is compared** with a frame's `userId`
   (`community_viewer.dart`), never roles or permissions
   (`community_boundaries_test.dart`).

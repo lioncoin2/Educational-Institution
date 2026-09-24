@@ -164,20 +164,49 @@ void main() {
       },
     );
 
-    testWidgets('labels a delegated capability as delegated', (tester) async {
+    testWidgets('names a member’s capability as it names any other', (
+      tester,
+    ) async {
       await open_(
         tester,
         '/communities/${MockCommunityRepository.delegatedId}',
         size: const Size(390, 1400),
       );
       expect(
-        find.text(
-          CommunityCopy.delegatedCapability(CommunityCapability.membersView),
-        ),
+        find.text(CommunityCopy.capability(CommunityCapability.membersView)),
         findsOneWidget,
       );
       expect(find.text(CommunityCopy.viewMembers), findsOneWidget);
     });
+
+    testWidgets(
+      'never says how a capability is held — the answer does not say',
+      (tester) async {
+        // What the server answers a former owner (an admin) after handing
+        // the community over: a MEMBER holding, by oversight, what no owner
+        // delegated. The answer carries no basis.
+        repo = _AnsweredAs(
+          communityJson(
+            id: 'c-1',
+            capabilities: const [
+              'community.members.view',
+              'community.members.remove',
+              'community.lock',
+            ],
+          ),
+        );
+        await open_(tester, '/communities/c-1', size: const Size(390, 1400));
+        expect(find.text('عضو'), findsOneWidget);
+        for (final c in [
+          CommunityCapability.membersView,
+          CommunityCapability.membersRemove,
+          CommunityCapability.lock,
+        ]) {
+          expect(find.text(CommunityCopy.capability(c)), findsOneWidget);
+        }
+        expect(find.textContaining('مفوَّض'), findsNothing); // "delegated"
+      },
+    );
 
     testWidgets('says a locked community is locked — and no more than that', (
       tester,
@@ -333,6 +362,32 @@ void main() {
       expect(find.text('مجتمع أسرة الحفظ'), findsOneWidget); // the subtitle
     });
 
+    testWidgets('says a community it never saw is not available', (
+      tester,
+    ) async {
+      await open_(tester, '/communities/mock-community-nowhere/members');
+      expect(find.text(CommunityCopy.gone), findsOneWidget);
+      expect(find.text(CommunityCopy.removed), findsNothing);
+      expect(find.text(CommunityCopy.backToList), findsOneWidget);
+    });
+
+    testWidgets('says the viewer is no longer a member once removed', (
+      tester,
+    ) async {
+      final realtime = FakeRealtimeClient();
+      await open_(
+        tester,
+        '/communities/$owned/members',
+        extra: [realtimeConnectionProvider.overrideWithValue(realtime)],
+      );
+      expect(find.text('طالب تجريبي'), findsOneWidget);
+      repo.endMembership(owned);
+      realtime.emit(removed(owned));
+      await tester.pumpAndSettle();
+      expect(find.text(CommunityCopy.removed), findsOneWidget);
+      expect(find.text(CommunityCopy.gone), findsNothing);
+    });
+
     testWidgets('says "not yours to see" to a plain member', (tester) async {
       await open_(tester, '/communities/$open/members');
       expect(find.text(CommunityCopy.membersForbidden), findsOneWidget);
@@ -481,4 +536,15 @@ void main() {
       },
     );
   });
+}
+
+/// Answers every community read with [json], as the server sent it.
+class _AnsweredAs extends ScriptedCommunities {
+  _AnsweredAs(this.json);
+
+  final Map<String, Object?> json;
+
+  @override
+  Future<Community> community(String communityId) async =>
+      Community.fromJson(json);
 }

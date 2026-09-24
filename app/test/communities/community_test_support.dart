@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -14,10 +15,11 @@ const viewer = MockCommunityRepository.viewer;
 /// The mock server, with a record of every read and switches for the
 /// states the state layer must survive:
 ///
-///   [failWith]     every read refused with this code while set
-///   [holdList] /   a read takes its answer NOW and hands it over only when
-///   [holdCommunity] released — a read that was answered before a change it
-///                  arrives after, as a slow network delivers one
+///   [failWith]      every read refused with this code while set
+///   [holdList] /    a read takes its answer (or its refusal) NOW and hands
+///   [holdCommunity] it over only when released — a read that was answered
+///   [holdMembers]   before a change it arrives after, as a slow network
+///                   delivers one
 class ScriptedCommunities extends MockCommunityRepository {
   ScriptedCommunities({super.communityPageSize, super.memberPageSize})
     : super(latency: Duration.zero);
@@ -28,6 +30,7 @@ class ScriptedCommunities extends MockCommunityRepository {
   String? failWith;
   Completer<void>? holdList;
   Completer<void>? holdCommunity;
+  Completer<void>? holdMembers;
 
   @override
   Future<CommunityPage> communities({String? cursor}) async {
@@ -42,9 +45,11 @@ class ScriptedCommunities extends MockCommunityRepository {
   Future<Community> community(String communityId) async {
     communityRequests.add(communityId);
     _fail();
-    final answer = await super.community(communityId);
-    await holdCommunity?.future;
-    return answer;
+    try {
+      return await super.community(communityId);
+    } finally {
+      await holdCommunity?.future;
+    }
   }
 
   @override
@@ -54,7 +59,11 @@ class ScriptedCommunities extends MockCommunityRepository {
   }) async {
     memberCursors.add(cursor);
     _fail();
-    return super.members(communityId, cursor: cursor);
+    try {
+      return await super.members(communityId, cursor: cursor);
+    } finally {
+      await holdMembers?.future;
+    }
   }
 
   /// Ends the viewer's membership everywhere: an empty list.
@@ -80,12 +89,19 @@ const seededIds = [
 
 /// The mock messaging server, with community chats that can be taken away
 /// (as the server stops listing a chat once its community is left) and
-/// switches for how the community route answers.
+/// switches for how the community route answers. With a
+/// [conversationPageSize] the list comes in pages of that size; [holdList]
+/// and [holdConversation] hand a read's answer over only when released, as
+/// [ScriptedCommunities]' holds do.
 class ScriptedMessaging extends MockMessagingRepository {
-  ScriptedMessaging() : super(latency: Duration.zero);
+  ScriptedMessaging({this.conversationPageSize})
+    : super(latency: Duration.zero);
 
+  final int? conversationPageSize;
   int listRequests = 0;
   final List<String> conversationRequests = [];
+  Completer<void>? holdList;
+  Completer<void>? holdConversation;
 
   /// Communities whose chat the server no longer shows the viewer.
   final Set<String> leftCommunities = {};
@@ -104,26 +120,42 @@ class ScriptedMessaging extends MockMessagingRepository {
   Future<ConversationPage> conversations({String? cursor}) async {
     listRequests += 1;
     final page = await super.conversations(cursor: cursor);
-    return ConversationPage(
-      items: [
-        for (final c in page.items)
-          if (!leftCommunities.contains(c.communityId)) _adjusted(c),
-      ],
-      nextCursor: page.nextCursor,
-    );
+    final shown = [
+      for (final c in page.items)
+        if (!leftCommunities.contains(c.communityId)) _adjusted(c),
+    ];
+    final size = conversationPageSize;
+    final ConversationPage answer;
+    if (size == null) {
+      answer = ConversationPage(items: shown, nextCursor: page.nextCursor);
+    } else {
+      // An offset cursor: a list that changed meanwhile shifts under it.
+      final start = min(cursor == null ? 0 : int.parse(cursor), shown.length);
+      final end = min(start + size, shown.length);
+      answer = ConversationPage(
+        items: shown.sublist(start, end),
+        nextCursor: end < shown.length ? '$end' : null,
+      );
+    }
+    await holdList?.future;
+    return answer;
   }
 
   @override
   Future<Conversation> conversation(String conversationId) async {
     conversationRequests.add(conversationId);
-    final c = await super.conversation(conversationId);
-    if (leftCommunities.contains(c.communityId)) {
-      throw const MessagingException(
-        'messaging.conversation_not_found',
-        'No such conversation.',
-      );
+    try {
+      final c = await super.conversation(conversationId);
+      if (leftCommunities.contains(c.communityId)) {
+        throw const MessagingException(
+          'messaging.conversation_not_found',
+          'No such conversation.',
+        );
+      }
+      return _adjusted(c);
+    } finally {
+      await holdConversation?.future;
     }
-    return _adjusted(c);
   }
 
   @override
