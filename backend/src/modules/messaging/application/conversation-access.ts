@@ -8,6 +8,11 @@ import {
 } from '../../communities/contracts/authorization';
 import type { CommunityAct } from '../../communities/contracts/capabilities';
 import {
+  COMMUNITY_MEMBERSHIP,
+  type CommunityMembership,
+  type MemberState,
+} from '../../communities/contracts/membership';
+import {
   AUTHORIZATION_SERVICE,
   type AuthorizationService,
 } from '../../identity/contracts/authorization';
@@ -47,12 +52,15 @@ export interface Membership {
  * on their own. So Communities is asked on EVERY request — no cache — for
  * `community.chat.read`, and only then is the caller's row looked at:
  *
- *   refused          404, identical to a missing conversation; a sync is
- *                    scheduled, so a stale row is cleaned up soon
+ *   refused          404, identical to a missing conversation. If the caller
+ *                    is still projected as a member, their row is stale: a
+ *                    sync is scheduled — or, if Communities does not know
+ *                    that row's change at all, a rebuild
  *   Communities down 503 — never a role-only answer
  *   permitted        the caller's row, repaired first if it is behind the
  *                    permit's stint (a join the projection has not applied
- *                    yet); still not current → 404
+ *                    yet); still not current → 404. A row AHEAD of the stint
+ *                    is checked the same way as a refused one
  *
  * A removal therefore takes effect when Communities commits it, whatever the
  * projection says. Conversations whose membership messaging manages never
@@ -66,6 +74,7 @@ export class ConversationAccess {
     @Inject(AUTHORIZATION_SERVICE) private readonly authorization: AuthorizationService,
     @Inject(MESSAGING_REPOSITORY) private readonly repository: MessagingRepository,
     @Inject(COMMUNITY_AUTHORIZATION) private readonly communities: CommunityAuthorization,
+    @Inject(COMMUNITY_MEMBERSHIP) private readonly membership: CommunityMembership,
     private readonly sync: CommunityChatSync,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
@@ -134,6 +143,10 @@ export class ConversationAccess {
     if (stint === null) return err(CONVERSATION_NOT_FOUND);
     const row = await this.repository.findParticipant(conversation.id, principal.userId);
     if (isActive(row) && (row.sourceVersion ?? 0) >= stint.version) {
+      // Newer than the stint Communities just vouched for: a change committed
+      // since — or one Communities lost to a restore (§7.6). Ask which; the
+      // answer never changes this admission, which the permit already made.
+      if ((row.sourceVersion ?? 0) > stint.version) await this.checkRow(conversation, row);
       return ok({ conversation, participant: row });
     }
     const applied = await this.repository.applyCommunityMembership({
@@ -155,9 +168,15 @@ export class ConversationAccess {
       this.repository.findParticipant(conversation.id, principal.userId),
       this.repository.findConversation(conversation.id),
     ]);
-    // Still not current: a newer leave was applied meanwhile, or the
-    // projection carries a newer tombstone (an authority restore, §7.6).
-    if (!isActive(repaired) || current === null) return err(CONVERSATION_NOT_FOUND);
+    if (!isActive(repaired) || current === null) {
+      // Still not current. A leave committed after the permit, and applied
+      // first — or a newer version Communities does not know (it was restored
+      // behind the projection, §7.6), which only a rebuild clears. Ask which.
+      if (repaired !== null && (repaired.sourceVersion ?? 0) > stint.version) {
+        await this.checkRow(conversation, repaired);
+      }
+      return err(CONVERSATION_NOT_FOUND);
+    }
     return ok({ conversation: current, participant: repaired });
   }
 
@@ -169,9 +188,37 @@ export class ConversationAccess {
     const permit = await this.communityPermit(principal, communityId, 'community.chat.read');
     if (!permit.ok) {
       if (permit.error.kind === 'unavailable') return permit;
-      this.sync.schedule(communityId);
+      // Refused, yet still projected as a current member: that row is stale.
+      const row = await this.repository.findParticipant(conversation.id, principal.userId);
+      if (isActive(row)) await this.checkRow(conversation, row);
       return err(CONVERSATION_NOT_FOUND);
     }
     return this.admittedToCommunityChat(principal, conversation, permit.value);
   }
+
+  /**
+   * A projected row disagrees with Communities' answer. If Communities knows
+   * the row's change — the same stint at that version, or anything newer —
+   * the projection is merely behind, and a sync catches it up. If it does
+   * not, the projection holds a change the authority lost: a rebuild. Never
+   * decides access; if Communities cannot say now, the sweeper will.
+   */
+  private async checkRow(conversation: Conversation, row: Participant): Promise<void> {
+    const communityId = conversation.communityId;
+    if (communityId === null) return;
+    const answer = await askCommunities(this.logger, () =>
+      this.membership.statesOf(communityId, [row.userId]),
+    );
+    if (!answer.ok) return;
+    if (knowsRow(answer.value[0], row)) this.sync.schedule(communityId);
+    else this.sync.requestReconcile(communityId);
+  }
+}
+
+/** Whether the authority's latest state for this person accounts for the row's change. */
+function knowsRow(state: MemberState | undefined, row: Participant): boolean {
+  if (state === undefined) return false;
+  const version = row.sourceVersion ?? 0;
+  if (state.version !== version) return state.version > version;
+  return state.membershipId === row.sourceMembershipId && state.active === isActive(row);
 }

@@ -468,6 +468,12 @@ redesign.
 | community chat; `projected_membership_version = head.membershipVersion` | the projection page, as today; `visibleSequence`, `readersOnly` and `onlyUserIds` apply unchanged |
 | community chat; the versions differ | the projection page narrowed to the users `statesOf` reports ACTIVE; a sync is scheduled |
 
+**As implemented, every page is checked** (§20.2,
+[ADR 0022](decisions/0022-community-chat-delivery-check.md)): the page is
+narrowed by `statesOf` whether the versions differ or not. A Communities restored from a
+backup hands the lost versions out again, so equal versions do not prove
+that the projection agrees with it.
+
 **The ceiling, on every page.** For a community chat, lagging or not and
 whatever `readersOnly` says, each non-empty page is then narrowed to the
 accounts that hold every permission of the `community.chat.read` ceiling
@@ -526,6 +532,8 @@ their row at once.
 
 - Sync and sweeper together use at most two connections in the background
   (PROVISIONAL, Q26), because the pool has 10 per process (`database.ts:28`).
+- As implemented (§20.2), the reconciler runs inside the sync's worker for
+  that community, and the sweeper hands an ahead projection to the sync.
 - An earlier draft of this design had a one-per-transaction hint,
   `communities.membership.changed`; it was dropped. The per-member events
   carry `membershipVersion`, a batch add is at most 200 per request, and each
@@ -547,7 +555,8 @@ their row at once.
 | The caller's own row is behind | `permit.membership.version > row.source_version` | repair on access, inline, one row | served after the repair |
 | The caller was removed but is still projected | the permit is refused | the scheduled sync | 404 at once |
 | The projection is ahead: the authority was restored from a backup | `projected > head` | the reconciler | correct. A member whose row carries a newer tombstone gets 404 until the reconciler runs: fail closed |
-| Rows diverge at equal versions (a bug) | the reconciler on demand | the reconciler | correct |
+| The authority was restored and has since handed the lost versions out again: `projected = head`, yet rows disagree (added in P4, §20.2) | a recipient page holding someone Communities has no stint for, or reports gone by a change the projection claims to reflect; an access refusal or a repair on a row Communities never wrote; a row ahead of the permit's stint that Communities never made | the reconciler, in the sync's worker | correct: every request asks the authority and every recipient page is checked. A member whose row carries a lost tombstone gets 404 until the rebuild runs, seconds later |
+| Rows diverge at equal versions (a bug) | the same signals; the reconciler on demand | the reconciler | correct |
 
 Metrics, not audit: the age of the oldest lag, the number of lagging chats,
 repairs on access per minute, reconciler runs, and orphans (chats whose
@@ -1221,7 +1230,7 @@ is P5).
 | The applier, materialization, the reset; the chat lookups and the reconciler's walk | `messaging/infrastructure/drizzle-messaging-repository.ts`, `drizzle-messaging-read-model.ts`, `in-memory-messaging-store.ts` |
 | The read branch and repair on access | `messaging/application/conversation-access.ts` |
 | Posting, list filtering, titles and `canPost` | `messaging/application/community-chats.ts` |
-| Recipients: lag filter and read-ceiling narrowing | `messaging/application/message-recipients.service.ts` |
+| Recipients: every page checked against Communities, read-ceiling narrowing, divergence signals | `messaging/application/message-recipients.service.ts` |
 | Sync, sweeper, reconciler | `messaging/application/community-chat-{sync,sweeper,reconciler}.ts` |
 | The route | `messaging/api/community-chat.controller.ts`, `application/community-chat.use-case.ts` |
 | Bounds and refusals | `messaging/application/community-chat-settings.ts`; `MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS` in `platform/config/app-config.ts` |
@@ -1257,8 +1266,8 @@ All technical; none decides a policy.
   - Pass 2 covers the authority's current members that the projection does
     not show as current.
   - Someone the authority no longer knows at all becomes a tombstone at H.
-  - Then the projected version is reset to H (`resetProjectedVersion`), and a
-    sync pulls whatever committed meanwhile.
+  - Then the projected version is reset to H (`resetProjectedVersion`), and
+    the sync that ran it pulls whatever committed meanwhile.
   - The read model gained `projectionRows` for pass 1.
 - **Opening the chat from its community schedules a sync** when the chat was
   missing, or its projection is behind the caller's own stint, so the other
@@ -1286,6 +1295,57 @@ All technical; none decides a policy.
   failed pass. No metrics system exists yet, so §7.6's metrics are deferred
   (§20.8).
 
+After review, P4 changed six things. The first three answer one finding, and
+are recorded as [ADR 0022](decisions/0022-community-chat-delivery-check.md)
+(Proposed; it supersedes 0018's decision 9 in part). When
+Communities is restored from a backup, it hands out again the versions the
+projection has already applied. `projected = head` then says nothing about
+agreement: a lost join could be delivered to, and a lost removal could keep a
+real member out.
+
+- **Every recipient page is checked against Communities** (supersedes §7.3's
+  lag filter). Each non-empty page is narrowed to the people `statesOf`
+  reports ACTIVE, with one call per page, lagging or not. Nobody Communities
+  does not hold as a member gets a frame or a notification, whatever state
+  the projection is in. The cost is in §20.6.
+- **Three signals ask for a rebuild** (`CommunityChatSync.requestReconcile`).
+  Each fires when the projection holds a change Communities does not know:
+  - A recipient page holds someone Communities has no stint for, or reports
+    gone by a change at or below `min(projected, head)`, which the projection
+    claims to reflect.
+  - An access refusal or an ignored repair finds a row whose change
+    Communities' latest state for that person does not account for: no stint,
+    a lower version, or another stint or state at the same version.
+  - An admitted member's row is ahead of the permit's stint, and Communities
+    never made that change.
+
+  An ordinary lag, a change Communities has made that the projection has not
+  applied, schedules a sync instead. No signal changes the answer being given.
+- **Rebuilds run in the sync's per-community worker.** The reconciler no
+  longer schedules the sync. The sync calls the reconciler before its next
+  pull, so no pass over that community runs alongside its rebuild. The
+  sweeper hands an ahead projection to the sync. A pass that finds the
+  projection ahead rebuilds once. If it is still ahead after that, the
+  authority moved back again: the sync logs an error and stops, never loops.
+- **A long backlog yields the worker.** After `MAX_PAGES_PER_PASS` (100) pages
+  a pass stops, and the community goes to the back of the queue. Before, the
+  pass kept the worker until the whole backlog was done.
+- **Lists degrade per row.** When Communities cannot answer, the list leaves
+  out that page's community chats (a row alone is never an answer: the P4 brief's §19) and
+  lists everything else. Before, the whole page failed with 503, DMs and groups
+  included. A chat whose title or posting right cannot be read shows no title
+  and `canPost: false`. That flag is only a hint: a send still asks its own
+  permit.
+- **The route names the conversation to identity.** Once the chat is resolved,
+  `GET /messaging/communities/:communityId/conversation` asks `messaging.read`
+  again with the conversation named, as every conversation-scoped read does.
+
+One change touched Communities' own code. `latestStints`, behind `statesOf`,
+binds its ids as one array parameter instead of one parameter per id. For
+1,000 ids, building the query cost about 30 ms, more than running it. The
+contract and the plan are unchanged: `communities-scale.spec.ts` still pins
+index probes at ~900,000 stints.
+
 ### 20.3 What messaging's participant rows are (P4 brief §4)
 
 For a community chat they are **A: a named projection — a read model** of
@@ -1294,15 +1354,15 @@ list, and never an access answer on their own.
 
 - They are also where messaging keeps its own per-member state: the read
   watermark and the history window (§3.2).
-- They are what delivery pages over, the B aspect, always narrowed as §7.3
-  describes.
+- They are what delivery pages over, the B aspect. Each page is always
+  narrowed by Communities' answer for it and by the read ceiling (§20.2).
 
 | Property | Semantics |
 | --- | --- |
 | Source of truth | Communities: `community_members`, through `COMMUNITY_MEMBERSHIP` and `COMMUNITY_AUTHORIZATION` only |
 | Direction | Communities → messaging, pulled (`changesSince`); Communities never calls messaging |
-| Consistency | Eventual, with bounded lag: the wake-up applies within milliseconds; a lost one is found by the next sweep (≤ 60 s) or repaired on access. Every request asks the authority, so lag never widens access |
-| Recovery | The sync; the sweeper (materializes missing chats, finds lag after a restart); repair on access (the caller's own row); the reconciler (projection ahead after a restore; on demand for divergence at equal versions) |
+| Consistency | Eventual, with bounded lag: the wake-up applies within milliseconds; a lost one is found by the next sweep (≤ 60 s) or repaired on access. Every request asks the authority and every recipient page is checked against it, so neither lag nor divergence widens access or delivery |
+| Recovery | The sync; the sweeper (materializes missing chats, finds lag after a restart); repair on access (the caller's own row); the reconciler, in the sync's worker (projection ahead after a restore; divergence seen by a recipient page, an access refusal, a repair or an admission) |
 | Duplicates | A version-keyed register per member (§6.2), with its guard repeated in the database. Replays and reordering are no-ops, and concurrent appliers converge |
 
 ### 20.4 Membership changes and the chat (P4 brief §9)
@@ -1334,13 +1394,15 @@ Explicit open questions behind this table, none answered here:
 | Case | Behaviour | Evidence |
 | --- | --- | --- |
 | Community exists, chat creation fails | The request fails (5xx); nothing half-made: materialization is one `INSERT … ON CONFLICT DO NOTHING`; the next open, wake-up or sweep retries | contract suite |
-| Chat exists, projection sync fails | The pass logs and stops; access stays right (permit per request, repair on access); fan-out narrowed by the lag filter; the sweeper retries | `community-chat.spec.ts` |
+| Chat exists, projection sync fails | The pass logs and stops; access stays right (permit per request, repair on access); fan-out narrowed by the per-page check; the sweeper retries | `community-chat.spec.ts` |
 | Member joins while the sync is unavailable | Served on first access by repair; list views may omit the chat until the sync runs | `community-chat.spec.ts` |
 | Removal races a send | S2: permits first then append first → lands, ordered before the projected removal; permits first then the removal applied first → the lock refuses; removal first → refused at the permit | `community-chat-postgres.spec.ts` (A, B, C, and 50 rounds of real concurrency) |
 | Concurrent chat creation | The partial unique index: 20 at once → 1 | Postgres suite, application suite |
 | Duplicate, replayed or reordered wake-ups | Wake-ups carry nothing used but the community id; the pulled states go through the version register | both suites |
-| Stale projection | Never an access answer; the lag filter while versions differ; the read ceiling on every page; the reconciler when ahead | application and Postgres suites |
-| Communities cannot answer | 503 on every community-chat request, `SERVER_ERROR` on `subscribe`; the recipient walk throws for its caller to log; the sweeper skips the tick; conversations messaging manages are unaffected | `community-chat.spec.ts`, `community-chat-relay.spec.ts` |
+| Stale projection | Never an access answer; every recipient page checked with `statesOf`; the read ceiling on every page; the reconciler when ahead | application and Postgres suites |
+| Communities restored from a backup, lost versions handed out again (`projected = head`) | Nobody Communities does not hold ACTIVE is delivered to. A recipient page, an access refusal, a repair or an admission that sees a change Communities never made asks for a rebuild, which runs in the sync's worker. A member kept out by a lost tombstone gets 404 until then (seconds). An ordinary lag only syncs | `community-chat.spec.ts` (restore window; repaired row above the projected version; admission ahead of the permit; no rebuild for lag; one rebuild per pass) |
+| One community with a long backlog | A pass yields after 100 pages; other communities are served in between | `community-chat.spec.ts` |
+| Communities cannot answer | 503 on every community-chat request, and `SERVER_ERROR` on `subscribe`. The list leaves out the community chats and lists the rest; a chat that cannot be described shows no title and `canPost: false`. The recipient walk throws for its caller to log, including when only the page's `statesOf` fails, and the sweeper skips the tick. Conversations messaging manages are unaffected | `community-chat.spec.ts`, `community-chat-relay.spec.ts` |
 
 When in doubt it denies:
 
@@ -1360,43 +1422,51 @@ When in doubt it denies:
 - A 30-member community as the control.
 
 **What the numbers are.** Timings were measured on the development
-container, not production hardware. They show that cost does not grow with
-membership; they are **not** a capacity claim.
+container, not production hardware. Each figure is the range over two runs
+of the suite after the review fixes (§20.2). They show that cost does not
+grow with membership; they are **not** a capacity claim.
 
 **Fill** — the real sync, while the owner kept sending:
 
 - 60 applies of at most 1,000 states.
-- Lock hold per batch: p50 64 ms, max 95 ms.
-- 77 sends during the fill: p50 78 ms, max 179 ms. Each waits for at most the
-  batch holding the lock.
+- Lock hold per batch: p50 63–67 ms, max 82–107 ms.
+- 70–73 sends during the fill: p50 78–81 ms, max 124–132 ms. Each waits for
+  at most the batch holding the lock.
 
 **Delivery.** The `MESSAGE_RECIPIENTS` walk takes 30 pages and returns every
-member exactly once, in about 0.36 s.
+member exactly once, in 1.10–1.17 s. It took about 0.36 s before every page
+was checked against Communities; the added cost is one `statesOf` per page.
 
 **p99, 30,000 against 30:**
 
 | Path | 30,000 | 30 |
 | --- | --- | --- |
-| Membership authorization (Communities' one statement) | 3.7 ms | 2.8 ms |
-| Chat access (open the chat) | 9.4 ms | 7.5 ms |
-| Message send, both permits included | 16.7 ms | 18.0 ms |
-| One recipient page | 18.2 ms (1,000 ids) | 5.9 ms (30 ids) |
-| Community-chat lookup | 1.0 ms | 0.9 ms |
+| Membership authorization (Communities' one statement) | 3.4–4.0 ms | 3.6–3.8 ms |
+| Chat access (open the chat) | 8.7–9.2 ms | 8.8–10.7 ms |
+| Message send, both permits included | 17.3–20.8 ms | 12.7–15.4 ms |
+| One recipient page, checked against Communities | 41.4–43.2 ms (1,000 ids) | 9.6–10.6 ms (30 ids) |
+| Community-chat lookup | 0.6–1.8 ms | 0.7–0.8 ms |
+
+A recipient page took 18.2 ms at p99 before the check. The difference is
+Communities' `statesOf` for 1,000 people. Before its ids were bound as one
+array (§20.2), building the 1,000 bind parameters added about 30 ms more, and
+the page took 89 ms.
 
 **What EXPLAIN and the statement counts show:**
 
 - Opening, paging, sending and a recipient page send the same number of
-  statements at 30,000 as at 30. None scans a membership table.
+  statements at 30,000 as at 30. None scans messaging's membership table.
 - Member pages use `conversation_participants_current_idx` under 50% churn
   (gate G2).
 - The chat lookup uses `conversations_community_unique`.
-- The lag filter adds exactly one statement per page (`statesOf`), whatever
-  the page size.
+- Every recipient page adds exactly one statement, `statesOf`, whatever the
+  page size and whether the projection lags. Under 50% churn, a lagging
+  projection is never mistaken for a lost change: no rebuild is asked for.
 - No N+1 anywhere.
 - One nuance on `statesOf`. At this fixture's 60,000-row `community_members`,
   the planner answers Communities' `statesOf` for 1,000 people with one pass
   of the table rather than 1,000 probes. At production volume it probes the
-  index (`communities-scale.spec.ts` pins that at 900,000 stints).
+  index (`communities-scale.spec.ts` pins that at ~900,000 stints).
 
 **What is not claimed:**
 
@@ -1409,10 +1479,10 @@ member exactly once, in about 0.36 s.
 | Suite | Covers |
 | --- | --- |
 | `community-chat.spec.ts` (domain) | The full truth table: every row × incoming × version. Rejoin by stint id; tombstones; FULL and FROM_JOIN; the override; batch rules; the advance rule; 200 seeded convergence runs with 1–3 interleaved appliers |
-| `community-chat.spec.ts` (application) | Every item of the P4 brief's §15 that the in-memory adapters can show: access, refusals, repair, removal and leave, rejoin, delegated and revoked posting, LOCKED, owner transfer, capacity switch, 412 and 403, list views and their fixed call count, recipients (lag, ceiling, unknown, unreadable), failure (503), sync coalescing, sweeper, reconciler |
+| `community-chat.spec.ts` (application) | Every item of the P4 brief's §15 that the in-memory adapters can show: access, refusals, repair, removal and leave, rejoin, delegated and revoked posting, LOCKED, owner transfer, capacity switch, 412 and 403, list views and their fixed call count, recipients (lag, ceiling, unknown, unreadable), failure (503; the list and the view degrading per row), sync coalescing and yielding, sweeper, reconciler. The review's cases too: after a restore that reused the lost versions, a ghost is never delivered to and a shut-out member is let back in by the rebuild; a repaired row above the projected version; an admission ahead of the permit; no rebuild for an ordinary lag; one rebuild per pass; the route naming the conversation to identity. Each was checked to fail with its fix reverted |
 | `community-chat-relay.spec.ts`, `community-chat-notifications.spec.ts` | No frame and no notification row for a removed member or one without the read ceiling. `subscribe` refused like a missing conversation; `SERVER_ERROR` when Communities is down |
 | `in-memory-community-chat.spec.ts` + the Postgres suite | The same store contract on both adapters (mock parity) |
-| `community-chat-postgres.spec.ts` | Schema guards; 20 concurrent materializations; the 10→20-after-50 regression; 1,000 concurrent applies never lowering the version; two appliers equal one; S2 A, B and C; 50 racing rounds; drift; a restarted process's sweeper; the lag filter; the reconciler after a simulated restore; divergence at equal versions |
+| `community-chat-postgres.spec.ts` | Schema guards; 20 concurrent materializations; the 10→20-after-50 regression; 1,000 concurrent applies never lowering the version; two appliers equal one; S2 A, B and C; 50 racing rounds; drift; a restarted process's sweeper; recipients narrowed while the projection lags; the reconciler after a simulated restore; divergence at equal versions |
 | `community-chat-db-guard.spec.ts` | The database guard with the code's check bypassed |
 | `community-chat-scale.spec.ts` | §20.6 |
 | `communities-migrations.spec.ts` | 0012's exact delta on a database already in use |
@@ -1433,9 +1503,18 @@ Each item below is deliberately later, and none is needed for what P4 does:
 - **Metrics:** age of the oldest lag, lagging chats, repairs per minute,
   reconciler runs and orphan chats. Logs only until a metrics system exists.
 - **An operator route to run the reconciler on demand.** It runs by itself
-  when a projection is ahead; on demand it is a method call.
+  when a projection is ahead or a divergence is seen (§20.2). On demand it is
+  a method call: `CommunityChatSync.requestReconcile`.
+- **A cheaper restore detector.** Each recipient page now costs one
+  `statesOf` (§20.6). A digest of the membership changes, carried in
+  Communities' head, would let a page skip that call when the digests match.
+  That digest is Communities' to add, so it is not added here.
+- **`FROM_JOIN` and the list preview.** The list does no repair on access. If
+  Q52 chose `FROM_JOIN`, a stale row from an earlier stint would set the
+  window behind the `lastMessage` preview, which could then show a message
+  sent between stints. The list would first have to check the row's stint.
+  This cannot happen under `FULL`, the current setting.
 - **The rest of §19:**
-  - carrying the lag flag in the recipients cursor;
   - sequence allocation without the row lock, if Q51 lets many post;
   - `community.messages.moderate`, which waits on Q51 and Q23;
   - the Q28 collapse seam.

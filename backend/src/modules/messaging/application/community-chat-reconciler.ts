@@ -14,7 +14,6 @@ import {
   type MessagingRepository,
 } from '../domain/ports';
 import { memberStateOf } from './community-calls';
-import { CommunityChatSync } from './community-chat-sync';
 
 export interface ReconcileReport {
   readonly communityId: string;
@@ -45,11 +44,12 @@ export interface ReconcileReport {
  *
  * Each difference is written with the override — the one writer allowed to
  * lower a row's version; someone the authority no longer knows at all
- * becomes a tombstone at H. Then the projected version is reset to H, and a
- * sync pulls whatever committed during the rebuild: anything the override
- * wrote over is newer than H, so it is pulled again. Access stays correct
- * throughout, because every request asks Communities; fan-out stays correct,
- * because the versions differ until the reset and the lag filter holds.
+ * becomes a tombstone at H. Then the projected version is reset to H, and the
+ * caller — the sync, in whose per-community worker this runs — pulls whatever
+ * committed during the rebuild: anything the override wrote over is newer
+ * than H, so it is pulled again. Access stays correct throughout, because
+ * every request asks Communities; so does fan-out, because every recipient
+ * page is checked against Communities.
  *
  * Derived state: a warning and a metric, never an audit entry. The cost is
  * proportional to the community's size — about 30 + 30 pages at 30,000.
@@ -63,7 +63,6 @@ export class CommunityChatReconciler {
     @Inject(COMMUNITY_MEMBERSHIP) private readonly membership: CommunityMembership,
     @Inject(MESSAGING_REPOSITORY) private readonly repository: MessagingRepository,
     @Inject(MESSAGING_READ_MODEL) private readonly readModel: MessagingReadModel,
-    private readonly sync: CommunityChatSync,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -152,7 +151,6 @@ export class CommunityChatReconciler {
     } while (cursor !== null);
 
     await this.repository.resetProjectedVersion(chat.conversationId, version);
-    this.sync.schedule(communityId);
 
     const report: ReconcileReport = {
       communityId,

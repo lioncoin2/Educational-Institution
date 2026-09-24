@@ -80,45 +80,49 @@ export class CommunityChats {
    * The rows of a list page the caller may still see: the page's community
    * chats re-asked of Communities in ONE call. A refused one is dropped —
    * its row is stale — and its community synced.
+   *
+   * When Communities cannot answer, every community chat on the page is
+   * dropped — its row alone is never an answer (§19) — and the rest of the
+   * page is served: the caller's other conversations never depend on
+   * Communities. They are back on the next read once it answers again.
    */
   async readable(
     principal: Principal,
     rows: readonly ConversationSummaryRow[],
-  ): Promise<Result<ConversationSummaryRow[]>> {
+  ): Promise<ConversationSummaryRow[]> {
     const communityIds = communityIdsOf(rows);
-    if (communityIds.length === 0) return ok([...rows]);
+    if (communityIds.length === 0) return [...rows];
     const answers = await askCommunities(this.logger, () =>
       this.authorization.authorizeEach(principal, communityIds, 'community.chat.read'),
     );
-    if (!answers.ok) return answers;
+    if (!answers.ok) return rows.filter((row) => row.conversation.communityId === null);
     const refused = new Set(communityIds.filter((id) => answers.value.get(id)?.ok !== true));
     for (const communityId of refused) this.sync.schedule(communityId);
-    return ok(
-      rows.filter(
-        (row) =>
-          row.conversation.communityId === null || !refused.has(row.conversation.communityId),
-      ),
+    return rows.filter(
+      (row) => row.conversation.communityId === null || !refused.has(row.conversation.communityId),
     );
   }
 
   /**
    * Titles and posting rights for the community chats among rows the caller
    * may read — one `authorizeEach` and one `describe`, whatever their number,
-   * and none when there are none.
+   * and none when there are none. When Communities cannot answer, none: each
+   * such chat is shown with the views' fail-closed default — no title, and
+   * no posting (a send would be refused with 503 anyway).
    */
   async details(
     principal: Principal,
     rows: readonly ConversationSummaryRow[],
-  ): Promise<Result<ReadonlyMap<string, CommunityChatDetails>>> {
+  ): Promise<ReadonlyMap<string, CommunityChatDetails>> {
     const communityIds = communityIdsOf(rows);
-    if (communityIds.length === 0) return ok(new Map());
+    if (communityIds.length === 0) return new Map();
     const answers = await askCommunities(this.logger, () =>
       Promise.all([
         this.authorization.authorizeEach(principal, communityIds, 'community.chat.post'),
         this.directory.describe(communityIds),
       ]),
     );
-    if (!answers.ok) return answers;
+    if (!answers.ok) return new Map();
     const [posting, summaries] = answers.value;
     const titles = new Map(summaries.map((summary) => [summary.communityId, summary.title]));
     const details = new Map<string, CommunityChatDetails>();
@@ -130,7 +134,7 @@ export class CommunityChats {
           posting.get(conversation.communityId)?.ok === true && !this.overCapacity(conversation),
       });
     }
-    return ok(details);
+    return details;
   }
 
   /** The capacity switch (§11.2), against messaging's own projected count. */

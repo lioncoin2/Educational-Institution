@@ -168,13 +168,16 @@ export class DrizzleCommunityReadModel implements CommunityReadModel {
     if (userIds.length === 0) return [];
     // community_members_history_idx (community_id, user_id, version DESC):
     // the latest stint is the highest version, never the latest joined_at.
+    // The ids go as ONE array parameter: messaging checks every recipient
+    // page of up to 1,000 here, and binding them one by one cost more to
+    // build than the query costs to run.
     const rows = await this.db
       .selectDistinctOn([communityMembers.userId])
       .from(communityMembers)
       .where(
         and(
           eq(communityMembers.communityId, communityId),
-          inArray(communityMembers.userId, [...userIds]),
+          sql`${communityMembers.userId} = any(${sql.param([...userIds])}::text[])`,
         ),
       )
       .orderBy(asc(communityMembers.userId), desc(communityMembers.version));

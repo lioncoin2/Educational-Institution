@@ -37,7 +37,9 @@ import type { ConversationView } from './views';
  *      non-member and an unreadable community all get the same 404, and
  *      nothing is created for any of them;
  *   3. the chat, materialized idempotently if the community has none yet
- *      (any number of concurrent calls give one conversation);
+ *      (any number of concurrent calls give one conversation) — and then
+ *      `messaging.read` again, now with the conversation named, as every
+ *      conversation-scoped read asks it;
  *   4. the caller's projected row, repaired at once if the projection has
  *      not applied their join yet — so someone who just joined through a
  *      link can read the chat immediately. A projection behind the caller's
@@ -96,6 +98,8 @@ export class GetCommunityChatUseCase {
           })
         : await this.repository.findConversation(known.conversationId);
     if (conversation === null) return err(CONVERSATION_NOT_FOUND);
+    const named = this.access.authorize(principal, Permissions.messaging.read, conversation.id);
+    if (!named.ok) return named;
 
     const membership = await this.access.admittedToCommunityChat(
       principal,

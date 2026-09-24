@@ -12,7 +12,6 @@ import {
   type CommunityMembership,
 } from '../../communities/contracts/membership';
 import { MESSAGING_READ_MODEL, type MessagingReadModel } from '../domain/ports';
-import { CommunityChatReconciler } from './community-chat-reconciler';
 import { COMMUNITY_CHAT_SETTINGS, type CommunityChatSettings } from './community-chat-settings';
 import { CommunityChatSync } from './community-chat-sync';
 
@@ -21,7 +20,7 @@ export interface SweepReport {
   readonly communities: number;
   /** Chats missing or behind their community's head: handed to the sync. */
   readonly behind: number;
-  /** Chats ahead of their community's head: rebuilt by the reconciler. */
+  /** Chats ahead of their community's head: handed to the sync, which rebuilds them. */
   readonly ahead: number;
 }
 
@@ -32,7 +31,8 @@ export interface SweepReport {
  * lookup — two statements per 1,000 communities:
  *
  *   no chat, or projected behind the head  →  the sync (which materializes)
- *   projected ahead of the head            →  the reconciler
+ *   projected ahead of the head            →  the sync, which rebuilds it
+ *                                             (the reconciler, in its worker)
  *
  * Stateless: a failed tick is logged and the next starts from the first
  * page. Correctness never depends on it — every request asks Communities —
@@ -49,7 +49,6 @@ export class CommunityChatSweeper implements OnApplicationBootstrap, OnModuleDes
     @Inject(COMMUNITY_MEMBERSHIP) private readonly membership: CommunityMembership,
     @Inject(MESSAGING_READ_MODEL) private readonly readModel: MessagingReadModel,
     private readonly sync: CommunityChatSync,
-    private readonly reconciler: CommunityChatReconciler,
     @Inject(COMMUNITY_CHAT_SETTINGS) private readonly settings: CommunityChatSettings,
   ) {}
 
@@ -106,7 +105,7 @@ export class CommunityChatSweeper implements OnApplicationBootstrap, OnModuleDes
           this.sync.schedule(head.communityId);
         } else if (chat.projectedVersion > head.membershipVersion) {
           ahead += 1;
-          await this.reconciler.reconcile(head.communityId);
+          this.sync.schedule(head.communityId);
         }
       }
       after = page.next ?? undefined;

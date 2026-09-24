@@ -43,19 +43,25 @@ const NOBODY: RecipientPage = { userIds: [], nextCursor: null };
  * fewer ids than its limit; the cursor still continues after the last member
  * examined, so nobody is skipped or seen twice.
  *
- * A community chat's page (community-chat.md §7.3) comes from the projection
- * and is then narrowed, never widened:
+ * A community chat's page (community-chat.md §7.3, §20.2) comes from the
+ * projection and is then narrowed, never widened:
  *
  *   community unknown, or its chat unreadable   an empty page
- *   projection behind (or ahead of) the head    only those Communities reports
- *                                                ACTIVE now; a sync is scheduled
- *   always, whatever `readersOnly` says         only accounts holding EVERY
+ *   every page                                  only those Communities reports
+ *                                                ACTIVE now (one statesOf)
+ *   every page, whatever `readersOnly` says     only accounts holding EVERY
  *                                                permission of COMMUNITY_CHAT_READ_CEILING
  *
  * So a member Communities removed, or one whose role lost part of the read
  * ceiling, gets no frame and no notification — exactly as they get 404 over
- * HTTP. A member joined but not yet projected is missed until the sync runs:
- * that fails closed, and they read the message over HTTP.
+ * HTTP — whatever state the projection is in, even one that looks current
+ * after Communities was restored behind it. A member joined but not yet
+ * projected is missed until the sync runs: that fails closed, and they read
+ * the message over HTTP.
+ *
+ * The page also keeps the projection honest: behind the head, a sync is
+ * scheduled; holding someone Communities has no change for — or reports as
+ * gone by a change the projection claims to reflect — a rebuild.
  */
 @Injectable()
 export class MessageRecipientsService implements MessageRecipients {
@@ -99,18 +105,31 @@ export class MessageRecipientsService implements MessageRecipients {
     const [head] = await this.membership.heads([communityId]);
     if (head === undefined || !head.effects.chatReadable) return NOBODY;
 
+    const projected = conversation.projectedMembershipVersion ?? 0;
+    if (projected !== head.membershipVersion) this.sync.schedule(communityId);
     const page = await this.page(conversation.id, afterUserId, options);
     let userIds = page.userIds;
-    if (conversation.projectedMembershipVersion !== head.membershipVersion) {
-      this.sync.schedule(communityId);
-      if (userIds.length > 0) {
-        const active = new Set(
-          (await this.membership.statesOf(communityId, userIds))
-            .filter((state) => state.active)
-            .map((state) => state.userId),
-        );
-        userIds = userIds.filter((userId) => active.has(userId));
+    if (userIds.length > 0) {
+      const states = new Map(
+        (await this.membership.statesOf(communityId, userIds)).map((state) => [
+          state.userId,
+          state,
+        ]),
+      );
+      // Everyone on this page is projected as a current member. The
+      // projection claims every change up to `reflected`: someone Communities
+      // has no stint for at all, or reports gone by a change in that range,
+      // is a change Communities lost — it was restored behind the projection.
+      const reflected = Math.min(projected, head.membershipVersion);
+      if (
+        userIds.some((userId) => {
+          const state = states.get(userId);
+          return state === undefined || (!state.active && state.version <= reflected);
+        })
+      ) {
+        this.sync.requestReconcile(communityId);
       }
+      userIds = userIds.filter((userId) => states.get(userId)?.active === true);
     }
     return {
       userIds: await this.holdingAll(userIds, COMMUNITY_CHAT_READ_CEILING),

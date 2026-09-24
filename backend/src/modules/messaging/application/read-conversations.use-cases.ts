@@ -26,7 +26,8 @@ import type { ConversationView, MessagePage, ParticipantView } from './views';
  * A community chat on the page is shown only if Communities still lets the
  * caller read it — its row is a projection, never an answer on its own — so
  * a page may hold fewer items than its limit; the cursor still continues
- * after the last row examined.
+ * after the last row examined. If Communities cannot answer, the page's
+ * community chats are left out and everything else is listed.
  */
 @Injectable()
 export class ListConversationsUseCase {
@@ -52,11 +53,9 @@ export class ListConversationsUseCase {
       after: after.value,
     });
     const readable = await this.communityChats.readable(query.principal, page.items);
-    if (!readable.ok) return readable;
-    const details = await this.communityChats.details(query.principal, readable.value);
-    if (!details.ok) return details;
+    const details = await this.communityChats.details(query.principal, readable);
     return ok({
-      items: await this.views.conversations(readable.value, details.value),
+      items: await this.views.conversations(readable, details),
       nextCursor: page.next === null ? null : encodeConversationCursor(page.next),
     });
   }
@@ -99,8 +98,7 @@ export class GetConversationUseCase {
     const row = await this.readModel.conversationSummary(conversationId, principal.userId);
     if (row === null) return err(CONVERSATION_NOT_FOUND);
     const details = await this.communityChats.details(principal, [row]);
-    if (!details.ok) return details;
-    const [view] = await this.views.conversations([row], details.value);
+    const [view] = await this.views.conversations([row], details);
     return view === undefined ? err(CONVERSATION_NOT_FOUND) : ok(view);
   }
 }

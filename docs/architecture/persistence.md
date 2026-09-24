@@ -454,6 +454,13 @@ shutdown. `DatabaseModule` is composed explicitly by `AppModule`, so a unit test
 never opens a pool by accident. Replicas × pool size is the number to compare
 with Postgres's `max_connections`.
 
+A connection can fail while it sits idle: Postgres restarts, a failover
+happens, or an administrator ends the session. The pool then drops that
+connection and reports it as an `'error'` event. With no listener, that
+event would crash the process. The pool therefore logs it as a warning,
+with the error's code and class only, since its message can echo connection
+details. The next query opens a fresh connection.
+
 ---
 
 ## 8. Deliberately deferred

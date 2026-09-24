@@ -34,6 +34,7 @@ the history, not the current state.
 | [0019](0019-community-scoped-live-sessions.md) | Community-scoped live sessions: Postgres truth, level-triggered LiveKit convergence, a presenter slot, narrow RTC ports | Accepted |
 | [0020](0020-attendance-snapshots.md) | Attendance snapshots are observations owned by a new attendance module (implementation held) | Accepted (implementation held) |
 | [0021](0021-cross-cutting-rules-for-new-modules.md) | Cross-cutting rules for the new modules: events in contracts, journals, durability classes, the realtime transport matrix, protocol v1 growth, `FailureKind 'unavailable'`, executable guards | Accepted |
+| [0022](0022-community-chat-delivery-check.md) | Community chat: every recipient page is checked against Communities, and a divergence rebuilds the projection (supersedes 0018 in part) | Proposed (implemented; awaiting acceptance) |
 
 > **`Proposed`** (added 2026-09-23): a design under review, with nothing
 > implemented. It becomes `Accepted` when the user accepts it (dated in the
@@ -42,6 +43,12 @@ the history, not the current state.
 > and 0021 are implemented in phases, and 0020's implementation is held until
 > the attendance policy questions are answered (the Q40 ruling in
 > [0016](0016-communities-module.md)).
+>
+> **0022 is the one `Proposed` record that is implemented.** Review of P4
+> found that 0018's decision 9 lets delivery trust a stale projection after
+> Communities is restored from a backup. The P4 brief's §19 forbids that.
+> The fix therefore landed with P4's review fixes and waits for the user's
+> acceptance. Rejecting it restores decision 9, a small code change.
 
 **0015 is reserved.** The academic reconciliation names ADR 0015 for its
 structure change (`academic-reconciliation.md:410`, `:490`, `:506`), which

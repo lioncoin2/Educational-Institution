@@ -171,34 +171,29 @@ export async function messagingHarness(
     sweepIntervalMs: 0,
     ...options.settings,
   };
+  const reconciler = new CommunityChatReconciler(
+    communities.membership,
+    repository,
+    readModel,
+    clock,
+  );
   const sync = new CommunityChatSync(
     bus,
     communities.membership,
     repository,
     readModel,
+    reconciler,
     clock,
     ids,
   );
   sync.onModuleInit();
-  const reconciler = new CommunityChatReconciler(
-    communities.membership,
-    repository,
-    readModel,
-    sync,
-    clock,
-  );
-  const sweeper = new CommunityChatSweeper(
-    communities.membership,
-    readModel,
-    sync,
-    reconciler,
-    settings,
-  );
+  const sweeper = new CommunityChatSweeper(communities.membership, readModel, sync, settings);
 
   const access = new ConversationAccess(
     authorization,
     repository,
     communities.authorization,
+    communities.membership,
     sync,
     clock,
   );

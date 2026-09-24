@@ -267,7 +267,10 @@ describeWithPostgres('a community chat at 30,000 members', () => {
     nodes
       .filter((node) => node['Node Type'] === 'Seq Scan')
       .map((node) => node['Relation Name'])
-      .filter((relation) => relation !== undefined && MEMBERSHIP_TABLES.includes(relation));
+      .filter(
+        (relation): relation is string =>
+          relation !== undefined && MEMBERSHIP_TABLES.includes(relation),
+      );
   const indexes = (nodes: readonly PlanNode[]) =>
     new Set(nodes.map((node) => node['Index Name']).filter((name) => name !== undefined));
 
@@ -391,43 +394,52 @@ describeWithPostgres('a community chat at 30,000 members', () => {
           }),
       ],
       [
+        // Every page is checked against Communities: one statesOf for its
+        // 1,000 people. How Communities plans that is Communities' own — at
+        // this fixture's 60,000 stints one pass is cheaper than 1,000 probes;
+        // at production volume it is index probes (communities-scale.spec.ts
+        // pins it at ~900,000 stints) — so only messaging's table is held here.
         'one recipient page of 1,000',
         (community: 'c-30k' | 'c-30') => h.recipients.list(chats[community], { limit: 1000 }),
+        ['conversation_participants'],
       ],
-    ])('%s', async (_name, call) => {
+    ])('%s', async (_name, call, tables: readonly string[] = MEMBERSHIP_TABLES) => {
       h.clock.advance(60);
       const large = await plansOf(() => call('c-30k'));
       const small = await plansOf(() => call('c-30'));
       expect(large.sent).toBe(small.sent);
       expect(large.sent).toBeLessThanOrEqual(12);
-      expect(scansOfMembership(large.nodes)).toEqual([]);
+      expect(scansOfMembership(large.nodes).filter((table) => tables.includes(table))).toEqual([]);
     });
   });
 
-  it('keeps the lag filter to one more statement per page, whatever the page holds', async () => {
-    // Measured alone: the sync this schedules would otherwise run alongside.
+  it('checks every page against Communities in one call, whatever it holds — lagging or not', async () => {
+    // Measured alone: the sync a lagging page schedules would otherwise run alongside.
     jest.spyOn(h.sync, 'schedule').mockImplementation(() => undefined);
-    // Behind by one change: every page is checked against Communities.
-    await db.execute(sql`
-      update conversations set projected_membership_version = 59999 where id = ${chats['c-30k']}`);
+    const rebuild = jest.spyOn(h.sync, 'requestReconcile');
+    const statesOf = jest.spyOn(h.communities.membership, 'statesOf');
     try {
+      const current = await plansOf(() => h.recipients.list(chats['c-30k'], { limit: 1000 }));
+      // Behind by one change.
+      await db.execute(sql`
+        update conversations set projected_membership_version = 59999 where id = ${chats['c-30k']}`);
       const small = await plansOf(() => h.recipients.list(chats['c-30k'], { limit: 10 }));
       const large = await plansOf(() => h.recipients.list(chats['c-30k'], { limit: 1000 }));
+      // One statesOf a page, and the same statements, whatever the page's
+      // size or the projection's lag.
+      expect(statesOf).toHaveBeenCalledTimes(3);
+      expect(statesOf.mock.calls.map(([, userIds]) => userIds.length)).toEqual([1000, 10, 1000]);
       expect(large.sent).toBe(small.sent);
-      // Messaging's own statements stay on its indexes. Communities' statesOf
-      // for 1,000 people is Communities' to plan: at this table's 60,000 rows
-      // one pass is cheaper than 1,000 probes, and at production volume it is
-      // index probes (communities-scale.spec.ts pins it at 900,000 stints).
+      expect(large.sent).toBe(current.sent);
+      // Messaging's own statements stay on its indexes (Communities' statesOf
+      // is Communities' to plan — see the recipient page above).
       expect(
         scansOfMembership(large.nodes).filter((table) => table === 'conversation_participants'),
       ).toEqual([]);
       const page = await h.recipients.list(chats['c-30k'], { limit: 1000 });
       expect(page.userIds).toHaveLength(1000);
-      // Lagging adds exactly Communities' statesOf to what a current page costs.
-      await db.execute(sql`
-        update conversations set projected_membership_version = 60000 where id = ${chats['c-30k']}`);
-      const current = await plansOf(() => h.recipients.list(chats['c-30k'], { limit: 1000 }));
-      expect(large.sent).toBe(current.sent + 1);
+      // Under 50% churn, lagging is not mistaken for a lost change.
+      expect(rebuild).not.toHaveBeenCalled();
     } finally {
       jest.restoreAllMocks();
       await db.execute(sql`

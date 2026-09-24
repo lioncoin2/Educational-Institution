@@ -612,19 +612,30 @@ repeated in the database and `member_count` moved by the rows really
 written. It is fed by `CommunityChatSync` (woken by Communities' member
 events, pulling `changesSince`), by repair on access (the caller's own row,
 from the permit), by `CommunityChatSweeper` (at boot and every 60 s) and,
-when the projection is ahead of the authority after a restore, by
-`CommunityChatReconciler`. None of it publishes an event or writes an audit
-entry.
+when the projection is ahead of the authority after a restore or holds a
+change Communities never made, by `CommunityChatReconciler`, which runs in
+the sync's worker. None of it publishes an event or writes an audit entry.
 
 **Delivery.** `MESSAGE_RECIPIENTS` keeps its signature. For a community
-chat each page comes from the projection, is narrowed to the members
-Communities reports ACTIVE while the projection lags the community's head,
-and is always narrowed to the accounts holding every permission of
-`COMMUNITY_CHAT_READ_CEILING` — so a removed member, or one whose role lost
-part of the read ceiling, receives no frame and no notification row, exactly
-as they get 404 over HTTP. Realtime and notifications are unchanged.
+chat each page comes from the projection. It is then narrowed twice, on
+every page:
+
+- to the members Communities reports ACTIVE (one `statesOf`), lagging or not
+  ([ADR 0022](decisions/0022-community-chat-delivery-check.md), Proposed);
+- to the accounts holding every permission of `COMMUNITY_CHAT_READ_CEILING`.
+
+So a removed member, one whose role lost part of the read ceiling, or someone
+the projection holds only because Communities was restored behind it,
+receives no frame and no notification row, exactly as they get 404 over HTTP.
+Realtime and notifications are unchanged.
 
 **When Communities cannot answer**, every community-chat request fails
-closed with 503 `unavailable` (realtime `subscribe`: `SERVER_ERROR`); the
-recipient walk throws for its caller to log; the sweeper skips the tick.
-Conversations messaging manages never call Communities.
+closed with 503 `unavailable`, and realtime `subscribe` answers
+`SERVER_ERROR`. There are two exceptions:
+
+- The conversation list leaves out the community chats on the page and lists
+  the rest.
+- A chat that cannot be described shows no title and `canPost: false`.
+
+The recipient walk throws for its caller to log, and the sweeper skips the
+tick. Conversations messaging manages never call Communities.
