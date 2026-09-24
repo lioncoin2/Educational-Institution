@@ -55,6 +55,12 @@ const _routes = <String, (String, String)>{
   '/messages/mock-group': ('محادثة جماعية', 'الأستاذ عبدالله'),
   '/messages/mock-direct': ('محادثة خاصة', 'قبل الخميس'),
   '/messages/mock-channel': ('قناة إعلانات', 'يمكنك القراءة فقط'),
+  '/communities': ('مجتمعاتي', 'مجتمع طلاب التجويد'),
+  '/communities/mock-community-family': ('مجتمع', 'مالك المجتمع'),
+  '/communities/mock-community-institute/members': (
+    'أعضاء مجتمع',
+    'الأستاذ عبدالله',
+  ),
   '/sign-in': ('تسجيل الدخول', 'أدخل بيانات حسابك في المعهد'),
 };
 

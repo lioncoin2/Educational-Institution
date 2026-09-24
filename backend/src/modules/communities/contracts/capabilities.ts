@@ -50,6 +50,19 @@ export const COMMUNITY_CHAT_READ_CEILING: readonly Permission[] = Object.freeze(
   Permissions.messaging.read,
 ]);
 
+/**
+ * The identity permissions `community.view` needs on the membership path —
+ * its standing ceiling (PROVISIONAL, Q44). Published because two paths must
+ * agree on it: the act table, for every request a person makes, and
+ * realtime's community frame audiences, which have no principal and narrow
+ * each audience to the accounts that hold ALL of these. One constant, so a
+ * member whose role lost it is refused on HTTP and is told nothing about the
+ * community in the background either.
+ */
+export const COMMUNITY_VIEW_CEILING: readonly Permission[] = Object.freeze([
+  Permissions.communities.read,
+]);
+
 /** Participation: satisfied by ACTIVE membership alone, never by a grant. */
 export const COMMUNITY_PARTICIPATION = [
   'community.view',

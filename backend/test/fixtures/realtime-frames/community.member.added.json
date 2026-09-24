@@ -1,0 +1,8 @@
+{
+  "type": "community.member.added",
+  "eventId": "community.member.added:community-1:user-2:7",
+  "occurredAt": "2026-09-24T10:00:00.000Z",
+  "communityId": "community-1",
+  "userId": "user-2",
+  "version": 1
+}

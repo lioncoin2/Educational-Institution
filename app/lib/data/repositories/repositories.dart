@@ -1,6 +1,7 @@
 import '../models/academic.dart';
 import '../models/auth.dart';
 import '../models/certificate.dart';
+import '../models/communities.dart';
 import '../models/data_origin.dart';
 import '../models/feed.dart';
 import '../models/institution.dart';
@@ -148,6 +149,13 @@ abstract interface class MessagingRepository {
 
   Future<Conversation> conversation(String conversationId);
 
+  /// A community's chat — an ordinary conversation, typed CHANNEL and
+  /// carrying the community's id — resolved from the community, for a person
+  /// whose membership lets them read it now. Everything after uses the
+  /// ordinary conversation routes with the returned id. Not the viewer's to
+  /// read (any more), or no such community: `messaging.conversation_not_found`.
+  Future<Conversation> conversationForCommunity(String communityId);
+
   /// Newest page when neither cursor is given; [before]/[after] are sequences.
   Future<MessagePage> messages(
     String conversationId, {
@@ -192,6 +200,25 @@ abstract interface class MessagingRepository {
     String messageId,
     String fileAssetId,
   );
+}
+
+/// Communities — the groups the signed-in person belongs to
+/// (`/communities`).
+///
+/// Every method throws [CommunityException] with the server's code on
+/// refusal. Reading only: what the viewer may do in a community is the
+/// server's `me` block, and a community the viewer is not (or no longer) in
+/// is, to this API, one that does not exist. Pages are the server's, by
+/// opaque cursor — a roster is never loaded whole.
+abstract interface class CommunityRepository {
+  /// The viewer's own communities, most recently joined first.
+  Future<CommunityPage> communities({String? cursor});
+
+  Future<Community> community(String communityId);
+
+  /// The roster, a page at a time — for a viewer whose `me.capabilities`
+  /// holds `community.members.view`; anyone else is refused.
+  Future<CommunityMemberPage> members(String communityId, {String? cursor});
 }
 
 /// Notifications — the signed-in person's own inbox, preferences and push

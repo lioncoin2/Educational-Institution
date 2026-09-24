@@ -59,6 +59,16 @@ export class ConnectionManager {
   }
 
   /**
+   * Every account with at least one connection here, each once — a snapshot:
+   * connections that open or close afterwards do not change it. What an
+   * audience is intersected with (`onlineAudience`), so a fan-out costs what
+   * is connected here, not what a community or a channel holds.
+   */
+  onlineUserIds(): readonly string[] {
+    return [...this.byUser.keys()];
+  }
+
+  /**
    * Sends one frame to every connection of one account. Returns how many took
    * it. A connection that cannot — closed, too far behind, or failing — is
    * dropped, and never stops the others from receiving.

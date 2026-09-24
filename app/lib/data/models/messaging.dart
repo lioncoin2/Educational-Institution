@@ -212,6 +212,7 @@ class Conversation implements Sourced {
     this.title,
     this.counterpartUserId,
     this.lastMessage,
+    this.communityId,
     this.origin = DataOrigin.profile,
   });
 
@@ -234,6 +235,12 @@ class Conversation implements Sourced {
           ),
     createdAt: DateTime.parse(json['createdAt']! as String),
     activityAt: DateTime.parse(json['activityAt']! as String),
+    // Additive on the server: an older one sends nothing, and anything but
+    // an id means "not a community's chat".
+    communityId: switch (json['communityId']) {
+      final String id when id.isNotEmpty => id,
+      _ => null,
+    },
   );
 
   final String id;
@@ -256,8 +263,14 @@ class Conversation implements Sourced {
   final DateTime createdAt;
   final DateTime activityAt;
 
+  /// Set when this is a community's chat: who may read it and post in it is
+  /// then the community's to say, and it follows the viewer's membership.
+  final String? communityId;
+
   @override
   final DataOrigin origin;
+
+  bool get isCommunityChat => communityId != null;
 
   static const int unreadCountCap = 100;
 
@@ -307,6 +320,7 @@ class Conversation implements Sourced {
       activityAt: message.createdAt.isAfter(activityAt)
           ? message.createdAt
           : activityAt,
+      communityId: communityId,
       origin: origin,
     );
   }
@@ -326,6 +340,7 @@ class Conversation implements Sourced {
     lastMessage: lastMessage,
     createdAt: createdAt,
     activityAt: activityAt,
+    communityId: communityId,
     origin: origin,
   );
 }

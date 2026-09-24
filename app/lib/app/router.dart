@@ -6,6 +6,9 @@ import '../features/announcements/announcements_screen.dart';
 import '../features/auth/sign_in_screen.dart';
 import '../features/certificates/certificate_detail_screen.dart';
 import '../features/certificates/certificates_screen.dart';
+import '../features/communities/communities_screen.dart';
+import '../features/communities/community_members_screen.dart';
+import '../features/communities/community_screen.dart';
 import '../features/episode/episode_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/learning_path/learning_path_screen.dart';
@@ -77,6 +80,32 @@ GoRouter buildRouter() {
             builder: (context, state) => ConversationScreen(
               conversationId: state.pathParameters['conversationId']!,
             ),
+          ),
+        ],
+      ),
+      GoRoute(
+        path: Routes.communities,
+        name: 'communities',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const CommunitiesScreen(),
+        routes: [
+          GoRoute(
+            path: ':communityId',
+            name: 'community',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) => CommunityScreen(
+              communityId: state.pathParameters['communityId']!,
+            ),
+            routes: [
+              GoRoute(
+                path: 'members',
+                name: 'community-members',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => CommunityMembersScreen(
+                  communityId: state.pathParameters['communityId']!,
+                ),
+              ),
+            ],
           ),
         ],
       ),

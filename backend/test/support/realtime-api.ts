@@ -1,4 +1,5 @@
 import { BootstrapOwnerUseCase } from '../../src/modules/identity/application/bootstrap-owner.use-case';
+import { CommunitiesRealtimeRelay } from '../../src/modules/realtime/application/communities-relay';
 import { MessagingRealtimeRelay } from '../../src/modules/realtime/application/messaging-relay';
 import { RealtimeSessions } from '../../src/modules/realtime/application/realtime-sessions';
 import { WebSocketTransport } from '../../src/modules/realtime/infrastructure/websocket-transport';
@@ -17,7 +18,7 @@ export interface Account {
  * The real application — AppModule, configureApp, the real HTTP server with
  * the realtime endpoint on it — plus the steps every realtime API suite
  * needs: a bootstrapped owner, accounts provisioned through the admin API,
- * and messaging over HTTP.
+ * and messaging and communities over HTTP.
  */
 export async function startRealtimeApi(env: Record<string, string> = {}) {
   const api: RunningApi = await startApi(env);
@@ -56,6 +57,7 @@ export async function startRealtimeApi(env: Record<string, string> = {}) {
     transport: api.app.get(WebSocketTransport),
     sessions: api.app.get(RealtimeSessions),
     relay: api.app.get(MessagingRealtimeRelay),
+    communitiesRelay: api.app.get(CommunitiesRealtimeRelay),
 
     async provision(name: string, role: string, displayName = name): Promise<Account> {
       const email = `${name}@institution.test`;
@@ -136,6 +138,57 @@ export async function startRealtimeApi(env: Record<string, string> = {}) {
         { token: owner.token },
       );
       if (response.status !== 204) throw new Error(`remove: ${response.status} ${response.raw}`);
+    },
+
+    /** A community created over HTTP by `owner`, who must hold communities.create. */
+    async createCommunity(owner: Account, title = 'حلقة التجويد'): Promise<string> {
+      const response = await api.call('POST', '/communities', {
+        token: owner.token,
+        body: { title },
+      });
+      if (response.status !== 201) throw new Error(`community: ${response.status} ${response.raw}`);
+      return response.body.id as string;
+    },
+
+    async addToCommunity(by: Account, communityId: string, members: readonly Account[]) {
+      const response = await api.call('POST', `/communities/${communityId}/members`, {
+        token: by.token,
+        body: { userIds: members.map((member) => member.id) },
+      });
+      if (response.status !== 201 && response.status !== 200) {
+        throw new Error(`add members: ${response.status} ${response.raw}`);
+      }
+    },
+
+    async removeFromCommunity(by: Account, communityId: string, userId: string): Promise<void> {
+      const response = await api.call('DELETE', `/communities/${communityId}/members/${userId}`, {
+        token: by.token,
+      });
+      if (response.status !== 204) throw new Error(`remove: ${response.status} ${response.raw}`);
+    },
+
+    /** Locks or unlocks; the community as the response returns it. */
+    async setCommunityLocked(by: Account, communityId: string, locked: boolean) {
+      const response = await api.call(
+        'POST',
+        `/communities/${communityId}/${locked ? 'lock' : 'unlock'}`,
+        { token: by.token },
+      );
+      if (response.status !== 200) throw new Error(`lock: ${response.status} ${response.raw}`);
+      return response.body;
+    },
+
+    async grantCapabilities(
+      owner: Account,
+      communityId: string,
+      userId: string,
+      capabilities: readonly string[],
+    ): Promise<void> {
+      const response = await api.call('POST', `/communities/${communityId}/grants`, {
+        token: owner.token,
+        body: { userId, capabilities },
+      });
+      if (response.status !== 201) throw new Error(`grant: ${response.status} ${response.raw}`);
     },
 
     async close(): Promise<void> {

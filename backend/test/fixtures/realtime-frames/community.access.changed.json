@@ -1,0 +1,7 @@
+{
+  "type": "community.access.changed",
+  "eventId": "community.access.changed:community-1:user-2:161c278836cde0cbe9e4",
+  "occurredAt": "2026-09-24T10:00:00.000Z",
+  "communityId": "community-1",
+  "version": 1
+}

@@ -95,6 +95,14 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 onSendFile: (file) =>
                     ref.read(provider.notifier).sendFile(file),
               )
+            // A community chat closed to the viewer may be locked, or not
+            // theirs to post in, or too large to post in now — the server
+            // does not say which, so neither does the screen.
+            else if (state.conversation.isCommunityChat)
+              const _Notice(
+                icon: Icons.lock_outline_rounded,
+                text: MessagingCopy.cannotPostHere,
+              )
             else
               const _Notice(
                 icon: Icons.campaign_outlined,

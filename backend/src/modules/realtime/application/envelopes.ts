@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type { MessageView, PersonView } from '../../messaging/contracts/message-view';
 import type { ConversationPosition } from '../../messaging/contracts/message-delivery';
 import type { ConversationType, ParticipantRole } from '../../messaging/contracts/vocabulary';
@@ -6,10 +8,11 @@ import { PROTOCOL_VERSION, type RealtimeErrorCode } from '../domain/protocol';
 
 /**
  * Server → client frames, version 1. Every one is built here, field by field,
- * from messaging's and notifications' contract views and the event's
- * identifiers — never by spreading a domain event or a stored row onto the
- * wire, so nothing the contract does not name (an audit field, a storage key,
- * a signed URL, a token, a deduplication key) can reach a client by accident.
+ * from messaging's and notifications' contract views, Communities' events and
+ * the event's identifiers — never by spreading a domain event or a stored row
+ * onto the wire, so nothing the contract does not name (an audit field, a
+ * storage key, a signed URL, a token, a deduplication key) can reach a client
+ * by accident.
  *
  * Each builder returns the serialized frame: an event is serialized once and
  * the same string is sent to every connection that receives it.
@@ -278,4 +281,124 @@ export function notificationsReadFrame(input: {
     throughId: input.throughId,
     readAt: input.readAt,
   });
+}
+
+// ── Communities ────────────────────────────────────────────────────────────
+//
+// Hints, never grants (communities-live-attendance.md §16.2): ids, codes and
+// versions only — no title, no name, no capability, no grant or invitation
+// id, no count, no roster, and nothing of how someone joined or who acted.
+// The client re-reads the community over HTTP, which decides everything.
+// Golden copies of each: test/fixtures/realtime-frames/, shared with the app.
+
+/**
+ * "You are a member of this community now." The stint's membership version
+ * is in the id only: stable across redelivery, and never a field — it is not
+ * a version the client can compare against anything HTTP returns.
+ */
+export function communityMemberAddedFrame(input: {
+  readonly occurredAt: Date;
+  readonly communityId: string;
+  readonly userId: string;
+  readonly membershipVersion: number;
+}): string {
+  return frame({
+    type: 'community.member.added',
+    eventId: `community.member.added:${input.communityId}:${input.userId}:${input.membershipVersion}`,
+    occurredAt: input.occurredAt.toISOString(),
+    communityId: input.communityId,
+    userId: input.userId,
+  });
+}
+
+/** "You are no longer a member": you left, or were removed. Nothing else is said. */
+export function communityMemberRemovedFrame(input: {
+  readonly occurredAt: Date;
+  readonly communityId: string;
+  readonly userId: string;
+  readonly reason: 'left' | 'removed';
+  readonly membershipVersion: number;
+}): string {
+  return frame({
+    type: 'community.member.removed',
+    eventId: `community.member.removed:${input.communityId}:${input.userId}:${input.membershipVersion}`,
+    occurredAt: input.occurredAt.toISOString(),
+    communityId: input.communityId,
+    userId: input.userId,
+    reason: input.reason,
+  });
+}
+
+/**
+ * The community was locked, as of `lifecycleVersion` — which the client
+ * compares with the one `GET /communities/:id` returned, so a frame older
+ * than what it holds is dropped and a newer one triggers the re-read.
+ */
+export function communityLockedFrame(input: {
+  readonly occurredAt: Date;
+  readonly communityId: string;
+  readonly lifecycleVersion: number;
+}): string {
+  return frame({
+    type: 'community.locked',
+    eventId: `community.locked:${input.communityId}:${input.lifecycleVersion}`,
+    occurredAt: input.occurredAt.toISOString(),
+    communityId: input.communityId,
+    lifecycleVersion: input.lifecycleVersion,
+  });
+}
+
+export function communityUnlockedFrame(input: {
+  readonly occurredAt: Date;
+  readonly communityId: string;
+  readonly lifecycleVersion: number;
+}): string {
+  return frame({
+    type: 'community.unlocked',
+    eventId: `community.unlocked:${input.communityId}:${input.lifecycleVersion}`,
+    occurredAt: input.occurredAt.toISOString(),
+    communityId: input.communityId,
+    lifecycleVersion: input.lifecycleVersion,
+  });
+}
+
+/**
+ * What changed someone's access: a grant made or revoked, or ownership moved
+ * from one account to another at a time.
+ */
+export type AccessChangeCause =
+  | { readonly kind: 'granted' | 'revoked'; readonly grantId: string }
+  | { readonly kind: 'transferred'; readonly fromUserId: string; readonly toUserId: string };
+
+/**
+ * "What you may do here changed" — a capability granted or revoked, or
+ * ownership moved. Which, and by whom, stays off the wire: the client
+ * re-reads its `me` block. The recipient is in the id because one fact (a
+ * transfer) tells two people, each with their own frame. The cause is in it
+ * too, so that two changes are never one id — a client drops a repeated id,
+ * and a second change dropped as a duplicate of the first would be a re-read
+ * that never happens — but only as a digest: the id names the fact without
+ * naming the grant, the capability or the other party.
+ */
+export function communityAccessChangedFrame(input: {
+  readonly occurredAt: Date;
+  readonly communityId: string;
+  readonly userId: string;
+  readonly cause: AccessChangeCause;
+}): string {
+  const cause =
+    input.cause.kind === 'transferred'
+      ? `transferred:${input.cause.fromUserId}:${input.cause.toUserId}:${input.occurredAt.getTime()}`
+      : `${input.cause.kind}:${input.cause.grantId}`;
+  return frame({
+    type: 'community.access.changed',
+    eventId: `community.access.changed:${input.communityId}:${input.userId}:${digest(cause)}`,
+    occurredAt: input.occurredAt.toISOString(),
+    communityId: input.communityId,
+  });
+}
+
+/** A fixed-length, one-way name for a fact: the same fact, the same name. */
+function digest(fact: string): string {
+  return createHash('sha256').update(fact).digest('hex').slice(0, 20);
 }

@@ -4,6 +4,7 @@ import {
   COMMUNITY_CAPABILITIES,
   COMMUNITY_CHAT_READ_CEILING,
   COMMUNITY_PARTICIPATION,
+  COMMUNITY_VIEW_CEILING,
   isCommunityAct,
   isCommunityCapability,
 } from '../contracts/capabilities';
@@ -33,6 +34,13 @@ describe('the act rules (PROVISIONAL)', () => {
     expect(COMMUNITY_CHAT_READ_CEILING).toEqual(['communities.read', 'messaging.read']);
     expect(ACT_RULES['community.chat.read'].standingCeiling).toEqual(COMMUNITY_CHAT_READ_CEILING);
     expect(Object.isFrozen(COMMUNITY_CHAT_READ_CEILING)).toBe(true);
+  });
+
+  it('asks a viewer for exactly the published view ceiling — the one realtime narrows community frames by', () => {
+    expect(COMMUNITY_VIEW_CEILING).toEqual(['communities.read']);
+    expect(ACT_RULES['community.view'].standingCeiling).toEqual(COMMUNITY_VIEW_CEILING);
+    expect(ACT_RULES['community.view'].oversightCeiling).toEqual(['communities.manage']);
+    expect(Object.isFrozen(COMMUNITY_VIEW_CEILING)).toBe(true);
   });
 
   it('is exactly the table the design states', () => {

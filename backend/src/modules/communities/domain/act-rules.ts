@@ -1,6 +1,7 @@
 import { Permissions, type Permission } from '../../identity/contracts/permissions';
 import {
   COMMUNITY_CHAT_READ_CEILING,
+  COMMUNITY_VIEW_CEILING,
   isCommunityCapability,
   isCommunityParticipationAct,
   type CommunityAct,
@@ -63,7 +64,9 @@ function rule(
 }
 
 export const ACT_RULES: Readonly<Record<CommunityAct, ActRule>> = Object.freeze({
-  'community.view': rule('community.view', [communities.read], [communities.manage]),
+  // The published constant, so realtime's principal-less community frame
+  // audiences narrow by exactly the ceiling this rule asks of a person.
+  'community.view': rule('community.view', COMMUNITY_VIEW_CEILING, [communities.manage]),
   'community.members.view': rule(
     'community.members.view',
     [communities.moderate],

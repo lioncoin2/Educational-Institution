@@ -15,7 +15,6 @@ import {
 import {
   MESSAGE_DELIVERY,
   MESSAGE_RECIPIENTS,
-  MAX_RECIPIENT_PAGE,
   MessagingEvents,
   type ConversationCreated,
   type MessageDelivery,
@@ -33,6 +32,7 @@ import {
   participantAddedFrame,
   participantRemovedFrame,
 } from './envelopes';
+import { onlineAudience } from './online-audience';
 
 /**
  * Messaging's facts, delivered to the people entitled to them who are
@@ -201,22 +201,20 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
 
   /**
    * The conversation's current members — who can see `visibleSequence`,
-   * when given — that are connected to this instance. Walked a page at a
-   * time, so a 10,000-member channel is never loaded whole.
+   * when given — that are connected to this instance (gate G1). Messaging
+   * still answers who belongs, page by page, and is only ever asked about the
+   * people connected here: at most 1 + ⌈A/1000⌉ calls for A accounts online,
+   * however large the channel, instead of every page of it.
    */
-  private async onlineMembers(conversationId: string, visibleSequence?: number): Promise<string[]> {
-    const online: string[] = [];
-    let cursor: string | null = null;
-    do {
-      const page = await this.recipients.list(conversationId, {
+  private onlineMembers(conversationId: string, visibleSequence?: number): Promise<string[]> {
+    return onlineAudience(this.connections.onlineUserIds(), (page) =>
+      this.recipients.list(conversationId, {
         visibleSequence,
-        cursor,
-        limit: MAX_RECIPIENT_PAGE,
-      });
-      online.push(...page.userIds.filter((userId) => this.connections.isOnline(userId)));
-      cursor = page.nextCursor;
-    } while (cursor !== null);
-    return online;
+        onlyUserIds: page.onlyUserIds,
+        cursor: page.cursor,
+        limit: page.limit,
+      }),
+    );
   }
 
   private malformed(event: DomainEvent): void {

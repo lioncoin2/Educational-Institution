@@ -17,6 +17,7 @@ import '../../core/widgets/layout/responsive_body.dart';
 import '../../core/widgets/patterns/info_row.dart';
 import '../../data/models/student.dart';
 import '../../providers/app_providers.dart';
+import '../communities/community_copy.dart';
 import '../notifications/state/unread_count_controller.dart';
 import 'widgets/about_institution_section.dart';
 
@@ -143,6 +144,12 @@ class ProfileScreen extends ConsumerWidget {
                       icon: Icons.forum_outlined,
                       label: 'الرسائل',
                       onTap: () => context.push(Routes.messages),
+                    ),
+                    const Divider(indent: Insets.giant),
+                    _NavRow(
+                      icon: Icons.groups_outlined,
+                      label: CommunityCopy.screenTitle,
+                      onTap: () => context.push(Routes.communities),
                     ),
                   ],
                 ),

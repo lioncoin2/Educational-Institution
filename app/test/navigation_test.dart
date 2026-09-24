@@ -183,6 +183,28 @@ void main() {
     expect(location(), '/notifications');
   });
 
+  testWidgets('profile reaches communities, a community and its chat',
+      (tester) async {
+    await boot(tester);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    await tapNav(tester, 'حسابي');
+
+    await tapText(tester, 'مجتمعاتي');
+    expect(location(), '/communities');
+
+    await tapText(tester, 'مجتمع طلاب التجويد');
+    expect(location(), '/communities/mock-community-tajweed');
+
+    await tapText(tester, 'فتح محادثة المجتمع');
+    expect(location(), '/messages/mock-community-tajweed-chat');
+
+    container.read(routerProvider).pop();
+    await tester.pumpAndSettle();
+    expect(location(), '/communities/mock-community-tajweed');
+  });
+
   testWidgets('marking notifications read clears the home badge',
       (tester) async {
     await boot(tester);

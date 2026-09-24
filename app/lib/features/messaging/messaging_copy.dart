@@ -21,8 +21,19 @@ abstract final class MessagingCopy {
     'files.extension_mismatch' => 'نوع الملف غير مسموح به.',
     'files.content_mismatch' => 'محتوى الملف لا يطابق نوعه.',
     'files.too_many_uploads' => 'رفعت ملفات كثيرة. حاول لاحقًا.',
+    'messaging.community_chat_over_capacity' =>
+      'النشر في هذه المحادثة غير متاح حاليًا لكثرة أعضائها.',
+    'messaging.too_many_community_chat_lookups' =>
+      'طلبات كثيرة متتابعة. حاول بعد قليل.',
+    'messaging.members_hidden' => 'قائمة المشاركين في هذه المحادثة غير معروضة.',
+    'messaging.membership_managed_by_community' =>
+      'العضوية في هذه المحادثة تتبع العضوية في المجتمع.',
     _ => 'تعذّر إتمام العملية. حاول مرة أخرى.',
   };
+
+  /// A community's chat the viewer may read but not post in — for a reason
+  /// the server keeps to itself (locked, no capability, too large).
+  static const cannotPostHere = 'لا يمكنك النشر في هذه المحادثة حاليًا.';
 
   static String typeLabel(ConversationType type, int memberCount) =>
       switch (type) {

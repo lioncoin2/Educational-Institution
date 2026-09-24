@@ -45,6 +45,15 @@ class ConversationListState {
 ///   participant.added    a conversation to show: the list is fetched again
 ///   participant.removed  the conversation leaves the list
 ///
+/// A community's chat follows the viewer's membership, which messaging does
+/// not announce — the community's frames do:
+///
+///   community.member.added    (the viewer) the list is fetched again: the
+///                             chat may be theirs now
+///   community.member.removed  (the viewer) that community's chat leaves the
+///                             list at once, then the list is fetched again —
+///                             the server's word stands over the frame's
+///
 /// Whenever the connection comes (back) up, the first page is fetched again
 /// over HTTP: whatever happened while it was down is in there.
 class ConversationListController extends AsyncNotifier<ConversationListState> {
@@ -171,6 +180,20 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
         markedRead(event.conversationId, event.lastReadSequence);
       case ParticipantAddedEvent() when event.userId == _viewerId:
         unawaited(_resync());
+      case CommunityMemberAddedEvent() when event.userId == _viewerId:
+        unawaited(_resyncAfterRunning());
+      case CommunityMemberRemovedEvent() when event.userId == _viewerId:
+        final current = state.value;
+        if (current == null) return;
+        state = AsyncData(
+          current.copyWith(
+            items: [
+              for (final c in current.items)
+                if (c.communityId != event.communityId) c,
+            ],
+          ),
+        );
+        unawaited(_resyncAfterRunning());
       case ParticipantRemovedEvent() when event.userId == _viewerId:
         final current = state.value;
         if (current == null) return;
@@ -197,6 +220,13 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
     return _resyncing ??= _fetchFirstPage().whenComplete(
       () => _resyncing = null,
     );
+  }
+
+  /// A first-page read that starts after the one in flight, if any: that
+  /// one may have been answered before the change now being caught up with.
+  Future<void> _resyncAfterRunning() async {
+    await _resyncing;
+    if (ref.mounted) await _resync();
   }
 
   Future<void> _fetchFirstPage() async {

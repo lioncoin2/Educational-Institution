@@ -1,0 +1,9 @@
+{
+  "type": "community.member.removed",
+  "eventId": "community.member.removed:community-1:user-2:9",
+  "occurredAt": "2026-09-24T10:00:00.000Z",
+  "communityId": "community-1",
+  "userId": "user-2",
+  "reason": "removed",
+  "version": 1
+}

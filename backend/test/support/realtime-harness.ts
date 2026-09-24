@@ -3,10 +3,12 @@ import { UuidIdGenerator } from '../../src/platform/primitives/uuid-id-generator
 import { InMemoryRateLimiter } from '../../src/platform/rate-limit/in-memory-rate-limiter';
 import type { DomainEvent, Principal } from '../../src/shared';
 import type { KnownRoleCode } from '../../src/modules/identity/domain/role';
+import { CommunitiesRealtimeRelay } from '../../src/modules/realtime/application/communities-relay';
 import { ConnectionManager } from '../../src/modules/realtime/application/connection-manager';
 import { MessagingRealtimeRelay } from '../../src/modules/realtime/application/messaging-relay';
 import { RealtimeSessions } from '../../src/modules/realtime/application/realtime-sessions';
 import type { ClientLink } from '../../src/modules/realtime/domain/connection';
+import { communitiesHarness, type CommunitiesHarness } from './communities-harness';
 import { identityHarness } from './identity-harness';
 import { messagingHarness } from './messaging-harness';
 import { principalWith } from './principals';
@@ -16,12 +18,15 @@ export type Frame = Record<string, unknown> & { readonly type: string };
 /** A client's end of a connection, as the application layer sees it: every frame, and the close. */
 export class FakeLink implements ClientLink {
   readonly frames: Frame[] = [];
+  /** The same frames exactly as sent — for byte-for-byte comparisons. */
+  readonly raw: string[] = [];
   closed: { code: number; reason: string } | null = null;
   /** False makes the link behave like a socket that died without saying so. */
   healthy = true;
 
   send(frame: string): boolean {
     if (this.closed !== null || !this.healthy) return false;
+    this.raw.push(frame);
     this.frames.push(JSON.parse(frame) as Frame);
     return true;
   }
@@ -151,3 +156,86 @@ export async function realtimeHarness() {
 }
 
 export type RealtimeHarness = Awaited<ReturnType<typeof realtimeHarness>>;
+
+const DEVICE_AT = new Date('2026-09-24T10:00:00.000Z');
+let devices = 0;
+
+/**
+ * One more device of `userId` on `connections`, registered as the sessions
+ * register it once `auth` succeeds — for suites about delivery, not about
+ * authentication, which ask ConnectionManager nothing else.
+ */
+export function connectDevice(connections: ConnectionManager, userId: string): FakeLink {
+  const link = new FakeLink();
+  devices += 1;
+  connections.register({
+    connectionId: `device-${devices}`,
+    userId,
+    sessionId: `session-${userId}`,
+    authenticatedAt: DEVICE_AT,
+    expiresAt: new Date(DEVICE_AT.getTime() + 900_000),
+    validatedAt: DEVICE_AT,
+    lastSeenAt: DEVICE_AT,
+    remoteAddress: '203.0.113.9',
+    link,
+  });
+  return link;
+}
+
+/**
+ * CommunitiesRealtimeRelay over the REAL Communities application layer: its
+ * use cases change the store and record to the journal, and the journal's
+ * events go on through an in-process bus to the relay, exactly as in the
+ * running server. The relay asks Communities' own membership contract, and
+ * the harness's account directory (identity's answer, from the provisional
+ * matrix) for the view ceiling. Only the sockets are fake: devices are
+ * registered on a real ConnectionManager.
+ *
+ * Pass a Communities harness built over other adapters (Postgres) or shared
+ * with a messaging harness; by default it is a fresh in-memory one.
+ */
+export function communitiesRealtimeHarness(
+  options: { readonly communities?: CommunitiesHarness } = {},
+) {
+  const communities = options.communities ?? communitiesHarness();
+  const bus = new InProcessEventBus();
+
+  // Communities' use cases publish to the journal; forward to the bus.
+  const record = communities.journal.publish.bind(communities.journal);
+  communities.journal.publish = async (events: readonly DomainEvent[]) => {
+    await record(events);
+    await bus.publish(events);
+  };
+
+  const connections = new ConnectionManager();
+  const relay = new CommunitiesRealtimeRelay(
+    bus,
+    communities.membership,
+    communities.accounts,
+    connections,
+  );
+  relay.onModuleInit();
+
+  return {
+    communities,
+    bus,
+    connections,
+    relay,
+
+    /** A connected device of this account. */
+    connect(userId: string): FakeLink {
+      return connectDevice(connections, userId);
+    },
+
+    /** Resolves once every event published so far has been delivered. */
+    async settle(): Promise<void> {
+      await relay.idle();
+    },
+
+    cleanup(): void {
+      relay.onModuleDestroy();
+    },
+  };
+}
+
+export type CommunitiesRealtimeHarness = ReturnType<typeof communitiesRealtimeHarness>;

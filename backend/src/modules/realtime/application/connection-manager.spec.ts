@@ -73,6 +73,25 @@ describe('ConnectionManager', () => {
     expect(manager.unregister('c2')).toBeUndefined();
   });
 
+  it('lists every account online here once, however many devices it holds — as a snapshot', () => {
+    const manager = new ConnectionManager();
+    expect(manager.onlineUserIds()).toEqual([]);
+    manager.register(connection('phone', 'u1'));
+    manager.register(connection('web', 'u1'));
+    manager.register(connection('c3', 'u2'));
+
+    const online = manager.onlineUserIds();
+    expect([...online].sort()).toEqual(['u1', 'u2']);
+
+    manager.unregister('c3');
+    manager.register(connection('c4', 'u3'));
+    // Taken before: unchanged by what connected or left since.
+    expect([...online].sort()).toEqual(['u1', 'u2']);
+    expect([...manager.onlineUserIds()].sort()).toEqual(['u1', 'u3']);
+    manager.unregister('phone');
+    expect([...manager.onlineUserIds()].sort()).toEqual(['u1', 'u3']);
+  });
+
   it('drops a dead connection the moment a send to it fails, and still reaches the live one', () => {
     const manager = new ConnectionManager();
     const dead = new FakeLink();

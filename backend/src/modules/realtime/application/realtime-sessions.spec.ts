@@ -5,9 +5,11 @@ import { META } from '../../../../test/support/messaging-harness';
 import {
   realtimeHarness,
   type Client,
+  type Person,
   type RealtimeHarness,
 } from '../../../../test/support/realtime-harness';
-import { Roles } from '../../identity/domain/role';
+import { Roles, type KnownRoleCode } from '../../identity/domain/role';
+import type { ConversationId } from '../../messaging/domain/conversation';
 import { CloseCodes } from '../domain/protocol';
 import {
   CONNECTIONS_OPENED_PER_USER,
@@ -399,6 +401,101 @@ describe('realtime sessions', () => {
       expect(errorOf(client)).toMatchObject({ code: 'UNAUTHORIZED' });
       expect(client.link.closed?.code).toBe(CloseCodes.unauthorized);
       expect(client.link.ofType('subscribed')).toEqual([]);
+    });
+  });
+
+  // P5 adds community frames without adding a subscription: they are pushed
+  // to the accounts they concern. `subscribe` stays conversation-only, and a
+  // community chat is subscribed to as the conversation it is — decided by
+  // Communities through messaging's access check, never by a projected row.
+  describe('subscribing stays conversation-only', () => {
+    let owner: Person;
+    let member: Person;
+    let communityId: string;
+    let chatId: string;
+
+    /** A person known to identity, messaging and Communities alike. */
+    async function person(role: KnownRoleCode, name: string): Promise<Person> {
+      const created = await h.person(role, name);
+      h.messaging.communities.accounts.add(created.userId, [role], name);
+      return created;
+    }
+
+    beforeEach(async () => {
+      owner = await person(Roles.admin, 'المشرفة');
+      member = await person(Roles.student, 'الطالبة');
+      communityId = await h.messaging.community(owner.principal, [member.principal]);
+      await h.messaging.deliverCommunityEvents();
+      chatId = (await h.messaging.openCommunityChat(owner.principal, communityId)).id;
+    });
+
+    it('refuses a subscribe that names a community, and keeps the connection', async () => {
+      const client = await h.connect(member.accessToken);
+
+      await client.send({ type: 'subscribe', conversationId: chatId, communityId, id: 'c1' });
+
+      expect(errorOf(client)).toMatchObject({ code: 'INVALID_PAYLOAD', id: 'c1' });
+      expect(client.link.ofType('subscribed')).toEqual([]);
+      expect(client.link.closed).toBeNull();
+    });
+
+    it('answers a community’s id given as a conversation exactly like a missing conversation', async () => {
+      const client = await h.connect(member.accessToken);
+
+      await client.send({ type: 'subscribe', conversationId: communityId });
+      const refusedCommunity = errorOf(client);
+      await client.send({ type: 'subscribe', conversationId: 'does-not-exist' });
+      const refusedMissing = errorOf(client);
+
+      expect(refusedCommunity).toMatchObject({
+        code: 'CONVERSATION_NOT_FOUND',
+        conversationId: communityId,
+      });
+      expect({ ...refusedMissing, conversationId: communityId }).toEqual(refusedCommunity);
+      expect(client.link.ofType('subscribed')).toEqual([]);
+    });
+
+    it('refuses a non-member the community chat’s real id, as a missing conversation', async () => {
+      const stranger = await person(Roles.student, 'الغريبة');
+      const client = await h.connect(stranger.accessToken);
+
+      await client.send({ type: 'subscribe', conversationId: chatId });
+
+      expect(errorOf(client)).toMatchObject({
+        code: 'CONVERSATION_NOT_FOUND',
+        conversationId: chatId,
+      });
+      expect(client.link.ofType('subscribed')).toEqual([]);
+    });
+
+    it('refuses a member Communities removed while messaging still projects them — and sends them nothing', async () => {
+      const client = await h.connect(member.accessToken);
+      expectOk(
+        await h.messaging.communities.remove.execute({
+          principal: owner.principal,
+          communityId,
+          userId: member.userId,
+          meta: META,
+        }),
+      );
+      // Messaging has not heard: the projected participant row is stale.
+      const projected = await h.messaging.readModel.listMemberIds(chatId as ConversationId, {
+        limit: 10,
+      });
+      expect(projected.userIds).toContain(member.userId);
+
+      await client.send({ type: 'subscribe', conversationId: chatId, id: 'stale' });
+      await h.messaging.text(owner.principal, chatId, 'بعد الإزالة');
+      await h.settle();
+
+      expect(errorOf(client)).toMatchObject({
+        code: 'CONVERSATION_NOT_FOUND',
+        conversationId: chatId,
+        id: 'stale',
+      });
+      expect(
+        client.link.frames.filter((frame) => frame.type !== 'ready' && frame.type !== 'error'),
+      ).toEqual([]);
     });
   });
 });

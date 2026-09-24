@@ -25,10 +25,12 @@ import '../data/repositories/academic/academic_learning_repository.dart';
 import '../data/repositories/academic/academic_profile_repositories.dart';
 import '../data/repositories/http/http_academic_repository.dart';
 import '../data/repositories/http/http_auth_repository.dart';
+import '../data/repositories/http/http_community_repository.dart';
 import '../data/repositories/http/http_messaging_repository.dart';
 import '../data/repositories/http/http_notifications_repository.dart';
 import '../data/repositories/mock/mock_academic_repository.dart';
 import '../data/repositories/mock/mock_auth_repository.dart';
+import '../data/repositories/mock/mock_community_repository.dart';
 import '../data/repositories/mock/mock_messaging_repository.dart';
 import '../data/repositories/mock/mock_notifications_repository.dart';
 import '../data/repositories/mock/mock_repositories.dart';
@@ -139,6 +141,16 @@ final messagingRepositoryProvider = Provider<MessagingRepository>(
           ref.watch(authRepositoryProvider),
         )
       : MockMessagingRepository(),
+);
+
+// ── Communities ────────────────────────────────────────────────────────────
+// The lists, the open community and its roster live in
+// features/communities/state; this is the seam under them.
+
+final communityRepositoryProvider = Provider<CommunityRepository>(
+  (ref) => ref.watch(backendModeProvider)
+      ? HttpCommunityRepository(ref.watch(apiClientProvider))
+      : MockCommunityRepository(),
 );
 
 // ── Realtime ───────────────────────────────────────────────────────────────

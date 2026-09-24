@@ -42,6 +42,16 @@ class HttpMessagingRepository implements MessagingRepository {
   );
 
   @override
+  Future<Conversation> conversationForCommunity(String communityId) => _call(
+    () async => Conversation.fromJson(
+      await _api.get(
+        '/messaging/communities/${Uri.encodeComponent(communityId)}'
+        '/conversation',
+      ),
+    ),
+  );
+
+  @override
   Future<MessagePage> messages(
     String conversationId, {
     int? before,

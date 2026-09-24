@@ -93,6 +93,7 @@ class ConversationState {
   bool isMine(Message message) => message.senderId == viewerId;
 
   ConversationState copyWith({
+    Conversation? conversation,
     List<Message>? messages,
     List<PendingMessage>? pending,
     bool? hasOlder,
@@ -103,7 +104,7 @@ class ConversationState {
     int? syncedThrough,
     bool? removed,
   }) => ConversationState(
-    conversation: conversation,
+    conversation: conversation ?? this.conversation,
     viewerId: viewerId,
     messages: messages ?? this.messages,
     pending: pending ?? this.pending,
@@ -137,6 +138,8 @@ class ConversationController extends AsyncNotifier<ConversationState> {
 
   Future<void>? _catchingUp;
   bool _catchUpAgain = false;
+  Future<void>? _refreshingConversation;
+  bool _refreshConversationAgain = false;
 
   @override
   Future<ConversationState> build() async {
@@ -291,6 +294,10 @@ class ConversationController extends AsyncNotifier<ConversationState> {
   // ── The live connection ─────────────────────────────────────────────────
 
   void _onEvent(RealtimeEvent event) {
+    if (event is CommunityEvent) {
+      _onCommunityEvent(event);
+      return;
+    }
     if (event is! ConversationEvent || event.conversationId != conversationId) {
       return;
     }
@@ -322,8 +329,60 @@ class ConversationController extends AsyncNotifier<ConversationState> {
     }
   }
 
+  /// A community chat follows its community — and a community frame is a
+  /// hint to ask again, never an answer. The viewer's removal is confirmed by
+  /// the server refusing the subscription (never by the frame alone); a
+  /// lock, an unlock or changed access shows in the conversation's `canPost`,
+  /// read again.
+  void _onCommunityEvent(CommunityEvent event) {
+    final current = state.value;
+    if (current == null || current.removed) return;
+    if (event.communityId != current.conversation.communityId) return;
+    switch (event) {
+      case CommunityMemberRemovedEvent() when event.userId == current.viewerId:
+        unawaited(_sync());
+      case CommunityLifecycleEvent() || CommunityAccessChangedEvent():
+        unawaited(_refreshConversation());
+      default:
+        return;
+    }
+  }
+
   void _onStatus(RealtimeStatus status) {
     if (status.isLive) unawaited(_sync());
+  }
+
+  /// The conversation itself again (title, member count, whether the viewer
+  /// may post). One at a time; asked for meanwhile, once more after. "Not
+  /// found" means it is no longer the viewer's; any other failure keeps what
+  /// is shown.
+  Future<void> _refreshConversation() {
+    final running = _refreshingConversation;
+    if (running != null) {
+      _refreshConversationAgain = true;
+      return running;
+    }
+    return _refreshingConversation = _runRefreshConversation().whenComplete(
+      () => _refreshingConversation = null,
+    );
+  }
+
+  Future<void> _runRefreshConversation() async {
+    do {
+      _refreshConversationAgain = false;
+      final Conversation fresh;
+      try {
+        fresh = await _repository.conversation(conversationId);
+      } on MessagingException catch (error) {
+        if (!ref.mounted) return;
+        if (error.code == 'messaging.conversation_not_found') _markRemoved();
+        continue;
+      }
+      if (!ref.mounted) return;
+      final now = state.value;
+      if (now == null || now.removed) return;
+      state = AsyncData(now.copyWith(conversation: fresh));
+    } while (_refreshConversationAgain && ref.mounted);
   }
 
   /// Confirms this conversation over the live connection and catches up

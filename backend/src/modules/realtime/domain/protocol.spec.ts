@@ -63,6 +63,32 @@ describe('the realtime protocol, as a client may speak it', () => {
     });
   });
 
+  // Community frames are pushed by account; nothing is subscribed to by
+  // naming a community (ADR 0021 decision 8). The strict parser is what
+  // keeps it so: no client frame grew a field for one.
+  it.each([
+    [
+      'a community beside the conversation',
+      { type: 'subscribe', conversationId: 'c-1', communityId: 'community-1' },
+    ],
+    ['a community instead of a conversation', { type: 'subscribe', communityId: 'community-1' }],
+    ['a topic', { type: 'subscribe', conversationId: 'c-1', topic: 'community' }],
+  ])('refuses a subscribe carrying %s as INVALID_PAYLOAD', (_what, frame) => {
+    expect(parseClientFrame(JSON.stringify(frame))).toMatchObject({
+      ok: false,
+      code: 'INVALID_PAYLOAD',
+    });
+  });
+
+  it('knows no community frame a client could send', () => {
+    for (const type of ['community.subscribe', 'watch', 'community.member.added']) {
+      expect(parseClientFrame(JSON.stringify({ type, communityId: 'community-1' }))).toMatchObject({
+        ok: false,
+        code: 'INVALID_EVENT',
+      });
+    }
+  });
+
   it('echoes a valid correlation id on a refusal, so the client can match it', () => {
     expect(parseClientFrame(JSON.stringify({ type: 'nope', id: 'req-7' }))).toEqual({
       ok: false,

@@ -2,6 +2,7 @@ import '../../../app/app_config.dart';
 import '../../models/data_origin.dart';
 import '../../models/messaging.dart';
 import '../repositories.dart';
+import 'mock_community_repository.dart';
 
 /// In-memory stand-in for the messaging backend, for the demo build and for
 /// widget tests.
@@ -11,6 +12,12 @@ import '../repositories.dart';
 /// clientMessageId returns the original; pages are keyed by sequence; unread
 /// counts stop at the cap; the read watermark only moves forward; channels
 /// refuse posts from readers. Everything in it is invented and marked as such.
+///
+/// Each community of `MockCommunityRepository` has its chat here, as on the
+/// server: a CHANNEL carrying the community's id, listed with the others and
+/// resolved from the community by [conversationForCommunity]. Posting in it
+/// is what the community allows — its owner, while it is open and small
+/// enough to be served; everyone else reads.
 class MockMessagingRepository implements MessagingRepository {
   MockMessagingRepository({this.latency = AppConfig.fakeLatency}) {
     _seed();
@@ -41,6 +48,23 @@ class MockMessagingRepository implements MessagingRepository {
   Future<Conversation> conversation(String conversationId) async {
     await _wait();
     return _find(conversationId).view();
+  }
+
+  @override
+  Future<Conversation> conversationForCommunity(String communityId) async {
+    await _wait();
+    final chat = _conversations.values
+        .where((c) => c.communityId == communityId)
+        .firstOrNull;
+    if (chat == null) {
+      // An unknown community and one that is not the viewer's are answered
+      // alike.
+      throw const MessagingException(
+        'messaging.conversation_not_found',
+        'No such conversation.',
+      );
+    }
+    return chat.view();
   }
 
   @override
@@ -333,9 +357,78 @@ class MockMessagingRepository implements MessagingRepository {
     }
     channel.lastRead = 2;
 
-    for (final c in [direct, group, channel]) {
+    for (final c in [direct, group, channel, ..._communityChats()]) {
       _conversations[c.id] = c;
     }
+  }
+
+  /// One chat per demo community, quieter than the conversations above:
+  /// everything in them has been read.
+  List<_MockConversation> _communityChats() {
+    final chats = <_MockConversation>[];
+    for (final (index, (communityId, title, members, canPost, lines)) in [
+      (
+        MockCommunityRepository.openId,
+        'مجتمع طلاب التجويد',
+        24,
+        false,
+        [
+          'مرحبًا بكم في مجتمع طلاب التجويد.',
+          'درس أحكام النون الساكنة يوم الأحد بإذن الله.',
+        ],
+      ),
+      (
+        MockCommunityRepository.ownedId,
+        'مجتمع أسرة الحفظ',
+        12,
+        true,
+        ['نلتقي بعد صلاة المغرب لمراجعة الورد.'],
+      ),
+      (
+        MockCommunityRepository.delegatedId,
+        'مجتمع حلقة المساء',
+        64,
+        false,
+        ['موعد حلقة المساء بعد صلاة العشاء.'],
+      ),
+      (
+        MockCommunityRepository.lockedId,
+        'مجتمع المراجعة الأسبوعية',
+        18,
+        false,
+        ['تمّت مراجعة جزء عمّ هذا الأسبوع بحمد الله.'],
+      ),
+      (
+        MockCommunityRepository.largeId,
+        'مجتمع طلاب المعهد',
+        30000,
+        false,
+        ['أهلًا بكم في مجتمع طلاب المعهد.'],
+      ),
+    ].indexed) {
+      final chat = _MockConversation(
+        id: '$communityId-chat',
+        type: ConversationType.channel,
+        title: title,
+        memberCount: members,
+        myRole: ParticipantRole.member,
+        canPost: canPost,
+        createdAt: _start.subtract(Duration(days: 20 + index)),
+        names: const {_teacher: 'الأستاذ عبدالله', viewer: 'طالب تجريبي'},
+        communityId: communityId,
+      );
+      for (final (i, text) in lines.indexed) {
+        chat.add(
+          senderId: _teacher,
+          type: MessageType.text,
+          body: text,
+          at: _start.subtract(Duration(days: 5 + index, hours: 2 - i)),
+        );
+      }
+      chat.lastRead = chat.lastSequence;
+      chats.add(chat);
+    }
+    return chats;
   }
 }
 
@@ -350,6 +443,7 @@ class _MockConversation {
     required this.createdAt,
     required this.names,
     this.counterpartUserId,
+    this.communityId,
   });
 
   final String id;
@@ -361,6 +455,7 @@ class _MockConversation {
   final bool canPost;
   final DateTime createdAt;
   final Map<String, String> names;
+  final String? communityId;
 
   final List<Message> messages = [];
   final Map<String, Message> byClientId = {};
@@ -431,6 +526,7 @@ class _MockConversation {
             ),
       createdAt: createdAt,
       activityAt: activityAt,
+      communityId: communityId,
       origin: DataOrigin.mock,
     );
   }

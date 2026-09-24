@@ -67,6 +67,15 @@ sealed class ServerFrame {
         'notification.created' => NotificationCreatedEvent._fromJson(json),
         'notification.read' => NotificationReadEvent._fromJson(json),
         'notification.read_all' => NotificationsReadAllEvent._fromJson(json),
+        'community.member.added' => CommunityMemberAddedEvent._fromJson(json),
+        'community.member.removed' => CommunityMemberRemovedEvent._fromJson(
+          json,
+        ),
+        'community.locked' => CommunityLockedEvent._fromJson(json),
+        'community.unlocked' => CommunityUnlockedEvent._fromJson(json),
+        'community.access.changed' => CommunityAccessChangedEvent._fromJson(
+          json,
+        ),
         _ => null,
       };
     } on FormatException {
@@ -378,4 +387,146 @@ final class NotificationsReadAllEvent extends NotificationEvent {
   final DateTime throughCreatedAt;
   final String? throughId;
   final DateTime readAt;
+}
+
+/// Something that changed in one community, for the one person it concerns
+/// — or, for a lock, for its members online. No subscription asks for these:
+/// the server addresses them to accounts it has just checked against the
+/// community's own records (backend/test/fixtures/realtime-frames holds
+/// their exact shape).
+///
+/// A community frame is a hint, never an answer. It carries ids, a reason
+/// code and a version — no title, no count, no capability — and grants
+/// nothing: what the viewer may do is read again over HTTP.
+sealed class CommunityEvent extends RealtimeEvent {
+  const CommunityEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required this.communityId,
+  });
+
+  final String communityId;
+}
+
+/// [userId] began a stint in the community — told to them alone.
+final class CommunityMemberAddedEvent extends CommunityEvent {
+  const CommunityMemberAddedEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.communityId,
+    required this.userId,
+  });
+
+  factory CommunityMemberAddedEvent._fromJson(Map<String, Object?> json) =>
+      CommunityMemberAddedEvent(
+        eventId: json['eventId']! as String,
+        occurredAt: DateTime.parse(json['occurredAt']! as String),
+        communityId: json['communityId']! as String,
+        userId: json['userId']! as String,
+      );
+
+  final String userId;
+}
+
+/// Why a stint ended. A reason a newer server adds is [unknown] — the
+/// removal itself still counts.
+enum CommunityRemovalReason {
+  left('left'),
+  removed('removed'),
+  unknown('unknown');
+
+  const CommunityRemovalReason(this.wire);
+
+  final String wire;
+
+  static CommunityRemovalReason fromWire(String value) =>
+      values.firstWhere((r) => r.wire == value, orElse: () => unknown);
+}
+
+/// [userId]'s stint ended — told to them alone, and the last thing they
+/// hear about the community.
+final class CommunityMemberRemovedEvent extends CommunityEvent {
+  const CommunityMemberRemovedEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.communityId,
+    required this.userId,
+    required this.reason,
+  });
+
+  factory CommunityMemberRemovedEvent._fromJson(Map<String, Object?> json) =>
+      CommunityMemberRemovedEvent(
+        eventId: json['eventId']! as String,
+        occurredAt: DateTime.parse(json['occurredAt']! as String),
+        communityId: json['communityId']! as String,
+        userId: json['userId']! as String,
+        reason: CommunityRemovalReason.fromWire(json['reason']! as String),
+      );
+
+  final String userId;
+  final CommunityRemovalReason reason;
+}
+
+/// The community was locked or unlocked. [lifecycleVersion] orders these:
+/// one not newer than what is held is old news, however late it arrives.
+sealed class CommunityLifecycleEvent extends CommunityEvent {
+  const CommunityLifecycleEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.communityId,
+    required this.lifecycleVersion,
+  });
+
+  final int lifecycleVersion;
+}
+
+final class CommunityLockedEvent extends CommunityLifecycleEvent {
+  const CommunityLockedEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.communityId,
+    required super.lifecycleVersion,
+  });
+
+  factory CommunityLockedEvent._fromJson(Map<String, Object?> json) =>
+      CommunityLockedEvent(
+        eventId: json['eventId']! as String,
+        occurredAt: DateTime.parse(json['occurredAt']! as String),
+        communityId: json['communityId']! as String,
+        lifecycleVersion: json['lifecycleVersion']! as int,
+      );
+}
+
+final class CommunityUnlockedEvent extends CommunityLifecycleEvent {
+  const CommunityUnlockedEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.communityId,
+    required super.lifecycleVersion,
+  });
+
+  factory CommunityUnlockedEvent._fromJson(Map<String, Object?> json) =>
+      CommunityUnlockedEvent(
+        eventId: json['eventId']! as String,
+        occurredAt: DateTime.parse(json['occurredAt']! as String),
+        communityId: json['communityId']! as String,
+        lifecycleVersion: json['lifecycleVersion']! as int,
+      );
+}
+
+/// What the viewer may do in the community changed — a capability granted
+/// or taken back, ownership passed on. Which, the frame does not say.
+final class CommunityAccessChangedEvent extends CommunityEvent {
+  const CommunityAccessChangedEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.communityId,
+  });
+
+  factory CommunityAccessChangedEvent._fromJson(Map<String, Object?> json) =>
+      CommunityAccessChangedEvent(
+        eventId: json['eventId']! as String,
+        occurredAt: DateTime.parse(json['occurredAt']! as String),
+        communityId: json['communityId']! as String,
+      );
 }

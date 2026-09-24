@@ -6,12 +6,16 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 
 import type { Database } from '../../src/platform/database';
+import { InProcessEventBus } from '../../src/platform/events/event-bus';
 import type { Principal } from '../../src/shared';
 import { DrizzleCommunityReadModel } from '../../src/modules/communities/infrastructure/drizzle-community-read-model';
 import { DrizzleCommunityRepository } from '../../src/modules/communities/infrastructure/drizzle-community-repository';
+import { MessagingEvents, type RecipientPage } from '../../src/modules/messaging/contracts';
 import type { ConversationId } from '../../src/modules/messaging/domain/conversation';
 import { DrizzleMessagingReadModel } from '../../src/modules/messaging/infrastructure/drizzle-messaging-read-model';
 import { DrizzleMessagingRepository } from '../../src/modules/messaging/infrastructure/drizzle-messaging-repository';
+import { ConnectionManager } from '../../src/modules/realtime/application/connection-manager';
+import { MessagingRealtimeRelay } from '../../src/modules/realtime/application/messaging-relay';
 import { communitiesHarness, type CommunitiesHarness } from '../support/communities-harness';
 import { expectErr, expectOk } from '../support/identity-harness';
 import { META, messagingHarness, type MessagingHarness } from '../support/messaging-harness';
@@ -22,6 +26,7 @@ import {
   type ScratchDatabase,
 } from '../support/postgres';
 import { principalWith } from '../support/principals';
+import { connectDevice } from '../support/realtime-harness';
 
 interface PlanNode {
   readonly 'Node Type': string;
@@ -341,6 +346,78 @@ describeWithPostgres('a community chat at 30,000 members', () => {
     expect(walked).toContain(owners['c-30k'].userId);
     expect(walked).not.toContain(md5('gone-c-30k:1'));
   });
+
+  // Gate G1 (§12.5): the realtime relay asks MESSAGE_RECIPIENTS only about
+  // the accounts connected here — at most 1 + ⌈A/1000⌉ pages, each still
+  // checked against Communities and the read ceiling — instead of all 30.
+  it.each([
+    [50, 2],
+    [2_500, 4],
+  ])(
+    'tells %i accounts online about a message in at most %i recipient calls — whom the old walk told (G1)',
+    async (count, bound) => {
+      // Members spread through the community — the sender among them — and
+      // people who left it or never belonged.
+      const insiders = Array.from({ length: (count * 4) / 5 }, (_, n) =>
+        md5(`c-30k:${1 + n * 13}`),
+      );
+      const outsiders = Array.from({ length: count / 5 }, (_, n) =>
+        n % 2 === 0 ? md5(`gone-c-30k:${n + 1}`) : md5(`never-c-30k:${n}`),
+      );
+      const connections = new ConnectionManager();
+      const relay = new MessagingRealtimeRelay(
+        new InProcessEventBus(),
+        h.recipients,
+        h.delivery,
+        connections,
+      );
+      const links = new Map(
+        [...insiders, ...outsiders].map((userId) => [userId, connectDevice(connections, userId)]),
+      );
+
+      h.clock.advance(60);
+      const { message } = await h.text(owners['c-30k'], chats['c-30k'], `G1 ${count}`);
+      const event = h.events.published
+        .filter((published) => published.name === MessagingEvents.messageSent)
+        .at(-1);
+      expect(event?.payload).toMatchObject({ messageId: message.id });
+
+      // The walk the relay made before G1, as the oracle: every page, then
+      // who of it is online.
+      const walked: string[] = [];
+      let cursor: string | null = null;
+      let pages = 0;
+      do {
+        const page: RecipientPage = await h.recipients.list(chats['c-30k'], {
+          visibleSequence: message.sequence,
+          cursor,
+          limit: 1000,
+        });
+        walked.push(...page.userIds.filter((userId) => connections.isOnline(userId)));
+        cursor = page.nextCursor;
+        pages += 1;
+      } while (cursor !== null);
+      expect(pages).toBe(30);
+
+      const list = jest.spyOn(h.recipients, 'list');
+      let calls: Parameters<typeof h.recipients.list>[];
+      try {
+        await relay.relay(event!);
+        calls = [...list.mock.calls];
+      } finally {
+        list.mockRestore();
+      }
+      expect(calls.length).toBeLessThanOrEqual(bound);
+      expect(calls.length).toBeLessThanOrEqual(1 + Math.ceil(count / 1000));
+      expect(calls.every(([, options]) => options.visibleSequence === message.sequence)).toBe(true);
+      const told = [...links]
+        .filter(([, link]) => link.ofType('message.sent').length > 0)
+        .map(([userId]) => userId);
+      expect(told.sort()).toEqual([...walked].sort());
+      expect(told.sort()).toEqual([...insiders].sort());
+      report[`g1Online${count}`] = { recipientCalls: calls.length, oldWalk: pages };
+    },
+  );
 
   it('pages current members on conversation_participants_current_idx under 50% churn (G2)', async () => {
     const [middle] = (

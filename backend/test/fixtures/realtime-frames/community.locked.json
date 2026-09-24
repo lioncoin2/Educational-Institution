@@ -1,0 +1,8 @@
+{
+  "type": "community.locked",
+  "eventId": "community.locked:community-1:2",
+  "occurredAt": "2026-09-24T10:00:00.000Z",
+  "communityId": "community-1",
+  "lifecycleVersion": 2,
+  "version": 1
+}

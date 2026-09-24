@@ -145,7 +145,10 @@ void main() {
   testWidgets('caps the unread badge at 99+', (tester) async {
     repo.unreadOverride = 100;
     await open(tester, '/messages');
-    expect(find.text('99+'), findsNWidgets(3));
+    // One badge per listed conversation — the demo's community chats too.
+    final listed = (await repo.conversations()).items.length;
+    expect(listed, greaterThan(3));
+    expect(find.text('99+'), findsNWidgets(listed));
   });
 
   testWidgets('opens a conversation, shows who said what, and marks it read', (

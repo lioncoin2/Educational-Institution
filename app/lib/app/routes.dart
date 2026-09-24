@@ -12,6 +12,7 @@ abstract final class Routes {
   static const String notificationSettings = '/notifications/settings';
   static const String announcements = '/announcements';
   static const String messages = '/messages';
+  static const String communities = '/communities';
   static const String signIn = '/sign-in';
 
   static String program(String programId) => '$programs/$programId';
@@ -26,6 +27,12 @@ abstract final class Routes {
 
   static String conversation(String conversationId) =>
       '$messages/${Uri.encodeComponent(conversationId)}';
+
+  static String community(String communityId) =>
+      '$communities/${Uri.encodeComponent(communityId)}';
+
+  static String communityMembers(String communityId) =>
+      '${community(communityId)}/members';
 
   static String certificate(String certificateId) =>
       '$certificates/$certificateId';

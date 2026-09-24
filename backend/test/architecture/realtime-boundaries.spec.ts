@@ -15,6 +15,9 @@ import { cruise, edgesFrom, reachableFrom, type CruiseOutput } from '../support/
  *     its tables or its use cases; realtime owns no notification state;
  *   - inside realtime, only the infrastructure adapter knows a socket library;
  *   - realtime knows messaging and identity through their contracts only;
+ *   - realtime knows Communities through its contracts only — the membership
+ *     facts, the view ceiling and the events its relay turns into frames —
+ *     and wires it through its module file; never its tables or use cases;
  *   - nothing but the composition root imports realtime.
  */
 const SOCKET_LIBRARIES =
@@ -130,6 +133,45 @@ describe('realtime boundaries', () => {
       )
       .map((edge) => `${edge.source} -> ${edge.resolved}`);
     expect(intrusions).toEqual([]);
+  });
+
+  it('lets realtime know Communities only through its contracts, and wire it through its module', () => {
+    const intrusions = edgesFrom(output, (source) => source.startsWith('src/modules/realtime/'))
+      .filter(
+        (edge) =>
+          edge.resolved.startsWith('src/modules/communities/') &&
+          !edge.resolved.startsWith('src/modules/communities/contracts/') &&
+          !(
+            edge.source === 'src/modules/realtime/realtime.module.ts' &&
+            edge.resolved === 'src/modules/communities/communities.module.ts'
+          ),
+      )
+      .map((edge) => `${edge.source} -> ${edge.resolved}`);
+    expect(intrusions).toEqual([]);
+    // …and through them, nothing of Communities' storage or logic.
+    expect(
+      reaching(inModule('realtime'), (path) =>
+        /^src\/modules\/communities\/(domain|application|infrastructure|api)\//.test(path),
+      ),
+    ).toEqual([]);
+  });
+
+  it('finds realtime using the Communities contracts, and wiring its module — the check above is not vacuous', () => {
+    const toCommunities = edgesFrom(output, inModule('realtime'))
+      .filter((edge) => edge.resolved.startsWith('src/modules/communities/contracts/'))
+      .map((edge) => edge.resolved);
+    expect(toCommunities).toEqual(
+      expect.arrayContaining([
+        'src/modules/communities/contracts/membership.ts',
+        'src/modules/communities/contracts/events.ts',
+        'src/modules/communities/contracts/capabilities.ts',
+      ]),
+    );
+    expect(
+      edgesFrom(output, (source) => source === 'src/modules/realtime/realtime.module.ts').map(
+        (edge) => edge.resolved,
+      ),
+    ).toContain('src/modules/communities/communities.module.ts');
   });
 
   it('is imported by the composition root only', () => {
