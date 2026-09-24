@@ -207,7 +207,7 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
    * however large the channel, instead of every page of it.
    */
   private onlineMembers(conversationId: string, visibleSequence?: number): Promise<string[]> {
-    return onlineAudience(this.connections.onlineUserIds(), (page) =>
+    return onlineAudience(this.connections, (page) =>
       this.recipients.list(conversationId, {
         visibleSequence,
         onlyUserIds: page.onlyUserIds,

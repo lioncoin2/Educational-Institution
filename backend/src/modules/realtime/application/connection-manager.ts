@@ -58,6 +58,11 @@ export class ConnectionManager {
     return this.byUser.has(userId);
   }
 
+  /** How many distinct accounts have at least one connection here. */
+  accountCount(): number {
+    return this.byUser.size;
+  }
+
   /**
    * Every account with at least one connection here, each once — a snapshot:
    * connections that open or close afterwards do not change it. What an

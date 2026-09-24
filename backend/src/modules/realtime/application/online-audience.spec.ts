@@ -1,6 +1,11 @@
 import { MAX_MEMBER_PAGE } from '../../communities/contracts/membership';
 import { MAX_RECIPIENT_PAGE } from '../../messaging/contracts/message-recipients';
-import { AUDIENCE_PAGE, onlineAudience, type AudiencePager } from './online-audience';
+import {
+  AUDIENCE_PAGE,
+  onlineAudience,
+  type AudiencePager,
+  type OnlineAccounts,
+} from './online-audience';
 
 /** A deterministic generator, so a failure is reproducible from its seed. */
 function random(seed: number): () => number {
@@ -46,6 +51,20 @@ function source(members: readonly string[]) {
 
 const bound = (online: number) => 1 + Math.ceil(online / 1000);
 
+/** The accounts connected, as the connection registry answers for them; `listed` counts full listings. */
+function connected(userIds: readonly string[]): OnlineAccounts & { listed: number } {
+  const ids = new Set(userIds);
+  return {
+    listed: 0,
+    accountCount: () => ids.size,
+    isOnline: (userId) => ids.has(userId),
+    onlineUserIds() {
+      this.listed += 1;
+      return [...ids];
+    },
+  };
+}
+
 describe('onlineAudience', () => {
   it('pages exactly as both sources do: 1,000, the bound of each', () => {
     expect(AUDIENCE_PAGE).toBe(1000);
@@ -55,7 +74,7 @@ describe('onlineAudience', () => {
 
   it('asks nothing at all when nobody is online', async () => {
     const { pageOf, calls } = source(Array.from({ length: 30_000 }, (_, n) => idOf(n)));
-    expect(await onlineAudience([], pageOf)).toEqual([]);
+    expect(await onlineAudience(connected([]), pageOf)).toEqual([]);
     expect(calls).toEqual([]);
   });
 
@@ -64,8 +83,11 @@ describe('onlineAudience', () => {
     const { pageOf, calls } = source(members);
     const online = [idOf(3), idOf(999), 'stranger', idOf(3)];
 
-    expect((await onlineAudience(online, pageOf)).sort()).toEqual([idOf(3), idOf(999)]);
+    const accounts = connected(online);
+    expect((await onlineAudience(accounts, pageOf)).sort()).toEqual([idOf(3), idOf(999)]);
     expect(calls).toEqual([{ onlyUserIds: undefined, cursor: null }]);
+    // Its members are each asked about; the accounts online are never listed.
+    expect(accounts.listed).toBe(0);
   });
 
   it('reaches 50 people online among 30,000 members in at most 2 calls', async () => {
@@ -76,7 +98,7 @@ describe('onlineAudience', () => {
       ...Array.from({ length: 10 }, (_, n) => `stranger-${n}`),
     ];
 
-    const audience = await onlineAudience(online, pageOf);
+    const audience = await onlineAudience(connected(online), pageOf);
 
     expect(audience.sort()).toEqual(online.slice(0, 40).sort());
     expect(calls.length).toBeLessThanOrEqual(2);
@@ -101,7 +123,7 @@ describe('onlineAudience', () => {
       };
     };
 
-    expect((await onlineAudience(online, short)).sort()).toEqual(online);
+    expect((await onlineAudience(connected(online), short)).sort()).toEqual(online);
     expect(Math.max(...named)).toBe(1000);
   });
 
@@ -128,7 +150,7 @@ describe('onlineAudience', () => {
       );
       const { pageOf, calls } = source(members);
 
-      const audience = await onlineAudience(online, pageOf);
+      const audience = await onlineAudience(connected(online), pageOf);
 
       const belongs = new Set(members);
       const expected = [...new Set(online)].filter((userId) => belongs.has(userId)).sort();

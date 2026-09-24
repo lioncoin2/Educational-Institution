@@ -118,8 +118,8 @@ describe('community frames, as the golden fixtures state them', () => {
       { kind: 'granted', grantId: 'grant-5' },
       { kind: 'revoked', grantId: 'grant-5' },
       { kind: 'granted', grantId: 'grant-6' },
-      { kind: 'transferred', fromUserId: userId, toUserId: 'user-3' },
-      { kind: 'transferred', fromUserId: 'user-3', toUserId: userId },
+      { kind: 'transferred', side: 'from' },
+      { kind: 'transferred', side: 'to' },
     ].map(
       (cause) =>
         (
@@ -134,10 +134,10 @@ describe('community frames, as the golden fixtures state them', () => {
         ).eventId,
     );
     expect(new Set(ids).size).toBe(ids.length);
-    // The id names the fact, not the grant, the capability or the other party.
+    // The id names the fact, not the grant or the capability.
     for (const id of ids) {
       expect(id).toMatch(/^community\.access\.changed:community-1:user-2:[0-9a-f]{20}$/);
-      expect(id).not.toMatch(/grant|user-3|granted|revoked|transferred/);
+      expect(id).not.toMatch(/grant|granted|revoked|transferred/);
     }
   });
 });

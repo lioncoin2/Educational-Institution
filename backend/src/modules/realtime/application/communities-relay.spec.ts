@@ -455,14 +455,59 @@ describe('Communities events, delivered in real time', () => {
       );
       await h.settle();
 
-      const fact = `transferred:${owner.userId}:${teacher.userId}:${c.clock.now().getTime()}`;
+      const ms = c.clock.now().getTime();
       expect(community(o).map((frame) => frame.eventId)).toEqual([
-        accessId(communityId, owner.userId, fact),
+        accessId(communityId, owner.userId, `transferred:from:${ms}`),
       ]);
       expect(community(t).map((frame) => frame.eventId)).toEqual([
-        accessId(communityId, teacher.userId, fact),
+        accessId(communityId, teacher.userId, `transferred:to:${ms}`),
       ]);
       expect(community(s)).toEqual([]);
+    });
+
+    it('name a transfer by what its recipient already knows — never by the other party', async () => {
+      // After an oversight transfer the former owner is a MEMBER who can
+      // neither list the roster nor read who owns the community now: the
+      // frame telling them their access changed must not tell them that.
+      const formerOwnerIds = async (newOwner: string): Promise<string[]> => {
+        const run = communitiesRealtimeHarness();
+        try {
+          const rc = run.communities;
+          const admin = rc.person('owner-1', ['ADMIN']);
+          const boss = rc.person('overseer-1', ['ADMIN']);
+          const former = rc.person('teacher-a', ['TEACHER']);
+          rc.person('teacher-b', ['TEACHER']);
+          rc.person('teacher-c', ['TEACHER']);
+          const id = await rc.community(admin);
+          await rc.addPeople(admin, id, former.userId, 'teacher-b', 'teacher-c');
+          expectOk(
+            await rc.transfer.execute({
+              principal: admin,
+              communityId: id,
+              userId: former.userId,
+              meta: META,
+            }),
+          );
+          const link = run.connect(former.userId);
+          expectOk(
+            await rc.transfer.execute({
+              principal: boss,
+              communityId: id,
+              userId: newOwner,
+              meta: META,
+            }),
+          );
+          await run.settle();
+          return community(link).map((frame) => String(frame.eventId));
+        } finally {
+          run.cleanup();
+        }
+      };
+
+      const toB = await formerOwnerIds('teacher-b');
+      expect(toB).toHaveLength(1);
+      // The same transfer to someone else, at the same moment: the same frame.
+      expect(await formerOwnerIds('teacher-c')).toEqual(toB);
     });
   });
 

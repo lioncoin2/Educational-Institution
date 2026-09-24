@@ -363,12 +363,15 @@ export function communityUnlockedFrame(input: {
 }
 
 /**
- * What changed someone's access: a grant made or revoked, or ownership moved
- * from one account to another at a time.
+ * What changed someone's access: a grant made or revoked — named by the grant,
+ * which its holder can already list — or ownership moved, named by which side
+ * of it the recipient is on and when. Never by the other party: a former owner
+ * may no longer read who owns the community now, and a digest of a guessable
+ * name would tell them.
  */
 export type AccessChangeCause =
   | { readonly kind: 'granted' | 'revoked'; readonly grantId: string }
-  | { readonly kind: 'transferred'; readonly fromUserId: string; readonly toUserId: string };
+  | { readonly kind: 'transferred'; readonly side: 'from' | 'to' };
 
 /**
  * "What you may do here changed" — a capability granted or revoked, or
@@ -388,7 +391,7 @@ export function communityAccessChangedFrame(input: {
 }): string {
   const cause =
     input.cause.kind === 'transferred'
-      ? `transferred:${input.cause.fromUserId}:${input.cause.toUserId}:${input.occurredAt.getTime()}`
+      ? `transferred:${input.cause.side}:${input.occurredAt.getTime()}`
       : `${input.cause.kind}:${input.cause.grantId}`;
   return frame({
     type: 'community.access.changed',
@@ -398,7 +401,11 @@ export function communityAccessChangedFrame(input: {
   });
 }
 
-/** A fixed-length, one-way name for a fact: the same fact, the same name. */
+/**
+ * A fixed-length name for a fact: the same fact, the same name. One-way only
+ * for what the recipient cannot guess — so a fact names nothing they may not
+ * already know.
+ */
 function digest(fact: string): string {
   return createHash('sha256').update(fact).digest('hex').slice(0, 20);
 }

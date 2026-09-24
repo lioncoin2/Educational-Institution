@@ -29,8 +29,19 @@ interface PlanNode {
   readonly 'Node Type': string;
   readonly 'Relation Name'?: string;
   readonly 'Index Name'?: string;
+  readonly 'Actual Rows'?: number;
+  readonly 'Actual Loops'?: number;
+  readonly 'Rows Removed by Filter'?: number;
+  readonly 'Rows Removed by Index Recheck'?: number;
   readonly Plans?: readonly PlanNode[];
 }
+
+/** The rows a node read, as EXPLAIN ANALYZE counts them: those it kept and those it threw away. */
+const examined = (node: PlanNode) =>
+  ((node['Actual Rows'] ?? 0) +
+    (node['Rows Removed by Filter'] ?? 0) +
+    (node['Rows Removed by Index Recheck'] ?? 0)) *
+  (node['Actual Loops'] ?? 1);
 
 function walk(node: PlanNode, visit: (node: PlanNode) => void): void {
   visit(node);
@@ -149,7 +160,10 @@ describeWithPostgres('community lock frames at 30,000 members', () => {
    */
   async function plansOf(
     sent: readonly { query: string; params: unknown[] }[],
-    { seqScan = true }: { readonly seqScan?: boolean } = {},
+    {
+      seqScan = true,
+      analyze = false,
+    }: { readonly seqScan?: boolean; readonly analyze?: boolean } = {},
   ) {
     const plans: PlanNode[][] = [];
     const client = await pool.connect();
@@ -157,7 +171,10 @@ describeWithPostgres('community lock frames at 30,000 members', () => {
       await client.query('begin');
       if (!seqScan) await client.query('set local enable_seqscan = off');
       for (const { query, params } of sent) {
-        const explained = await client.query(`explain (format json) ${query}`, params);
+        const explained = await client.query(
+          `explain (${analyze ? 'analyze, ' : ''}format json) ${query}`,
+          params,
+        );
         const plan = (explained.rows[0] as { 'QUERY PLAN': { Plan: PlanNode }[] })['QUERY PLAN'][0];
         const nodes: PlanNode[] = [];
         if (plan !== undefined) walk(plan.Plan, (node) => nodes.push(node));
@@ -196,6 +213,33 @@ describeWithPostgres('community lock frames at 30,000 members', () => {
         ]) as string[],
       });
     });
+  }
+
+  /**
+   * What an index name cannot show: each member read is bounded by the page
+   * it asks for — the rows every community_members node reads, kept or
+   * filtered out, run for real, are at most a page and the one that says
+   * another follows — never the community's 30,000 or its 100,000 departed.
+   */
+  async function expectBoundedMemberReads(
+    sent: readonly { query: string; params: unknown[] }[],
+  ): Promise<void> {
+    const analyzed = await plansOf(sent, { analyze: true });
+    const reads = analyzed
+      .filter(readsMembers)
+      .map((nodes) =>
+        Math.max(
+          ...nodes
+            .filter(
+              (node) =>
+                node['Relation Name'] === 'community_members' ||
+                node['Index Name']?.startsWith('community_members_'),
+            )
+            .map(examined),
+        ),
+      );
+    expect(reads.length).toBeGreaterThan(0);
+    expect(reads.filter((rows) => rows > 1001)).toEqual([]);
   }
 
   const locked = new Set<string>();
@@ -276,9 +320,10 @@ describeWithPostgres('community lock frames at 30,000 members', () => {
       expect(sent.length).toBe(1 + calls.members.mock.calls.length);
       expect(sent.filter(({ query }) => /\boffset\b/iu.test(query))).toEqual([]);
       const plans = await plansOf(sent);
-      // One statement per members() call, each on an ACTIVE-member index.
+      // One statement per members() call, each on an index and reading no more than its page.
       expect(plans.filter(readsMembers)).toHaveLength(calls.members.mock.calls.length);
       expectIndexedMemberReads(plans);
+      await expectBoundedMemberReads(sent);
     },
   );
 
@@ -297,6 +342,7 @@ describeWithPostgres('community lock frames at 30,000 members', () => {
     const plans = await plansOf(statements);
     expect(plans.filter(readsMembers)).toHaveLength(1);
     expectIndexedMemberReads(plans);
+    await expectBoundedMemberReads(statements);
   });
 
   /**

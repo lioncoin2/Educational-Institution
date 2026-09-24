@@ -239,6 +239,23 @@ describe('the messaging relay’s audience, bounded by who is online (G1)', () =
     expect(w.reached('conversation.created').sort()).toEqual([SENDER, idOf(1)]);
   });
 
+  it('never lists who is online for a conversation that fits one page, however many are', async () => {
+    const w = world([
+      { userId: SENDER, hiddenThrough: 0 },
+      { userId: idOf(1), hiddenThrough: 0 },
+    ]);
+    // A full instance: 10,000 accounts connected, two of them in this DM.
+    w.online([SENDER, idOf(1), ...Array.from({ length: 9998 }, (_, n) => `stranger-${n}`)]);
+    const listed = jest.spyOn(w.connections, 'onlineUserIds');
+
+    await w.relay.relay(sent);
+
+    // The DM's one page is kept by asking whether each of its members is
+    // connected — work that grows with the page, not with the instance.
+    expect(listed).not.toHaveBeenCalled();
+    expect(w.reached('message.sent').sort()).toEqual([SENDER, idOf(1)]);
+  });
+
   /**
    * The property: for any channel of 0–30,000 recipients (some outside the
    * message's history window) and 0–10,000 accounts online, members or not,

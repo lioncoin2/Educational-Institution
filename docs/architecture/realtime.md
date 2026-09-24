@@ -494,7 +494,7 @@ The rest follows `messaging-relay.ts`:
 ## C3. The frames: protocol v1, additive
 
 Every frame is `{type, eventId, occurredAt, …, version: 1}`, built field by
-field in `envelopes.ts:286-404` from the event's ids and versions, never by
+field in `envelopes.ts:286-411` from the event's ids and versions, never by
 spreading a payload. No frame carries a title, a name, a count, a
 capability, a grant or invitation id, a roster, or how or by whom someone
 joined.
@@ -516,17 +516,22 @@ joined.
   it: the client drops a lock frame not newer than the version it holds.
 - **The `community.access.changed` id ends in a digest of the fact**: the
   first 20 hex characters of SHA-256 over `granted:<grantId>`,
-  `revoked:<grantId>` or `transferred:<fromUserId>:<toUserId>:<occurredAt ms>`
-  (`envelopes.ts:369-371`, `:389-392`, `digest` at `:402-404`). The P5 plan
+  `revoked:<grantId>` or `transferred:<side>:<occurredAt ms>`, `<side>` being `from` or `to`
+  (`envelopes.ts:371-373`, `:392-395`, `digest` at `:409-411`). The P5 plan
   ended the id in `<occurredAt ms>` (the hub's "derived from community,
   user and time", [§16.2](communities-live-attendance.md#162-frames-added-to-protocol-v1)).
   That gives two changes of one person's access within one millisecond the
   same id: the client would drop the second as a duplicate, and the re-read
   it should have caused would never happen. The digest names the fact
-  without putting the grant id, the capability or the other party on the
-  wire. The recipient is in the id because a transfer
-  tells two people, each with their own frame
-  (`envelopes.spec.ts:96-142`).
+  without putting the grant id or the capability on the wire. A transfer is
+  named by which side of it the recipient is on and when, never by the
+  other party: a digest is one-way only for what its reader cannot guess,
+  and a former owner who may no longer read who owns the community could
+  otherwise hash each member id they once saw until one matched (found by
+  the P5 adversarial review; `communities-relay.spec.ts`, "never by the
+  other party", gives the former owner the same id whoever the new owner
+  is). The recipient is in the id because a transfer tells two people,
+  each with their own frame (`envelopes.spec.ts:96-143`).
 
 **Golden fixtures.** `backend/test/fixtures/realtime-frames/` holds one JSON
 file per frame (two for `community.member.removed`, `left` and `removed`)
@@ -567,13 +572,16 @@ interest set is kept per connection.
 
 ## C5. `onlineAudience`: fan-out bounded by who is connected (gate G1)
 
-`onlineAudience(online, pageOf)` (`realtime/application/online-audience.ts:45-71`)
+`onlineAudience(online, pageOf)` (`realtime/application/online-audience.ts:59-85`)
 is the one audience algorithm the relays share; each relay keeps its own
 payload validation (ADR 0021's rejected "one generic relay").
 
 - Nobody online: no call at all.
 - Page 1 (`cursor: null`, `limit: 1000`). If it has no next page, its
-  members ∩ online.
+  members, each kept if `isOnline`: the accounts online are never listed,
+  so a direct message costs its page, not the instance's 10,000 accounts
+  (found by the P5 adversarial review; `messaging-relay-audience.spec.ts`,
+  "never lists who is online").
 - Otherwise the accounts online, in chunks of `AUDIENCE_PAGE` = 1,000, each
   asked with `onlyUserIds` (following a cursor if a source ever pages
   shorter): at most 1 + ⌈A/1000⌉ calls, whether the audience is 2,000 or
@@ -583,9 +591,12 @@ payload validation (ADR 0021's rejected "one generic relay").
   call on either side.
 - The source stays the only judge: every id returned came from it, asked at
   delivery time; nothing is cached or widened. Results are de-duplicated.
-- `ConnectionManager.onlineUserIds()` (`connection-manager.ts:67-69`) is every
-  account with a connection here, each once: a snapshot, unaffected by
-  connections that open or close afterwards.
+- `online` is the connection registry itself, asked rather than copied
+  (`OnlineAccounts`: `accountCount`, `isOnline`, `onlineUserIds`;
+  `ConnectionManager` is one, `connection-manager.ts:57-74`).
+  `onlineUserIds()` is every account with a connection here, each once: a
+  snapshot, unaffected by connections that open or close afterwards, and
+  asked for only when the audience spans more than one page.
 
 **G1.** `MessagingRealtimeRelay.onlineMembers` (`messaging-relay.ts:209-219`)
 now resolves `conversation.created` and `message.sent` through
@@ -702,7 +713,12 @@ Backend (`npm run verify`):
   `withPermission`; a 30-member community takes one member call. Every
   statement sent is EXPLAINed: `community_members` is read through a
   `community_members_*` index, never a Seq Scan, and no statement has an
-  OFFSET. Identity's side of the narrowing: a 1,000-account page is three
+  OFFSET. Each is also run under EXPLAIN ANALYZE, and no `community_members`
+  node reads more than 1,001 rows, kept or filtered out: a member read is
+  bounded by its page, not by the community (an index name alone could not
+  tell a bounded probe from an index walk of all 30,000; the P5 adversarial
+  review found the gap, and a non-sargable filter now fails the suite at
+  30,000 rows read). Identity's side of the narrowing: a 1,000-account page is three
   statements (`users`, `user_identifiers`, `user_roles`), each bound to the
   page's 1,000 ids and joining nothing; with sequential scans disabled, each
   is served by its index (`users_pkey`, `user_identifiers_user_id_idx`,

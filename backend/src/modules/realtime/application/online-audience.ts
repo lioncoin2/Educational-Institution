@@ -24,13 +24,27 @@ export type AudiencePager = (page: {
 }) => Promise<AudiencePage>;
 
 /**
+ * Who is connected here, as the connection registry answers it: asked, not
+ * copied, so an audience of one page costs that page, however many accounts
+ * this instance holds. `ConnectionManager` is one.
+ */
+export interface OnlineAccounts {
+  /** How many distinct accounts are connected. */
+  accountCount(): number;
+  isOnline(userId: string): boolean;
+  /** Every account connected, each once — a snapshot. */
+  onlineUserIds(): readonly string[];
+}
+
+/**
  * Who of an audience is connected here: `pageOf`'s members ∩ `online`,
  * each once (ADR 0021 decision 7; communities-live-attendance.md §7.6).
  *
  * What it costs is bounded by the connections, not by the audience:
  *
  *   nobody online               no call at all
- *   the audience fits a page    one call — its members, kept if online
+ *   the audience fits a page    one call — its members, each kept if online;
+ *                               the accounts online are never listed
  *   anything larger             that first call, then the online accounts
  *                               named in chunks of AUDIENCE_PAGE — at most
  *                               1 + ⌈A/1000⌉ calls for A accounts online,
@@ -43,27 +57,27 @@ export type AudiencePager = (page: {
  * from it, asked at delivery time — nothing here is cached or widened.
  */
 export async function onlineAudience(
-  online: readonly string[],
+  online: OnlineAccounts,
   pageOf: AudiencePager,
 ): Promise<string[]> {
-  const connected = new Set(online);
-  if (connected.size === 0) return [];
+  if (online.accountCount() === 0) return [];
 
   const first = await pageOf({ cursor: null, limit: AUDIENCE_PAGE });
   if (first.nextCursor === null) {
-    return [...new Set(first.userIds.filter((userId) => connected.has(userId)))];
+    return [...new Set(first.userIds.filter((userId) => online.isOnline(userId)))];
   }
 
   const audience = new Set<string>();
-  const accounts = [...connected];
+  const accounts = [...new Set(online.onlineUserIds())];
   for (let from = 0; from < accounts.length; from += AUDIENCE_PAGE) {
     const chunk = accounts.slice(from, from + AUDIENCE_PAGE);
+    const named = new Set(chunk);
     // A chunk of at most one page of names fits one page of answers; the
     // cursor is still followed, so a source that pages shorter loses no one.
     let cursor: string | null = null;
     do {
       const page = await pageOf({ onlyUserIds: chunk, cursor, limit: AUDIENCE_PAGE });
-      for (const userId of page.userIds) if (connected.has(userId)) audience.add(userId);
+      for (const userId of page.userIds) if (named.has(userId)) audience.add(userId);
       cursor = page.nextCursor;
     } while (cursor !== null);
   }

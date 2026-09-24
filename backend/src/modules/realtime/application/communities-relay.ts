@@ -191,10 +191,11 @@ export class CommunitiesRealtimeRelay implements OnModuleInit, OnModuleDestroy {
       case CommunityEvents.capabilityRevoked: {
         const payload = capabilityPayload(event);
         if (payload === null) return this.malformed(event);
-        return this.accessChanged(event, payload.communityId, [payload.userId], {
+        const cause: AccessChangeCause = {
           kind: event.name === CommunityEvents.capabilityGranted ? 'granted' : 'revoked',
           grantId: payload.grantId,
-        });
+        };
+        return this.accessChanged(event, payload.communityId, [payload.userId], () => cause);
       }
       case CommunityEvents.ownershipTransferred: {
         const payload = ownershipTransferredPayload(event);
@@ -203,7 +204,7 @@ export class CommunitiesRealtimeRelay implements OnModuleInit, OnModuleDestroy {
           event,
           payload.communityId,
           [payload.fromUserId, payload.toUserId],
-          { kind: 'transferred', fromUserId: payload.fromUserId, toUserId: payload.toUserId },
+          (userId) => ({ kind: 'transferred', side: userId === payload.toUserId ? 'to' : 'from' }),
         );
       }
       case CommunityEvents.communityLocked:
@@ -215,18 +216,26 @@ export class CommunitiesRealtimeRelay implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** `community.access.changed` to each member named — their own frame, their own id. */
+  /**
+   * `community.access.changed` to each member named — their own frame, their
+   * own id, the cause as that member may know it.
+   */
   private async accessChanged(
     event: DomainEvent,
     communityId: string,
     userIds: readonly string[],
-    cause: AccessChangeCause,
+    causeFor: (userId: string) => AccessChangeCause,
   ): Promise<void> {
     const members = await this.concerned(communityId, userIds, (state) => state?.active === true);
     for (const userId of members) {
       this.connections.sendToUser(
         userId,
-        communityAccessChangedFrame({ occurredAt: event.occurredAt, communityId, userId, cause }),
+        communityAccessChangedFrame({
+          occurredAt: event.occurredAt,
+          communityId,
+          userId,
+          cause: causeFor(userId),
+        }),
       );
     }
   }
@@ -241,7 +250,7 @@ export class CommunitiesRealtimeRelay implements OnModuleInit, OnModuleDestroy {
     // and whoever is connected hears the newer one instead.
     if (head === undefined || head.lifecycleVersion > payload.lifecycleVersion) return;
 
-    const members = await onlineAudience(this.connections.onlineUserIds(), (page) =>
+    const members = await onlineAudience(this.connections, (page) =>
       this.membership.members(payload.communityId, {
         onlyUserIds: page.onlyUserIds,
         cursor: page.cursor,

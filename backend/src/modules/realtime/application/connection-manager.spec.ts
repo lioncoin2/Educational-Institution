@@ -92,6 +92,19 @@ describe('ConnectionManager', () => {
     expect([...manager.onlineUserIds()].sort()).toEqual(['u1', 'u3']);
   });
 
+  it('counts accounts, not devices', () => {
+    const manager = new ConnectionManager();
+    expect(manager.accountCount()).toBe(0);
+    manager.register(connection('phone', 'u1'));
+    manager.register(connection('web', 'u1'));
+    manager.register(connection('c3', 'u2'));
+    expect(manager.accountCount()).toBe(2);
+    expect(manager.count()).toBe(3);
+    manager.unregister('phone');
+    manager.unregister('web');
+    expect(manager.accountCount()).toBe(1);
+  });
+
   it('drops a dead connection the moment a send to it fails, and still reaches the live one', () => {
     const manager = new ConnectionManager();
     const dead = new FakeLink();

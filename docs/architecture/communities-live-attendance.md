@@ -903,11 +903,12 @@ onlineUserIds(): readonly string[];   // ConnectionManager: the keys of byUser
 // accounts. Cost: at most 1 + ⌈A/1000⌉ calls. MessagingRealtimeRelay.onlineMembers moves onto it.
 ```
 
-- **Realtime, as landed in P5:** `onlineUserIds()` at
-  `connection-manager.ts:67-69`; the resolver is the function
-  `onlineAudience(online, pageOf)` (`realtime/application/online-audience.ts:45-71`),
-  called with `connections.onlineUserIds()` and a source's page function,
-  and asks nothing when nobody is online. `MessagingRealtimeRelay.onlineMembers`
+- **Realtime, as landed in P5:** `onlineUserIds()` and `accountCount()` at
+  `connection-manager.ts:62-74`; the resolver is the function
+  `onlineAudience(online, pageOf)` (`realtime/application/online-audience.ts:59-85`),
+  called with the connection registry itself (asked with `isOnline`, listed
+  only when the audience spans pages) and a source's page function, and
+  asks nothing when nobody is online. `MessagingRealtimeRelay.onlineMembers`
   is on it (G1). Details and evidence:
   [realtime.md §C5](realtime.md#c5-onlineaudience-fan-out-bounded-by-who-is-connected-gate-g1).
 - **Protocol v1 server frames** are listed in [§16.2](#162-frames-added-to-protocol-v1).
@@ -1394,7 +1395,7 @@ landed in P5 with the ids below
 | `community.member.added` | `communityId, userId` | `community.member.added:<communityId>:<userId>:<membershipVersion>` (the design: derived from community, user and time) |
 | `community.member.removed` | `communityId, userId, reason: 'left' \| 'removed'` | `community.member.removed:<communityId>:<userId>:<membershipVersion>` |
 | `community.locked`, `community.unlocked` | `communityId, lifecycleVersion` | `community.locked:<communityId>:<lifecycleVersion>`; `community.unlocked:<communityId>:<lifecycleVersion>` |
-| `community.access.changed` | `communityId` | `community.access.changed:<communityId>:<recipientUserId>:<digest>`, the digest being the first 20 hex characters of SHA-256 over `granted:<grantId>`, `revoked:<grantId>` or `transferred:<fromUserId>:<toUserId>:<occurredAt ms>`. Changed from the P5 plan's `<occurredAt ms>`: two access changes within one millisecond would have shared an id, and the client drops a repeated id; the digest keeps the grant id, the capability and the other party off the wire |
+| `community.access.changed` | `communityId` | `community.access.changed:<communityId>:<recipientUserId>:<digest>`, the digest being the first 20 hex characters of SHA-256 over `granted:<grantId>`, `revoked:<grantId>` or `transferred:<side>:<occurredAt ms>` (`<side>` being `from` or `to`, the recipient's side of the transfer). Changed from the P5 plan's `<occurredAt ms>`: two access changes within one millisecond would have shared an id, and the client drops a repeated id; the digest keeps the grant id and the capability off the wire, and a transfer never names the other party, whom a former owner could otherwise recover by hashing member ids they once saw ([realtime.md §C3](realtime.md#c3-the-frames-protocol-v1-additive)) |
 | `live.session.started` | `communityId, sessionId` | `live.session.started:<sessionId>` |
 | `live.session.ended` | `communityId, sessionId, reason` | `live.session.ended:<sessionId>` |
 | `live.session.changed` | `communityId, sessionId, stateVersion` | `live.session.changed:<sessionId>:<stateVersion>` |
