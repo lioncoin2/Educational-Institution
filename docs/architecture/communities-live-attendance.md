@@ -153,7 +153,7 @@ phase named and does not exist yet.
 | Cross-module database or repository access | Each table is written and read only by its owner's infrastructure; ids cross modules as plain text; no cross-module foreign key | `no-cross-module-internals` (`.dependency-cruiser.cjs:141-161`); schema-import and `pg_constraint` tests per new module (*proposed*, P2, P4, P6, P9; the pattern of `messaging-persistence.spec.ts:129`) |
 | Importing another module's infrastructure | Modules meet only at `contracts/` and `*.module.ts`; exports are contract tokens | the same rule; the exports-are-contracts test (*proposed*, P0) |
 | Business logic in controllers | One use case per act; controllers map DTOs and results | the existing API-layer rules (`.dependency-cruiser.cjs:119-137`) |
-| Business logic in Flutter screens | Screens render server capability booleans; controllers and repositories own flow | Flutter boundary tests (*proposed*, P0, P5, P7; the pattern of `academic_boundaries_test.dart:51-94`) |
+| Business logic in Flutter screens | Screens render server capability booleans; controllers and repositories own flow | Flutter boundary tests on the pattern of `academic_boundaries_test.dart:51-94`: `app/test/live/live_boundaries_test.dart` (landed in P0); `app/test/communities/community_boundaries_test.dart` (landed in P5: community screens, widgets and state import no HTTP client, socket, API client or repository implementation and read no permissions or roles; only `app_providers.dart` constructs a `CommunityRepository`); live's (*proposed*, P7) |
 | LiveKit SDK in domain code | Narrow RTC ports in `live/domain`; one adapter file | `domain-is-dependency-free` (`.dependency-cruiser.cjs:26-36`); the fixed vendor-SDK rule, `livekit-sdk-only-in-the-live-adapter` and the rules-match spec (*proposed*, P0) |
 | Messaging owning membership rules | Messaging asks `COMMUNITY_AUTHORIZATION` on every access; its participant rows for community chats are a named projection with no write port | `messaging-boundaries.spec.ts` (domain purity; Communities reached only through its contracts; exports unchanged); the 412 refusals on messaging's membership routes (`community-chat.spec.ts`, `community-chat.api.spec.ts`; landed in P4) |
 | Academic owning generic group infrastructure | The module is `communities`; no halaqa link in v1 ([Q50](open-questions.md#q50--communities-and-the-academic-structure)) | `communities-boundaries.spec` (*proposed*, P2) |
@@ -207,7 +207,7 @@ the chat, or in a live session, and each of those has its own bound:
 | Scale | Unit | Bounded by | Measured today |
 | --- | --- | --- | --- |
 | A. Membership | one stint row | Nothing as policy. `member_count` has no upper CHECK; 30,000 and 100,000 are fixture sizes | Nothing (not built) |
-| B. Messaging | one message, fanned out to online readers | Realtime: today ⌈N/1000⌉ queries per message per instance, whatever is online (`messaging-relay.ts:207-219`); with `OnlineAudience` (P5, gate G1) at most `1 + ⌈A/1000⌉`, where A is the accounts connected to that instance (A ≤ 10,000, `realtime-policy.ts:42`). Notifications: one row per reader (Q28) | Fan-out tested at 250 members (`messaging-persistence.spec.ts:522-551`) |
+| B. Messaging | one message, fanned out to online readers | Realtime: today ⌈N/1000⌉ queries per message per instance, whatever is online (`messaging-relay.ts:207-219`); with `OnlineAudience` (P5, gate G1; landed 2026-09-24) at most `1 + ⌈A/1000⌉`, where A is the accounts connected to that instance (A ≤ 10,000, `realtime-policy.ts:42`). Notifications: one row per reader (Q28) | Fan-out tested at 250 members (`messaging-persistence.spec.ts:522-551`); since P5, the relay's recipient calls counted at 30,000 members with 50 and 2,500 accounts online (`community-chat-scale.spec.ts`; [realtime.md §C5](realtime.md#c5-onlineaudience-fan-out-bounded-by-who-is-connected-gate-g1)) |
 | C. Live | one participant in one room on one node | The per-session cap, to be set from measurement (PROVISIONAL 300 plus a reserve of 10 until then, [Q57](open-questions.md#q57--live-session-size-and-concurrency)) | Nothing |
 | D. Attendance | one entry per observed participant per press | The room's size, never the membership | Nothing |
 
@@ -270,12 +270,12 @@ the chat, or in a live session, and each of those has its own bound:
 | **messaging** (existing, extended in P4) | Implemented; gains an additive community-chat branch | Conversations, messages, attachment references, ordering, idempotent sends, watermarks, history windows. NEW: the link `conversations.community_id`; the named, non-authoritative projection of a community's ACTIVE members; `CommunityChatSync`, `CommunityChatSweeper`, `CommunityChatReconciler`, `GetCommunityChatUseCase`. `ConversationAccess` stays the single checkpoint | Unchanged: `MESSAGE_RECIPIENTS`, `MESSAGE_DELIVERY` (`messaging.module.ts:108`) | Community rules (who may join, invite, lock or post: it asks); invitations; lifecycle status values; live, LiveKit, notifications, realtime. `messaging/domain` never imports communities; messaging never reaches live, even transitively |
 | **live** (existing, evolved in place) | Implemented today in memory and halaqa-bound. P1 hardening, P6 community scope, P9 observation | `LiveSession` (replaces `LiveRoom`), `SpeakerRequest`, `PresenterGrant`, moderation actions; `capabilitiesFor`; the media room name; the RTC ports and the only LiveKit adapter; `LiveAccess`, `LiveReconciler`, `ProtectLiveSessions`, `LiveAudienceService`; the observation rule `provider_registry_v1` (applied by `LivePresenceService` behind `LIVE_PRESENCE`, P9); one use case per act | Today nothing (`live.module.ts:36-62`). Then `LIVE_AUDIENCE` (P6), `LIVE_SESSIONS` (P6), `LIVE_PRESENCE` (P9, attendance only) | Membership storage and community rules (it asks); the raw lifecycle status (it reads effects flags and refusals); attendance semantics (it reports raw connection states); messaging, realtime, notifications, academic, operations |
 | **attendance** (NEW, **HELD**) | Designed only. Blocked by Q40, Q69 and P6 | `AttendanceSnapshot` (header and entries); the recorded `observation_rule` id; the idempotency key; four use cases; `AttendanceAccess`; `AttendanceJournal` | Nothing in v1; type-only `contracts/events.ts`. A reader contract waits for its first consumer | LiveKit and live internals; operations' `AttendanceState`; academic and halaqa ids; `attendance.read` and `attendance.manage` (never consulted; a grep test enforces it); notifications, realtime. Only `app.module` imports it |
-| **realtime** (existing, extended in P5, P7) | Implemented; additive only | Connections (plus `onlineUserIds()`); protocol v1 frames; `MessagingRealtimeRelay`, `NotificationRealtimeRelay`, NEW `CommunitiesRealtimeRelay`, NEW `LiveRealtimeRelay`; the internal `OnlineAudience`; transient coalescing buffers | Nothing; imported only by `app.module` (`realtime-boundaries.spec.ts:118-123`) | Any module's tables; membership rules (audiences are asked of source contracts at delivery time); LiveKit. It stores nothing and opens no second socket |
+| **realtime** (existing, extended in P5, P7) | Implemented; additive only. P5 landed 2026-09-24 ([realtime.md Part C](realtime.md#part-c--communities-in-real-time)) | Connections (plus `onlineUserIds()`, P5); protocol v1 frames; `MessagingRealtimeRelay`, `NotificationRealtimeRelay`, NEW `CommunitiesRealtimeRelay` (P5), NEW `LiveRealtimeRelay` (P7); the internal `OnlineAudience` (P5: `onlineAudience`, `realtime/application/online-audience.ts`); transient coalescing buffers (P7) | Nothing; imported only by `app.module` (`realtime-boundaries.spec.ts:118-123`) | Any module's tables; membership rules (audiences are asked of source contracts at delivery time); LiveKit. It stores nothing and opens no second socket |
 | **notifications** (existing) | Implemented; unchanged until P10 | Notification rows, preferences, devices, push. Later: translators for the new facts, importing only contracts | Unchanged: `NOTIFICATION_READER` | Community rules, live state, LiveKit. It never becomes an authorization bypass: opening a notification runs the owner's checkpoint |
 | **operations** (contract only) | Contract only; `AttendanceRecord` stays on hold | `AttendanceState`, `SessionRef`, `AttendanceAmendment` (`operations/contracts/index.ts:7-19`), types unchanged; its doc comment is corrected | None | How a session is delivered. It imports `attendance/contracts` only if Q70 says snapshots feed its record, never the reverse |
 | **files**, **academic** (existing) | Unchanged | As today | `FILE_ASSETS`; `ACADEMIC_RELATIONSHIPS` | Communities (no halaqa link in v1, Q50) |
 | **shared kernel, platform** | Extended in P0 and P6 | `FailureKind` gains `'unavailable'` → 503. `AppConfig.live` (P6). `AUDIT_LOG`, `EVENT_PUBLISHER`, `RATE_LIMITER`, `CLOCK`, `ID_GENERATOR` reused; `EventPublisher`/`EventSubscriber` unchanged until P11 | Unchanged ports | Any business module |
-| **app** (Flutter data layer) | Extended in P5 and P7; attendance in P9 | `CommunityRepository`, `LiveRepository` (HTTP and mock, bound only in `app_providers.dart`); `CommunityEvent` and `LiveEvent` frame families; the `LiveMediaClient` seam; server-parsed capability models; the `/invite` route | n/a | Screens never import `livekit_client`, `flutter_webrtc`, `web_socket`, `http`, `api_client` or repository implementations; never derive rights from roles; never label anyone "present" |
+| **app** (Flutter data layer) | Extended in P5 and P7; attendance in P9. P5 landed 2026-09-24: a read-only `CommunityRepository`, the `CommunityEvent` family, the capability models and the community screens; the `/invite` route and the management calls are deferred, to be scheduled ([§25](#25-implementation-phases)) | `CommunityRepository`, `LiveRepository` (HTTP and mock, bound only in `app_providers.dart`); `CommunityEvent` and `LiveEvent` frame families; the `LiveMediaClient` seam; server-parsed capability models; the `/invite` route | n/a | Screens never import `livekit_client`, `flutter_webrtc`, `web_socket`, `http`, `api_client` or repository implementations; never derive rights from roles; never label anyone "present" |
 
 ### 2.2 Data ownership
 
@@ -351,7 +351,7 @@ cycle is possible.
 | communities | shared, platform | `AUDIT_LOG`, `EVENT_PUBLISHER`, `RATE_LIMITER`, `CLOCK`, `ID_GENERATOR`, `Result`, `Principal`; `DATABASE`, `APP_CONFIG` in wiring | **new** |
 | messaging (application only) | communities | `COMMUNITY_AUTHORIZATION` (`community.chat.read`, `community.chat.post`); `COMMUNITY_MEMBERSHIP` (`heads`, `listHeads`, `statesOf`, `changesSince`, `members`); `COMMUNITY_DIRECTORY`; the constant `COMMUNITY_CHAT_READ_CEILING` (P4); subscribes to `communities.member.added` / `.removed` as wake-ups. Never from `messaging/domain` | **new** |
 | live (application) | communities | `COMMUNITY_AUTHORIZATION` (`community.live.start`, `.host`, `.moderate`, `.join`, `.raise_hand` per request; `permittedAmong` for `.join`, `.remain`, `.moderate` and `.host` in batches of 1,000 for the reconciler and `LIVE_AUDIENCE`); `COMMUNITY_MEMBERSHIP` (`heads` for session-wide effects); `COMMUNITY_CAPABILITY_HOLDERS` (moderators); subscribes to `communities.member.removed`, `communities.capability.revoked`, `communities.community.locked`/`unlocked` as accelerators | **new** |
-| realtime | communities | `CommunitiesRealtimeRelay`: `COMMUNITY_MEMBERSHIP.members` (`OnlineAudience`), `CommunityEvents` | **new** |
+| realtime | communities | `CommunitiesRealtimeRelay`: `COMMUNITY_MEMBERSHIP.members` (`OnlineAudience`), `CommunityEvents`. As landed in P5: `RealtimeModule` imports `CommunitiesModule` (`realtime.module.ts:43`); the relay also asks `COMMUNITY_MEMBERSHIP.statesOf` and `.heads` and reads `COMMUNITY_VIEW_CEILING`, which it checks through identity's `ACCOUNT_DIRECTORY.withPermission` ([realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs)) | **new** (landed in P5) |
 | realtime | live | `LiveRealtimeRelay`: `LIVE_AUDIENCE`, `LiveEvents` | **new** |
 | attendance (P9) | live | `LIVE_SESSIONS.describe`, `LIVE_PRESENCE.observe` | **new** |
 | attendance (P9) | communities | `COMMUNITY_AUTHORIZATION` (`community.attendance.record`, `.view`, added in P9; then, in the fallback order of [attendance.md §11.3](attendance.md#113-attendanceaccess-how-refusals-map), `community.live.moderate`, `community.live.host` and `community.view`) | **new** |
@@ -573,6 +573,7 @@ lands. Details: [communities.md](communities.md),
 | `PROVISIONAL_POLICY_RULES` → `[]` | identity (internal) | modify | P6 | identity only; Live stops passing `ownerUserId` |
 | `capabilities.ts` (acts, guards) | communities | new | P2 | messaging, live, attendance, realtime (types), Flutter (wire strings) |
 | `COMMUNITY_CHAT_READ_CEILING` (in `capabilities.ts`): the one Communities contract addition P4 needs | communities | extend | P4 | messaging (`MESSAGE_RECIPIENTS`, two `withPermission` calls per non-empty community-chat page); Communities' own act table |
+| `COMMUNITY_VIEW_CEILING` (in `capabilities.ts`, `[communities.read]`): the one Communities contract addition P5 made, not in the approved catalogue ([realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs)) | communities | extend | P5 (landed) | realtime (`CommunitiesRealtimeRelay` narrows every community frame audience by it); Communities' own act table (`community.view`'s standing ceiling) |
 | `COMMUNITY_AUTHORIZATION` | communities | new | P2 (grant basis P3; `permittedAmong` P6) | messaging, live, attendance, communities' own use cases |
 | `COMMUNITY_MEMBERSHIP` | communities | new | P2 | messaging, live, realtime, notifications (P10) |
 | `COMMUNITY_DIRECTORY` | communities | new | P2 | messaging |
@@ -591,10 +592,10 @@ lands. Details: [communities.md](communities.md),
 | `AppConfig.live` + pinned LiveKit config | platform | extend | P6 | live |
 | `AttendanceEvents` | attendance | new | P9 | none built |
 | `FailureKind 'unavailable'` → 503 | shared, platform | extend | P0 | live, communities consumers, attendance |
-| Protocol v1 server frames | realtime | extend | P5, P7 | Flutter |
-| `ConnectionManager.onlineUserIds()`, `OnlineAudience` | realtime (internal) | new | P5 | all relays |
+| Protocol v1 server frames | realtime | extend | P5 (landed: the five `community.*` frames), P7 | Flutter |
+| `ConnectionManager.onlineUserIds()`, `OnlineAudience` | realtime (internal) | new | P5 (landed) | all relays |
 | `.dependency-cruiser.cjs` rules | architecture | modify | P0 | CI |
-| Repositories, frame families, `LiveMediaClient` | app | new | P5, P7, P9 | Flutter screens and controllers |
+| Repositories, frame families, `LiveMediaClient` | app | new | P5 (landed: the read-only `CommunityRepository`, `CommunityEvent`), P7, P9 | Flutter screens and controllers |
 | `operations/contracts/index.ts` doc comment | operations | modify | P0 | readers |
 
 ### 7.2 Identity
@@ -892,6 +893,13 @@ onlineUserIds(): readonly string[];   // ConnectionManager: the keys of byUser
 // accounts. Cost: at most 1 + ⌈A/1000⌉ calls. MessagingRealtimeRelay.onlineMembers moves onto it.
 ```
 
+- **Realtime, as landed in P5:** `onlineUserIds()` at
+  `connection-manager.ts:67-69`; the resolver is the function
+  `onlineAudience(online, pageOf)` (`realtime/application/online-audience.ts:45-71`),
+  called with `connections.onlineUserIds()` and a source's page function,
+  and asks nothing when nobody is online. `MessagingRealtimeRelay.onlineMembers`
+  is on it (G1). Details and evidence:
+  [realtime.md §C5](realtime.md#c5-onlineaudience-fan-out-bounded-by-who-is-connected-gate-g1).
 - **Protocol v1 server frames** are listed in [§16.2](#162-frames-added-to-protocol-v1).
 - **`.dependency-cruiser.cjs`** (P0): the corrected
   `application-has-no-vendor-sdks` path is
@@ -1312,6 +1320,10 @@ sessions they hosted or recorded in.
 `WS /realtime` is unchanged: first-frame authentication, the `messaging.read`
 connection gate, `subscribe` stays conversation-only, **no client frame is
 added**. Only server frames are added ([§16.2](#162-frames-added-to-protocol-v1)).
+As landed in P5, `protocol.spec.ts` and `realtime-sessions.spec.ts` pin it:
+a `subscribe` naming a community is `INVALID_PAYLOAD`, and a community's id
+given as a conversation is `CONVERSATION_NOT_FOUND`
+([realtime.md §C4](realtime.md#c4-no-community-subscription-account-addressed-push)).
 
 ---
 
@@ -1326,11 +1338,11 @@ measured.
 | Fact | App WebSocket frame | Audience, and how it is resolved | Cost at 30,000 members | LiveKit | Notifications | Nothing |
 | --- | --- | --- | --- | --- | --- | --- |
 | community created | — | — | — | — | — | the creator has the HTTP response |
-| community locked / unlocked | `community.locked` / `.unlocked` `{communityId, lifecycleVersion}` | ACTIVE members online here: `OnlineAudience` over `COMMUNITY_MEMBERSHIP.members` | 0 if nobody is connected; 1 query if ≤ 1,000 members; else ≤ 1 + ⌈A/1000⌉ (≤ 11), whatever the size | Live's reaction applies the effects (a running session continues, PROVISIONAL, Q46) | later (Q67) | |
-| member added | `community.member.added` `{communityId, userId}` | that user only (Q22 precedent) | 0 queries | — | later | |
-| member removed | `community.member.removed` `{communityId, userId, reason}` | that user only | 0 queries | `PARTICIPANT_REMOVED` to that participant | later | |
+| community locked / unlocked | `community.locked` / `.unlocked` `{communityId, lifecycleVersion}` | ACTIVE members online here: `OnlineAudience` over `COMMUNITY_MEMBERSHIP.members`. As built (P5): nobody when `heads` shows the community gone or a newer lifecycle version; then only accounts holding `COMMUNITY_VIEW_CEILING` | 0 if nobody is connected; 1 query if ≤ 1,000 members; else ≤ 1 + ⌈A/1000⌉ (≤ 11), whatever the size. As built (P5), one `heads` before these and ⌈N/1000⌉ `withPermission` after them, for the N members found online: ≤ 22 calls in all | Live's reaction applies the effects (a running session continues, PROVISIONAL, Q46) | later (Q67) | |
+| member added | `community.member.added` `{communityId, userId}` | that user only (Q22 precedent); as built (P5), while the stint the event names is their latest and ACTIVE | 0 queries in the design; as built, 0 if that user is not connected here, else one `statesOf` and one `withPermission` | — | later | |
+| member removed | `community.member.removed` `{communityId, userId, reason}` | that user only; as built (P5), while their latest stint is not ACTIVE | as member added | `PARTICIPANT_REMOVED` to that participant | later | |
 | invitation created / revoked | — | — | — | — | — | managers reload over HTTP |
-| capability granted / revoked, ownership transferred | `community.access.changed` `{communityId}` | the affected user(s); the client refetches `GET /communities/:id` | 0 queries | re-evaluation of a holder in a session | later | |
+| capability granted / revoked, ownership transferred | `community.access.changed` `{communityId}` | the affected user(s); the client refetches `GET /communities/:id`. As built (P5), each while an ACTIVE member | as member added; one `statesOf` for both users of a transfer | re-evaluation of a holder in a session | later | |
 | live session started | `live.session.started` `{communityId, sessionId}` | two steps: the community's ACTIVE members online here (`OnlineAudience` over `COMMUNITY_MEMBERSHIP.members`), then those of them `LIVE_AUDIENCE.participantsAmong` accepts, probed in chunks of 1,000. The frame grants nothing | the first step as for a lock (1 query if ≤ 1,000 members, else ≤ 1 + ⌈A/1000⌉), plus ⌈M/1000⌉ contract calls for the M members found online | the room exists | later (Q67) | |
 | live session ended | `live.session.ended` `{communityId, sessionId, reason}` | same as started; terminal for that id | same | `ROOM_DELETED` to everyone in the room | later | |
 | hand raised, withdrawn, declined; speaker granted, revoked, expired; screen share started, stopped | `live.session.changed` `{communityId, sessionId, stateVersion}` | `LIVE_AUDIENCE.moderators` (coalesced to ≤ 1 per 250 ms per session) ∪ the affected user (immediate). **Zero frames per listener** | 1 contract call over a small set | grant or revoke: the participant's permission update (`ParticipantPermissionsUpdated`); disallowed tracks unpublished at once | later | |
@@ -1338,31 +1350,46 @@ measured.
 | in-room roster | — | — | — | LiveKit; visible to all participants until [Q59](open-questions.md#q59--visibility-inside-a-live-session) | — | |
 | join credential | — | — | — | — | — | HTTP `POST …/join` response only |
 | attendance snapshot recorded | — | — | — | — | later (Q67) | v1: no frame |
-| community chat message | existing `message.sent` | existing: `MESSAGE_RECIPIENTS` (projection + lag filter + `COMMUNITY_CHAT_READ_CEILING`) through `OnlineAudience` with `visibleSequence` | today 30 queries per message per instance at 30,000 (`messaging-relay.ts:207-219`); ≤ 11 with `OnlineAudience` | — | existing: one row per reader (Q28; gate G4) | |
+| community chat message | existing `message.sent` | existing: `MESSAGE_RECIPIENTS` (projection + lag filter + `COMMUNITY_CHAT_READ_CEILING`) through `OnlineAudience` with `visibleSequence` | 30 queries per message per instance at 30,000 before P5 (`messaging-relay.ts:207-219` at `9670c47`); since P5 (G1), ≤ 1 + ⌈A/1000⌉ (≤ 11) through `onlineAudience` | — | existing: one row per reader (Q28; gate G4) | |
 | data channel | — | — | — | **unused**; `canPublishData = false` for everyone | — | |
 
 Relays chain per aggregate id, do nothing when this instance has no
 connections, serialize each frame once, and are detached from the publisher
 (the `messaging-relay.ts` pattern). HTTP is the truth; frames are hints.
 
+**As built (P5, 2026-09-24).** The community rows above are as implemented
+([realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs)). P5
+refined the approved matrix in two ways, both of which only remove
+recipients: every audience is re-asked of Communities at delivery time (the
+person's latest stint through `statesOf`; a lock's `heads`), so an event
+overtaken by a later change reaches nobody; and every audience is narrowed to
+the accounts holding `COMMUNITY_VIEW_CEILING`, the standing ceiling of
+`community.view`, published by Communities for this. The per-person frames
+therefore cost one `statesOf` and one `withPermission` when their person is
+connected here, instead of 0. A per-person frame is serialized once per
+recipient, because its `eventId` names them.
+
 ### 16.2 Frames added to protocol v1
 
 Every frame is `{type, version: 1, eventId, occurredAt, …}`, built field by
-field, with an `eventId` derived from the fact:
+field, with an `eventId` derived from the fact. The five `community.*` frames
+landed in P5 with the ids below
+([realtime.md §C3](realtime.md#c3-the-frames-protocol-v1-additive)):
 
 | Frame | Fields | eventId |
 | --- | --- | --- |
-| `community.member.added` | `communityId, userId` | derived from community, user and time |
-| `community.member.removed` | `communityId, userId, reason: 'left' \| 'removed'` | same |
-| `community.locked`, `community.unlocked` | `communityId, lifecycleVersion` | `community.locked:<id>:<lifecycleVersion>` |
-| `community.access.changed` | `communityId` | derived from community, user and time |
+| `community.member.added` | `communityId, userId` | `community.member.added:<communityId>:<userId>:<membershipVersion>` (the design: derived from community, user and time) |
+| `community.member.removed` | `communityId, userId, reason: 'left' \| 'removed'` | `community.member.removed:<communityId>:<userId>:<membershipVersion>` |
+| `community.locked`, `community.unlocked` | `communityId, lifecycleVersion` | `community.locked:<communityId>:<lifecycleVersion>`; `community.unlocked:<communityId>:<lifecycleVersion>` |
+| `community.access.changed` | `communityId` | `community.access.changed:<communityId>:<recipientUserId>:<digest>`, the digest being the first 20 hex characters of SHA-256 over `granted:<grantId>`, `revoked:<grantId>` or `transferred:<fromUserId>:<toUserId>:<occurredAt ms>`. Changed from the P5 plan's `<occurredAt ms>`: two access changes within one millisecond would have shared an id, and the client drops a repeated id; the digest keeps the grant id, the capability and the other party off the wire |
 | `live.session.started` | `communityId, sessionId` | `live.session.started:<sessionId>` |
 | `live.session.ended` | `communityId, sessionId, reason` | `live.session.ended:<sessionId>` |
 | `live.session.changed` | `communityId, sessionId, stateVersion` | `live.session.changed:<sessionId>:<stateVersion>` |
 
 No frame carries a name, text, a token, an invitation code, a URL, queue
 contents or a roster. Golden JSON fixtures are shared by the backend builders
-and the Flutter parser.
+and the Flutter parser: since P5 they are `backend/test/fixtures/realtime-frames/`,
+read by `envelopes.spec.ts` and `app/test/realtime/community_frames_test.dart`.
 
 ### 16.3 How protocol v1 grows, and why there is one socket
 
@@ -1384,7 +1411,10 @@ and the Flutter parser.
   (Q66).
 - **Reconnect:** on `reconnected` the client refetches the open community and
   session views over HTTP. A `live.session.changed` at or below the held
-  version is ignored; a newer one triggers one single-flight refetch.
+  version is ignored; a newer one triggers one single-flight refetch. As
+  landed in P5 for communities: the list, the open community and its roster
+  read again whenever the connection comes up, connected or reconnected
+  ([realtime.md §C6](realtime.md#c6-the-clients-contract-for-community-frames)).
 
 ---
 
@@ -1395,21 +1425,24 @@ and the Flutter parser.
 bound only in `lib/providers/app_providers.dart`; `RealtimeClient` and
 `realtime_frames.dart` (messaging and notification frames); media seams with
 Unavailable defaults (`lib/data/media/media_seams.dart`); `DataOrigin.mock` on
-mock data; no `livekit_client` or `flutter_webrtc` in `pubspec.yaml`.
+mock data; no `livekit_client` or `flutter_webrtc` in `pubspec.yaml`. P5
+(landed 2026-09-24) added the community rows marked below; the routes are
+`/communities`, `/communities/:communityId` and
+`/communities/:communityId/members`, reached from Profile.
 
 | Piece | Proposal | Phase |
 | --- | --- | --- |
-| `CommunityRepository` | `communities({scope, cursor})`, `community(id)`, `members(id, cursor)`; `addMembers`, `removeMember`, `leave`; `createInvitation(id, terms)` → `{invitation, token}` (token shown once); `invitations`, `revokeInvitation`; `join(token)` (POST body); `lock`, `unlock`; `grants`, `grant`, `revokeGrant`, `transferOwnership` (P3). HTTP + mock | P5 |
+| `CommunityRepository` | `communities({scope, cursor})`, `community(id)`, `members(id, cursor)`; `addMembers`, `removeMember`, `leave`; `createInvitation(id, terms)` → `{invitation, token}` (token shown once); `invitations`, `revokeInvitation`; `join(token)` (POST body); `lock`, `unlock`; `grants`, `grant`, `revokeGrant`, `transferOwnership` (P3). HTTP + mock. **As landed (P5): reads only** — `communities({cursor})` (always `scope=mine`), `community(id)`, `members(id, {cursor})`, HTTP and mock; every other method is deferred | P5: reads landed; the rest deferred, to be scheduled |
 | `LiveRepository` | `currentSession(communityId)`, `session(sessionId)`, `start(communityId)`; `join(sessionId)` → `LiveMediaGrant` (redacted `toString`); `raiseHand`, `lowerHand`, `hands`; `grant`, `decline`, `revoke`, `end`; `claimScreenShare`, `stopScreenShare`. HTTP + mock | P7 |
 | `AttendanceRepository` | only when the hold lifts | P9 |
-| `MessagingRepository` | `+ conversationForCommunity(id)`; `Conversation.communityId: String?` | P5 |
-| Capability and state models | `CommunityView {id, title, state (+unknown), lifecycleVersion, memberCount, me: {standing, capabilities: Set<CommunityCapability (+unknown)>, participation}}`; `LiveSessionView` with `stateVersion` and server-computed `me` flags. Unknown enum values map to `unknown` and are ignored; missing booleans are false | P5, P7 |
+| `MessagingRepository` | `+ conversationForCommunity(id)`; `Conversation.communityId: String?` | P5 (landed) |
+| Capability and state models | `CommunityView {id, title, state (+unknown), lifecycleVersion, memberCount, me: {standing, capabilities: Set<CommunityCapability (+unknown)>, participation}}`; `LiveSessionView` with `stateVersion` and server-computed `me` flags. Unknown enum values map to `unknown` and are ignored; missing booleans are false. **As landed (P5):** `Community {id, title, status (+unknown), lifecycleVersion, memberCount, createdAt, me: CommunityMe {standing (null: oversight), joinedAt, capabilities, participation}}` in `lib/data/models/communities.dart`, with `canOpenChat` (participation holds `community.chat.read`) and `canViewMembers` (capabilities hold `community.members.view`) | P5 (landed), P7 |
 | `LiveMediaClient` seam | `{isAvailable, state, states, connect(grant), setMicrophoneEnabled, setScreenShareEnabled, disconnect}`, bound to `UnavailableLiveMediaClient`. The UI says plainly that live audio is unavailable in this build. `LiveKitLiveMediaClient` becomes the only file importing `livekit_client` in P7b (an ADR plus device evidence) | P7, P7b |
-| Frame families | `CommunityEvent` and `LiveEvent` `RealtimeEvent` families as part files of `realtime_frames.dart`, parsed from the shared golden fixtures | P5, P7 |
-| Controllers | `CommunityController`: on `community.locked`/`unlocked` with a newer `lifecycleVersion`, records the version and makes one single-flight refetch of `GET /communities/:id`, because `me.capabilities` includes the lifecycle gate and is never recomputed on the client; `member.removed` puts the community away; `access.changed` refetches. `LiveSessionController`: version-gated refetch; reconnect catch-up; `ROOM_DELETED` → refetch the session; `DUPLICATE_IDENTITY` → no automatic rejoin ([Q60](open-questions.md#q60--one-account-on-several-devices-in-a-session)) | P5, P7 |
-| Deep links | `/invite#<token>`: the token travels only in the URL fragment, which browsers never send in requests or `Referer` headers (the web app uses the path URL strategy, `url_strategy_web.dart:9`, so a path or query would reach the static host). The app reads it from the fragment, holds it in memory, requires sign-in, POSTs it once in the body, replaces the history entry, never logs or prints it. Other links carry ids only and are resolved over HTTP | P5 |
-| Mock parity | `MockCommunityRepository` and `MockLiveRepository` reproduce the server rules (idempotent join, max-uses refusal, locked refusals per the PROVISIONAL table (Q46), one open hand, the speaker cap, idempotent end) and carry `DataOrigin.mock`. Mock mode never produces a usable media grant | P5, P7 |
-| Guards | No `livekit_client`, `flutter_webrtc` or `dart_webrtc` in `pubspec.yaml` or `lib/` (P0; after P7b, one adapter file only). Screens and `core/widgets` never import `package:http`, `web_socket`, `api_client.dart`, repository implementations or `websocket_realtime_client.dart`. Community and live features never read `CurrentUser.permissions` or roles. Nothing labels anyone "present" or turns a snapshot into a ratio | P0, P5, P7, P9 |
+| Frame families | `CommunityEvent` and `LiveEvent` `RealtimeEvent` families as part files of `realtime_frames.dart`, parsed from the shared golden fixtures. **As landed (P5):** `CommunityEvent` is declared in `realtime_frames.dart` itself, and parsed from `backend/test/fixtures/realtime-frames/` in its test | P5 (landed), P7 |
+| Controllers | `CommunityController`: on `community.locked`/`unlocked` with a newer `lifecycleVersion`, records the version and makes one single-flight refetch of `GET /communities/:id`, because `me.capabilities` includes the lifecycle gate and is never recomputed on the client; `member.removed` puts the community away; `access.changed` refetches. `LiveSessionController`: version-gated refetch; reconnect catch-up; `ROOM_DELETED` → refetch the session; `DUPLICATE_IDENTITY` → no automatic rejoin ([Q60](open-questions.md#q60--one-account-on-several-devices-in-a-session)). **As landed (P5):** `CommunityController` as above, and the viewer's `member.added`, or the connection coming up, also refetches; `CommunityListController`, `CommunityMembersController`, and the chat opener, which asks `GET /messaging/communities/:communityId/conversation` and opens the ordinary conversation route; messaging's controllers follow community frames ([realtime.md §C6](realtime.md#c6-the-clients-contract-for-community-frames)) | P5 (landed), P7 |
+| Deep links | `/invite#<token>`: the token travels only in the URL fragment, which browsers never send in requests or `Referer` headers (the web app uses the path URL strategy, `url_strategy_web.dart:9`, so a path or query would reach the static host). The app reads it from the fragment, holds it in memory, requires sign-in, POSTs it once in the body, replaces the history entry, never logs or prints it. Other links carry ids only and are resolved over HTTP | P5 in the plan; **not built in P5: deferred, to be scheduled** |
+| Mock parity | `MockCommunityRepository` and `MockLiveRepository` reproduce the server rules (idempotent join, max-uses refusal, locked refusals per the PROVISIONAL table (Q46), one open hand, the speaker cap, idempotent end) and carry `DataOrigin.mock`. Mock mode never produces a usable media grant. **As landed (P5):** `MockCommunityRepository` serves the reads — refusals for an unknown community and for a roster without `community.members.view`, the lifecycle applied to `me`, and a 30,000-member community whose roster is built a page at a time; join, max-uses and invitation parity wait for the deferred management calls | P5 (reads landed), P7 |
+| Guards | No `livekit_client`, `flutter_webrtc` or `dart_webrtc` in `pubspec.yaml` or `lib/` (P0; after P7b, one adapter file only). Screens and `core/widgets` never import `package:http`, `web_socket`, `api_client.dart`, repository implementations or `websocket_realtime_client.dart`. Community and live features never read `CurrentUser.permissions` or roles. Nothing labels anyone "present" or turns a snapshot into a ratio. **As landed:** `live_boundaries_test.dart` (P0); `community_boundaries_test.dart` (P5) for community screens, widgets and state | P0 (landed), P5 (landed), P7, P9 |
 
 ---
 
@@ -1611,10 +1644,13 @@ only when the gates hold for the new size:
 
 | Gate | What | Phase |
 | --- | --- | --- |
-| G1 | `OnlineAudience` in realtime (fan-out bounded by online accounts, not members) | P5 |
+| G1 | `OnlineAudience` in realtime (fan-out bounded by online accounts, not members) | P5 (landed 2026-09-24; [realtime.md §C5](realtime.md#c5-onlineaudience-fan-out-bounded-by-who-is-connected-gate-g1)) |
 | G2 | the partial index on current participants in messaging | P4 |
 | G3 | load profile 4 run, and its results filed | P8 |
 | G4 | [Q27](open-questions.md#q27--how-long-are-notifications-kept) and Q28 answered, or the per-reader notification cost explicitly accepted | policy |
+
+G1 and G2 have landed; G3 and G4 do not hold, so the switch keeps its
+default of 250.
 
 Live sessions above the measured cap are likewise never enabled.
 
@@ -1690,9 +1726,9 @@ institutional cap is Q57's.
 | LiveKit adapter contract suite | Against a pinned LiveKit server in CI with `room.auto_create=false`, skipped without credentials: `ensureRoom` idempotent and surfacing errors; decoded tokens carry exactly the expected grants (listener: no sources, no data; speaker: MICROPHONE; presenter: SCREEN_SHARE; identity = user id; name from the directory; TTL); an absent identity maps to `not_connected`; `removeParticipant` and `endRoom` work; `listParticipants` is mapped and filtered; the provider's behaviour for a missing room is pinned. Behavioural checks (a listener's publish refused; a stale token cannot re-create a room) need a real client SDK in CI, chosen in P6 | P1, P6, P9 |
 | Reconciler | With a fake provider seeded with participants: a member removed while connected is ejected within one tick even when no event was published; a divergent grant is re-applied; a revoked speaker still publishing loses the right; corrective acts audited with a null actor; a consistent session produces nothing; the regression where a speaker demoted 12 minutes earlier rejoins with a refreshed token; a repeated violation → exactly one media reset | P6 |
 | Events and journals | Payload keys equal the contract type's keys, values are flat scalars; audit before event; a no-op writes neither; a failed audit publishes nothing; `publish()` resolves before relay or reaction work | each phase |
-| Realtime | `OnlineAudience` property test (members 0–30,000, online 0–10,000): result = members ∩ online within 1 + ⌈A/1000⌉ calls, and messaging results equal the existing walk; relay audiences match the matrix; frames equal the golden fixtures; over a real WebSocket, a removed member receives `community.member.removed` and nothing about the community after it; existing messaging relay specs unchanged | P5, P7 |
+| Realtime | `OnlineAudience` property test (members 0–30,000, online 0–10,000): result = members ∩ online within 1 + ⌈A/1000⌉ calls, and messaging results equal the existing walk; relay audiences match the matrix; frames equal the golden fixtures; over a real WebSocket, a removed member receives `community.member.removed` and nothing about the community after it; existing messaging relay specs unchanged. P5's part landed ([realtime.md §C8](realtime.md#c8-tested)) | P5 (landed), P7 |
 | Messaging projection | Permutation, duplication and loss converge; the `greatest()` regression; a missed leave then a rejoin is detected by `source_membership_id`; a removed member is refused as soon as the removal commits; a member whose role loses `communities.read` gets no frame and no notification (`COMMUNITY_CHAT_READ_CEILING`); above `communityChatMaxServedMembers` a send gets 412 `messaging.community_chat_over_capacity` and `canPost` is false; existing `security.spec` and `membership.spec` pass unmodified | P4 |
-| Flutter | Repository parsing against `MockClient` (unknown enums → unknown, missing booleans → false); capability-driven UI (every action shown iff its server boolean is true; no role reads); frame parsing from the golden fixtures, version ≠ 1 dropped; `LiveSessionController` state machine with fakes; `CommunityController` version handling; the `/invite` flow never logs the token; mock parity; architecture tests; the layout table at every viewport; attendance screens never compute a ratio | P0, P5, P7, P9 |
+| Flutter | Repository parsing against `MockClient` (unknown enums → unknown, missing booleans → false); capability-driven UI (every action shown iff its server boolean is true; no role reads); frame parsing from the golden fixtures, version ≠ 1 dropped; `LiveSessionController` state machine with fakes; `CommunityController` version handling; the `/invite` flow never logs the token; mock parity; architecture tests; the layout table at every viewport; attendance screens never compute a ratio. P5's part landed without the `/invite` flow, which is deferred ([realtime.md §C8](realtime.md#c8-tested)) | P0, P5 (landed), P7, P9 |
 
 **Brief §27 coverage:** community authorization, membership isolation,
 teacher scope and delegated scope → domain truth tables and use cases;
@@ -1716,7 +1752,8 @@ never edited.
 After P4's review came [0022](decisions/0022-community-chat-delivery-check.md),
 accepted 2026-09-24. It replaces 0018's delivery shortcut. 0018 keeps its
 text and gains only a status line and notes pointing to 0022 (the convention
-in [decisions/README.md](decisions/README.md)).
+in [decisions/README.md](decisions/README.md)). 0021 gains the same for
+decision 7, whose statement count included the lag filter's `statesOf`.
 
 | ADR | Decision | Amends or supersedes |
 | --- | --- | --- |
@@ -1725,8 +1762,8 @@ in [decisions/README.md](decisions/README.md)).
 | [0018](decisions/0018-community-chat-projection.md) | A community chat is a CHANNEL conversation plus `community_id`; messaging keeps a named, versioned, non-authoritative projection and asks Communities on every access; no write port; gates G1–G4 | Supersedes ADR 0011 §4–5 in part; amends messaging.md and the `MESSAGE_RECIPIENTS` comment. Superseded in part by 0022 (its lag filter) |
 | [0019](decisions/0019-community-scoped-live-sessions.md) | Community-scoped live sessions: Postgres truth, level-triggered LiveKit convergence, the presenter slot, narrow RTC ports, `auto_create=false`, capacity from measurement | Amends ADR 0003; supersedes the LiveRoom/halaqa design, "no screen share by construction" and the Redis queue plan (`realtime.md:542-553`) |
 | [0020](decisions/0020-attendance-snapshots.md) | Attendance snapshots are immutable observations owned by a new leaf `attendance` module; implementation HELD | Supersedes in part ADR 0006's attendance example and module-boundaries.md's "operations derives attendance" |
-| [0021](decisions/0021-cross-cutting-rules-for-new-modules.md) | Events in contracts; journals; durability classes and outbox triggers; the realtime transport matrix; protocol v1 growth; `FailureKind 'unavailable'`; executable guards; one API instance until P11 | Amends ADR 0006, ADR 0009 and ADR 0012 |
-| [0022](decisions/0022-community-chat-delivery-check.md) | Every community-chat recipient page is checked against Communities; a divergence rebuilds the projection in the sync's worker (accepted 2026-09-24, after P4's review) | Supersedes ADR 0018's delivery shortcut: decision 9's lag filter |
+| [0021](decisions/0021-cross-cutting-rules-for-new-modules.md) | Events in contracts; journals; durability classes and outbox triggers; the realtime transport matrix; protocol v1 growth; `FailureKind 'unavailable'`; executable guards; one API instance until P11 | Amends ADR 0006, ADR 0009 and ADR 0012. Superseded in part by 0022 (decision 7's count of a community-chat page) |
+| [0022](decisions/0022-community-chat-delivery-check.md) | Every community-chat recipient page is checked against Communities; a divergence rebuilds the projection in the sync's worker (accepted 2026-09-24, after P4's review) | Supersedes ADR 0018's delivery shortcut: decision 9's lag filter, and with it the lagging-only `statesOf` in ADR 0021 decision 7's count |
 
 ---
 
@@ -1813,7 +1850,8 @@ and [Q36](open-questions.md#q36--tahajji-دورة-التهجي-وإعداد-ال
 | P2 Communities core | **Landed 2026-09-23.** The module (domain, Postgres and in-memory adapters, `/communities`, journal, events); stints, invitation links with the creator re-check, lock/unlock; `COMMUNITY_AUTHORIZATION` (membership, owner and oversight bases), `COMMUNITY_MEMBERSHIP`, `COMMUNITY_DIRECTORY`; four catalogue leaves with migration 0009 and the schema with 0010; the boundary spec; the concurrency suite; `EXPLAIN` at 30,000 and 100,000 members. Choices made during implementation are recorded in [communities.md](communities.md) |
 | P3 Delegation | **Landed 2026-09-23.** `communities_capability_grants` (migration 0011); grant, revoke, list grants and transfer ownership (`/communities/:id/grants`, `PUT /communities/:id/owner`); the grant basis in the evaluator, re-verified under lock; grants ended with their stint or when their holder becomes owner; dormancy; the subset rule for a delegate's removals; the link-creator re-check's grant lookup; `COMMUNITY_CAPABILITY_HOLDERS`; `communities.capability.granted/revoked` and `communities.ownership.transferred`. Choices made during implementation are recorded in [communities.md](communities.md) |
 | P4 Community chat | **Landed 2026-09-24.** Migration 0012 (`community_id`, `projected_membership_version`, the `source_*` columns, their shape CHECKs, the replaced title CHECK, `conversations_community_unique`, and the G2 index `conversation_participants_current_idx`); the pure register `projectMember` and the applier on both adapters; idempotent materialization; `CommunityChatSync`, `CommunityChatSweeper`, `CommunityChatReconciler`; the `ConversationAccess` branch with repair on access; posting through the `community.chat.post` permit and the capacity switch (`MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS`, default 250); the 412 and 403 refusals; every recipient page checked against Communities ([ADR 0022](decisions/0022-community-chat-delivery-check.md), which replaced the planned lag filter) and the `COMMUNITY_CHAT_READ_CEILING` narrowing; divergence signals that rebuild the projection in the sync's worker; `authorizeEach` list views; `GET /messaging/communities/:communityId/conversation`. Posting stays switched off above 250 members until G1 (P5), G3 (P8) and G4 hold. No Flutter change (P5). Choices made during implementation are recorded in [community-chat.md](community-chat.md) |
-| P5–P8, P10–P12 | not started |
+| P5 Community realtime and Flutter communities | **Landed 2026-09-24.** `ConnectionManager.onlineUserIds()` and `onlineAudience` (`realtime/application/online-audience.ts`: no call when nobody is online, at most 1 + ⌈A/1000⌉ page calls); G1: `MessagingRealtimeRelay` resolves its recipients through it, and the existing relay specs pass unmodified; `CommunitiesRealtimeRelay`, wired by `RealtimeModule` importing `CommunitiesModule` and reaching only its contracts (`realtime-boundaries.spec.ts`), with every audience re-asked of Communities at delivery time (the person's latest stint; a lock's `heads`, then the ACTIVE members online) and narrowed by `COMMUNITY_VIEW_CEILING`, P5's one Communities contract addition, which `community.view`'s act rule now reads; the five `community.*` frames of protocol v1 and their golden fixtures in `backend/test/fixtures/realtime-frames/`; no client frame, `subscribe` still conversation-only, the version still 1; relay, WebSocket API, Postgres and scale specs, with `EXPLAIN` at 30,000 ACTIVE and 100,000 departed stints. Flutter: a read-only `CommunityRepository` (HTTP and mock), the models, the `CommunityEvent` family, `/communities`, `/communities/:communityId` and `…/members` driven by `me.capabilities` and `me.participation` (never roles), `conversationForCommunity` and `Conversation.communityId` with the chat opened as an ordinary conversation, and `community_boundaries_test.dart`. No migration, domain event, notification type or messaging protocol change; posting stays switched off above 250 members until G3 (P8) and G4 hold. **Narrowed on purpose:** the `/invite#<token>` deep link and every management action in the app (adding and removing members, leaving, creating and revoking invitations, joining by token, locking and unlocking, grants and their revocation, ownership transfer) are not in P5; they are deferred, to be scheduled. **Changed from the plan:** the `community.access.changed` `eventId` ends in a digest of the fact instead of its time, so two access changes within one millisecond never share an id ([§16.2](#162-frames-added-to-protocol-v1)). Choices made during implementation are recorded in [realtime.md Part C](realtime.md#part-c--communities-in-real-time) |
+| P6–P8, P10–P12 | not started |
 | P9 Attendance | **held** (Q40 ruling: until Q68/Q69 and the related attendance questions are answered) |
 
 Every phase exits with `npm run verify` and `flutter test` green. No phase
@@ -1863,10 +1901,10 @@ phase named. Line numbers are at `9670c47`.
 
 | File | Change | Phase |
 | --- | --- | --- |
-| `module-boundaries.md` | Sections for communities and attendance (held); messaging depends on communities contracts and owns the link and projection; live is community-scoped with three new contracts; realtime depends on communities and live contracts; drop "operations derives attendance" (`:146-149`); rewrite `:57-60`, which carries a correction note | P0, P2, P6 |
+| `module-boundaries.md` | Sections for communities and attendance (held); messaging depends on communities contracts and owns the link and projection; live is community-scoped with three new contracts; realtime depends on communities and live contracts (communities done in P5); drop "operations derives attendance" (`:146-149`); rewrite `:57-60`, which carries a correction note | P0, P2, P6 |
 | `open-questions.md` | Q1's provisional line revised when ADR 0017 lands (a pointer is already there) | P6 |
 | `events.md` | Add the communities, new live and attendance events; remove "operations (attendance)" from `live.session.ended`; durability classes and T1–T4 | P0, P2, P6 |
-| `realtime.md` | Replace "no screen share by construction" (`:420-428`); rewrite the leaked-token claim (`:505-510`), which carries a correction note; mark the Redis queue and presence plan (`:542-553`) superseded; `:573` cites the new rule; add the matrix, frames, `OnlineAudience` and limits | P0, P5, P6 |
+| `realtime.md` | Replace "no screen share by construction" (`:420-428`); rewrite the leaked-token claim (`:505-510`), which carries a correction note; mark the Redis queue and presence plan (`:542-553`) superseded; `:573` cites the new rule; add the matrix, frames, `OnlineAudience` and limits (the communities half done in P5: [Part C](realtime.md#part-c--communities-in-real-time)) | P0, P5, P6 |
 | `authorization.md` | Ceiling AND module-owned standing; retire the host-only text (`:161-190`, `:219-243`) when P6 lands; delegation as Communities-owned grants (`:317-326`) | P2, P3, P6 |
 | `messaging.md` | Community chats, 412 refusals, `members_hidden`, no messaging cap, the lag filter, G1–G4, the new route | P4 |
 | `dependency-rules.md` | The corrected regex; the LiveKit rule; rules-match, no-`forwardRef`, exports-are-contracts; contracts import specific identity files, never the barrel | P0 |

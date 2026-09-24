@@ -15,9 +15,10 @@ From 0022 on, when a later ADR replaces only part of an earlier one, the
 earlier ADR stays `Accepted`, marked "superseded in part by NNNN". It gains
 only that status line and a note at each replaced decision pointing to its
 successor; its text is otherwise left as decided. The first such pair is
-0018 → 0022. Earlier partial supersessions (0016–0021 over 0003, 0005, 0006,
-0009, 0011 and 0012) are recorded only in the ADR that makes them, as the
-package note below says.
+0018 → 0022. 0021 → 0022 is the second: 0021's decision 7 counted the lag
+filter's `statesOf` in a community-chat page's cost. Earlier partial
+supersessions (0016–0021 over 0003, 0005, 0006, 0009, 0011 and 0012) are
+recorded only in the ADR that makes them, as the package note below says.
 
 | # | Decision | Status |
 | --- | --- | --- |
@@ -41,7 +42,7 @@ package note below says.
 | [0018](0018-community-chat-projection.md) | Community chat: messaging keeps a named, versioned projection of community membership | Accepted; superseded in part by [0022](0022-community-chat-delivery-check.md) |
 | [0019](0019-community-scoped-live-sessions.md) | Community-scoped live sessions: Postgres truth, level-triggered LiveKit convergence, a presenter slot, narrow RTC ports | Accepted |
 | [0020](0020-attendance-snapshots.md) | Attendance snapshots are observations owned by a new attendance module (implementation held) | Accepted (implementation held) |
-| [0021](0021-cross-cutting-rules-for-new-modules.md) | Cross-cutting rules for the new modules: events in contracts, journals, durability classes, the realtime transport matrix, protocol v1 growth, `FailureKind 'unavailable'`, executable guards | Accepted |
+| [0021](0021-cross-cutting-rules-for-new-modules.md) | Cross-cutting rules for the new modules: events in contracts, journals, durability classes, the realtime transport matrix, protocol v1 growth, `FailureKind 'unavailable'`, executable guards | Accepted; superseded in part by [0022](0022-community-chat-delivery-check.md) |
 | [0022](0022-community-chat-delivery-check.md) | Community chat: every recipient page is checked against Communities, and a divergence rebuilds the projection (replaces 0018's delivery shortcut) | Accepted |
 
 > **`Proposed`** (added 2026-09-23): a design under review, with nothing

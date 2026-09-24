@@ -45,7 +45,7 @@ backend/src/
     live/          realtime audio rooms, raise-hand queue, moderation
     files/         upload policy, storage keys, signed access
     notifications/ each person's inbox: what they were told, read or not; push
-    realtime/      messaging events and notifications to connected clients, over WebSocket
+    realtime/      messaging, notification and community events to connected clients, over WebSocket
     automation/    scheduled and triggered actions
     reporting/     read models, KPIs, Owner Command Center widgets
 ```
@@ -59,7 +59,7 @@ Depth of implementation varies deliberately:
 | `files` | **Messaging V1**: allow-listed, verified uploads; signed links; local adapter with its transfer routes. On Postgres, tested |
 | `messaging` | **Messaging V1**: DMs, groups, channels; server-ordered, idempotent sends; read state; keyset pages; membership-first authorization. **Community chats (P4)**: a community's chat is an ordinary conversation whose membership Communities decides, on every request ([community-chat.md](community-chat.md)). On Postgres, tested |
 | `notifications` | **Notifications V1**: a persistent inbox fed by messaging's facts; idempotent by a database constraint; read state, capped unread count, keyset pages; per-channel preferences; device registration; push behind a provider port (logging adapter — no provider chosen, Q24). On Postgres, tested |
-| `realtime` | **Realtime Messaging V1**: authenticated WebSocket at `/realtime`; messaging events to current members' connections, per event; each person's new notifications and reads to their own connections; multi-device; heartbeat; limits. Single instance, tested on Postgres |
+| `realtime` | **Realtime Messaging V1**: authenticated WebSocket at `/realtime`; messaging events to current members' connections, per event; each person's new notifications and reads to their own connections; multi-device; heartbeat; limits. **Community frames (P5)**: a community's lock and unlock to its members online, and a person's own addition, removal and access change to them, as ids-only hints asked of Communities at delivery time; fan-out bounded by the accounts online, not by members (gate G1) ([realtime.md Part C](realtime.md#part-c--communities-in-real-time)). Single instance, tested on Postgres |
 | `academic` | **Academic Core V1**: sections → programs → halaqat, seeded from the printed institution profile (provisional: the owner's later description differs and is under [reconciliation](academic-reconciliation.md)); dated enrollments and teacher assignments with history; one-active invariants in the database; resource-level access (a teacher's roster through their assignment); `ACADEMIC_RELATIONSHIPS` for later modules ([academic.md](academic.md)). On Postgres, tested |
 | `communities` | **Communities core (P2) and delegation (P3)**: persistent spaces (the brief's "groups") and who belongs — membership stints with history, invitation links (only the token's SHA-256 is stored), OPEN/LOCKED; capabilities the owner delegates to members one grant at a time, revocation, and ownership transfer; one evaluator behind `COMMUNITY_AUTHORIZATION` (ceiling AND membership, ownership, a grant or oversight AND lifecycle); `COMMUNITY_MEMBERSHIP`, `COMMUNITY_CAPABILITY_HOLDERS` and `COMMUNITY_DIRECTORY` for later consumers ([communities.md](communities.md)). On Postgres, tested at 30,000 and 100,000 members |
 | the other five | Contracts and a Nest module only — deliberately empty |
@@ -240,6 +240,13 @@ notification center and its settings, one unread count behind every badge,
 and a `PushTokenSource` seam with no push SDK behind it yet. The only change
 to Home, Programs and Profile is the badge on their existing bells and row.
 
+P5 added a read-only `CommunityRepository` (HTTP and in-memory), the
+community frames, and three screens reached from Profile — the viewer's
+communities, one community, and its roster for those allowed to see it —
+showing only what the server's `me` block allows, never what a role
+suggests; a community's chat opens as an ordinary conversation. Managing a
+community from the app, and the `/invite` link, are deferred.
+
 The Flutter side holds **no secrets**. It never sees the LiveKit API secret; it
 receives a short-lived, capability-scoped join token minted server-side.
 
@@ -253,7 +260,7 @@ receives a short-lived, capability-scoped join token minted server-side.
 - [session-management.md](session-management.md) — devices, rotation, revocation
 - [authorization.md](authorization.md) — how permission decisions are made
 - [events.md](events.md) — how modules stay decoupled
-- [realtime.md](realtime.md) — messaging in real time, and the 2500-participant audio design
+- [realtime.md](realtime.md) — messaging and community facts in real time, and the 2500-participant audio design
 - [messaging.md](messaging.md) — messaging V1: model, ordering, idempotency, authorization
 - [notifications.md](notifications.md) — notifications V1: the inbox, deduplication, delivery, push, devices
 - [storage.md](storage.md) — files and binaries

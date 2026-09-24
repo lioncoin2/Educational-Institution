@@ -1,8 +1,8 @@
 # 0021 — Cross-cutting rules for the new modules: events in contracts, journals, durability classes, the realtime transport matrix, protocol v1 growth, `FailureKind 'unavailable'`, executable guards
 
-**State: ACCEPTED (2026-09-23) — the executable guards and the event and failure-kind rules landed in P0; the rest lands with the phases that need it ([the hub's §25](../communities-live-attendance.md#25-implementation-phases)).**
+**State: ACCEPTED (2026-09-23) — the executable guards and the event and failure-kind rules landed in P0; decisions 7 and 8 for Communities (`onlineAudience`, gate G1, `CommunitiesRealtimeRelay`, the five `community.*` frames and their golden fixtures) landed in P5 (2026-09-24), where the relay also re-checks each person's stint and narrows every audience by a view ceiling ([realtime.md Part C](../realtime.md#part-c--communities-in-real-time)); the rest lands with the phases that need it ([the hub's §25](../communities-live-attendance.md#25-implementation-phases)).**
 
-**Status:** Accepted
+**Status:** Accepted; superseded in part by [0022](0022-community-chat-delivery-check.md) (2026-09-24)
 **Accepted:** 2026-09-23, by the user (the architecture design was approved to proceed; the Q40 ruling is recorded in [0016](0016-communities-module.md)).
 **Date:** 2026-09-23
 
@@ -153,6 +153,12 @@ Everything below is proposed. None of it exists today.
    (the `community.chat.post` permit is granted and `member_count` is within
    `communityChatMaxServedMembers`) is false, so there is no `message.sent`
    to fan out.
+
+   > **Superseded in part by [0022](0022-community-chat-delivery-check.md):**
+   > a community chat's `MESSAGE_RECIPIENTS` page no longer runs `statesOf`
+   > only while the projection lags. It runs one `statesOf` on every non-empty
+   > page, lagging or not, so k counts it on every such page. The read
+   > ceiling's two `withPermission` calls are unchanged.
 
 8. **Protocol v1 grows only by additive server frames**, and the version is
    never bumped. New frames: `community.member.added`,

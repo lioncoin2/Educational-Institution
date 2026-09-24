@@ -1,6 +1,6 @@
 # 0018 — Community chat: messaging keeps a named, versioned projection of community membership
 
-**State: ACCEPTED (2026-09-23) — implemented in P4. Until then nothing here exists.**
+**State: ACCEPTED (2026-09-23) — implemented in P4 (2026-09-24); decision 12's gate G1 (`OnlineAudience` in realtime) landed in P5 (2026-09-24).**
 
 **Status:** Accepted; superseded in part by [0022](0022-community-chat-delivery-check.md) (2026-09-24)
 **Accepted:** 2026-09-23, by the user (the architecture design was approved to proceed; the Q40 ruling is recorded in [0016](0016-communities-module.md)).

@@ -186,7 +186,9 @@ gate, as a `CommunityPermit` naming its basis and grant),
 `members` — facts for trusted consumers, never access),
 `COMMUNITY_CAPABILITY_HOLDERS` (`list`: the owner and the effective grantees
 of one capability, keyset-paged — never an overseer), `COMMUNITY_DIRECTORY`
-(titles, for display); the act vocabulary (`community.*`), the wire
+(titles, for display); the act vocabulary (`community.*`) with the identity
+ceilings that principal-less consumers narrow by (`COMMUNITY_CHAT_READ_CEILING`
+for messaging, P4; `COMMUNITY_VIEW_CEILING` for realtime, P5), the wire
 vocabulary and the event types.
 
 **Events.** `communities.community.created|locked|unlocked`,
@@ -200,8 +202,8 @@ the permission catalogue), `shared`. Nothing else — an architecture test
 
 **Must not know.** Conversations and chat data, live sessions and LiveKit,
 attendance, realtime, notifications, academic and halaqat, and every other
-module's tables. Messaging, Live and Attendance ask Communities; Communities
-never asks them.
+module's tables. Messaging, Realtime, Live and Attendance ask Communities;
+Communities never asks them.
 
 ---
 
@@ -484,14 +486,15 @@ delivery know requests and recipients, never why.
 
 ## realtime
 
-**State:** implemented — Realtime Messaging V1. See
-[realtime.md Part M](realtime.md) and
+**State:** implemented — Realtime Messaging V1, plus community frames (P5).
+See [realtime.md Part M](realtime.md) and
+[Part C](realtime.md#part-c--communities-in-real-time), and
 [ADR 0012](decisions/0012-realtime-messaging-transport.md).
 
-**Responsibility.** Delivering messaging's facts, and each person's own
-notifications, to the people entitled to them while they are connected —
-nothing else. It stores nothing and decides no messaging or notification
-rule.
+**Responsibility.** Delivering messaging's facts, each person's own
+notifications, and Communities' facts to the people entitled to them while
+they are connected — nothing else. It stores nothing and decides no
+messaging, notification or community rule.
 
 **Owned state.** In memory, per instance: authenticated connections
 (connection id, account, session, expiry, last seen — no roles, memberships
@@ -499,13 +502,17 @@ or content) and connections still authenticating.
 
 **Parts.** `domain/` — the wire protocol v1 (frames, error and close codes),
 the `ClientLink` port, provisional limits. `application/` —
-`ConnectionManager` (register, unregister, per-account lookup, send to one
-or many accounts, drop dead connections), `RealtimeSessions` (authenticate,
-re-authenticate, subscribe, ping, sweep), `MessagingRealtimeRelay` (the
-event subscriber: recipients, render once, fan out),
-`NotificationRealtimeRelay` (notifications' events → the recipient's own
-connections). `infrastructure/` —
-`WebSocketTransport`, the only code that knows a socket library (`ws`).
+`ConnectionManager` (register, unregister, per-account lookup, the accounts
+online, send to one or many accounts, drop dead connections),
+`RealtimeSessions` (authenticate, re-authenticate, subscribe, ping, sweep),
+`MessagingRealtimeRelay` (the event subscriber: recipients, render once, fan
+out), `NotificationRealtimeRelay` (notifications' events → the recipient's
+own connections), `CommunitiesRealtimeRelay` (Communities' events → the
+person concerned, or a community's ACTIVE members online, asked of
+Communities at delivery time), and `onlineAudience` (an audience ∩ the
+accounts online here, in at most 1 + ⌈A/1000⌉ calls; both group relays use
+it). `infrastructure/` — `WebSocketTransport`, the only code that knows a
+socket library (`ws`).
 
 **Public contract.** None: nothing depends on realtime, and only the
 composition root imports it (architecture test). Its API is the wire
@@ -515,31 +522,43 @@ protocol at `/realtime`.
 `messaging.message.sent`, `messaging.message.read`,
 `messaging.participant.added`, `messaging.participant.removed`,
 `notifications.notification.created`, `notifications.notification.read`,
-`notifications.notification.all_read`. Publishes none.
+`notifications.notification.all_read`, and (P5)
+`communities.member.added`, `communities.member.removed`,
+`communities.capability.granted`, `communities.capability.revoked`,
+`communities.ownership.transferred`, `communities.community.locked`,
+`communities.community.unlocked`. Publishes none.
 
 **Depends on.** `identity/contracts` (`ACCESS_TOKEN_AUTHENTICATOR`,
-`AUTHORIZATION_SERVICE`, the `messaging.read` permission),
+`AUTHORIZATION_SERVICE`, the `messaging.read` permission, and
+`ACCOUNT_DIRECTORY.withPermission` for the community view ceiling),
 `messaging/contracts` (events, `MESSAGE_RECIPIENTS`, `MESSAGE_DELIVERY`,
 `MessageView`), `notifications/contracts` (events, `NOTIFICATION_READER`),
-`shared` (event subscriber, rate limiter, clock, ids), `platform`
-(configuration, for the handshake's origins and proxy trust).
+`communities/contracts` (P5: `COMMUNITY_MEMBERSHIP` — `statesOf`, `heads`,
+`members` —, `COMMUNITY_VIEW_CEILING`, `CommunityEvents`), `shared` (event
+subscriber, rate limiter, clock, ids), `platform` (configuration, for the
+handshake's origins and proxy trust). `RealtimeModule` imports
+`IdentityModule`, `MessagingModule`, `NotificationsModule` and
+`CommunitiesModule`.
 
-**Must not know.** Messaging's or notifications' tables and rules, identity's
-internals. Architecture tests assert each — realtime reaches messaging,
-identity and notifications through their contracts only, and stores no
-notification — and that no module but this one's infrastructure imports a
-WebSocket library.
+**Must not know.** Messaging's, notifications' or Communities' tables and
+rules, identity's internals. Architecture tests assert each — realtime
+reaches messaging, identity, notifications and Communities through their
+contracts only (and each module file, for wiring), and stores no
+notification; `realtime-boundaries.spec.ts` also proves it does use
+Communities' `membership.ts`, `events.ts` and `capabilities.ts`, so that
+check is not vacuous — and that no module but this one's infrastructure
+imports a WebSocket library. Communities never imports realtime
+(`communities-boundaries.spec.ts`).
 
 > **Proposed change:** see
 > [communities-live-attendance.md §3](communities-live-attendance.md#3-dependency-graph)
 > and [§16](communities-live-attendance.md#16-realtime-transport-matrix)
 > (design only,
 > [ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md)
-> Accepted). Realtime would gain `CommunitiesRealtimeRelay` (P5) and
-> `LiveRealtimeRelay` (P7), and so also depend on `communities/contracts`
-> (`COMMUNITY_MEMBERSHIP.members`, `CommunityEvents`) and `live/contracts`
-> (`LIVE_AUDIENCE`, `LiveEvents`). It would still export nothing and be
-> imported only by the composition root.
+> Accepted). Realtime would gain `LiveRealtimeRelay` (P7), and so also
+> depend on `live/contracts` (`LIVE_AUDIENCE`, `LiveEvents`). It would still
+> export nothing and be imported only by the composition root.
+> `CommunitiesRealtimeRelay`, proposed here for P5, landed in P5 (above).
 
 ---
 

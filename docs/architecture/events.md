@@ -126,8 +126,11 @@ else's without importing platform's concrete bus. Now a subscriber registers in
 `onModuleInit` and unsubscribes in `onModuleDestroy`. Today's subscribers:
 notifications' `MessagingNotificationTranslator` (messaging's facts →
 notifications) and `PushDelivery` (its own `notifications.notification.created`
-→ devices), and realtime's `MessagingRealtimeRelay` and
-`NotificationRealtimeRelay`. None of them knows another exists.
+→ devices), realtime's `MessagingRealtimeRelay`,
+`NotificationRealtimeRelay` and `CommunitiesRealtimeRelay` (Communities'
+facts → the people they concern, P5), and messaging's `CommunityChatSync`
+(Communities' membership events as wake-ups, P4). None of them knows another
+exists.
 
 ### A subscriber must not hold up the publisher
 
@@ -138,7 +141,8 @@ returns, and the detached work logs its own failures. A send returns when its
 message is stored, never when everyone has been notified. The realtime relay
 and the notification translator also chain their detached work per
 conversation (the event's `aggregateId`), so one conversation's events are
-handled in the order they were published. Push delivery and the realtime
+handled in the order they were published; the community relay does the same
+per community. Push delivery and the realtime
 notification relay instead gather a turn of the event loop's
 `notification.created` events — a whole page of recipients — and serve it
 with one query.
@@ -218,12 +222,12 @@ events are grandfathered). Since Phase 0 that includes live's events
 | `academic.student.enrolled` · `academic.student.enrollment_ended` | academic — a new ACTIVE enrollment; one ended (COMPLETED / WITHDRAWN — provisional, and known not to cover moves: Q30, Q37) | attendance, notifications (Q28), reporting; none subscribed |
 | `academic.teacher.assigned` · `academic.teacher.assignment_ended` | academic | a teacher's workspace, notifications (Q28); none subscribed |
 | `communities.community.created` | communities — always followed by `member.added` for the owner | none in v1 |
-| `communities.community.locked` · `.unlocked` | communities — a real status change only, with its `lifecycleVersion` | realtime relay (P5), Live's `ProtectLiveSessions` accelerator (P6); none subscribed yet — no consumer enforces a lock from the event |
-| `communities.member.added` | communities — a manager's add (`source: ADDED`) or a link redemption (`INVITATION`), with its `membershipVersion` | **messaging — subscribed** (P4): a wake-up for the community chat's projection, reading only `communityId`; realtime relay (P5) |
-| `communities.member.removed` | communities — a leave (`reason: LEFT`) or a removal (`REMOVED`); class **S** | **messaging — subscribed** (P4): the same wake-up — access already ends at the commit, because every request asks Communities; Live ejection (P6), realtime relay (P5) |
+| `communities.community.locked` · `.unlocked` | communities — a real status change only, with its `lifecycleVersion` | **realtime — subscribed** (P5): `community.locked` / `.unlocked` to the ACTIVE members connected, unless a newer change has committed; Live's `ProtectLiveSessions` accelerator (P6). No consumer enforces a lock from the event |
+| `communities.member.added` | communities — a manager's add (`source: ADDED`) or a link redemption (`INVITATION`), with its `membershipVersion` | **messaging — subscribed** (P4): a wake-up for the community chat's projection, reading only `communityId`; **realtime — subscribed** (P5): `community.member.added` to the person added, while that stint is their latest |
+| `communities.member.removed` | communities — a leave (`reason: LEFT`) or a removal (`REMOVED`); class **S** | **messaging — subscribed** (P4): the same wake-up — access already ends at the commit, because every request asks Communities; **realtime — subscribed** (P5): `community.member.removed` to that person, while they are still out; Live ejection (P6) |
 | `communities.invitation.created` · `.revoked` | communities | none; never on any wire — revocation takes effect inside redemption |
-| `communities.capability.granted` · `.revoked` | communities — one per grant row the owner created, or revoked; a grant that ends with its stint is implied by `member.removed` | realtime relay (P5), Live re-evaluates a holder in a running session (P6); none subscribed yet |
-| `communities.ownership.transferred` | communities — with `basis` (`owner` \| `oversight`) and the new owner's `endedGrantIds` | realtime relay (P5); none subscribed yet |
+| `communities.capability.granted` · `.revoked` | communities — one per grant row the owner created, or revoked; a grant that ends with its stint is implied by `member.removed` | **realtime — subscribed** (P5): `community.access.changed` to the holder; Live re-evaluates a holder in a running session (P6) |
+| `communities.ownership.transferred` | communities — with `basis` (`owner` \| `oversight`) and the new owner's `endedGrantIds` | **realtime — subscribed** (P5): `community.access.changed` to the previous and the new owner |
 
 The `live.speaker.*`, `identity.*`, `messaging.*`, `notifications.*`,
 `academic.*` and `communities.*` events are raised by implemented code today; messaging's have two real subscribers,
@@ -231,7 +235,11 @@ notifications and realtime, notifications' have realtime and its own push
 delivery, and Communities' `member.added` and `member.removed` have messaging
 (P4) — as wake-ups only: messaging pulls the truth from
 `COMMUNITY_MEMBERSHIP.changesSince`, so a lost, repeated or reordered event
-changes nothing it would not also find by itself. The rest are declared so the vocabulary is settled before the
+changes nothing it would not also find by itself. Since P5 realtime subscribes
+to every Communities event but `community.created` and the invitation events,
+and likewise decides nothing from the event alone: it asks
+`COMMUNITY_MEMBERSHIP` who is concerned when it delivers
+([realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs)). The rest are declared so the vocabulary is settled before the
 modules arrive. Notifications' events carry ids, codes and channel flags — a
 notification's parameters (a sender's name) never travel in an event;
 realtime reads the stored notification through `NOTIFICATION_READER`. Their

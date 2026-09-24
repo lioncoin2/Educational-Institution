@@ -2,7 +2,8 @@
 
 **State: APPROVED (2026-09-23) — implemented in P4 (2026-09-24).** What was
 built, the choices made while building it, and the evidence are in
-[§20](#20-p4-as-implemented).
+[§20](#20-p4-as-implemented). Gate G1 and the Flutter side (§12.7) landed in
+P5 (2026-09-24, [§20.8](#208-deferred)).
 
 How messaging carries a community's chat (phase **P4**). Communities decides
 who belongs and who may read or post; messaging stores the messages and
@@ -582,7 +583,7 @@ requests.
 | Frames whose recipients were resolved before the commit | they may still arrive | existing at-most-once delivery |
 | Notification rows already stored | kept; they carry no message text, and opening one runs the checkpoint (404) | existing behaviour |
 | The projection row | on the wake-up, usually milliseconds; at worst the next sweep, 60 s (PROVISIONAL, Q26) | sync, sweeper. It affects only list views, the displayed member count and the capacity switch (§11.2) |
-| The removed person's app | the `community.member.removed` frame (P5), or the next 404 | realtime relay; HTTP |
+| The removed person's app | the `community.member.removed` frame (P5, landed), or the next 404 | realtime relay; HTTP |
 | The messages they wrote | kept | [Q3](open-questions.md#q3--what-is-the-retention-policy-for-files-messages-audit-entries-and-session-history), Q49 |
 
 "Atomically enough": the only requests accepted after the commit are those
@@ -707,7 +708,7 @@ figure is untested (`messaging.md:444-447`; `messaging-persistence.spec.ts:522-5
 
 | Gate | What | Where | Phase |
 | --- | --- | --- | --- |
-| G1 | `OnlineAudience`: fan-out bounded by accounts online on the instance, not by members | realtime, internal (§12.5) | P5 |
+| G1 | `OnlineAudience`: fan-out bounded by accounts online on the instance, not by members | realtime, internal (§12.5) | P5 (landed 2026-09-24) |
 | G2 | the partial index `conversation_participants_current_idx` on current participants | messaging (§12.3) | P4 |
 | G3 | load profile 4 has run, and its results are filed under `docs/architecture/load-tests/` | [hub §21](communities-live-attendance.md#21-load-testing-plan) | P8 |
 | G4 | Q27 and Q28 answered, or the cost of one notification row per reader per post explicitly accepted | notifications policy | — |
@@ -888,11 +889,15 @@ and `left_after_joined` accepts `left_at = joined_at` (`schema.ts:101-108`).
   accounts, using the existing `onlyUserIds` (`message-recipients.ts:40-44`).
   `MessagingRealtimeRelay.onlineMembers` (`messaging-relay.ts:207-219`) moves
   onto it, passing `visibleSequence` through. No contract changes.
+  **Landed in P5** as `onlineAudience` (`realtime/application/online-audience.ts`),
+  with `onlineMembers` now at `messaging-relay.ts:209-219`
+  ([realtime.md §C5](realtime.md#c5-onlineaudience-fan-out-bounded-by-who-is-connected-gate-g1)).
 - **No new frame for the chat.** It travels as the existing `message.sent` and
   `message.read`, with `conversationType` `'CHANNEL'`. `subscribe` is
   unchanged. Protocol v1 is not bumped. The `community.member.added` and
-  `community.member.removed` frames come from `CommunitiesRealtimeRelay` (P5),
-  to the affected user only ([hub §16](communities-live-attendance.md#16-realtime-transport-matrix)).
+  `community.member.removed` frames come from `CommunitiesRealtimeRelay` (P5,
+  landed), to the affected user only ([hub §16](communities-live-attendance.md#16-realtime-transport-matrix);
+  [realtime.md Part C](realtime.md#part-c--communities-in-real-time)).
 - **The connection gate stays `messaging.read`** (`realtime-sessions.ts:442-444`;
   [Q66](open-questions.md#q66--realtime-without-messagingread)). The
   `community.chat.read` ceiling includes `messaging.read`, so no reader of a
@@ -926,6 +931,13 @@ uses (§7.3). Two properties it relies on:
 - The current app already renders a community chat as a channel and posts
   according to `canPost`, because both come from the server
   (`messaging.dart:225-226`).
+- **Landed in P5.** Both bullets above, plus: the community screen opens the
+  chat by asking `conversationForCommunity` and then the ordinary
+  conversation route with the id it returns; a community chat that refuses
+  posting says so neutrally instead of showing the announcement-channel
+  text; `MessagingCopy` gains the community-chat codes; and the conversation
+  and its list follow the viewer's community frames
+  ([realtime.md §C6](realtime.md#c6-the-clients-contract-for-community-frames)).
 
 ---
 
@@ -1159,8 +1171,8 @@ and [A5](communities-live-attendance.md#a5-a-removed-member-loses-chat-and-live-
 | Events | With a bus spy: materialization and applies publish no `messaging.*` event and write no audit row; `message.sent` in a community chat carries `CHANNEL` | P4 |
 | Failure | A rejected Communities call gives 503 on HTTP and `SERVER_ERROR` on `subscribe`, never a success; the sweeper skips the tick | P4 |
 | Mock parity | The same contract suites run against Drizzle and the in-memory adapters, for messaging (materialize, apply, `communityChatsFor`) and for Communities (`authorize`, `changesSince`, `listHeads`) | P4 |
-| Realtime (G1) | `OnlineAudience` returns exactly the full walk's recipients, intersected with online accounts, over random memberships and online sets; with 30,000 members and 50 online it makes at most 2 calls. The existing relay specs pass | P5 |
-| Flutter | A community chat typed `CHANNEL` renders and posts according to `canPost` in the current app; `communityId` parsing and `conversationForCommunity` in the HTTP and mock repositories | P5 |
+| Realtime (G1) | `OnlineAudience` returns exactly the full walk's recipients, intersected with online accounts, over random memberships and online sets; with 30,000 members and 50 online it makes at most 2 calls. The existing relay specs pass | P5 (landed: `online-audience.spec.ts`, `messaging-relay-audience.spec.ts`, `community-chat-scale.spec.ts`) |
+| Flutter | A community chat typed `CHANNEL` renders and posts according to `canPost` in the current app; `communityId` parsing and `conversationForCommunity` in the HTTP and mock repositories | P5 (landed: `app/test/communities/`) |
 | Load (G3) | Profile 4 on the target topology: a 30,000-member chat at 0.1–20 messages/s with 1%, 10% and 33% online (realtime query rate, CPU, p99 send latency, notification rows/s); a join storm through one link (community-row lock wait, repair rate, send lock-wait p99); an import of 30,000 (total time, longest send stall) | P8 |
 
 ---
@@ -1505,10 +1517,22 @@ other existing messaging, realtime and notifications suite.
 
 Each item below is deliberately later, and none is needed for what P4 does:
 
-- **G1** `OnlineAudience` (P5), and the realtime `community.member.*` frames (P5).
+- **G1** `OnlineAudience` (P5), and the realtime `community.member.*` frames
+  (P5). **Landed in P5 (2026-09-24).** The relay asks `MESSAGE_RECIPIENTS`
+  only about the accounts connected here: on the scale fixture, a message
+  in the 30,000-member chat takes at most 2 recipient calls with 50 accounts
+  online and at most 4 with 2,500, instead of the old walk's 30 pages, and
+  reaches exactly whom the old walk reached (`community-chat-scale.spec.ts`).
+  Every page is still checked against Communities (ADR 0022). The five
+  `community.*` frames are in
+  [realtime.md Part C](realtime.md#part-c--communities-in-real-time).
 - **G3** load profile 4 (P8).
 - **G4** notification cost, which waits on Q27 and Q28.
+- **The switch is unchanged.** `MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS`
+  keeps its default of 250 after P5: G1 alone does not reopen posting.
 - **Flutter** (P5): parse `communityId`; `conversationForCommunity`.
+  **Landed in P5 (2026-09-24)**, with the chat opened from the community
+  screen as an ordinary conversation (§12.7).
 - **Metrics:** age of the oldest lag, lagging chats, repairs per minute,
   reconciler runs and orphan chats. Logs only until a metrics system exists.
 - **An operator route to run the reconciler on demand.** It runs by itself

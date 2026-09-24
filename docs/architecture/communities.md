@@ -1,6 +1,6 @@
 # Communities
 
-**State: APPROVED (2026-09-23) — implemented in phases: P2 (core), P3 (delegation), and P4's one contract addition.** What a phase has not delivered does not exist yet; [the hub's §25](communities-live-attendance.md#25-implementation-phases) records which phases have landed.
+**State: APPROVED (2026-09-23) — implemented in phases: P2 (core), P3 (delegation), and one contract constant each for P4 and P5.** What a phase has not delivered does not exist yet; [the hub's §25](communities-live-attendance.md#25-implementation-phases) records which phases have landed.
 
 The design of the `communities` module: the Community aggregate, membership,
 invitation links, the OPEN/LOCKED lifecycle (phase **P2**), and delegated
@@ -213,6 +213,25 @@ decides it. Nothing here decides an institutional policy.
 > nothing but identity (`communities-boundaries.spec.ts`,
 > `messaging-boundaries.spec.ts`). What a community chat does is
 > [community-chat.md](community-chat.md).
+
+> **P5 landed (2026-09-24): Communities' facts in real time.** Communities
+> gained one contract constant, `COMMUNITY_VIEW_CEILING` in
+> `contracts/capabilities.ts` (`[communities.read]`, frozen), now read by the
+> act table's `community.view` rule as its standing ceiling (the oversight
+> ceiling stays `[communities.manage]`); `act-rules.spec.ts` pins both. It is
+> published because two paths must agree on it: a person's permit on every
+> request, and realtime's community frame audiences, which have no principal
+> and keep only accounts holding all of it. Nothing else here changed: no
+> rule, table, event, route or module import, and no new domain event —
+> realtime subscribes to the events of [§11](#11-events-and-audit) as they
+> were. Realtime is the contracts' second consumer: `COMMUNITY_MEMBERSHIP`
+> (`statesOf`, `heads`, `members`), `COMMUNITY_VIEW_CEILING` and the events,
+> through `RealtimeModule` importing `CommunitiesModule`; Communities still
+> imports nothing but identity. The frames, their audiences and their cost
+> are [realtime.md Part C](realtime.md#part-c--communities-in-real-time). The
+> app reads communities (list, one community, the roster) and does none of
+> the management acts yet; the `/invite` link is deferred too
+> ([§12](#12-api), [§20](#20-deferred)).
 
 ---
 
@@ -1372,7 +1391,17 @@ export function isCommunityAct(v: string): v is CommunityAct;
  *  and Messaging narrows every community-chat page of MESSAGE_RECIPIENTS with it, one
  *  ACCOUNT_DIRECTORY.withPermission call per permission, so the two paths cannot drift. */
 export const COMMUNITY_CHAT_READ_CEILING: readonly Permission[] = ['communities.read', 'messaging.read'];
+
+/** P5. The identity permissions of community.view's standing ceiling (PROVISIONAL, Q44). The act rules use it,
+ *  and realtime narrows every community frame audience with it, so a member whose role lost it is refused
+ *  on HTTP and told nothing in the background either. */
+export const COMMUNITY_VIEW_CEILING: readonly Permission[] = ['communities.read'];
 ```
+
+`COMMUNITY_VIEW_CEILING` (`capabilities.ts:62-64`) is the one addition P5
+made, for realtime's `CommunitiesRealtimeRelay`: each community frame
+audience costs one `withPermission` call per 1,000 recipients
+([realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs)).
 
 `COMMUNITY_CHAT_READ_CEILING` is the one addition to Communities' contracts
 that the community chat (P4) needs
@@ -1517,7 +1546,7 @@ overseers. Trusted in-process, no principal.
 | --- | --- |
 | Messaging (P4, application layer only) | `COMMUNITY_AUTHORIZATION` (`chat.read`, `chat.post`); `COMMUNITY_MEMBERSHIP` (`heads`, `listHeads`, `statesOf`, `changesSince`, `members`); `COMMUNITY_DIRECTORY`; `COMMUNITY_CHAT_READ_CEILING`; `member.*` events as wake-ups |
 | Live (P6) | `COMMUNITY_AUTHORIZATION` (`live.start`, `live.host`, `live.moderate`, `live.join`, `live.raise_hand` per request; `permittedAmong` for `live.join`, `live.remain`, `live.moderate` and `live.host` in batches of 1,000 for the reconciler and `LIVE_AUDIENCE`); `COMMUNITY_MEMBERSHIP` (`heads` for session-wide effects); `COMMUNITY_CAPABILITY_HOLDERS` (moderators); `member.removed`, `capability.revoked`, `community.locked/unlocked` as accelerators |
-| Realtime (P5) | `COMMUNITY_MEMBERSHIP.members` (OnlineAudience); `CommunityEvents` |
+| Realtime (P5, landed) | `COMMUNITY_MEMBERSHIP` (`statesOf` for the person an event concerns, `heads` for a lock's staleness, `members` through `onlineAudience`); `COMMUNITY_VIEW_CEILING`; `CommunityEvents` but `community.created` and the invitation events |
 | Attendance (P9, HELD) | `COMMUNITY_AUTHORIZATION` (the attendance acts, then the fallbacks `live.moderate`, `live.host` and `view` of [§6.12](#612-how-live-messaging-and-attendance-ask)) |
 | Notifications (P10, after Q67/Q28) | `COMMUNITY_MEMBERSHIP` or `COMMUNITY_CAPABILITY_HOLDERS` for recipients |
 
@@ -1544,7 +1573,7 @@ with a reconciler backstop).
 | Event | Payload | Class | Consumers | Travels |
 | --- | --- | --- | --- | --- |
 | `communities.community.created` | `{communityId, createdBy: string \| null}` | R | none in v1; always followed by `member.added` for the owner | in-process only |
-| `communities.community.locked` / `.unlocked` | `{communityId, lockedBy \| unlockedBy: string \| null, lifecycleVersion}` | R | realtime relay; Live `ProtectLiveSessions` (accelerator). No consumer enforces the lock from the event: decisions pull the permit | frame `community.locked`/`unlocked` `{communityId, lifecycleVersion}` to ACTIVE members online (P5) |
+| `communities.community.locked` / `.unlocked` | `{communityId, lockedBy \| unlockedBy: string \| null, lifecycleVersion}` | R | realtime relay; Live `ProtectLiveSessions` (accelerator). No consumer enforces the lock from the event: decisions pull the permit | frame `community.locked`/`unlocked` `{communityId, lifecycleVersion}` to ACTIVE members online (landed in P5) |
 | `communities.member.added` | `{communityId, userId, membershipId, source: 'ADDED' \| 'INVITATION', addedBy, invitationId, membershipVersion}` | R | Messaging `CommunityChatSync` (wake-up); realtime relay | frame to that user only |
 | `communities.member.removed` | `{communityId, userId, membershipId, reason: 'LEFT' \| 'REMOVED', removedBy, membershipVersion}` — implies every grant of that stint ended in the same transaction | **S** | Live (ejection; backstop: the 60 s participant sweep); Messaging (wake-up; access is already refused at commit); realtime relay | frame to that user only |
 | `communities.invitation.created` / `.revoked` | `{communityId, invitationId, createdBy \| revokedBy: string \| null}` | R | none; revocation takes effect inside redemption, not through delivery | never on any wire |
@@ -1665,7 +1694,11 @@ answering 429 with `retryAfterSeconds` ([Q48](open-questions.md#q48--invitation-
 implementations bound only in `app_providers.dart`; wire enums with an
 `unknown` member; buttons shown from `me.capabilities` only, never from roles;
 an `/invite` route that reads the token from the link, holds it in memory,
-POSTs it once and never stores or logs it. Details in the hub.
+POSTs it once and never stores or logs it. Details in the hub. **As landed
+in P5:** the repository reads only (`GET /communities?scope=mine`,
+`GET /communities/:communityId`, `…/members`), and the screens show only what
+`me.capabilities` and `me.participation` allow; the `/invite` route and every
+write are deferred, to be scheduled.
 
 ---
 
@@ -2209,3 +2242,7 @@ Every PROVISIONAL default above is one of these. Full text in
   one CHECK change.
 - **A member limit** (Q20): a nullable column in the same conditional `UPDATE`.
 - **The outbox and a Redis rate limiter** (P11), on ADR 0021's triggers.
+- **The app's management acts and the `/invite` link**: adding and removing
+  members, leaving, invitations and joining by token, locking and unlocking,
+  grants and ownership transfer. P5's Flutter repository reads only; these
+  are deferred from P5, to be scheduled.

@@ -9,7 +9,10 @@ but the word:
   from the API. Implemented (Realtime Messaging V1,
   [ADR 0012](decisions/0012-realtime-messaging-transport.md); notifications
   ride the same connection since Notifications V1,
-  [ADR 0013](decisions/0013-notifications-v1.md)).
+  [ADR 0013](decisions/0013-notifications-v1.md)). Since P5 a community's
+  lock and unlock, and a person's own addition, removal and access change,
+  ride it too, as ids-only hints
+  (**[Part C](#part-c--communities-in-real-time)**).
 - **[Part A — live audio rooms](#part-a--live-audio-the-2500-participant-design):**
   a teacher speaking to ~2500 listeners. LiveKit media, capability tokens.
   Designed; the coordination layer is implemented.
@@ -46,7 +49,7 @@ Two stacks that meet only at an event:
 | --- | --- |
 | persistence → domain event | event subscriber → recipients → connections → transport |
 | decides membership, visibility, what a message looks like | decides nothing about messaging |
-| imports no socket library, no realtime code (architecture tests) | reads messaging, identity and notifications through their contracts only |
+| imports no socket library, no realtime code (architecture tests) | reads messaging, identity, notifications and Communities through their contracts only |
 
 Realtime is an **extension**, not a second messaging system: it stores
 nothing, and nothing depends on it. When it is down, messages are still
@@ -109,7 +112,10 @@ nothing else.
 3. Then the coarse gate every messaging route has: `messaging.read`. (The
    connection also carries the account's own notifications; the gate is
    unchanged — every role holds it — and an account without it would read
-   its notifications over HTTP.)
+   its notifications over HTTP. Community frames ([Part C](#part-c--communities-in-real-time))
+   pass the same gate: every role holding `communities.read` or `live.join`
+   also holds `messaging.read`, pinned by `identity/domain/role.spec.ts`
+   ([Q66](open-questions.md#q66--realtime-without-messagingread)).)
 4. Then the per-account limits (§M8).
 5. `ready` — `{connectionId, userId, expiresAt, heartbeatSeconds}`. The
    user id is the server's, from the token; a frame that tries to state one
@@ -152,6 +158,10 @@ permission or an organisation. A removal that has committed is in effect for
 the next event. Someone added to a group after a message was sent is not
 sent it (their window starts after it). The institution owner, holding every
 permission, receives nothing of a conversation they are not in (tested).
+Since P5 (gate G1) the relay asks `MESSAGE_RECIPIENTS` only about the
+accounts connected to this instance ([§C5](#c5-onlineaudience-fan-out-bounded-by-who-is-connected-gate-g1)):
+the same people, in at most 1 + ⌈A/1000⌉ calls for A accounts connected
+here, instead of every page.
 
 **Subscriptions are derived, not declared.** `{"type":"subscribe",
 "conversationId"}` asks the server to confirm one conversation, with
@@ -302,15 +312,20 @@ Backend (`npm run verify`):
 - `realtime/domain/protocol.spec.ts` — frames, strictness, refusing
   client-claimed identity;
 - `realtime/application/connection-manager.spec.ts` — registration,
-  multi-device, cleanup, dead and throwing connections;
+  multi-device, cleanup, dead and throwing connections, the snapshot of
+  accounts online;
 - `realtime/application/realtime-sessions.spec.ts` — authentication
   (invalid, expired, revoked, suspended, no permission), deadline, expiry,
   re-authentication, revalidation, limits, malformed frames, subscriptions
-  (member, stranger, owner, revoked);
+  (member, stranger, owner, revoked), and no subscription to a community
+  ([§C4](#c4-no-community-subscription-account-addressed-push));
 - `realtime/application/messaging-relay.spec.ts` — fan-out, envelope,
   sender reconciliation, files as references, removal, history windows,
   ordering, duplicates, read marks, membership, persistence unaffected by
-  failure;
+  failure (unmodified by P5);
+- `realtime/application/online-audience.spec.ts` and
+  `messaging-relay-audience.spec.ts` — gate G1
+  ([§C5](#c5-onlineaudience-fan-out-bounded-by-who-is-connected-gate-g1));
 - `realtime/infrastructure/*.spec.ts` — handshake rate limit, frames,
   backpressure, CLI context, client address;
 - `test/api/realtime.api.spec.ts` — the running application over real
@@ -328,7 +343,9 @@ Backend (`npm run verify`):
   connected recipient, a disconnected one, and one who reconnects, on
   PostgreSQL end to end;
 - `test/architecture/realtime-boundaries.spec.ts` — the module boundaries
-  (including: realtime reaches notifications through its contracts only).
+  (including: realtime reaches notifications and Communities through their
+  contracts only);
+- the community suites of [§C8](#c8-tested).
 
 Flutter (`flutter test`): frame parsing; the WebSocket client against a fake
 server (auth frame, never a URL token; duplicates; subscribe; reconnect;
@@ -336,7 +353,8 @@ server (auth frame, never a URL token; duplicates; subscribe; reconnect;
 conversation and list state (dedupe, pending reconciliation, a lost event,
 reconnect catch-up, monotonic read marks, removal); notification frames and
 their state (live insertion once, cross-device reads, reconnect resync);
-screens; the import boundaries.
+community frames and state ([§C8](#c8-tested)); screens; the import
+boundaries.
 
 ## M12. Deliberately deferred
 
@@ -346,8 +364,401 @@ screens; the import boundaries.
 - **Read receipts and "seen by"** (Q25); **typing indicators; presence.**
   They would ride the same connection, gated by the same `subscribe`.
 - **Announcing membership changes to the other members** of a group —
-  waits on Q22 (who may see who is in a conversation).
+  waits on Q22 (who may see who is in a conversation). Likewise for a
+  community (Q22, Q49): its frames tell only the person concerned
+  ([§C2](#c2-who-receives-what-and-what-it-costs)).
 - **Several instances** (§M10) and a durable outbox.
+
+---
+
+# Part C — Communities in real time
+
+**Landed in P5 (2026-09-24).** Communities' facts reach the people they
+concern while they are connected: on the same connection, through the same
+`ConnectionManager`, as hints the app answers by reading the community again
+over HTTP. The design is the hub's
+[§15.6](communities-live-attendance.md#156-realtime) and
+[§16](communities-live-attendance.md#16-realtime-transport-matrix), and
+[ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md) decisions
+6–9. This part records what was built, the choices made while building it,
+and the evidence. Nothing here adds a table, a migration, a domain event, a
+notification type, a client frame or a protocol version.
+
+## C1. The pipeline
+
+```
+  HTTP act ──▶ Communities use case ──▶ communities tables (PostgreSQL)   ◀── the truth
+                     │ after the commit: audit, then event (CommunitiesJournal)
+                     ▼
+   communities.member.added / .removed · .capability.granted / .revoked ·
+   .ownership.transferred · .community.locked / .unlocked      (ids and versions only)
+                     │ EventSubscriber port — the request has already returned
+                     ▼
+   realtime ─ CommunitiesRealtimeRelay      per community, in publication order
+                 │ who?  COMMUNITY_MEMBERSHIP   the person's latest stint (statesOf), or
+                 │                              heads, then the ACTIVE members connected
+                 │                              here (members, through onlineAudience)
+                 │ may they view it?  ACCOUNT_DIRECTORY.withPermission,
+                 │                    for every permission of COMMUNITY_VIEW_CEILING
+                 ▼
+             ConnectionManager               the same connections, the same socket
+                 ▼
+   Flutter: CommunityListController / CommunityController / CommunityMembersController,
+            ConversationController / ConversationListController  ──▶  re-read over HTTP
+```
+
+| Communities | Realtime |
+| --- | --- |
+| decides membership, lifecycle and what a person may do; publishes after the commit | decides nothing about communities: it asks, at delivery time, and forwards ids |
+| imports nothing of realtime (`communities-boundaries.spec.ts`) | reaches only `communities/contracts`, and `communities.module.ts` for wiring (`realtime-boundaries.spec.ts:138-175`) |
+
+`RealtimeModule` imports `CommunitiesModule` (`realtime.module.ts:43`), which
+imports only `IdentityModule`, so no cycle can close. The relay uses
+`COMMUNITY_MEMBERSHIP` (`statesOf`, `heads`, `members`), the constant
+`COMMUNITY_VIEW_CEILING`, the `CommunityEvents` names and payload types, and
+identity's `ACCOUNT_DIRECTORY.withPermission`. It stores nothing. When it is
+down, Communities is unaffected and every client still converges over HTTP.
+
+`communities.community.created` and the invitation events are not subscribed
+to: the creator has the HTTP response and hears of their own membership
+through the `member.added` that always follows; a link is never on any wire.
+
+## C2. Who receives what, and what it costs
+
+`CommunitiesRealtimeRelay` (`realtime/application/communities-relay.ts`).
+`A` is the number of distinct accounts connected to this instance
+(A ≤ 10,000, `realtime-policy.ts:42`); `N` is the number of the community's
+ACTIVE members among them.
+
+| Event | Frame | Delivered to, as Communities answers at delivery time | Contract calls on this instance |
+| --- | --- | --- | --- |
+| `communities.member.added` | `community.member.added` | the person added, only while the stint the event names (`membershipId`) is their latest and ACTIVE (`communities-relay.ts:145-166`) | 0 if they are not connected here; otherwise one `statesOf` and at most one `withPermission` |
+| `communities.member.removed` | `community.member.removed`, `reason` `left` or `removed` (the event's `LEFT` or `REMOVED`) | the person who left or was removed, only while their latest stint is not ACTIVE, so a rejoin overtakes it (`:167-189`). Nobody else is told (PROVISIONAL, [Q22](open-questions.md#q22--who-may-see-who-is-in-a-conversation), [Q49](open-questions.md#q49--leaving-removal-and-rejoining)) | as above |
+| `communities.capability.granted` / `.revoked` | `community.access.changed` | the holder, while an ACTIVE member (`:190-198`, `:219-232`). Nothing is announced to the others ([Q45](open-questions.md#q45--capability-grants-duration-handover-and-visibility)) | as above |
+| `communities.ownership.transferred` | `community.access.changed`, one per person | the previous owner and the new one, each while an ACTIVE member (`:199-208`) | 0 if neither is connected here; otherwise one `statesOf` for both and at most one `withPermission` |
+| `communities.community.locked` / `.unlocked` | `community.locked` / `community.unlocked` | the community's ACTIVE members connected here; nobody if Communities no longer knows the community or a newer lock or unlock has committed (its head's `lifecycleVersion` is above the event's) (`:234-265`) | one `heads`; then `members` through `onlineAudience`: 1 call if the community fits one page of 1,000, otherwise at most 1 + ⌈A/1000⌉; then ⌈N/1000⌉ `withPermission`. A stale event stops after `heads`. At most 22 calls at A = 10,000, whatever the community's size |
+| `communities.community.created`, `communities.invitation.*` | — | nobody | — |
+
+**Every audience is asked of Communities when the frame is built**, never
+taken from the event alone, from a client, from messaging's projection, or
+from anything realtime keeps (`concerned`, `communities-relay.ts:272-283`).
+An event published out of order, or overtaken by a later change, reaches
+nobody it no longer concerns: a stale `added` after a removal, a `removed`
+after a rejoin, a lock after the unlock that followed it. A removed member
+hears of the removal and then nothing more about the community, unless
+they join again.
+
+**Every audience is narrowed by the view ceiling.**
+`COMMUNITY_VIEW_CEILING` (`communities/contracts/capabilities.ts:62-64`,
+today `[communities.read]`) is the standing ceiling that `community.view`'s
+act rule asks of a person on HTTP (`act-rules.ts:69`; `act-rules.spec.ts:39-44`
+pins the two together). Recipients are kept only if their
+ACTIVE account holds every permission of it, asked of identity in chunks of
+`ACCOUNT_DIRECTORY_MAX_IDS` = 1,000 (`viewers`, `communities-relay.ts:289-302`).
+So a member whose role lost it, or whose account was suspended, is refused
+on HTTP and told nothing in the background either. It is published by
+Communities, as `COMMUNITY_CHAT_READ_CEILING` was for the chat in P4, so the
+two paths cannot drift.
+
+**Lock frames go to members, not to the `community.view` permit.** An
+overseer holding `communities.manage` without a stint receives no community
+frame and sees a lock over HTTP.
+
+**How this differs from the approved matrix.** The hub listed the per-person
+frames at 0 queries, addressed from the event payload
+([§16.1](communities-live-attendance.md#161-where-every-event-and-state-change-travels)).
+P5 re-asks Communities for the person's latest stint and narrows every
+audience by the view ceiling. Both only remove recipients, never add one.
+The price is one `statesOf` and one `withPermission` for an event whose
+person is connected here, and for a lock one `heads` and ⌈N/1000⌉
+`withPermission` beyond the member pages.
+
+The rest follows `messaging-relay.ts`:
+
+- `schedule` returns at once, and asks nothing, when nobody is connected to
+  this instance (`communities-relay.ts:119-121`); otherwise delivery is
+  chained per community (the event's `aggregateId`) and detached from the
+  publisher.
+- Payloads cross a module boundary, so their shape is checked, not assumed:
+  the payload's `communityId` must equal the event's `aggregateId`; ids are
+  non-empty strings; versions are non-negative safe integers; a removal's
+  reason is `LEFT` or `REMOVED`. Anything else is logged as `ignoring a
+  malformed community event` and sends nothing (`:309-379`).
+- A lock frame is serialized once for all its recipients. A per-person frame
+  is serialized per recipient, because its `eventId` names them.
+- Every connection of a recipient's account receives it; a dead device never
+  stops the others.
+- A failure is logged as `realtime delivery failed` with the event name and
+  community id only, and the next event is delivered as usual.
+
+## C3. The frames: protocol v1, additive
+
+Every frame is `{type, eventId, occurredAt, …, version: 1}`, built field by
+field in `envelopes.ts:286-404` from the event's ids and versions, never by
+spreading a payload. No frame carries a title, a name, a count, a
+capability, a grant or invitation id, a roster, or how or by whom someone
+joined.
+
+| Frame | Fields | `eventId` | Builder |
+| --- | --- | --- | --- |
+| `community.member.added` | `communityId`, `userId` | `community.member.added:<communityId>:<userId>:<membershipVersion>` | `envelopes.ts:299-312` |
+| `community.member.removed` | `communityId`, `userId`, `reason: 'left' \| 'removed'` | `community.member.removed:<communityId>:<userId>:<membershipVersion>` | `:315-330` |
+| `community.locked` | `communityId`, `lifecycleVersion` | `community.locked:<communityId>:<lifecycleVersion>` | `:337-349` |
+| `community.unlocked` | `communityId`, `lifecycleVersion` | `community.unlocked:<communityId>:<lifecycleVersion>` | `:351-363` |
+| `community.access.changed` | `communityId` | `community.access.changed:<communityId>:<recipientUserId>:<digest>` | `:383-399` |
+
+- **The same fact always has the same id**, so a redelivery is a duplicate
+  the client drops (§M6 rule 2).
+- **`membershipVersion` is in the id only**, never a field: stable across
+  redelivery, but not a version the client could compare with anything HTTP
+  returns.
+- **`lifecycleVersion` is a field** because `GET /communities/:id` returns
+  it: the client drops a lock frame not newer than the version it holds.
+- **The `community.access.changed` id ends in a digest of the fact**: the
+  first 20 hex characters of SHA-256 over `granted:<grantId>`,
+  `revoked:<grantId>` or `transferred:<fromUserId>:<toUserId>:<occurredAt ms>`
+  (`envelopes.ts:369-371`, `:389-392`, `digest` at `:402-404`). The P5 plan
+  ended the id in `<occurredAt ms>` (the hub's "derived from community,
+  user and time", [§16.2](communities-live-attendance.md#162-frames-added-to-protocol-v1)).
+  That gives two changes of one person's access within one millisecond the
+  same id: the client would drop the second as a duplicate, and the re-read
+  it should have caused would never happen. The digest names the fact
+  without putting the grant id, the capability or the other party on the
+  wire. The recipient is in the id because a transfer
+  tells two people, each with their own frame
+  (`envelopes.spec.ts:96-142`).
+
+**Golden fixtures.** `backend/test/fixtures/realtime-frames/` holds one JSON
+file per frame (two for `community.member.removed`, `left` and `removed`)
+and a README. `envelopes.spec.ts` requires a builder case for every fixture
+and a fixture for every case, compares each byte for byte (the same keys in
+the same order), and allows no other keys. The app's
+`test/realtime/community_frames_test.dart` parses every one of the same
+files. A field changed on one side fails the other side's suite.
+
+**The protocol version stays 1.** Installed apps drop a frame whose version
+is not 1 (`realtime_frames.dart:56`) and ignore unknown types (`:79`), so the
+five frames are additive: an old app works from HTTP, and the new app
+ignores nothing it needs.
+
+## C4. No community subscription: account-addressed push
+
+A client never names a community to realtime. Community frames are pushed to
+the accounts the relay has just checked, through `ConnectionManager`; no
+interest set is kept per connection.
+
+- **No client frame is added.** The strict parser refuses a `subscribe`
+  carrying `communityId` or `topic` as `INVALID_PAYLOAD`, and knows no
+  `community.subscribe` or `watch` type (`INVALID_EVENT`)
+  (`protocol.spec.ts:66-90`).
+- **`subscribe` stays conversation-only.** A community's id given as
+  `conversationId` is answered exactly like a missing conversation,
+  `CONVERSATION_NOT_FOUND`; so is a non-member subscribing to a community
+  chat's real id; and a member Communities has removed while messaging's
+  projection still lists them is refused and receives no frame
+  (`realtime-sessions.spec.ts:411-500`). A community chat is subscribed to as
+  the conversation it is, through messaging's own "open this conversation"
+  decision, which asks Communities (§M4;
+  [community-chat.md §12.5](community-chat.md#125-realtime)).
+- **Why.** ADR 0021 rejected a `subscribe{topic}` or `watch` frame: server
+  state that must follow every membership change, multi-instance semantics
+  and a wider parser, for audiences that account addressing already serves.
+  It stays a possible future extension, negotiated through `ready.features`.
+
+## C5. `onlineAudience`: fan-out bounded by who is connected (gate G1)
+
+`onlineAudience(online, pageOf)` (`realtime/application/online-audience.ts:45-71`)
+is the one audience algorithm the relays share; each relay keeps its own
+payload validation (ADR 0021's rejected "one generic relay").
+
+- Nobody online: no call at all.
+- Page 1 (`cursor: null`, `limit: 1000`). If it has no next page, its
+  members ∩ online.
+- Otherwise the accounts online, in chunks of `AUDIENCE_PAGE` = 1,000, each
+  asked with `onlyUserIds` (following a cursor if a source ever pages
+  shorter): at most 1 + ⌈A/1000⌉ calls, whether the audience is 2,000 or
+  100,000.
+- `AUDIENCE_PAGE` equals messaging's `MAX_RECIPIENT_PAGE` and Communities'
+  `MAX_MEMBER_PAGE` (`online-audience.spec.ts:50-54`), so one page is one
+  call on either side.
+- The source stays the only judge: every id returned came from it, asked at
+  delivery time; nothing is cached or widened. Results are de-duplicated.
+- `ConnectionManager.onlineUserIds()` (`connection-manager.ts:67-69`) is every
+  account with a connection here, each once: a snapshot, unaffected by
+  connections that open or close afterwards.
+
+**G1.** `MessagingRealtimeRelay.onlineMembers` (`messaging-relay.ts:209-219`)
+now resolves `conversation.created` and `message.sent` through
+`onlineAudience`, passing `visibleSequence` through. `MESSAGE_RECIPIENTS`
+did not change: it already took `onlyUserIds`. A community chat's pages keep
+every check of [ADR 0022](decisions/0022-community-chat-delivery-check.md)
+(one `statesOf` per non-empty page, the read ceiling), now per chunk. A
+message in a 30,000-member channel went from 30 recipient calls per instance
+to at most 1 + ⌈A/1000⌉ (≤ 11 at A = 10,000). The existing
+`messaging-relay.spec.ts` and `community-chat-relay.spec.ts` pass unmodified.
+G1 alone does not reopen posting above 250 members: the switch waits for G3
+and G4 ([community-chat.md §11.2](community-chat.md#112-gates-g1g4)).
+
+## C6. The client's contract for community frames
+
+§M6 applies: duplicates dropped by `eventId`, reconnect with backoff, HTTP is
+the truth. In the app (`app/lib/features/communities/state/`,
+`app/lib/features/messaging/state/`):
+
+- **A frame is a reason to read again, never an answer.** What a person may
+  do is the server's `me` block, never worked out on the device. The one
+  thing shown before HTTP confirms it is the viewer's own removal, and a
+  re-read that finds the community still theirs restores it.
+- **`CommunityController`** (one community): a lock or unlock newer than the
+  `lifecycleVersion` held → one re-read of `GET /communities/:id`; an older or
+  repeated one → nothing; `access.changed` → a re-read; the viewer's
+  `member.removed` → shown as removed at once, then a re-read (404 keeps it
+  removed); the viewer's `member.added` → a re-read. A 404 is the removed
+  state, not an error.
+- **`CommunityListController`**: the viewer added → the first page again; the
+  viewer removed → the community leaves the list at once, then the first
+  page again; a newer lock or unlock, or `access.changed` → that community
+  again (gone: it leaves the list).
+- **`CommunityMembersController`**: pages of 50, never walked to the end on
+  its own; `access.changed` or the viewer's `member.*` for this community →
+  the first page again, which also answers whether the roster is still
+  theirs (403 → "not yours to see").
+- **Messaging's controllers**, for a community chat: the viewer's removal →
+  the conversation subscribes and catches up again, and the server's
+  `CONVERSATION_NOT_FOUND` marks it removed, never the frame alone; a lock,
+  an unlock or `access.changed` → the conversation is read again (`canPost`).
+  The list drops that community's chat when the viewer is removed and reads
+  its first page again when they are added or removed.
+- **Whenever the connection comes up** (connected or reconnected), each open
+  community view reads again over HTTP: a frame missed meanwhile is in the
+  answer.
+- **One read at a time**, and a read asked for meanwhile runs once more after
+  it, so the last answer shown was asked for after the last frame.
+- **Only the account id is compared** with a frame's `userId`
+  (`community_viewer.dart`), never roles or permissions
+  (`community_boundaries_test.dart`).
+
+## C7. When it fails
+
+| Failure | Effect |
+| --- | --- |
+| A contract call throws | logged with ids only; nothing is sent for that event; the community's next event is delivered as usual (tested) |
+| A frame is missed (the app was disconnected, the instance restarted, or a second instance served the change before P11) | the next lock frame, or the re-read when the connection comes up, converges: `GET /communities/:id` shows the status and a newer `lifecycleVersion` (API test) |
+| An event overtaken by a later change | dropped at delivery (§C2) |
+| A frame serialized before a removal commits | can still arrive; it grants nothing, because every HTTP read and command re-authorizes ([hub §19.3](communities-live-attendance.md#193-other-threats)) |
+| Nobody connected to the instance | nothing is scheduled and nothing is asked |
+
+## C8. Tested
+
+Backend (`npm run verify`):
+
+- `realtime/application/communities-relay.spec.ts` — the real Communities use
+  cases and journal (`test/support/communities-harness.ts`) on an in-process
+  bus, a real `ConnectionManager` with fake links: (A) a member hears of
+  their own addition, a lock, an unlock and their own access change, on every
+  device, and a creator hears of their own new community as an addition;
+  (B) a removed member hears of the removal and nothing after it;
+  (C, D) a non-member, and an overseer without a stint, hear nothing whatever
+  ids they know; (E) messaging's projection is never read; (F) out-of-order
+  and overtaken events deliver nothing stale; (G) access frames reach the
+  grantee alone with the community's id only, a delegate hears nothing of
+  others joining or leaving, and a transfer tells both sides; (H) lock frames
+  carry the version only; (J) an event relayed twice gives byte-identical
+  frames. Also: the view-ceiling narrowing, no call for a person who is not
+  connected or when nobody is, the call counts of §C2, malformed payloads,
+  per-community order, failure isolation, unsubscribing on shutdown.
+- `envelopes.spec.ts` — the golden fixtures, byte for byte; the allowed keys;
+  distinct access ids within one millisecond.
+- `online-audience.spec.ts` — the page size pinned to both sources; no call
+  when nobody is online; one call for one page; 50 of 30,000 in at most 2
+  calls; at most 1,000 names per call; members ∩ online within
+  1 + ⌈A/1000⌉ calls for 120 seeded audiences (0–30,000 members, 0–10,000
+  online).
+- `messaging-relay-audience.spec.ts` — G1: 50 and 2,500 people online among
+  30,000 recipients reached in at most 2 and 4 calls instead of the old
+  walk's 27 pages (every tenth recipient is outside the message's history
+  window); one call for a conversation that fits a page; for 40 seeded
+  channels, exactly the old walk's recipients within the bound.
+- `connection-manager.spec.ts`, `domain/protocol.spec.ts`,
+  `realtime-sessions.spec.ts` — `onlineUserIds`, and §C4.
+- `communities/domain/act-rules.spec.ts` — `COMMUNITY_VIEW_CEILING` is
+  `community.view`'s standing ceiling.
+- `test/api/communities-realtime.api.spec.ts` — the running application over
+  real sockets: addition, lock and unlock reach a member and nothing reaches a
+  stranger; the grantee alone; a removed member is told once, then nothing,
+  and after reconnecting HTTP agrees (`GET /communities` leaves it out,
+  `GET /communities/:id` and the chat lookup answer 404); a lock missed while
+  disconnected is recovered from `GET /communities/:id`; a fact delivered
+  twice has the same `eventId`, byte for byte.
+- `test/integration/communities-realtime-postgres.spec.ts` — the same on
+  PostgreSQL: added, locked, missed and caught up, removed, isolated; a
+  transfer and a grant.
+- `test/integration/communities-realtime-scale.spec.ts` — a community of
+  30,000 ACTIVE members and 100,000 departed stints, beside a second
+  30,000-member community sharing half its members and 2,000 small ones
+  (166,030 stints). With 50 and 2,500 accounts online (members, leavers and
+  strangers) a lock reaches exactly the online ACTIVE members, with one
+  `heads`, at most 1 + ⌈A/1000⌉ member pages, no `statesOf` and ⌈N/1000⌉
+  `withPermission`; a 30-member community takes one member call. Every
+  statement sent is EXPLAINed: `community_members` is read through a
+  `community_members_*` index, never a Seq Scan, and no statement has an
+  OFFSET. Identity's side of the narrowing: a 1,000-account page is three
+  statements (`users`, `user_identifiers`, `user_roles`), each bound to the
+  page's 1,000 ids and joining nothing; with sequential scans disabled, each
+  is served by its index (`users_pkey`, `user_identifiers_user_id_idx`,
+  `user_roles_user_id_role_pk`). At the fixture's 60,000 accounts Postgres
+  prefers a sequential pass of the 5 MB `user_roles` heap to 1,000 probes by
+  cost; the suite's comment records that it turned to the primary key between
+  120,000 and 260,000 rows when measured. That choice is not asserted.
+- `test/integration/community-chat-scale.spec.ts` — G1 on PostgreSQL: a
+  message in the 30,000-member community chat with 50 and 2,500 accounts
+  online takes at most 2 and 4 recipient calls, every one with the message's
+  `visibleSequence`, instead of the old walk's 30 pages, and reaches exactly
+  whom the old walk reached.
+- `test/architecture/realtime-boundaries.spec.ts` — realtime reaches
+  Communities only through `contracts/` and wires it only through
+  `communities.module.ts`; reaches nothing of its domain, application,
+  infrastructure or API; and is found using `membership.ts`, `events.ts` and
+  `capabilities.ts`, so the check is not vacuous.
+
+Flutter (`flutter test`):
+
+- `test/realtime/community_frames_test.dart` — every golden fixture parsed
+  into its `CommunityEvent`; version ≠ 1, a missing field or a wrong type
+  dropped; extra fields ignored; an unknown removal reason read as
+  `unknown`.
+- `test/communities/` — models (unknown values dropped, so they open no
+  action), the HTTP repository against a `MockClient` (404, 403, sign-in,
+  network, unreadable), the mock repository (a 30,000-member roster paged by
+  cursor without being built), the controllers (duplicates, out-of-order
+  lifecycle versions, a frame missed while offline, removal, HTTP overruling
+  a frame), messaging's controllers and community frames, the screens,
+  right-to-left layout, opening the chat, and `community_boundaries_test.dart`
+  (community screens, widgets and state import no HTTP client, socket, API
+  client or repository implementation, and read no permissions or roles; only
+  `app_providers.dart` constructs a `CommunityRepository`; the wire models are
+  plain Dart; the HTTP repository only reads).
+- `test/layout_test.dart` and `test/navigation_test.dart` — the three
+  community routes at every viewport; Profile → communities → a community →
+  its chat.
+
+## C9. Deliberately deferred
+
+- **Announcing membership or access changes to other members** (Q22, Q45,
+  Q49). The PROVISIONAL defaults tell only the person concerned.
+  `memberCount` is not pushed; others see it on their next read.
+- **Notifications about community facts** (Q67, Q28; P10).
+- **In the app: the `/invite#<token>` link and every management action**
+  (adding and removing members, leaving, creating and revoking invitations,
+  joining by token, locking and unlocking, grants and their revocation,
+  ownership transfer). P5's `CommunityRepository` only reads. They are
+  deferred, to be scheduled
+  ([hub §25](communities-live-attendance.md#25-implementation-phases)).
+- **A frame for a change no event names**: a grant going dormant, or a role
+  change that alters `me`. The next HTTP read shows it; a member who lost the
+  view ceiling hears nothing more from the relay.
+- **Live frames** (`live.session.*`, P7), **load profile 4** (P8), and
+  **several instances** (§M10, P11).
 
 ---
 
