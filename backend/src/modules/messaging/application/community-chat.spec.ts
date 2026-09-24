@@ -1019,12 +1019,19 @@ describe('community chats', () => {
 
       // Communities vouches for the student, but the lost removal at H+2
       // outranks any repair: refused now, and a rebuild asked for.
+      const apply = jest.spyOn(h.repository, 'applyCommunityMembership');
       expect(
         expectErr(await h.getConversation.execute({ principal: student, conversationId: chatId }))
           .code,
       ).toBe(NOT_FOUND);
       await h.sync.idle();
       expect(h.reconciler.reconciliations).toBe(1);
+      // No repair was attempted — it could not have won, and it would have
+      // taken the conversation lock for nothing. Only the rebuild wrote.
+      const repairs = apply.mock.calls.filter(
+        ([input]) => input.advance === null && input.override !== true,
+      );
+      expect(repairs).toEqual([]);
       expectOk(await h.getConversation.execute({ principal: student, conversationId: chatId }));
       expect(await projected(chatId)).toEqual((await authority(communityId)).sort());
     });

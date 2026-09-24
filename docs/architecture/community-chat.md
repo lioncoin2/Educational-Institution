@@ -1321,6 +1321,9 @@ real member out.
 
   An ordinary lag, a change Communities has made that the projection has not
   applied, schedules a sync instead. No signal changes the answer being given.
+  A permitted member whose row is not current, at a version the stint cannot
+  outrank, gets no repair attempt: the register would ignore it. A lockout
+  therefore never takes the conversation lock while it waits for its rebuild.
 - **Rebuilds run in the sync's per-community worker.** The reconciler no
   longer schedules the sync. The sync calls the reconciler before its next
   pull, so no pass over that community runs alongside its rebuild. The
@@ -1400,7 +1403,7 @@ Explicit open questions behind this table, none answered here:
 | Concurrent chat creation | The partial unique index: 20 at once → 1 | Postgres suite, application suite |
 | Duplicate, replayed or reordered wake-ups | Wake-ups carry nothing used but the community id; the pulled states go through the version register | both suites |
 | Stale projection | Never an access answer; every recipient page checked with `statesOf`; the read ceiling on every page; the reconciler when ahead | application and Postgres suites |
-| Communities restored from a backup, lost versions handed out again (`projected = head`) | Nobody Communities does not hold ACTIVE is delivered to. A recipient page, an access refusal, a repair or an admission that sees a change Communities never made asks for a rebuild, which runs in the sync's worker. A member kept out by a lost tombstone gets 404 until then (seconds). An ordinary lag only syncs | `community-chat.spec.ts` (restore window; repaired row above the projected version; admission ahead of the permit; no rebuild for lag; one rebuild per pass) |
+| Communities restored from a backup, lost versions handed out again (`projected = head`) | Nobody Communities does not hold ACTIVE is delivered to. A recipient page, an access refusal, a repair or an admission that sees a change Communities never made asks for a rebuild, which runs in the sync's worker. A member kept out by a lost tombstone gets 404 until then (seconds), without taking the conversation lock. An ordinary lag only syncs | `community-chat.spec.ts` (restore window; repaired row above the projected version; admission ahead of the permit; no rebuild for lag; one rebuild per pass) |
 | One community with a long backlog | A pass yields after 100 pages; other communities are served in between | `community-chat.spec.ts` |
 | Communities cannot answer | 503 on every community-chat request, and `SERVER_ERROR` on `subscribe`. The list leaves out the community chats and lists the rest; a chat that cannot be described shows no title and `canPost: false`. The recipient walk throws for its caller to log, including when only the page's `statesOf` fails, and the sweeper skips the tick. Conversations messaging manages are unaffected | `community-chat.spec.ts`, `community-chat-relay.spec.ts` |
 

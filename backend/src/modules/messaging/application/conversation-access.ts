@@ -59,8 +59,10 @@ export interface Membership {
  *   Communities down 503 — never a role-only answer
  *   permitted        the caller's row, repaired first if it is behind the
  *                    permit's stint (a join the projection has not applied
- *                    yet); still not current → 404. A row AHEAD of the stint
- *                    is checked the same way as a refused one
+ *                    yet); still not current → 404. A row at or past the
+ *                    stint is never repaired — the repair could not win — and
+ *                    is checked the same way as a refused one when it is
+ *                    past the stint or not current
  *
  * A removal therefore takes effect when Communities commits it, whatever the
  * projection says. Conversations whose membership messaging manages never
@@ -131,7 +133,7 @@ export class ConversationAccess {
    * row, repaired first when it is behind the permit's stint. Repair only
    * ever writes the ACTIVE stint Communities just vouched for — never a
    * leave, which the scheduled sync applies — so a refused read never takes
-   * a busy conversation's lock.
+   * a busy conversation's lock; nor does a repair that could not win.
    */
   async admittedToCommunityChat(
     principal: Principal,
@@ -142,12 +144,18 @@ export class ConversationAccess {
     const stint = permit.membership;
     if (stint === null) return err(CONVERSATION_NOT_FOUND);
     const row = await this.repository.findParticipant(conversation.id, principal.userId);
-    if (isActive(row) && (row.sourceVersion ?? 0) >= stint.version) {
-      // Newer than the stint Communities just vouched for: a change committed
-      // since — or one Communities lost to a restore (§7.6). Ask which; the
-      // answer never changes this admission, which the permit already made.
-      if ((row.sourceVersion ?? 0) > stint.version) await this.checkRow(conversation, row);
-      return ok({ conversation, participant: row });
+    const version = row?.sourceVersion ?? 0;
+    if (row !== null && version >= stint.version) {
+      // At or past the stint Communities just vouched for. Past it: a change
+      // committed since — or one Communities lost to a restore (§7.6); not
+      // current at the stint's own version: only the latter. Ask which — the
+      // answer never changes this request's, which the permit already made.
+      if (version > stint.version || !isActive(row)) await this.checkRow(conversation, row);
+      if (isActive(row)) return ok({ conversation, participant: row });
+      // Not current, and no repair could win — the register ignores a version
+      // not above the row's — so none is attempted: no conversation lock is
+      // taken for a write that would change nothing.
+      return err(CONVERSATION_NOT_FOUND);
     }
     const applied = await this.repository.applyCommunityMembership({
       conversationId: conversation.id,
