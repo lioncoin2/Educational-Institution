@@ -11,6 +11,14 @@ rather than with an argument that was already had.
 is never edited to change its decision — a new one supersedes it. The record is
 the history, not the current state.
 
+From 0022 on, when a later ADR replaces only part of an earlier one, the
+earlier ADR stays `Accepted`, marked "superseded in part by NNNN". It gains
+only that status line and a note at each replaced decision pointing to its
+successor; its text is otherwise left as decided. The first such pair is
+0018 → 0022. Earlier partial supersessions (0016–0021 over 0003, 0005, 0006,
+0009, 0011 and 0012) are recorded only in the ADR that makes them, as the
+package note below says.
+
 | # | Decision | Status |
 | --- | --- | --- |
 | [0001](0001-backend-stack.md) | TypeScript and NestJS for the backend | Accepted |
@@ -30,11 +38,11 @@ the history, not the current state.
 | 0015 | *Reserved* for the academic structure change: the ADR superseding the parts of 0014 that the owner's answers change ([academic-reconciliation.md §13](../academic-reconciliation.md#13-minimal-recommended-changes-before-the-next-milestone)). Not yet written | — |
 | [0016](0016-communities-module.md) | Communities: a new module owns communities, membership, invitation links and lifecycle | Accepted |
 | [0017](0017-community-scoped-authorization.md) | Community-scoped authorization: identity ceilings AND community standing; delegated capabilities; host-only moderation retired | Accepted |
-| [0018](0018-community-chat-projection.md) | Community chat: messaging keeps a named, versioned projection of community membership | Accepted |
+| [0018](0018-community-chat-projection.md) | Community chat: messaging keeps a named, versioned projection of community membership | Accepted; superseded in part by [0022](0022-community-chat-delivery-check.md) |
 | [0019](0019-community-scoped-live-sessions.md) | Community-scoped live sessions: Postgres truth, level-triggered LiveKit convergence, a presenter slot, narrow RTC ports | Accepted |
 | [0020](0020-attendance-snapshots.md) | Attendance snapshots are observations owned by a new attendance module (implementation held) | Accepted (implementation held) |
 | [0021](0021-cross-cutting-rules-for-new-modules.md) | Cross-cutting rules for the new modules: events in contracts, journals, durability classes, the realtime transport matrix, protocol v1 growth, `FailureKind 'unavailable'`, executable guards | Accepted |
-| [0022](0022-community-chat-delivery-check.md) | Community chat: every recipient page is checked against Communities, and a divergence rebuilds the projection (supersedes 0018 in part) | Proposed (implemented; awaiting acceptance) |
+| [0022](0022-community-chat-delivery-check.md) | Community chat: every recipient page is checked against Communities, and a divergence rebuilds the projection (replaces 0018's delivery shortcut) | Accepted |
 
 > **`Proposed`** (added 2026-09-23): a design under review, with nothing
 > implemented. It becomes `Accepted` when the user accepts it (dated in the
@@ -44,11 +52,12 @@ the history, not the current state.
 > the attendance policy questions are answered (the Q40 ruling in
 > [0016](0016-communities-module.md)).
 >
-> **0022 is the one `Proposed` record that is implemented.** Review of P4
-> found that 0018's decision 9 lets delivery trust a stale projection after
-> Communities is restored from a backup. The P4 brief's §19 forbids that.
-> The fix therefore landed with P4's review fixes and waits for the user's
-> acceptance. Rejecting it restores decision 9, a small code change.
+> **0022 was implemented before it was accepted.** Review of P4 found that
+> 0018's decision 9 let delivery trust a stale projection after an
+> independent restore of Communities. The P4 brief's §19 forbids that, so
+> the fix landed with P4's review fixes while 0022 was still `Proposed`.
+> The user accepted 0022 on 2026-09-24 and kept the implementation. 0018
+> stays `Accepted` for everything 0022 does not replace.
 
 **0015 is reserved.** The academic reconciliation names ADR 0015 for its
 structure change (`academic-reconciliation.md:410`, `:490`, `:506`), which

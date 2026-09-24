@@ -1,6 +1,6 @@
 # Communities, Live and Attendance
 
-**State: APPROVED (2026-09-23) — implemented in phases.** [§25](#25-implementation-phases) records which phases have landed; what a phase has not delivered does not exist yet. Attendance is approved as designed but its implementation is **held** (Q40 ruling).
+**State: APPROVED (2026-09-23) — implemented in phases.** [§25](#25-implementation-phases) records which phases have landed; what a phase has not delivered does not exist yet. Attendance is approved as designed but its implementation is **held** (Q40 ruling). [ADR 0022](decisions/0022-community-chat-delivery-check.md), accepted 2026-09-24, replaces the community chat's delivery shortcut. Wherever this document describes the "lag filter", every recipient page is now checked against Communities instead ([community-chat.md §20.2](community-chat.md#202-choices-made-during-implementation)).
 
 This is the hub of the design package for the brief's eight features:
 communities (the brief's "groups"), membership and invitation links, the
@@ -18,6 +18,7 @@ repeating them.
 | [live.md](live.md) | live sessions, the speaker and presenter state machines, RTC ports, the reconciler, capacity | P1, P6, P7 |
 | [attendance.md](attendance.md) | the snapshot model, observation rule and idempotency — **HELD** | P9 |
 | [ADR 0016](decisions/0016-communities-module.md) – [ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md) | the decisions, status Accepted (2026-09-23) | — |
+| [ADR 0022](decisions/0022-community-chat-delivery-check.md) | the community chat's delivery check, which replaces ADR 0018's delivery shortcut; status Accepted (2026-09-24) | P4 |
 | [open-questions.md](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules), Q40–Q72 | the policy this design does not invent | — |
 
 **The name.** In code and in these documents the brief's "Group" is the
@@ -1712,14 +1713,20 @@ All status **Accepted** (2026-09-23, by the user). ADR 0015 stays reserved for t
 change (`academic-reconciliation.md:410`, `:490`, `:506`). Existing ADRs are
 never edited.
 
+After P4's review came [0022](decisions/0022-community-chat-delivery-check.md),
+accepted 2026-09-24. It replaces 0018's delivery shortcut. 0018 keeps its
+text and gains only a status line and notes pointing to 0022 (the convention
+in [decisions/README.md](decisions/README.md)).
+
 | ADR | Decision | Amends or supersedes |
 | --- | --- | --- |
 | [0016](decisions/0016-communities-module.md) | A new `communities` module owns the Community aggregate, membership stints, invitation links and the OPEN/LOCKED lifecycle; imports Identity only; exports only contract tokens | Amends module-boundaries.md. Implementation gated by §13 (Q40) |
 | [0017](decisions/0017-community-scoped-authorization.md) | identity ceiling AND Communities standing AND the lifecycle gate; a closed `community.*` act vocabulary disjoint from identity's catalogue; four bases; host-only moderation retired | Amends ADR 0005; would revise Q1's provisional answer (P6); supersedes the host-only paragraph of authorization.md |
-| [0018](decisions/0018-community-chat-projection.md) | A community chat is a CHANNEL conversation plus `community_id`; messaging keeps a named, versioned, non-authoritative projection and asks Communities on every access; no write port; gates G1–G4 | Supersedes ADR 0011 §4–5 in part; amends messaging.md and the `MESSAGE_RECIPIENTS` comment |
+| [0018](decisions/0018-community-chat-projection.md) | A community chat is a CHANNEL conversation plus `community_id`; messaging keeps a named, versioned, non-authoritative projection and asks Communities on every access; no write port; gates G1–G4 | Supersedes ADR 0011 §4–5 in part; amends messaging.md and the `MESSAGE_RECIPIENTS` comment. Superseded in part by 0022 (its lag filter) |
 | [0019](decisions/0019-community-scoped-live-sessions.md) | Community-scoped live sessions: Postgres truth, level-triggered LiveKit convergence, the presenter slot, narrow RTC ports, `auto_create=false`, capacity from measurement | Amends ADR 0003; supersedes the LiveRoom/halaqa design, "no screen share by construction" and the Redis queue plan (`realtime.md:542-553`) |
 | [0020](decisions/0020-attendance-snapshots.md) | Attendance snapshots are immutable observations owned by a new leaf `attendance` module; implementation HELD | Supersedes in part ADR 0006's attendance example and module-boundaries.md's "operations derives attendance" |
 | [0021](decisions/0021-cross-cutting-rules-for-new-modules.md) | Events in contracts; journals; durability classes and outbox triggers; the realtime transport matrix; protocol v1 growth; `FailureKind 'unavailable'`; executable guards; one API instance until P11 | Amends ADR 0006, ADR 0009 and ADR 0012 |
+| [0022](decisions/0022-community-chat-delivery-check.md) | Every community-chat recipient page is checked against Communities; a divergence rebuilds the projection in the sync's worker (accepted 2026-09-24, after P4's review) | Supersedes ADR 0018's delivery shortcut: decision 9's lag filter |
 
 ---
 
@@ -1805,7 +1812,7 @@ and [Q36](open-questions.md#q36--tahajji-دورة-التهجي-وإعداد-ال
 | P1 Live hardening | **Landed 2026-09-23.** Everything in the P1 row below, plus `CapabilityConvergence` (the reconciler's targeted watch, pulled forward and scoped to changed participants) to keep the 120-second token from making reconnection unreliable — see [live.md](live.md#1-what-exists-today) |
 | P2 Communities core | **Landed 2026-09-23.** The module (domain, Postgres and in-memory adapters, `/communities`, journal, events); stints, invitation links with the creator re-check, lock/unlock; `COMMUNITY_AUTHORIZATION` (membership, owner and oversight bases), `COMMUNITY_MEMBERSHIP`, `COMMUNITY_DIRECTORY`; four catalogue leaves with migration 0009 and the schema with 0010; the boundary spec; the concurrency suite; `EXPLAIN` at 30,000 and 100,000 members. Choices made during implementation are recorded in [communities.md](communities.md) |
 | P3 Delegation | **Landed 2026-09-23.** `communities_capability_grants` (migration 0011); grant, revoke, list grants and transfer ownership (`/communities/:id/grants`, `PUT /communities/:id/owner`); the grant basis in the evaluator, re-verified under lock; grants ended with their stint or when their holder becomes owner; dormancy; the subset rule for a delegate's removals; the link-creator re-check's grant lookup; `COMMUNITY_CAPABILITY_HOLDERS`; `communities.capability.granted/revoked` and `communities.ownership.transferred`. Choices made during implementation are recorded in [communities.md](communities.md) |
-| P4 Community chat | **Landed 2026-09-24.** Migration 0012 (`community_id`, `projected_membership_version`, the `source_*` columns, their shape CHECKs, the replaced title CHECK, `conversations_community_unique`, and the G2 index `conversation_participants_current_idx`); the pure register `projectMember` and the applier on both adapters; idempotent materialization; `CommunityChatSync`, `CommunityChatSweeper`, `CommunityChatReconciler`; the `ConversationAccess` branch with repair on access; posting through the `community.chat.post` permit and the capacity switch (`MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS`, default 250); the 412 and 403 refusals; the lag filter and the `COMMUNITY_CHAT_READ_CEILING` narrowing; `authorizeEach` list views; `GET /messaging/communities/:communityId/conversation`. Posting stays switched off above 250 members until G1 (P5), G3 (P8) and G4 hold. No Flutter change (P5). Choices made during implementation are recorded in [community-chat.md](community-chat.md) |
+| P4 Community chat | **Landed 2026-09-24.** Migration 0012 (`community_id`, `projected_membership_version`, the `source_*` columns, their shape CHECKs, the replaced title CHECK, `conversations_community_unique`, and the G2 index `conversation_participants_current_idx`); the pure register `projectMember` and the applier on both adapters; idempotent materialization; `CommunityChatSync`, `CommunityChatSweeper`, `CommunityChatReconciler`; the `ConversationAccess` branch with repair on access; posting through the `community.chat.post` permit and the capacity switch (`MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS`, default 250); the 412 and 403 refusals; every recipient page checked against Communities ([ADR 0022](decisions/0022-community-chat-delivery-check.md), which replaced the planned lag filter) and the `COMMUNITY_CHAT_READ_CEILING` narrowing; divergence signals that rebuild the projection in the sync's worker; `authorizeEach` list views; `GET /messaging/communities/:communityId/conversation`. Posting stays switched off above 250 members until G1 (P5), G3 (P8) and G4 hold. No Flutter change (P5). Choices made during implementation are recorded in [community-chat.md](community-chat.md) |
 | P5–P8, P10–P12 | not started |
 | P9 Attendance | **held** (Q40 ruling: until Q68/Q69 and the related attendance questions are answered) |
 

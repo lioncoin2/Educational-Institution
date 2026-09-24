@@ -12,6 +12,9 @@ hub, [communities-live-attendance.md](communities-live-attendance.md). The
 community side (stints, versions, act rules, the lifecycle table) is in
 [communities.md](communities.md). The decision is recorded in
 [ADR 0018](decisions/0018-community-chat-projection.md), status Accepted (2026-09-23).
+Its delivery shortcut, §7.3's lag filter, is replaced by
+[ADR 0022](decisions/0022-community-chat-delivery-check.md), accepted
+2026-09-24: every recipient page is checked against Communities (§20.2).
 
 **The name.** In code and in these documents the brief's "Group" is the
 **Community** aggregate: module `communities`, id `communityId`. "Group" is
@@ -1193,7 +1196,9 @@ Deliberately later:
 - **The Q28 collapse seam** and an optional `memberCount` on `message.sent`
   (P10, only after Q28).
 - **Carrying the lag flag in the recipients cursor**, so a walk checks the
-  head once instead of once per page.
+  head once instead of once per page. Since
+  [ADR 0022](decisions/0022-community-chat-delivery-check.md), every page is
+  checked whatever the lag, so this would save only the head read.
 - **`community.messages.moderate`** (P12, after Q51 and Q23). Messaging will
   ask one more permit; no new projection is needed.
 - **Sequence allocation without the row lock**, if Q51 lets many people post.
@@ -1296,10 +1301,11 @@ All technical; none decides a policy.
   (§20.8).
 
 After review, P4 changed six things. The first three answer one finding, and
-are recorded as [ADR 0022](decisions/0022-community-chat-delivery-check.md)
-(Proposed; it supersedes 0018's decision 9 in part). When
-Communities is restored from a backup, it hands out again the versions the
-projection has already applied. `projected = head` then says nothing about
+are recorded as [ADR 0022](decisions/0022-community-chat-delivery-check.md),
+accepted 2026-09-24. It replaces 0018's delivery shortcut, decision 9's lag
+filter. When Communities is restored from a backup independently of
+messaging, it hands out again the versions the projection has already
+applied. `projected = head` then says nothing about
 agreement: a lost join could be delivered to, and a lost removal could keep a
 real member out.
 

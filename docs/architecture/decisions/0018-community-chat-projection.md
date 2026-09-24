@@ -2,9 +2,23 @@
 
 **State: ACCEPTED (2026-09-23) — implemented in P4. Until then nothing here exists.**
 
-**Status:** Accepted
+**Status:** Accepted; superseded in part by [0022](0022-community-chat-delivery-check.md) (2026-09-24)
 **Accepted:** 2026-09-23, by the user (the architecture design was approved to proceed; the Q40 ruling is recorded in [0016](0016-communities-module.md)).
 **Date:** 2026-09-23
+
+> **Superseded in part by [0022](0022-community-chat-delivery-check.md)**,
+> accepted 2026-09-24. 0022 replaces this record's delivery shortcut:
+> decision 9's lag filter, which let a recipient page through unchecked
+> while the projected version equalled the community's head.
+>
+> After an independent restore of Communities, versions are issued again,
+> so equal versions no longer prove equal membership. Every page is
+> therefore now checked against Communities.
+>
+> 0022 also adopts the alternative this record rejected, "filter every
+> recipient page through Communities", and extends decision 7's reconciler
+> triggers. Below is this record as accepted on 2026-09-23. It is not
+> rewritten; notes mark the parts 0022 replaces.
 
 **Supersedes [0011](0011-messaging-v1.md) §4–5 in part**: for a conversation
 linked to a community, messaging no longer owns membership. Its own add,
@@ -127,6 +141,11 @@ Everything below is proposed. None of it exists today.
    - **Reconciler**: after an authority restore (projection ahead of the head)
      or on demand.
 
+   > **Extended by [0022](0022-community-chat-delivery-check.md):** the
+   > reconciler also runs when a recipient page, an access refusal, a repair
+   > or an admission sees a change Communities never made. It runs in the
+   > sync's worker.
+
 8. **The authority is asked on every access.** `ConversationAccess` stays the
    single checkpoint and gains a community branch that asks
    `COMMUNITY_AUTHORIZATION` for `community.chat.read` or
@@ -149,6 +168,11 @@ Everything below is proposed. None of it exists today.
    ([community-chat.md §7.3](../community-chat.md#73-who-receives-a-message-the-lag-filter)).
    An unknown community, or one whose `chatReadable` effect is false, yields
    an empty page.
+
+   > **Superseded by [0022](0022-community-chat-delivery-check.md):** the lag
+   > filter is replaced. Every page is narrowed by `statesOf`, whether the
+   > projection lags or not. The read ceiling above still applies to every
+   > page.
 
 10. **Events.** For a linked conversation messaging raises only
     `message.sent` and `message.read` (with `conversationType 'CHANNEL'`),
@@ -273,6 +297,10 @@ If accepted:
   fan-out reads in steady state. The version comparison gives the same
   membership safety; the read ceiling is applied on every page anyway,
   through identity (decision 9).
+
+  > **Adopted by [0022](0022-community-chat-delivery-check.md).** Review
+  > showed that the version comparison stops being equivalent once an
+  > independent restore of Communities issues versions again.
 - **A `communities.membership.changed` hint, one per transaction.** Dropped:
   the per-member events carry `membershipVersion` and serve as wake-ups.
 - **Messaging's caps for community chats** (a 30,000-member chat would be

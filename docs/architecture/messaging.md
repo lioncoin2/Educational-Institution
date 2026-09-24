@@ -621,7 +621,8 @@ chat each page comes from the projection. It is then narrowed twice, on
 every page:
 
 - to the members Communities reports ACTIVE (one `statesOf`), lagging or not
-  ([ADR 0022](decisions/0022-community-chat-delivery-check.md), Proposed);
+  ([ADR 0022](decisions/0022-community-chat-delivery-check.md), which
+  replaced ADR 0018's lag filter);
 - to the accounts holding every permission of `COMMUNITY_CHAT_READ_CEILING`.
 
 So a removed member, one whose role lost part of the read ceiling, or someone
