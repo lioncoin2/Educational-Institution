@@ -285,17 +285,18 @@ deactivating a halaqa locks it `FOR UPDATE` — so no enrollment slips into a
 halaqa as it closes. Account ids are plain columns: suspending an account
 leaves its enrollments alone.
 
-> **Proposed change:** see
+> **Landed in P2:** see
 > [communities.md §5.2](communities.md#52-counters-and-version-allocation)
 > and the
 > [global lock order](communities-live-attendance.md#52-the-global-lock-order-communities)
-> (approved design, [ADR 0016](decisions/0016-communities-module.md) Accepted).
-> The proposed `communities` tables would take a per-aggregate,
-> commit-ordered version from `communities.membership_version` under the
-> community row lock, as messaging takes `conversations.last_sequence`
-> under the conversation row lock today. Every communities transaction
-> would take its locks in one global order, with the community row the last
-> existing row it locks.
+> ([ADR 0016](decisions/0016-communities-module.md) Accepted).
+> The `communities` tables take a per-aggregate, commit-ordered version from
+> `communities.membership_version` under the community row lock, as
+> messaging takes `conversations.last_sequence` under the conversation row
+> lock. Every communities transaction takes its locks in one global order,
+> with the community row the last existing row it locks; P3 added its grant
+> rows to that order, before the community row
+> (`communities/infrastructure/drizzle-community-repository.ts:104-122`).
 
 ### `audit_log`
 

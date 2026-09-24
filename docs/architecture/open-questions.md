@@ -102,6 +102,10 @@ later.
 **Proposed design (Q40–Q72).** The proposed modules would delete nothing:
 stints, links, grants, live sessions, hands and snapshots are kept until
 this is answered ([Q71](#q71--correcting-retaining-and-erasing-snapshots)).
+Built in P2 and P3 for stints, links and grants: Communities' Postgres
+adapter deletes no row — a removal or a revocation ends a stint or a grant,
+and a community is never deleted
+([Q47](#q47--retiring-a-community)).
 
 ---
 
@@ -493,7 +497,8 @@ participant, so a change applies to future joins without a migration.
 
 **Proposed design (Q40–Q72).** Community chats would follow the channel
 rule (full history), PROVISIONALLY; see
-[Q52](#q52--community-chat-history-for-newcomers-and-returners).
+[Q52](#q52--community-chat-history-for-newcomers-and-returners). Built in P4:
+`COMMUNITY_HISTORY = 'FULL'`.
 
 ---
 
@@ -518,7 +523,12 @@ PROVISIONAL (this question): members would see the community, its count and
 themselves; listing would need `community.members.view`, with display names
 only. Inside a live session, every participant sees every other
 participant's name until [Q59](#q59--visibility-inside-a-live-session) is
-answered.
+answered. Built in P2 for communities: `GET /communities/:communityId`
+carries the count and the caller's own `me` block, and the roster needs
+`community.members.view` (or oversight, audited) and returns display names,
+never emails. Since P5 a community's realtime frames tell only the person a
+membership or access change concerns
+([realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs)).
 
 ---
 
@@ -547,6 +557,9 @@ its own permission and probably a second approval — not a widening of
 `community.messages.moderate` ([Q51](#q51--the-community-chat-who-may-post));
 its oversight removes, never adds ([Q43](#q43--institutional-oversight-of-communities));
 removal from a live session is [Q64](#q64--removing-a-participant-from-a-session).
+Built in P2: the reservation is a comment beside `COMMUNITY_CAPABILITIES`
+(`communities/contracts/capabilities.ts`), not a capability, and oversight
+removes members but never adds them.
 
 ---
 
@@ -677,7 +690,9 @@ change to the model or the API.
 design keeps community chats above the load-tested size disabled (a send
 returns 412 `messaging.community_chat_over_capacity`) until gates G1–G4
 hold; G4 is this question and Q28 answered, or the cost accepted
-([community-chat.md §11.2](community-chat.md#112-gates-g1g4)).
+([community-chat.md §11.2](community-chat.md#112-gates-g1g4)). Built in P4:
+the switch, `MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS` (default 250). G1
+(P5) and G2 (P4) have landed; G3 and G4 do not hold, so it stays at 250.
 
 ---
 
@@ -908,7 +923,8 @@ distinct duties would be permissions checked in the future modules that act
 per halaqa.
 
 **Proposed design (Q40–Q72).** No proposed module would exercise
-`attendance.*`; community snapshots would be scoped by community standing,
+`attendance.*`, and none built in P2–P5 does; community snapshots would be
+scoped by community standing,
 which reviewers must accept ([Q69](#q69--who-records-and-who-views-snapshots)).
 
 ---
@@ -1148,7 +1164,7 @@ unconfirmed.
   migrations run before the seed.
 - **Trainees** are Q38.
 
-**Proposed design (Q40–Q72).** The proposed `communities` module is not
+**Proposed design (Q40–Q72).** The `communities` module (built in P2) is not
 called "group" and has no halaqa link, so it answers nothing here; see
 [Q40](#q40--governance-which-gates-apply-to-the-new-modules) and
 [Q50](#q50--communities-and-the-academic-structure).
@@ -1321,8 +1337,9 @@ audiences.
 > approved on 2026-09-23 and is implemented in phases; Q40 is answered. Each
 > **Built instead** below was written before implementation and reads
 > "nothing", followed by the default the design uses; the phase that builds a
-> default updates its entry (Q41–Q53 name the phase — P2, P3 or P4 — that
-> built theirs). Every such default is PROVISIONAL, belongs to the question it sits
+> default updates its entry (Q41–Q53 name the phase — P2, P3, P4 or P5 —
+> that built theirs; Q59, Q62 and Q66 name what P0, P1 and P5 built toward
+> theirs). Every such default is PROVISIONAL, belongs to the question it sits
 > under, and is not a decision — building it answered nothing.
 >
 > The brief's "group" is the **Community** aggregate here: "group" already
@@ -1492,8 +1509,8 @@ default:
 **When answered.** Who holds `communities.moderate` is a `role_permissions`
 migration, as in Q1. A different ceiling for one capability is one row in
 the act-rules constant (P3). Sub-delegation is one new capability and a
-check; the proposed grant row already records `granted_by`, so no data
-migrates.
+check; the grant row (P3, `0011_communities_grants`) already records
+`granted_by`, so no data migrates.
 
 ---
 
@@ -1513,7 +1530,9 @@ Revealing staff or monitor roles in large groups of minors is a privacy
 decision (Q22). Time-boxed grants are already deferred in
 [authorization.md §10](authorization.md#10-deferred).
 
-**Built instead.** Implemented as the default below — P3
+**Built instead.** Implemented as the default below — P3, and P5 (the
+`community.access.changed` frame, to the affected user only:
+[realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs))
 ([communities.md §6.10](communities.md#610-how-grants-end-and-dormancy)).
 PROVISIONAL default:
 
@@ -1525,10 +1544,11 @@ PROVISIONAL default:
 - nothing is broadcast; only the affected user gets the
   `community.access.changed` frame.
 
-**When answered.** An expiry is a nullable `expires_at` on the proposed
-grants table and one condition in the evaluator (P3, or additive after it).
-Purging is a sweep. Visibility is a view rule; announcing grants is a
-realtime audience (P5) and, if notified, a translator (P10).
+**When answered.** An expiry is a nullable `expires_at` on the grants table
+(P3 built it without one) and one condition in the evaluator, both
+additive. Purging is a sweep. Visibility is a view rule; announcing grants
+is a realtime audience (not built in P5, whose frame goes to the holder
+only; deferred, to be scheduled) and, if notified, a translator (P10).
 
 ---
 
@@ -1651,7 +1671,7 @@ their creator's authority removes one check.
 **Why not guessed.** Removal is a moderation act with safeguarding weight.
 Announcing it discloses membership (Q22).
 
-**Built instead.** Implemented as the default below — P2 (P4: a community chat follows it — messaging refuses its own add, remove and leave there with 412 `messaging.membership_managed_by_community`, and a rejoin starts a new window and watermark)
+**Built instead.** Implemented as the default below — P2 (P4: a community chat follows it — messaging refuses its own add, remove and leave there with 412 `messaging.membership_managed_by_community`, and a rejoin starts a new window and watermark; P5: the `community.member.removed` frame, to the person who left or was removed only — [realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs))
 ([communities.md §3.2](communities.md#32-membership-stints)).
 PROVISIONAL default:
 
@@ -1667,7 +1687,9 @@ What removal does to a running live session is
 
 **When answered.** Leaving and rejoining are act rules and one check in
 redemption (P2). A reason is a nullable column on the stint, additive.
-Announcing is a realtime audience (P5) and, for a notification, a translator
+Announcing is a realtime audience (not built in P5; deferred until this
+and [Q22](#q22--who-may-see-who-is-in-a-conversation) are answered, then to
+be scheduled) and, for a notification, a translator
 (P10, [Q67](#q67--notifications-for-community-live-and-attendance-facts)).
 
 ---
@@ -1686,7 +1708,9 @@ What exists today: `ACADEMIC_RELATIONSHIPS` reads ACTIVE relationships
 whatever the halaqa's status (Q32), and academic's events are not durable,
 so a synced copy would drift.
 
-**Built instead.** Nothing — design only
+**Built instead.** Implemented as the default below — P2: the module has
+no halaqa column and imports nothing of academic
+(`communities-boundaries.spec.ts`)
 ([communities.md §18](communities.md#18-relation-to-academic-q50)).
 PROVISIONAL default: no link, no enrollment-sourced membership and no
 derived capabilities in v1.
@@ -1944,9 +1968,11 @@ for minors. LiveKit shows every participant who is not hidden to everyone.
 The visible in-room roster undoes Q22's provisional hidden community roster
 for anyone who joins a session.
 
-**Built instead.** Nothing — design only
+**Built instead.** For community sessions, nothing — design only
 ([live.md §16](live.md#16-what-travels-where);
-[ADR 0019](decisions/0019-community-scoped-live-sessions.md)). PROVISIONAL
+[ADR 0019](decisions/0019-community-scoped-live-sessions.md)). P1 built the
+seam in the existing halaqa-bound module: `hidden` is stated in every
+permission set, always false (`live/domain/rtc-provider.ts`). PROVISIONAL
 default:
 
 - the LiveKit roster stays visible, as it is today;
@@ -2016,8 +2042,11 @@ in the reconciler's room sweep (P6).
 **Why not guessed.** Queue fairness and classroom flow are teaching policy
 (the Q4 reasoning). An automatic expiry can silently drop a quiet student.
 
-**Built instead.** Nothing — design only
-([live.md §5.1](live.md#51-transitions)). PROVISIONAL
+**Built instead.** For community sessions, nothing — design only
+([live.md §5.1](live.md#51-transitions)). P1 built this default in the
+existing halaqa-bound module (`live/domain/speaker-request.ts`: the
+transitions and `MAX_CONCURRENT_SPEAKERS = 4`; `DELETE …/hand` yields the
+floor). PROVISIONAL
 default: a grant comes only from a raised hand; a speaker may hand the floor
 back (granted → withdrawn); no timeouts; the speaker cap stays at 4 (Q4).
 
@@ -2136,15 +2165,21 @@ the realtime connection opens only for holders of `messaging.read`
 (`realtime-sessions.ts:443`). Opening it without that would need a
 permission check per frame family on messaging's frames.
 
-**Built instead.** Nothing — design only
+**Built instead.** The default below, with the gate unchanged
 ([communities-live-attendance.md §16.3](communities-live-attendance.md#163-how-protocol-v1-grows-and-why-there-is-one-socket)).
-PROVISIONAL default: the connection gate stays `messaging.read`. A test pins
-that every role holding `live.join` or `communities.read` also holds
-`messaging.read`. Other accounts get HTTP only.
+P0 added the test the default names (`identity/domain/role.spec.ts`). P5's community
+frames travel on the same connection, so they reach only accounts that
+passed this gate, and each audience is narrowed further to the holders of
+`COMMUNITY_VIEW_CEILING`
+([realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs));
+live frames are not built (P7). PROVISIONAL default: the connection gate
+stays `messaging.read`. A test pins that every role holding `live.join` or
+`communities.read` also holds `messaging.read`. Other accounts get HTTP
+only.
 
 **When answered.** "No role lacks it" changes nothing. Otherwise the gate at
 that line widens, and messaging's relay checks `messaging.read` per frame
-(P5).
+(not built in P5; deferred, to be scheduled if the answer needs it).
 
 ---
 

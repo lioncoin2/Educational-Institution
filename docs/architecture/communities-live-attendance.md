@@ -38,7 +38,10 @@ second. "Group" stays the brief's product word only.
   short path when the name is ambiguous). Line numbers cited in other
   documents of `docs/architecture/` are at that commit too, before this
   package's notes shifted them ([§25.3](#253-what-this-pass-did-not-do)).
-- **Everything else is a proposal.** Every default that is institutional
+- **Everything else was a proposal when written.** P0–P5 have landed since
+  ([§25](#25-implementation-phases)); where this document says so, it marks
+  the item "landed in Pn" or "as landed", and a `file:line` it cites for a
+  landed item is in the tree that phase left. Every default that is institutional
   policy is labelled PROVISIONAL and names its open question. Engineering
   bounds that must be measured are labelled PROVISIONAL too.
 - **LiveKit facts** come from the server and SDK source, not from LiveKit's
@@ -93,8 +96,9 @@ This package forms one acyclic modular monolith.
 
 ### 0.2 The three gating conditions
 
-**1. Phase 0 corrections.** The guards this design relies on are not real
-today:
+**1. Phase 0 corrections.** The guards this design relies on were not real
+at `9670c47` (P0 made them real, [§0.3](#03-what-would-have-been-spaghetti-and-what-prevents-it)
+and [§25](#25-implementation-phases)):
 
 - `application-has-no-vendor-sdks` can never fire. Its `to.path` is anchored
   at the package name, but resolved paths start with `node_modules/`
@@ -146,20 +150,21 @@ contracts.
 ### 0.3 What would have been spaghetti, and what prevents it
 
 A guard with a `file:line` exists today; one marked *proposed* is part of the
-phase named and does not exist yet.
+phase named and does not exist yet. Line numbers are at `9670c47`, except for a
+guard marked "landed in Pn", whose file and lines are in the current tree.
 
 | Forbidden by the brief | How this design avoids it | Enforced by |
 | --- | --- | --- |
-| Cross-module database or repository access | Each table is written and read only by its owner's infrastructure; ids cross modules as plain text; no cross-module foreign key | `no-cross-module-internals` (`.dependency-cruiser.cjs:141-161`); schema-import and `pg_constraint` tests per new module (*proposed*, P2, P4, P6, P9; the pattern of `messaging-persistence.spec.ts:129`) |
-| Importing another module's infrastructure | Modules meet only at `contracts/` and `*.module.ts`; exports are contract tokens | the same rule; the exports-are-contracts test (*proposed*, P0) |
+| Cross-module database or repository access | Each table is written and read only by its owner's infrastructure; ids cross modules as plain text; no cross-module foreign key | `no-cross-module-internals` (`.dependency-cruiser.cjs:141-161`); schema-import and `pg_constraint` tests per new module, on the pattern of `messaging-persistence.spec.ts:129`: Communities' landed in P2 (`communities-boundaries.spec.ts:102-117`; `communities-postgres.spec.ts:244-258`); the community chat's P4 columns sit in messaging's own tables, covered by that same messaging test (run after migration 0012) and `messaging-boundaries.spec.ts:83-88`; Live's and Attendance's (*proposed*, P6, P9) |
+| Importing another module's infrastructure | Modules meet only at `contracts/` and `*.module.ts`; exports are contract tokens | the same rule; the exports-are-contracts test (`boundaries.spec.ts:118-139`, landed in P0) |
 | Business logic in controllers | One use case per act; controllers map DTOs and results | the existing API-layer rules (`.dependency-cruiser.cjs:119-137`) |
 | Business logic in Flutter screens | Screens render server capability booleans; controllers and repositories own flow | Flutter boundary tests on the pattern of `academic_boundaries_test.dart:51-94`: `app/test/live/live_boundaries_test.dart` (landed in P0); `app/test/communities/community_boundaries_test.dart` (landed in P5: community screens, widgets and state import no HTTP client, socket, API client or repository implementation and read no permissions or roles; only `app_providers.dart` constructs a `CommunityRepository`); live's (*proposed*, P7) |
-| LiveKit SDK in domain code | Narrow RTC ports in `live/domain`; one adapter file | `domain-is-dependency-free` (`.dependency-cruiser.cjs:26-36`); the fixed vendor-SDK rule, `livekit-sdk-only-in-the-live-adapter` and the rules-match spec (*proposed*, P0) |
+| LiveKit SDK in domain code | Narrow RTC ports in `live/domain`; one adapter file | `domain-is-dependency-free` (`.dependency-cruiser.cjs:26-36`); the fixed vendor-SDK rule (`.dependency-cruiser.cjs:79-92`), `livekit-sdk-only-in-the-live-adapter` (`:121-134`) and the rules-match spec (`rules-match.spec.ts`), all landed in P0, with `live-boundaries.spec.ts` proving the LiveKit rule non-vacuous |
 | Messaging owning membership rules | Messaging asks `COMMUNITY_AUTHORIZATION` on every access; its participant rows for community chats are a named projection with no write port | `messaging-boundaries.spec.ts` (domain purity; Communities reached only through its contracts; exports unchanged); the 412 refusals on messaging's membership routes (`community-chat.spec.ts`, `community-chat.api.spec.ts`; landed in P4) |
-| Academic owning generic group infrastructure | The module is `communities`; no halaqa link in v1 ([Q50](open-questions.md#q50--communities-and-the-academic-structure)) | `communities-boundaries.spec` (*proposed*, P2) |
+| Academic owning generic group infrastructure | The module is `communities`; no halaqa link in v1 ([Q50](open-questions.md#q50--communities-and-the-academic-structure)) | `communities-boundaries.spec.ts:74-86` (landed in P2): Communities reaches identity's contracts and no other module, academic included, and its module file imports `IdentityModule` only |
 | Attendance reading LiveKit | Only `LIVE_PRESENCE`, allow-listed to attendance | `attendance-boundaries.spec` (*proposed*, P9) |
-| A giant `GroupService`, `LiveService` or god service | One use case per act; `CommunityAuthorizationService` is one pure evaluator, not a façade | review; the exports-are-contracts test (*proposed*, P0) |
-| Circular dependencies | A DAG with a topological order; three candidate back-edges rejected ([§3.4](#34-back-edges-and-the-rule-that-forbids-each)) | `no-circular` (`.dependency-cruiser.cjs:17-23`); the no-`forwardRef` test (*proposed*, P0); per-module boundary specs (four exist, e.g. `realtime-boundaries.spec.ts:118-123`; one per new module *proposed*) |
+| A giant `GroupService`, `LiveService` or god service | One use case per act; `CommunityAuthorizationService` is one pure evaluator, not a façade | review; the exports-are-contracts test (`boundaries.spec.ts:118-139`, landed in P0) |
+| Circular dependencies | A DAG with a topological order; three candidate back-edges rejected ([§3.4](#34-back-edges-and-the-rule-that-forbids-each)) | `no-circular` (`.dependency-cruiser.cjs:17-23`); the no-`forwardRef` test (`boundaries.spec.ts:143-148`, landed in P0); per-module boundary specs (four existed at `9670c47`, e.g. `realtime-boundaries.spec.ts:118-123`; `live-boundaries.spec.ts` landed in P0 and `communities-boundaries.spec.ts` in P2; attendance's *proposed*, P9) |
 
 ---
 
@@ -206,7 +211,7 @@ the chat, or in a live session, and each of those has its own bound:
 
 | Scale | Unit | Bounded by | Measured today |
 | --- | --- | --- | --- |
-| A. Membership | one stint row | Nothing as policy. `member_count` has no upper CHECK; 30,000 and 100,000 are fixture sizes | Nothing (not built) |
+| A. Membership | one stint row | Nothing as policy. `member_count` has no upper CHECK; 30,000 and 100,000 are fixture sizes | Nothing at `9670c47`. Since P2, `EXPLAIN` of the statements actually sent, on 30,000 and 100,000-member communities among about 900,000 stints, and a fixed number of statements per page (`communities-scale.spec.ts`) |
 | B. Messaging | one message, fanned out to online readers | Realtime: today ⌈N/1000⌉ queries per message per instance, whatever is online (`messaging-relay.ts:207-219`); with `OnlineAudience` (P5, gate G1; landed 2026-09-24) at most `1 + ⌈A/1000⌉`, where A is the accounts connected to that instance (A ≤ 10,000, `realtime-policy.ts:42`). Notifications: one row per reader (Q28) | Fan-out tested at 250 members (`messaging-persistence.spec.ts:522-551`); since P5, the relay's recipient calls counted at 30,000 members with 50 and 2,500 accounts online (`community-chat-scale.spec.ts`; [realtime.md §C5](realtime.md#c5-onlineaudience-fan-out-bounded-by-who-is-connected-gate-g1)) |
 | C. Live | one participant in one room on one node | The per-session cap, to be set from measurement (PROVISIONAL 300 plus a reserve of 10 until then, [Q57](open-questions.md#q57--live-session-size-and-concurrency)) | Nothing |
 | D. Attendance | one entry per observed participant per press | The room's size, never the membership | Nothing |
@@ -266,9 +271,9 @@ the chat, or in a live session, and each of those has its own bound:
 | Module | Status | Owns | Exports | Must not know |
 | --- | --- | --- | --- | --- |
 | **identity** (existing, extended) | Implemented. Gains 4 catalogue leaves (`communities.read`, `.create`, `.moderate`, `.manage`) with data migration 0009 (P2). `PROVISIONAL_POLICY_RULES` becomes `[]` (P6) | Accounts, roles, the permission catalogue, the provisional role matrix, `AuthorizationService` (synchronous, deny-overrides), `AccountDirectory` (`describe`, `withPermission`, ≤ 1,000 ids). Role-wide ceilings only | Unchanged: `AUTHORIZATION_SERVICE`, `ACCOUNT_DIRECTORY`, `ACCESS_TOKEN_AUTHENTICATOR` (`identity.module.ts:181`) | Communities, stints, grants, invitations; live sessions, hosts, attendance. After P6 it receives no `ownerUserId` for community or live decisions. No other module contributes a `PolicyRule`. No three-segment permission |
-| **communities** (NEW) | Approved. P2 core, P3 delegation. Not gated by the academic hold (Q40, answered) | The Community aggregate; membership stints; invitation links; capability grants (P3); the act-rules and lifecycle tables; one evaluator (`decideCommunityAct`); one use case per act; `CommunitiesJournal`; `CommunityPeople` | `COMMUNITY_AUTHORIZATION`, `COMMUNITY_MEMBERSHIP`, `COMMUNITY_DIRECTORY`, `COMMUNITY_CAPABILITY_HOLDERS` (P3). Type-only: `capabilities.ts`, `vocabulary.ts`, `events.ts` | Messaging and chat data (no last message, no unread count); live sessions ("live now" is composed by the client); LiveKit, attendance, realtime, notifications; academic and halaqat (Q50); any other module's tables. Imports `IdentityModule` only; its contracts import `shared` and `identity/contracts/permissions.ts`, never the identity barrel |
-| **messaging** (existing, extended in P4) | Implemented; gains an additive community-chat branch | Conversations, messages, attachment references, ordering, idempotent sends, watermarks, history windows. NEW: the link `conversations.community_id`; the named, non-authoritative projection of a community's ACTIVE members; `CommunityChatSync`, `CommunityChatSweeper`, `CommunityChatReconciler`, `GetCommunityChatUseCase`. `ConversationAccess` stays the single checkpoint | Unchanged: `MESSAGE_RECIPIENTS`, `MESSAGE_DELIVERY` (`messaging.module.ts:108`) | Community rules (who may join, invite, lock or post: it asks); invitations; lifecycle status values; live, LiveKit, notifications, realtime. `messaging/domain` never imports communities; messaging never reaches live, even transitively |
-| **live** (existing, evolved in place) | Implemented today in memory and halaqa-bound. P1 hardening, P6 community scope, P9 observation | `LiveSession` (replaces `LiveRoom`), `SpeakerRequest`, `PresenterGrant`, moderation actions; `capabilitiesFor`; the media room name; the RTC ports and the only LiveKit adapter; `LiveAccess`, `LiveReconciler`, `ProtectLiveSessions`, `LiveAudienceService`; the observation rule `provider_registry_v1` (applied by `LivePresenceService` behind `LIVE_PRESENCE`, P9); one use case per act | Today nothing (`live.module.ts:36-62`). Then `LIVE_AUDIENCE` (P6), `LIVE_SESSIONS` (P6), `LIVE_PRESENCE` (P9, attendance only) | Membership storage and community rules (it asks); the raw lifecycle status (it reads effects flags and refusals); attendance semantics (it reports raw connection states); messaging, realtime, notifications, academic, operations |
+| **communities** (NEW) | Implemented: P2 core and P3 delegation (landed 2026-09-23), and one contract constant each in P4 and P5. Not gated by the academic hold (Q40, answered) | The Community aggregate; membership stints; invitation links; capability grants (P3); the act-rules and lifecycle tables; one evaluator (`decideCommunityAct`); one use case per act; `CommunitiesJournal`; `CommunityPeople` | `COMMUNITY_AUTHORIZATION`, `COMMUNITY_MEMBERSHIP`, `COMMUNITY_DIRECTORY`, `COMMUNITY_CAPABILITY_HOLDERS` (P3). Type-only: `capabilities.ts`, `vocabulary.ts`, `events.ts` | Messaging and chat data (no last message, no unread count); live sessions ("live now" is composed by the client); LiveKit, attendance, realtime, notifications; academic and halaqat (Q50); any other module's tables. Imports `IdentityModule` only; its contracts import `shared` and `identity/contracts/permissions.ts`, never the identity barrel |
+| **messaging** (existing, extended in P4) | Implemented; gained an additive community-chat branch (landed in P4) | Conversations, messages, attachment references, ordering, idempotent sends, watermarks, history windows. NEW: the link `conversations.community_id`; the named, non-authoritative projection of a community's ACTIVE members; `CommunityChatSync`, `CommunityChatSweeper`, `CommunityChatReconciler`, `GetCommunityChatUseCase`. `ConversationAccess` stays the single checkpoint | Unchanged: `MESSAGE_RECIPIENTS`, `MESSAGE_DELIVERY` (`messaging.module.ts:108`) | Community rules (who may join, invite, lock or post: it asks); invitations; lifecycle status values; live, LiveKit, notifications, realtime. `messaging/domain` never imports communities; messaging never reaches live, even transitively |
+| **live** (existing, evolved in place) | Implemented today in memory and halaqa-bound. P1 hardening (landed 2026-09-23), P6 community scope, P9 observation | `LiveSession` (replaces `LiveRoom`), `SpeakerRequest`, `PresenterGrant`, moderation actions; `capabilitiesFor`; the media room name; the RTC ports and the only LiveKit adapter; `LiveAccess`, `LiveReconciler`, `ProtectLiveSessions`, `LiveAudienceService`; the observation rule `provider_registry_v1` (applied by `LivePresenceService` behind `LIVE_PRESENCE`, P9); one use case per act | Today nothing (`live.module.ts:36-62`). Then `LIVE_AUDIENCE` (P6), `LIVE_SESSIONS` (P6), `LIVE_PRESENCE` (P9, attendance only) | Membership storage and community rules (it asks); the raw lifecycle status (it reads effects flags and refusals); attendance semantics (it reports raw connection states); messaging, realtime, notifications, academic, operations |
 | **attendance** (NEW, **HELD**) | Designed only. Blocked by Q40, Q69 and P6 | `AttendanceSnapshot` (header and entries); the recorded `observation_rule` id; the idempotency key; four use cases; `AttendanceAccess`; `AttendanceJournal` | Nothing in v1; type-only `contracts/events.ts`. A reader contract waits for its first consumer | LiveKit and live internals; operations' `AttendanceState`; academic and halaqa ids; `attendance.read` and `attendance.manage` (never consulted; a grep test enforces it); notifications, realtime. Only `app.module` imports it |
 | **realtime** (existing, extended in P5, P7) | Implemented; additive only. P5 landed 2026-09-24 ([realtime.md Part C](realtime.md#part-c--communities-in-real-time)) | Connections (plus `onlineUserIds()`, P5); protocol v1 frames; `MessagingRealtimeRelay`, `NotificationRealtimeRelay`, NEW `CommunitiesRealtimeRelay` (P5), NEW `LiveRealtimeRelay` (P7); the internal `OnlineAudience` (P5: `onlineAudience`, `realtime/application/online-audience.ts`); transient coalescing buffers (P7) | Nothing; imported only by `app.module` (`realtime-boundaries.spec.ts:118-123`) | Any module's tables; membership rules (audiences are asked of source contracts at delivery time); LiveKit. It stores nothing and opens no second socket |
 | **notifications** (existing) | Implemented; unchanged until P10 | Notification rows, preferences, devices, push. Later: translators for the new facts, importing only contracts | Unchanged: `NOTIFICATION_READER` | Community rules, live state, LiveKit. It never becomes an authorization bypass: opening a notification runs the owner's checkpoint |
@@ -347,19 +352,19 @@ cycle is possible.
 | realtime | identity, messaging, notifications | `realtime.module.ts:34` | existing |
 | live | identity | `live.module.ts:37`; `AUTHORIZATION_SERVICE`; from P1 also `ACCOUNT_DIRECTORY` (display names, batched `withPermission`) | existing |
 | `live/infrastructure/livekit-rtc-provider.ts` | `livekit-server-sdk` | the only SDK importer; enforced from P0 by `livekit-sdk-only-in-the-live-adapter` | existing |
-| communities | identity | `CommunitiesModule` imports `IdentityModule` only. Code imports `identity/contracts/{authorization,account-directory,permissions}.ts`, never the barrel. Ceilings with context `{resourceType 'communities.community', resourceId, attributes {act}}`; eligibility and holder filtering through `ACCOUNT_DIRECTORY` | **new** |
-| communities | shared, platform | `AUDIT_LOG`, `EVENT_PUBLISHER`, `RATE_LIMITER`, `CLOCK`, `ID_GENERATOR`, `Result`, `Principal`; `DATABASE`, `APP_CONFIG` in wiring | **new** |
-| messaging (application only) | communities | `COMMUNITY_AUTHORIZATION` (`community.chat.read`, `community.chat.post`); `COMMUNITY_MEMBERSHIP` (`heads`, `listHeads`, `statesOf`, `changesSince`, `members`); `COMMUNITY_DIRECTORY`; the constant `COMMUNITY_CHAT_READ_CEILING` (P4); subscribes to `communities.member.added` / `.removed` as wake-ups. Never from `messaging/domain` | **new** |
+| communities | identity | `CommunitiesModule` imports `IdentityModule` only. Code imports `identity/contracts/{authorization,account-directory,permissions}.ts`, never the barrel. Ceilings with context `{resourceType 'communities.community', resourceId, attributes {act}}`; eligibility and holder filtering through `ACCOUNT_DIRECTORY` | **new** (landed in P2) |
+| communities | shared, platform | `AUDIT_LOG`, `EVENT_PUBLISHER`, `RATE_LIMITER`, `CLOCK`, `ID_GENERATOR`, `Result`, `Principal`; `DATABASE`, `APP_CONFIG` in wiring | **new** (landed in P2) |
+| messaging (application only) | communities | `COMMUNITY_AUTHORIZATION` (`community.chat.read`, `community.chat.post`); `COMMUNITY_MEMBERSHIP` (`heads`, `listHeads`, `statesOf`, `changesSince`, `members`); `COMMUNITY_DIRECTORY`; the constant `COMMUNITY_CHAT_READ_CEILING` (P4); subscribes to `communities.member.added` / `.removed` as wake-ups. Never from `messaging/domain` | **new** (landed in P4) |
 | live (application) | communities | `COMMUNITY_AUTHORIZATION` (`community.live.start`, `.host`, `.moderate`, `.join`, `.raise_hand` per request; `permittedAmong` for `.join`, `.remain`, `.moderate` and `.host` in batches of 1,000 for the reconciler and `LIVE_AUDIENCE`); `COMMUNITY_MEMBERSHIP` (`heads` for session-wide effects); `COMMUNITY_CAPABILITY_HOLDERS` (moderators); subscribes to `communities.member.removed`, `communities.capability.revoked`, `communities.community.locked`/`unlocked` as accelerators | **new** |
 | realtime | communities | `CommunitiesRealtimeRelay`: `COMMUNITY_MEMBERSHIP.members` (`OnlineAudience`), `CommunityEvents`. As landed in P5: `RealtimeModule` imports `CommunitiesModule` (`realtime.module.ts:43`); the relay also asks `COMMUNITY_MEMBERSHIP.statesOf` and `.heads` and reads `COMMUNITY_VIEW_CEILING`, which it checks through identity's `ACCOUNT_DIRECTORY.withPermission` ([realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs)) | **new** (landed in P5) |
 | realtime | live | `LiveRealtimeRelay`: `LIVE_AUDIENCE`, `LiveEvents` | **new** |
 | attendance (P9) | live | `LIVE_SESSIONS.describe`, `LIVE_PRESENCE.observe` | **new** |
 | attendance (P9) | communities | `COMMUNITY_AUTHORIZATION` (`community.attendance.record`, `.view`, added in P9; then, in the fallback order of [attendance.md §11.3](attendance.md#113-attendanceaccess-how-refusals-map), `community.live.moderate`, `community.live.host` and `community.view`) | **new** |
 | attendance (P9) | identity | `ACCOUNT_DIRECTORY.describe`; route-access decorators | **new** |
-| `app.module.ts` | communities, attendance | registration (P2, P9) | **new** |
+| `app.module.ts` | communities, attendance | registration (P2, P9) | **new** (communities landed in P2) |
 | notifications (P10) | communities, live, attendance contracts | translators import only `contracts/`; recipients from `COMMUNITY_MEMBERSHIP` or `COMMUNITY_CAPABILITY_HOLDERS` | future |
 | operations (only if Q70) | attendance | `attendance/contracts`; attendance never depends on operations | future |
-| Flutter `lib/features/*` | abstract repositories, `realtime_client.dart` + `realtime_frames.dart`, the `LiveMediaClient` interface | Riverpod providers; implementations bound only in `app_providers.dart` | **new** |
+| Flutter `lib/features/*` | abstract repositories, `realtime_client.dart` + `realtime_frames.dart`, the `LiveMediaClient` interface | Riverpod providers; implementations bound only in `app_providers.dart` | **new** (communities landed in P5: `lib/features/communities/`) |
 
 ### 3.3 Topological order and the cycle proof
 
@@ -384,8 +389,9 @@ Communities → Messaging, Live → Notifications, Attendance → Realtime →
 AppModule.** Every module imports only modules earlier in the order, so the
 graph is a DAG. Notifications and Attendance do not depend on each other; the
 matrix above lists Attendance first because P10's translators will read
-attendance contracts. No `forwardRef` exists today; a proposed P0 test would
-forbid it. No token is provided outside the module that declares it.
+attendance contracts. No `forwardRef` exists today, and since P0 a test
+forbids it (`boundaries.spec.ts:143-148`). No token is provided outside the
+module that declares it.
 
 **File level** (the contracts layer is the only cross-module surface besides
 `*.module.ts`):
@@ -409,8 +415,8 @@ because every Nest import is a file import between `*.module.ts` files.
 
 | Back-edge that would close a cycle | Forbidden by |
 | --- | --- |
-| communities → messaging, live, attendance, realtime, notifications, academic | new `communities-boundaries.spec`. `communities.module.ts` is checked with `edgesFrom`, because `reachableFrom` skips `*.module.ts` (`test/support/dependency-graph.ts:81`) |
-| live → messaging, realtime, notifications, attendance, academic, operations | new `live-boundaries.spec`, plus `notifications-boundaries.spec` |
+| communities → messaging, live, attendance, realtime, notifications, academic | `communities-boundaries.spec.ts:74-86` (landed in P2). `communities.module.ts` is checked with `edgesFrom`, because `reachableFrom` skips `*.module.ts` (`test/support/dependency-graph.ts:81`) |
+| live → messaging, realtime, notifications, attendance, academic, operations | `live-boundaries.spec.ts` (landed in P0, for LiveKit, live's contracts and who may reach live; the back-edges listed here are not asserted in it yet: *proposed*), plus `notifications-boundaries.spec` |
 | messaging → live, even transitively | `messaging-boundaries.spec.ts:43-50` stays green, because `communities/contracts` never reach live |
 | anything → realtime except `app.module` | `realtime-boundaries.spec.ts:118-123` |
 | anything → attendance except `app.module` | new `attendance-boundaries.spec` |
@@ -530,7 +536,10 @@ flow has one serialization point:
 
 ## 6. Persistence proposal
 
-**PROPOSAL.** No migration, table or seed exists. Every table is private to
+**PROPOSAL, landed in part.** The identity, communities and messaging rows
+below landed with their phases (P2, P3, P4) as migrations 0009–0012
+([persistence.md](persistence.md#communities-core-p2--two-steps)); no live or
+attendance table, migration or seed exists. Every table is private to
 its module and touched only by that module's infrastructure. There is **no
 foreign key across modules**: user, community and session ids cross as plain
 text, pinned per module by a `pg_constraint` test. Ids are text, timestamps
@@ -557,7 +566,8 @@ In-memory adapters implement the same ports for mock mode. No Redis.
 | attendance | `attendance_snapshot_entries` | PK (snapshot_id, user_id); connection CHECK (`CONNECTED`, `CONNECTING`); in-module FK to the header | P9 |
 
 Migration numbers other than 0009 are the next free numbers when each phase
-lands. Details: [communities.md](communities.md),
+lands (so far `0010_communities`, `0011_communities_grants` and
+`0012_community_chat`). Details: [communities.md](communities.md),
 [community-chat.md](community-chat.md), [live.md](live.md),
 [attendance.md](attendance.md).
 
@@ -1220,7 +1230,10 @@ this gap lands with the outbox (P11).
 - **What exists today:** four live routes — `POST /live/sessions/:id/join`,
   `POST /live/sessions/:id/hand`, `POST /live/requests/:id/grant` and
   `/revoke` (`live.controller.ts`). No community, start, end or attendance
-  route exists.
+  route exists. *Since then:* P1 added `DELETE /live/sessions/:id/hand` and
+  `POST /live/requests/:id/decline` (`live.controller.ts:56`, `:70`); P2 and
+  P3 added the §15.2 routes and P4 the first §15.3 route. No live start,
+  end, community-scoped live or attendance route exists.
 
 ### 15.2 Communities (P2; grants and ownership P3)
 
@@ -1865,7 +1878,7 @@ read, or a join without its membership check.
 | **P2** Communities core | The module (domain, Postgres and in-memory adapters, `/communities`, journal, events); stints, invitations (redemption re-checks the creator's ceiling and ACTIVE OWNER stint), lock/unlock; `COMMUNITY_AUTHORIZATION` (membership, owner, oversight bases), `COMMUNITY_MEMBERSHIP`, `COMMUNITY_DIRECTORY`; catalogue + migration 0009; boundary spec; 30k/100k fixtures | P0; the §13 step complete (Q35/Q36 answered, ADR 0015 landed), or the user's ruling on Q40; Q41–Q49 defaults recorded; Q42 (one owner or several) put to the institution, and its answer or an explicit acceptance of the one-owner default recorded, because P2 builds the one-owner index | The Postgres concurrency suite; EXPLAIN index scans at 30k and 100k; one audit and one event per effective change; the TEACHER-without-standing refusal matrix; mock parity | **Q40** (the §13 step, or the user's ruling) |
 | **P3** Delegation | Grants table; grant, revoke, transfer; the grant basis; `COMMUNITY_CAPABILITY_HOLDERS`; capability and ownership events; basis re-verified under lock; redemption's creator re-check gains the grant lookup | P2 | The truth table; the grant races; dormancy on ceiling loss; holders keyset under churn | P2 |
 | **P4** Community chat | Additive columns and CHECKs (`source_version`, `source_membership_id`, `source_joined_at` under the shape CHECK); projection, applier, materialization, sync, sweeper, reconciler (both adapters); the `ConversationAccess` branch; posting via permit; the capacity switch; 412 and 403 refusals; lag filter; the `COMMUNITY_CHAT_READ_CEILING` narrowing (the constant added to Communities' `capabilities.ts`); `authorizeEach` list views; the new route; the G2 index | P2 (P3 only for delegated posting) | A removed member refused at commit; projection property tests; 20 materializations → 1; existing security and membership specs unmodified; exports unchanged; chats disabled above the tested size until G1, G3, G4 | P2 |
-| **P5** Community realtime and Flutter communities | `onlineUserIds`, `OnlineAudience` (messaging relay swaps onto it: G1); `CommunitiesRealtimeRelay`; `community.*` frames; golden fixtures; Flutter `CommunityRepository`, frame families, capability-driven screens, `/invite`, `conversationForCommunity` | P2 (P3 for `access.changed`) | `OnlineAudience` property test; relay and WebSocket API tests; existing relay specs; Flutter parsing, golden, parity, boundary and layout tests | P2 |
+| **P5** Community realtime and Flutter communities | `onlineUserIds`, `OnlineAudience` (messaging relay swaps onto it: G1); `CommunitiesRealtimeRelay`; `community.*` frames; golden fixtures; Flutter `CommunityRepository`, frame families, capability-driven screens, `/invite`, `conversationForCommunity`. As landed: the repository reads only; `/invite` and the app's management actions are deferred, to be scheduled (the status table above) | P2 (P3 for `access.changed`) | `OnlineAudience` property test; relay and WebSocket API tests; existing relay specs; Flutter parsing, golden, parity, boundary and layout tests | P2 |
 | **P6** Community-scoped live sessions (backend) | `LiveSession` replaces `LiveRoom`; Postgres adapters with the start/end routes; `LiveAccess`; stop passing `ownerUserId` and retire `host-only-moderation` in the same change; join and raise through `COMMUNITY_AUTHORIZATION`; idempotent start and end; ensure-then-recheck; presenter slot; reconciler, with `RtcParticipantObserver.listParticipants` and the automatic media reset on a repeated violation; `COMMUNITY_AUTHORIZATION.permittedAmong` and `community.live.remain` in Communities; `ProtectLiveSessions`; soft and hard caps; `LIVE_AUDIENCE`, `LIVE_SESSIONS`; `AppConfig.live`; pinned LiveKit config and the adapter contract suite in CI | P1, P2, P3; LiveKit in CI | Contract suite green against a real server; lifecycle, cap and presenter concurrency; reconciler tests including the refreshed-token regression; no token without the permit; an all-permission principal without standing cannot moderate; no `ownerUserId` passed | P2, P3, LiveKit in CI |
 | **P7** Live realtime and Flutter live | `LiveRealtimeRelay` with coalescing; `LiveRepository`; `LiveEvent` families; `LiveSessionController`; `LiveMediaClient` bound to Unavailable; screens that say live audio is unavailable | P5, P6 | State-machine tests with fakes; mock mode never yields a usable media grant | P5, P6 |
 | **P7b** Media binding | `LiveKitLiveMediaClient` as the only `livekit_client` importer; Android foreground service and iOS broadcast extension | An ADR; devices or CI for Android, iOS and web | Device evidence recorded | a device-capable environment |

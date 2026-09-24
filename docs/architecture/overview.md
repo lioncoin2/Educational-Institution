@@ -197,7 +197,8 @@ Named, so that absence reads as a decision rather than an oversight:
 - **No 2500-person room UI.** Out of scope. Messaging V1 built the chat screens
   (list, conversation, composer); live rooms are the next milestone's.
 - **Postgres adapters only where there is code.** Identity, audit, files,
-  messaging and notifications are on Postgres. `live` is still in memory. The contract-only
+  messaging, notifications, academic and communities are on Postgres. `live`
+  is still in memory. The contract-only
   modules have no tables. See [persistence.md](persistence.md).
 - **No seeded accounts and no default credentials.** The first owner is created
   on the server with a CLI that reads the password from stdin. Q2.

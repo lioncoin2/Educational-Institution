@@ -777,11 +777,13 @@ So this document is organized around what actually breaks at that scale, what
 the design does about it, and — at the end, explicitly — **what has been proven
 and what has not.**
 
-> **Proposed change:** see [live.md](live.md) (design only,
+> **Proposed change:** see [live.md](live.md) (the P6 design,
 > [ADR 0019](decisions/0019-community-scoped-live-sessions.md) Accepted).
 > Live sessions would belong to a community instead of a halaqa, with
-> Postgres as the record, a presenter slot for screen sharing, narrow RTC
-> ports and a reconciler that brings LiveKit back in line with the record.
+> Postgres as the record, a presenter slot for screen sharing and a
+> reconciler that brings LiveKit back in line with the record. The narrow
+> RTC ports have landed, with the rest of P1's hardening of today's
+> halaqa-bound module ([live.md](live.md), the P1 note above §1).
 > A configured per-session cap, taken from load tests, would replace the
 > 2500 target
 > ([Q57](open-questions.md#q57--live-session-size-and-concurrency)). 30,000
@@ -790,7 +792,7 @@ and what has not.**
 > ~3,000-per-room figure LiveKit publishes is known only second-hand and
 > must be benchmarked: LiveKit's documentation site could not be read from
 > this environment. Until that lands, this part describes the design in
-> force. The corrections below concern today's code;
+> force. The corrections below concern the code at `9670c47`, before P1;
 > [live.md §1.2](live.md#12-corrections-to-realtimemd-part-a) lists every
 > known inaccuracy in this part.
 
@@ -1093,7 +1095,10 @@ truth lives only in Redis.
 > ([communities-live-attendance.md §25.1](communities-live-attendance.md#251-phase-0-corrections)).
 > The token items above are proven against `FakeRtcProvider` only. They
 > check the capability decision, not the LiveKit grant, and no spec covers
-> `livekit-rtc-provider.ts`.
+> `livekit-rtc-provider.ts`. *(Since P1, `livekit-rtc-provider.spec.ts`
+> covers the adapter: the claims of the tokens it signs, the full permission
+> set on every update, its error mapping and its logs, against a stubbed
+> room service rather than a LiveKit server.)*
 
 **Not proven — no load test has been run:**
 

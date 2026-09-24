@@ -73,6 +73,16 @@ comes only from second-hand quotes is marked as such.
 
 Everything below is proposed. None of it exists today.
 
+> **Note (2026-09-24):** written before implementation, and left as
+> decided. Of these decisions, P0 moved Live's events into
+> `live/contracts/events.ts` (decision 11), and P1 built decisions 8, 10 and
+> 13, with decision 7's 120-second join token, its ban on admin grants and
+> names from the directory, in the existing halaqa-bound, in-memory module
+> ([live.md](../live.md), the P1 note above §1). Everything else — `LiveSession`, Postgres, the presenter
+> slot, the reconciler, the contracts, the pinned configuration and the caps —
+> waits for P6 and P7
+> ([the hub's §25](../communities-live-attendance.md#25-implementation-phases)).
+
 1. **`LiveSession` replaces `LiveRoom`.** `{communityId, hostUserId, state
    live | ended, state_version, endedBy, endReason, participantCap,
    moderatorReserve, mediaRoomEpoch}`. There is no `scheduled` or `cancelled`

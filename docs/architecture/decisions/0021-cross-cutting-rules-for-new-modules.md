@@ -65,6 +65,11 @@ reported, and which rules keep all of it honest.
 
 Everything below is proposed. None of it exists today.
 
+> **Note (2026-09-24):** written before implementation, and left as
+> decided. The State line above says what has landed since (in P0, and for
+> Communities in P5); the rest waits for the phase that needs it
+> ([the hub's §25](../communities-live-attendance.md#25-implementation-phases)).
+
 1. **Events live in contracts.** Every event's name and payload type is in the
    publisher's `contracts/events.ts`; domain factories import from
    `../contracts/events`. In P0, Live's events move there with identical names

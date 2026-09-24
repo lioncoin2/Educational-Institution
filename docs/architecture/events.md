@@ -259,19 +259,23 @@ Identity's payloads carry ids and codes only. The Foundation's
 `userCreated` carried the email address, which would have copied personal data
 into every subscriber's storage.
 
-> **Proposed change:** see
+> **Landed in part:** see
 > [communities-live-attendance.md §14](communities-live-attendance.md#14-event-model)
-> (design only,
-> [ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md)
-> Accepted). It would add `communities.*` events and new live events
-> (`live.speaker.withdrawn`, `.declined` and `.expired`,
+> ([ADR 0021](decisions/0021-cross-cutting-rules-for-new-modules.md)
+> Accepted). Event types live in each publisher's `contracts/` (P0,
+> `test/architecture/events.spec.ts`); "operations (attendance)" has left
+> `live.session.ended`'s subscribers (P0,
+> [ADR 0020](decisions/0020-attendance-snapshots.md)); `live.speaker.withdrawn`
+> and `.declined` exist (P1, `live/contracts/events.ts:23-25`); and the
+> `communities.*` events exist (P2, P3), all in the table above.
+>
+> **Still proposed:** the live events `live.speaker.expired`,
 > `live.screen_share.started` and `.stopped`, with `communityId` and
-> `stateVersion` in live payloads). It
-> would also add `attendance.snapshot.recorded`, which is held. Event types
-> would live in each publisher's `contracts/`, and every event would carry a
-> durability class (R, S or G), with triggers T1–T4 for adopting the
-> outbox. "operations (attendance)" would leave `live.session.ended`'s
-> subscribers ([ADR 0020](decisions/0020-attendance-snapshots.md)).
+> `stateVersion` in live payloads (P6); `attendance.snapshot.recorded`,
+> which is held (P9); and a durability class (R, S or G) on every event,
+> with triggers T1–T4 for adopting the outbox. So far only Communities'
+> events are classed, in their contract's comment: `member.removed` is S,
+> the rest R (`communities/contracts/events.ts:14-16`).
 
 ---
 

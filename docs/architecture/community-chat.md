@@ -38,8 +38,10 @@ lifts that gate.
 such statement says so and cites `file:line`. Every `file:line` is at that
 commit, documents included (`messaging.md`, `events.md`,
 `module-boundaries.md`, `open-questions.md` and the rest): this package's
-notes have since moved lines in several of them. The code has not changed
-since `9670c47`. Everything else is a proposal.
+notes have since moved lines in several of them. Everything else was a
+proposal when written: §1–§19 are the design as approved, P4 built it
+([§20](#20-p4-as-implemented) records what was built, where, and every choice
+made while building it), and the P5 parts are marked where they landed.
 Every institutional default is labelled PROVISIONAL and names its open
 question. Every engineering bound that must be measured is labelled
 PROVISIONAL too.
@@ -826,6 +828,9 @@ semantics, so mock mode keeps working (`messaging.module.ts:65-83`).
 
 ### 12.3 Persistence (proposal: one additive migration in P4)
 
+Landed in P4, exactly as below, as migration `0012_community_chat`
+([§20](#20-p4-as-implemented)).
+
 Existing rows get NULLs and keep today's behaviour.
 
 ```sql
@@ -1227,7 +1232,9 @@ lag filter, the ceiling narrowing, G1–G4, the new route); the
 §11; the rewrites land with P4. If accepted, ADR 0018 would supersede ADR 0011
 §4–5 in part, because messaging would no longer own membership for
 conversations linked to a community (`0011-messaging-v1.md:41-52`). ADRs are
-never edited.
+never edited. *(Since then ADR 0018 was accepted, on 2026-09-23, and P4 made
+these changes: `messaging.md` §21, the messaging section of
+`module-boundaries.md`, and both code comments.)*
 
 ---
 

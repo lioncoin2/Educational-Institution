@@ -67,7 +67,8 @@ attendance package therefore starts at 0016 rather than renumbering that
 reservation.
 
 **0016–0021 are one package**, described in
-[communities-live-attendance.md](../communities-live-attendance.md). If
-accepted, they amend or partly supersede 0003, 0005, 0006, 0009, 0011 and
-0012; each new ADR says exactly which part. Those ADRs are not edited and stay
-`Accepted`: a partial supersession is recorded in the ADR that makes it.
+[communities-live-attendance.md](../communities-live-attendance.md).
+Accepted on 2026-09-23, they amend or partly supersede 0003, 0005, 0006,
+0009, 0011 and 0012; each new ADR says exactly which part. Those ADRs are
+not edited and stay `Accepted`: a partial supersession is recorded in the ADR
+that makes it.

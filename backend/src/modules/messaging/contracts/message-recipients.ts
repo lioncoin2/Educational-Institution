@@ -20,10 +20,10 @@ export const MAX_RECIPIENT_PAGE = 1000;
  *
  * For a community chat (conversations.community_id set), "current members"
  * means messaging's NAMED PROJECTION of Communities' ACTIVE members: derived,
- * versioned, written only by the projection applier. While its version
- * differs from the community's head, each page is narrowed to the members
- * Communities reports ACTIVE. Every page, whatever readersOnly says, is then
- * narrowed to the accounts holding every permission of
+ * versioned, written only by the projection applier. Every non-empty page is
+ * narrowed to the members Communities reports ACTIVE when it is read, whatever
+ * the projection's version (ADR 0022). Every page, whatever readersOnly says,
+ * is then narrowed to the accounts holding every permission of
  * COMMUNITY_CHAT_READ_CEILING. An unknown or unreadable community yields an
  * empty page. Delivery modules still never keep a copy.
  */

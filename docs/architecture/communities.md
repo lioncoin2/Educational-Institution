@@ -267,6 +267,10 @@ only.
 
 ## 2. What exists today, and what this module reuses
 
+*This section describes the repository before P2, and is kept as the record
+this design started from; P0 closed the gaps it lists, and the notes at the
+top of this document say what P2–P5 built.*
+
 **Today there is no communities module**, and no community, invitation, invite
 link or lock concept anywhere in the backend or the app. The backend modules
 are academic, assignments, automation, files, identity, live, messaging,
@@ -529,7 +533,9 @@ ended and is refused.
 
 ## 5. Persistence
 
-**Proposal only.** No migration, table or seed is created by this package.
+**Landed in P2 and P3** (migrations `0010_communities` and
+`0011_communities_grants`, [§5.5](#55-migrations)); the design package itself
+created no migration, table or seed.
 All tables are private to Communities; user ids are plain text with no foreign
 key into another module (pinned by a `pg_constraint` test, as academic does).
 Everything runs at READ COMMITTED, the project default.
@@ -700,10 +706,12 @@ conditional `UPDATE` that increments `member_count`. The 100,000-member fixture
   `communities.*` permissions and their PROVISIONAL grants, generated from the
   TypeScript constants. It gets its own upgrade test asserting its exact grant
   delta; P0 pins the academic upgrade test to `migrateTo(scratch.db, 9)`.
-- **The next free number** — the communities schema (three tables), generated
-  from `communities/infrastructure/schema.ts`, additive only (P2).
-- **A later number** — `communities_capability_grants` (P3), and in P9 a CHECK
-  migration adding the two attendance capabilities.
+- **The next free number** (landed as `0010_communities`) — the communities
+  schema (three tables), generated from `communities/infrastructure/schema.ts`,
+  additive only (P2).
+- **A later number** — `communities_capability_grants` (P3, landed as
+  `0011_communities_grants`), and in P9 a CHECK migration adding the two
+  attendance capabilities (not written: attendance is held).
 
 ---
 
@@ -1600,7 +1608,7 @@ a refresh hint, never a grant.
 | `communities.invitation.created` / `.revoked` | metadata `{invitationId, expiresAt, maxUses}` / `{invitationId}` (brief §26) |
 | `communities.capability.granted` / `.revoked` (P3) | per grant row; delegated permission changes (brief §26) |
 | `communities.ownership.transferred` (P3) | metadata `{fromUserId, toUserId, basis, endedGrantIds}` |
-| `communities.oversight.read` (name proposed here) | a read on the oversight basis, metadata `{act}` — PROVISIONAL ([Q43](open-questions.md#q43--institutional-oversight-of-communities)) |
+| `communities.oversight.read` (the name proposed here, used since P2: `application/communities-settings.ts:29`) | a read on the oversight basis, metadata `{act}` — PROVISIONAL ([Q43](open-questions.md#q43--institutional-oversight-of-communities)) |
 
 Never audited: member reads, evaluations, denials, failed redemptions,
 no-ops and idempotent repeats — those are logs and metrics. Never recorded

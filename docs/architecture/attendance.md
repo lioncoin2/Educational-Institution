@@ -125,6 +125,14 @@ notes to `events.md` §2 and to `module-boundaries.md`'s operations and live
 sections. The replacement text below lands in P0. Its line numbers are at
 `9670c47`, so each row for a changed document also names its section.
 
+*P0 has landed (2026-09-23). It carried out the operations row of
+`module-boundaries.md`, the `live.session.ended` change in `events.md` and
+the two code comments, in its own words. Not done yet: the live row
+(`module-boundaries.md`'s live section still says operations derives
+attendance, under its correction note); an attendance section in
+`module-boundaries.md`; the `events.md` §2 note, still a Proposed-change
+note; and the `attendance.snapshot.recorded` catalogue row.*
+
 | Where | Says today | Becomes |
 | --- | --- | --- |
 | `module-boundaries.md:146-149` (operations, "Must not know") | "How a session is delivered. A session held in a live audio room is the same session to operations; it subscribes to `live.session.ended` and records attendance from it, and would work identically for a room with chairs." | "How a session is delivered. Live-session presence observations are attendance-module snapshots ([attendance.md](attendance.md)). Whether the institution's `AttendanceRecord` uses them is Q70; if it does, operations depends on `attendance/contracts`, never the reverse." |
@@ -534,9 +542,10 @@ The load test measures how often each happens.
 
 Recording and viewing are **community acts**, asked of Communities for the one
 community concerned. `community.attendance.record` and
-`community.attendance.view` are reserved in Communities' proposed
-`capabilities.ts` (a comment beside `COMMUNITY_CAPABILITIES`) and are added in
-P9, with a CHECK migration, by Communities
+`community.attendance.view` are reserved in Communities' `capabilities.ts`
+(a comment beside `COMMUNITY_CAPABILITIES`; the file landed in P2, and the
+comment is at `communities/contracts/capabilities.ts:23-25` in today's tree)
+and are added in P9, with a CHECK migration, by Communities
 ([communities.md §6.3](communities.md#63-the-act-vocabulary)); neither exists
 today. Both have three segments, so neither can pass identity's permission
 shape CHECK (`identity/infrastructure/schema.ts:36`). Disjointness for all

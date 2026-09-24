@@ -68,6 +68,12 @@ real questions are who writes those rows and which way the dependency points.
 
 Everything below is proposed. None of it exists today.
 
+> **Note (2026-09-24):** written before implementation, and left as
+> decided. P4 has since built these decisions, except decision 9's lag
+> filter, which [0022](0022-community-chat-delivery-check.md) replaced, and
+> P5 built decision 12's gate G1. What was built is
+> [community-chat.md §20](../community-chat.md#20-p4-as-implemented).
+
 1. **One authority.** Communities alone decides who belongs and whether P may
    read or post in C now. Messaging owns conversations, messages, attachments,
    ordering, watermarks, history windows, and the link from a community to its

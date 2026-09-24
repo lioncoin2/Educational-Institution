@@ -2,8 +2,9 @@
 
 **State: APPROVED (2026-09-23) — implemented in phases: P1 (hardening the existing module), P6 (community-scoped sessions), P7 (realtime and Flutter), P7b (media).** What a phase has not delivered does not exist yet; [the hub's §25](communities-live-attendance.md#25-implementation-phases) records which phases have landed.
 
-§1 describes the code that exists today, and says so. Everything after §1 is
-a proposal.
+§1 describes the code as it was at `9670c47`, before P1, and says so; the
+note above §1 says what P1 changed. Everything after §1 is a proposal, except
+what the P0 and P1 rows of §2 name, which has landed.
 
 This is the design of the `live` module, evolved in place: hardening the
 existing module (phase **P1**), community-scoped live sessions (**P6**), live
@@ -1763,3 +1764,7 @@ is PROVISIONAL.
   events.md's live catalogue, ADR 0003's consequences (superseded in part by
   ADR 0019, never edited), and the comments in `live/domain/events.ts:3-7` and
   `operations/contracts/index.ts:1-6` that give attendance to operations.
+  *(Since then P0 corrected the two comments, marked the Part A claims it
+  resolved, and took attendance off `live.session.ended` in events.md; P1
+  added its events there and brought module-boundaries.md's live use cases,
+  contract and events up to date. The rest waits for P6.)*

@@ -58,6 +58,14 @@ would still be role-wide, not "in community C".
 
 Everything below is proposed. None of it exists today.
 
+> **Note (2026-09-24):** written before implementation, and left as
+> decided. P2 and P3 have since built decisions 1–9 and 12
+> ([communities.md §6](../communities.md#6-authorization)), except decision
+> 6's `permittedAmong`, which comes with P6. Decisions 10 and 11 (Live
+> moderation through Communities, and `host-only-moderation` retired) wait
+> for P6; until then the host-only rule is still in force
+> ([the hub's §25](../communities-live-attendance.md#25-implementation-phases)).
+
 1. **The rule.**
 
    ```

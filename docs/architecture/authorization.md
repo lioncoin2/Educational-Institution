@@ -208,17 +208,20 @@ When no owner is supplied, the rule does not apply. That is what lets a use
 case ask the coarse question, "may this principal moderate at all?", before it
 loads the room.
 
-> **Proposed change:** see
+> **Landed in part (P2, P3):** see
 > [communities-live-attendance.md §8](communities-live-attendance.md#8-authorization-model)
-> (design only,
-> [ADR 0017](decisions/0017-community-scoped-authorization.md) Accepted).
-> Inside a community, a decision would be identity's role-wide ceiling AND
-> the principal's standing in that community. The communities module would
-> hold that standing (owner, member, and capabilities the owner delegates)
-> and answer through `COMMUNITY_AUTHORIZATION`. Identity would get no
-> per-resource grants. The host-only rule above would be retired in the
+> ([ADR 0017](decisions/0017-community-scoped-authorization.md) Accepted).
+> Inside a community, a decision is identity's role-wide ceiling AND the
+> principal's standing in that community. The communities module holds that
+> standing (owner, member, and capabilities the owner delegates, P3) and
+> answers through `COMMUNITY_AUTHORIZATION`
+> ([communities.md §6](communities.md#6-authorization)). Identity got no
+> per-resource grants.
+>
+> **Proposed change:** the host-only rule above would be retired in the
 > change that moves live moderation to community standing (phase P6),
-> leaving `PROVISIONAL_POLICY_RULES` empty. Who may moderate stays open:
+> leaving `PROVISIONAL_POLICY_RULES` empty; until then it is in force
+> (`provisional-policy.ts`). Who may moderate stays open:
 > [Q54](open-questions.md#q54--who-starts-ends-and-moderates-a-live-session)
 > and [Q1](open-questions.md#q1--what-may-each-role-actually-do).
 

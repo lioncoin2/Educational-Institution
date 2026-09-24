@@ -7,16 +7,17 @@ that actually does the work — **what it must not know**.
 A module is a unit of ownership, not a folder. If two modules need the same
 table, one of them is wrong.
 
-**Implementation state** is marked on every module. Of the twelve business
-modules, seven are implemented (identity, live, files, messaging, realtime,
-notifications, academic); the other five are deliberately empty: contracts
-and a Nest module, no implementation. Deciding the boundary before the code
-arrives is cheap; retrofitting one is not.
+**Implementation state** is marked on every module. Of the thirteen business
+modules, eight are implemented (identity, live, files, messaging, realtime,
+notifications, academic, communities); the other five are deliberately
+empty: contracts and a Nest module, no implementation. Deciding the boundary
+before the code arrives is cheap; retrofitting one is not.
 
-> **Proposed change:** see [communities.md](communities.md) (design only,
-> [ADR 0016](decisions/0016-communities-module.md) Accepted): a new
-> `communities` module owning communities, their membership, invitation
-> links and lifecycle. It is what the brief calls "groups". The code name is
+> **Landed (P2, P3):** the `communities` module
+> ([communities.md](communities.md),
+> [ADR 0016](decisions/0016-communities-module.md) Accepted) owns
+> communities, their membership, invitation links and lifecycle, and has its
+> own section below. It is what the brief calls "groups". The code name is
 > Community because "group" already means messaging's `GROUP` conversation
 > type, and is used for Tahajji's «مجموعة» in
 > [Q36](open-questions.md#q36--tahajji-دورة-التهجي-وإعداد-المعلمات-مدينة-التهجي-and-the-40-groups).
@@ -26,9 +27,11 @@ arrives is cheap; retrofitting one is not.
 > `attendance` module owning attendance snapshots taken during a live
 > session. Its implementation is **held**.
 >
-> Neither module exists. Implementing either waits on
-> [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules).
-> The sections below describe the modules that exist today.
+> The attendance module does not exist. The
+> [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules)
+> ruling holds its implementation until the attendance questions are
+> answered (Q68, Q69 and the related Q70–Q72). The sections below describe
+> the modules that exist today.
 
 ---
 
@@ -388,8 +391,12 @@ attendance — operations derives that from the events.
 > - **Attendance.** Nothing derives attendance from these events: no module
 >   subscribes to any `live.*` event, and operations is contract only.
 >
-> **Proposed change:** see [live.md](live.md) (design only,
-> [ADR 0019](decisions/0019-community-scoped-live-sessions.md) Accepted). A
+> *(Since then P0 added `live.speaker.requested` to the events list above, and
+> P1 deleted `live/domain/participant.ts`; the entity list is unchanged.)*
+>
+> **Proposed change:** see [live.md](live.md) (the P6 design,
+> [ADR 0019](decisions/0019-community-scoped-live-sessions.md) Accepted; its
+> P1 hardening has landed, above). A
 > community-scoped `LiveSession` would replace the halaqa-bound `LiveRoom`.
 > Live would depend on `communities/contracts` and export `LIVE_AUDIENCE`,
 > `LIVE_SESSIONS` and `LIVE_PRESENCE`; only attendance may import

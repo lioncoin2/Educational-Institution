@@ -84,6 +84,13 @@ Two constraints come from outside the brief:
 
 Everything below is proposed. None of it exists today.
 
+> **Note (2026-09-24):** written before implementation, and left as
+> decided. P2 and P3 have since built what these decisions describe, in
+> `backend/src/modules/communities/`; [communities.md](../communities.md)
+> records what was built and the choices made while building it, and
+> [the hub's §25](../communities-live-attendance.md#25-implementation-phases)
+> records every phase.
+
 1. **The aggregate is a Community, not a Group.** Module `communities`,
    aggregate `Community`, id `communityId`, routes `/communities/...`, tokens
    `COMMUNITY_*`, events `communities.community.*`, realtime frames
