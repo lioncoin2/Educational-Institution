@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The app talks to its backend over HTTPS and a WebSocket. The debug and
+         profile manifests declare this for the Flutter tool; a release build
+         reads this manifest alone. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="quran_institution_app"
         android:name="${applicationName}"

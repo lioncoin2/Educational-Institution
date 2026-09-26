@@ -10,6 +10,8 @@ import 'package:quran_institution_app/data/models/auth.dart';
 import 'package:quran_institution_app/data/models/messaging.dart';
 import 'package:quran_institution_app/data/repositories/http/http_auth_repository.dart';
 import 'package:quran_institution_app/data/repositories/http/http_messaging_repository.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:quran_institution_app/providers/app_providers.dart';
 
 http.Response json(int status, Object body) => http.Response(
   jsonEncode(body),
@@ -134,6 +136,102 @@ void main() {
       await HttpAuthRepository(client).signOut();
       expect(await store.read(), isNull);
     });
+  });
+
+  group('HttpAuthRepository after a refresh', () {
+    final signedIn = {
+      'tokenType': 'Bearer',
+      'accessToken': 'a1',
+      'expiresIn': 900,
+      'refreshToken': 'r1',
+      'refreshTokenExpiresAt': '2026-10-01T00:00:00.000Z',
+      'sessionId': 's1',
+      'user': user,
+    };
+
+    test(
+      'forgets who was signed in once the server refuses a refresh',
+      () async {
+        var signedOut = 0;
+        final server = FakeServer({
+          'POST /auth/login': (_) => json(200, signedIn),
+          'GET /auth/sessions': (_) =>
+              error(401, 'identity.authentication_required'),
+          'POST /auth/refresh': (_) => error(401, 'identity.refresh_invalid'),
+        });
+        final store = InMemoryTokenStore();
+        final client = ApiClient(
+          baseUri: base,
+          httpClient: server.client,
+          tokenStore: store,
+          onSignedOut: () => signedOut += 1,
+        );
+        final auth = HttpAuthRepository(client);
+        await auth.signIn(
+          identifier: 'student@institution.test',
+          password: 'pw',
+        );
+        expect((await auth.currentUser())?.id, 'u-1');
+
+        // The access token expired and the server refused to renew the session.
+        await expectLater(auth.sessions(), throwsA(isA<AuthException>()));
+        expect(signedOut, 1);
+        expect(await store.read(), isNull);
+
+        // Nobody is signed in any more: no user comes back from the cache.
+        expect(await auth.currentUser(), isNull);
+        expect(server.calls.where((c) => c == 'GET /auth/me'), isEmpty);
+      },
+    );
+
+    test('keeps who is signed in when a refresh cannot reach the server', () async {
+      final server = FakeServer({
+        'POST /auth/login': (_) => json(200, signedIn),
+        'GET /auth/sessions': (_) =>
+            error(401, 'identity.authentication_required'),
+        'POST /auth/refresh': (_) => throw http.ClientException('offline'),
+      });
+      final (client, store) = await api(server);
+      final auth = HttpAuthRepository(client);
+      await auth.signIn(identifier: 'student@institution.test', password: 'pw');
+
+      await expectLater(auth.sessions(), throwsA(isA<AuthException>()));
+
+      // Unreachable is not refused: the session may still be good, so it stays.
+      expect((await store.read())?.refreshToken, 'r1');
+      expect((await auth.currentUser())?.id, 'u-1');
+    });
+
+    test(
+      'the app\'s session says signed out after a refused refresh',
+      () async {
+        final server = FakeServer({
+          'POST /auth/login': (_) => json(200, signedIn),
+          'GET /auth/sessions': (_) =>
+              error(401, 'identity.authentication_required'),
+          'POST /auth/refresh': (_) => error(401, 'identity.refresh_invalid'),
+        });
+        final container = ProviderContainer(
+          overrides: [
+            backendModeProvider.overrideWithValue(true),
+            httpClientProvider.overrideWithValue(server.client),
+          ],
+        );
+        addTearDown(container.dispose);
+        final auth = container.read(authRepositoryProvider);
+        await auth.signIn(
+          identifier: 'student@institution.test',
+          password: 'pw',
+        );
+        container.invalidate(sessionUserProvider);
+        expect((await container.read(sessionUserProvider.future))?.id, 'u-1');
+
+        // The refused refresh signs out through the real wiring
+        // (apiClientProvider's onSignedOut invalidates the session).
+        await expectLater(auth.sessions(), throwsA(isA<AuthException>()));
+        expect(await container.read(sessionUserProvider.future), isNull);
+      },
+    );
   });
 
   group('HttpMessagingRepository', () {

@@ -56,10 +56,12 @@ class HttpAuthRepository implements AuthRepository {
     }
   }
 
+  /// Who is signed in: nobody without tokens, whatever was known before — a
+  /// refresh the server refused clears them, and the session is over.
   @override
   Future<CurrentUser?> currentUser() async {
+    if (await _api.tokens.read() == null) return _user = null;
     if (_user != null) return _user;
-    if (await _api.tokens.read() == null) return null;
     try {
       return _user = CurrentUser.fromJson(await _api.get('/auth/me'));
     } on ApiException catch (error) {
