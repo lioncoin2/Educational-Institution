@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:quran_institution_app/app/app.dart';
 import 'package:quran_institution_app/data/api/api_client.dart';
 import 'package:quran_institution_app/data/api/token_store.dart';
+import 'package:quran_institution_app/data/models/auth.dart';
 import 'package:quran_institution_app/data/models/messaging.dart';
 import 'package:quran_institution_app/data/repositories/http/http_community_repository.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_community_repository.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_messaging_repository.dart';
 import 'package:quran_institution_app/data/repositories/repositories.dart';
 import 'package:quran_institution_app/features/communities/community_copy.dart';
+import 'package:quran_institution_app/features/communities/state/pending_invitation.dart';
 import 'package:quran_institution_app/features/messaging/messaging_copy.dart';
+import 'package:quran_institution_app/features/messaging/state/conversation_list_controller.dart';
 import 'package:quran_institution_app/providers/app_providers.dart';
 
 import 'community_test_support.dart';
@@ -199,7 +203,23 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    Future<void> start(WidgetTester tester) async {
+    /// Past the demo messaging's latency, even with no spinner turning.
+    Future<void> settle(WidgetTester tester) async {
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+    }
+
+    /// The chats the Messages list holds — as it holds them, unrefreshed.
+    List<String> inTheList() => [
+      for (final c
+          in container.read(conversationListProvider).requireValue.items)
+        c.id,
+    ];
+
+    Future<void> start(
+      WidgetTester tester, {
+      List<Override> extra = const [],
+    }) async {
       tester.view.physicalSize = const Size(390, 1400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
@@ -207,7 +227,10 @@ void main() {
       // Only the communities are stood in for; messaging is the app's own
       // wiring.
       container = ProviderContainer(
-        overrides: [communityRepositoryProvider.overrideWithValue(communities)],
+        overrides: [
+          communityRepositoryProvider.overrideWithValue(communities),
+          ...extra,
+        ],
       );
       addTearDown(container.dispose);
       await tester.pumpWidget(
@@ -237,6 +260,59 @@ void main() {
       );
       expect(find.byType(TextField), findsNothing);
       expect(find.text(MessagingCopy.cannotPostHere), findsOneWidget);
+    });
+
+    testWidgets('takes a left community’s chat out of the Messages list — '
+        'with no frame to say so, and no refresh', (tester) async {
+      const open = MockCommunityRepository.openId;
+      await start(tester);
+      await go(tester, '/messages');
+      await settle(tester);
+      expect(inTheList(), contains(chatOf(open)));
+
+      await go(tester, '/communities/$open');
+      await settle(tester);
+      await tester.tap(find.text(CommunityCopy.leave));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(CommunityCopy.confirmLeave));
+      await settle(tester);
+      expect(location(), '/communities');
+      await go(tester, '/messages');
+      await settle(tester);
+      expect(inTheList(), isNot(contains(chatOf(open))));
+      expect(find.text('مجتمع طلاب التجويد'), findsNothing);
+    });
+
+    testWidgets('lists the chat of a community joined by link — with no '
+        'frame to say so, and no refresh', (tester) async {
+      await start(
+        tester,
+        extra: [
+          sessionUserProvider.overrideWith(
+            (ref) async => const CurrentUser(
+              id: MockCommunityRepository.viewer,
+              displayName: 'طالب تجريبي',
+              status: AccountStatus.active,
+              roles: [],
+              permissions: {},
+            ),
+          ),
+          startupInvitationTokenProvider.overrideWithValue(
+            MockCommunityRepository.demoActiveToken,
+          ),
+        ],
+      );
+      await go(tester, '/messages');
+      await settle(tester);
+      expect(inTheList(), isNot(contains(dawnChat)));
+
+      await go(tester, '/invite');
+      await tester.tap(find.text(CommunityCopy.join));
+      await settle(tester);
+      expect(location(), '/communities/$invited');
+      await go(tester, '/messages');
+      await settle(tester);
+      expect(inTheList(), contains(dawnChat));
     });
 
     testWidgets('closes the former owner’s composer once the community is '

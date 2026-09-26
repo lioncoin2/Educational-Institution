@@ -176,6 +176,13 @@ abstract final class CommunityCopy {
     _ => 'تعذّر إتمام الطلب. حاول مرة أخرى.',
   };
 
+  /// A change the server confirmed, whose screen could not be read again
+  /// after it: what is shown is the server's answer to the change itself.
+  static const doneNotShown = 'تمّ ذلك، لكن تعذّر تحديث العرض.';
+
+  /// A change the viewer confirmed that could not be sent just then.
+  static const notSent = 'لم يُرسَل الطلب. حاول مرة أخرى.';
+
   // ── The roster's actions ──
 
   /// A member as the screens name them: their name, or the neutral word.
@@ -191,7 +198,12 @@ abstract final class CommunityCopy {
   static const removeMember = 'إزالة من المجتمع';
   static const confirmRemove = 'إزالة';
   static const confirmTransfer = 'نقل الملكية';
-  static const ownershipTransferred = 'نُقلت ملكية المجتمع.';
+
+  /// A hand-over the server confirmed: who owns the community now. True
+  /// whether ownership moved or [member] owned it already — the server
+  /// answers both alike, so nothing here says which.
+  static String ownerNow(CommunityMember member) =>
+      'مالك المجتمع الآن: ${memberName(member)}.';
 
   static String removeQuestion(CommunityMember member) =>
       'إزالة ${memberName(member)} من المجتمع؟';
@@ -219,6 +231,11 @@ abstract final class CommunityCopy {
 
   static String revokeGrantTooltip(CommunityCapability c) =>
       'سحب «${capability(c)}»';
+
+  static String revokeGrantQuestion(
+    CommunityCapability c,
+    CommunityMember member,
+  ) => 'سحب «${capability(c)}» من ${memberName(member)}؟';
 
   static String grantStatus(CommunityGrant? grant) => grant == null
       ? notGranted

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -42,14 +44,16 @@ class CommunityMembersScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final provider = communityMembersProvider(communityId);
     final value = ref.watch(provider);
-    // The community's name, when its screen already knows it — and what the
-    // viewer may do in it now.
+    // The community's name, when its screen already knows it — what the
+    // viewer may do in it now — and why not, when it could not be read.
+    final detailProvider = communityProvider(communityId);
     final community = ref.watch(
-      communityProvider(communityId).select((v) {
+      detailProvider.select((v) {
         final detail = v.value;
         return (
           title: detail?.community?.title,
           me: detail == null || detail.removed ? null : detail.community?.me,
+          failure: v.hasError && !v.hasValue ? v.error : null,
         );
       }),
     );
@@ -60,13 +64,29 @@ class CommunityMembersScreen extends ConsumerWidget {
       actions: [
         IconButton(
           tooltip: CommunityCopy.refresh,
-          onPressed: () => ref.invalidate(provider),
+          // Reads again under what is shown — the roster, and the `me` its
+          // actions are offered by; never starts the screen over.
+          onPressed: () {
+            unawaited(ref.read(provider.notifier).refresh());
+            unawaited(ref.read(detailProvider.notifier).refresh());
+          },
           icon: const Icon(Icons.refresh_rounded),
         ),
         const SizedBox(width: Insets.sm),
       ],
       slivers: [
         const SliverToBoxAdapter(child: ConnectionBanner()),
+        // `me` could not be read: said, rather than rows that look like no
+        // rights at all. The roster's own failure says it for both.
+        if (community.failure case final failure? when !value.hasError)
+          SliverGutter(
+            top: Insets.lg,
+            child: CommunityErrorView(
+              compact: true,
+              error: failure,
+              onRetry: () => ref.invalidate(detailProvider),
+            ),
+          ),
         ...value.when(
           loading: () => const [
             SliverGutter(top: Insets.lg, child: CommunitySkeleton(height: 64)),
@@ -76,7 +96,12 @@ class CommunityMembersScreen extends ConsumerWidget {
               top: Insets.lg,
               child: CommunityErrorView(
                 error: error,
-                onRetry: () => ref.invalidate(provider),
+                onRetry: () {
+                  ref.invalidate(provider);
+                  if (!ref.read(detailProvider).hasValue) {
+                    ref.invalidate(detailProvider);
+                  }
+                },
               ),
             ),
           ],
@@ -219,28 +244,33 @@ class _MemberActionsButton extends ConsumerWidget {
     final action = await showModalBottomSheet<_MemberAction>(
       context: context,
       showDragHandle: true,
+      // A long name at a large text size outgrows a small screen: the sheet
+      // scrolls, and every action stays within reach.
+      isScrollControlled: true,
       builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: Insets.xxl,
-                vertical: Insets.sm,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Insets.xxl,
+                  vertical: Insets.sm,
+                ),
+                child: Text(
+                  CommunityCopy.memberName(member),
+                  style: context.text.titleMedium,
+                ),
               ),
-              child: Text(
-                CommunityCopy.memberName(member),
-                style: context.text.titleMedium,
-              ),
-            ),
-            for (final action in actions)
-              ListTile(
-                leading: Icon(action.icon),
-                title: Text(action.label),
-                onTap: () => Navigator.pop(context, action),
-              ),
-          ],
+              for (final action in actions)
+                ListTile(
+                  leading: Icon(action.icon),
+                  title: Text(action.label),
+                  onTap: () => Navigator.pop(context, action),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -262,6 +292,22 @@ class _MemberActionsButton extends ConsumerWidget {
   CommunityMembersController _roster(WidgetRef ref) =>
       ref.read(communityMembersProvider(communityId).notifier);
 
+  /// Reads the roster and the community again — those still open: a
+  /// message offering this may outlive the row that asked.
+  VoidCallback _refreshOf(BuildContext context) {
+    final container = ProviderScope.containerOf(context, listen: false);
+    final roster = communityMembersProvider(communityId);
+    final community = communityProvider(communityId);
+    return () {
+      if (container.exists(roster)) {
+        unawaited(container.read(roster.notifier).refresh());
+      }
+      if (container.exists(community)) {
+        unawaited(container.read(community.notifier).refresh());
+      }
+    };
+  }
+
   Future<void> _remove(BuildContext context, WidgetRef ref) async {
     final yes = await confirmCommunityChange(
       context,
@@ -272,14 +318,15 @@ class _MemberActionsButton extends ConsumerWidget {
     if (!yes || !context.mounted) return;
     // Held before: once removed, this row — and its context — is gone.
     final messenger = ScaffoldMessenger.of(context);
+    final refresh = _refreshOf(context);
     final outcome = await _roster(ref).remove(member.userId);
-    if (outcome case WriteFailed(:final error)) {
-      messenger.toast(CommunityCopy.writeFailed(error.code));
-    }
+    sayWriteOutcome(messenger, outcome, refresh: refresh, confirmed: true);
   }
 
   /// Done, the viewer goes back to the community, where their standing in
-  /// it — as the server now answers — is shown.
+  /// it — as the server now answers — is shown: if the roster is still
+  /// where they are. A late answer never moves someone who has gone
+  /// elsewhere, or closes what they opened since.
   Future<void> _transfer(BuildContext context, WidgetRef ref) async {
     final yes = await confirmCommunityChange(
       context,
@@ -289,19 +336,24 @@ class _MemberActionsButton extends ConsumerWidget {
     if (!yes || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final router = GoRouter.of(context);
+    // The route, not this row: once handed over, the roster may no longer be
+    // the viewer's to see, and the row goes — the route stays.
+    final roster = ModalRoute.of(context);
+    final refresh = _refreshOf(context);
     final outcome = await _roster(ref).transferOwnership(member.userId);
-    switch (outcome) {
-      case WriteDone():
-        messenger.toast(CommunityCopy.ownershipTransferred);
-        if (router.canPop()) {
-          router.pop();
-        } else {
-          router.go(Routes.community(communityId));
-        }
-      case WriteFailed(:final error):
-        messenger.toast(CommunityCopy.writeFailed(error.code));
-      case WriteNotSent():
-        break;
+    if (outcome case WriteDone(refreshed: true)) {
+      // Who owns it now — not that it moved: naming the owner already is
+      // answered alike, and changes nothing.
+      messenger.toast(CommunityCopy.ownerNow(member));
+    } else {
+      sayWriteOutcome(messenger, outcome, refresh: refresh, confirmed: true);
+    }
+    if (outcome is WriteDone && (roster?.isCurrent ?? false)) {
+      if (router.canPop()) {
+        router.pop();
+      } else {
+        router.go(Routes.community(communityId));
+      }
     }
   }
 }

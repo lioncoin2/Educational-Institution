@@ -153,7 +153,7 @@ python3 tool/serve_web.py 8080     # ثم افتح http://127.0.0.1:8080
 
 ```bash
 flutter analyze     # يجب أن يعطي: No issues found!
-flutter test        # 800 اختبار
+flutter test        # 887 اختبارًا
 ```
 
 ---

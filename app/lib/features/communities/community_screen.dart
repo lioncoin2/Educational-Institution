@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -46,7 +48,8 @@ class CommunityScreen extends ConsumerWidget {
       actions: [
         IconButton(
           tooltip: CommunityCopy.refresh,
-          onPressed: () => ref.invalidate(provider),
+          // Reads again under what is shown; never starts the screen over.
+          onPressed: () => ref.read(provider.notifier).refresh(),
           icon: const Icon(Icons.refresh_rounded),
         ),
         const SizedBox(width: Insets.sm),
@@ -196,6 +199,15 @@ class _Details extends StatelessWidget {
   }
 }
 
+/// Leaving's icon — Icons.logout_rounded, drawn right to left in this RTL app
+/// so its arrow points to the end of the line, the way out (Material marks
+/// the logout icon to mirror; Flutter's own does not).
+const _leaveIcon = IconData(
+  0xf88b,
+  fontFamily: 'MaterialIcons',
+  matchTextDirection: true,
+);
+
 /// What the viewer may change about the community, each shown if and only if
 /// the server's `me` holds it — nothing at all when it holds none:
 ///
@@ -258,7 +270,7 @@ class _Management extends ConsumerWidget {
           onPressed: idle ? () => _leave(context, ref) : null,
           icon: writing == CommunityWrite.leave
               ? const BusyIndicator()
-              : const Icon(Icons.logout_rounded),
+              : const Icon(_leaveIcon),
           label: const Text(CommunityCopy.leave),
         ),
     ];
@@ -279,6 +291,18 @@ class _Management extends ConsumerWidget {
   CommunityController _controller(WidgetRef ref) =>
       ref.read(communityProvider(community.id).notifier);
 
+  /// Reads the community again — if its screen is still open: a message
+  /// offering this may outlive the screen.
+  VoidCallback _refreshOf(BuildContext context) {
+    final container = ProviderScope.containerOf(context, listen: false);
+    final provider = communityProvider(community.id);
+    return () {
+      if (container.exists(provider)) {
+        unawaited(container.read(provider.notifier).refresh());
+      }
+    };
+  }
+
   Future<void> _lock(BuildContext context, WidgetRef ref) async {
     final yes = await confirmCommunityChange(
       context,
@@ -287,15 +311,28 @@ class _Management extends ConsumerWidget {
     );
     if (!yes || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    _sayFailure(messenger, await _controller(ref).lock());
+    final refresh = _refreshOf(context);
+    sayWriteOutcome(
+      messenger,
+      await _controller(ref).lock(),
+      refresh: refresh,
+      confirmed: true,
+    );
   }
 
   Future<void> _unlock(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
-    _sayFailure(messenger, await _controller(ref).unlock());
+    final refresh = _refreshOf(context);
+    sayWriteOutcome(
+      messenger,
+      await _controller(ref).unlock(),
+      refresh: refresh,
+    );
   }
 
-  /// Done, the viewer goes to their list — which no longer has it.
+  /// Done, the viewer goes to their list — which no longer has it — if the
+  /// community is still where they are: a late answer never moves someone
+  /// who has gone elsewhere.
   Future<void> _leave(BuildContext context, WidgetRef ref) async {
     final yes = await confirmCommunityChange(
       context,
@@ -306,18 +343,15 @@ class _Management extends ConsumerWidget {
     if (!yes || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final router = GoRouter.of(context);
+    // The route, not this section: once left, the screen says so in its
+    // place — the route stays.
+    final screen = ModalRoute.of(context);
+    final refresh = _refreshOf(context);
     final outcome = await _controller(ref).leave();
-    if (outcome is WriteDone) router.go(Routes.communities);
-    _sayFailure(messenger, outcome);
-  }
-
-  static void _sayFailure(
-    ScaffoldMessengerState messenger,
-    WriteOutcome<void> outcome,
-  ) {
-    if (outcome case WriteFailed(:final error)) {
-      messenger.toast(CommunityCopy.writeFailed(error.code));
+    if (outcome is WriteDone && (screen?.isCurrent ?? false)) {
+      router.go(Routes.communities);
     }
+    sayWriteOutcome(messenger, outcome, refresh: refresh, confirmed: true);
   }
 }
 
@@ -354,12 +388,7 @@ class _OpenChatButtonState extends ConsumerState<_OpenChatButton> {
   Widget build(BuildContext context) {
     return FilledButton.icon(
       onPressed: _opening ? null : _open,
-      icon: _opening
-          ? const SizedBox.square(
-              dimension: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.forum_outlined),
+      icon: _opening ? const BusyIndicator() : const Icon(Icons.forum_outlined),
       label: const Text(CommunityCopy.openChat),
     );
   }

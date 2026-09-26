@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,7 +14,6 @@ import '../../core/widgets/layout/responsive_body.dart';
 import '../../providers/app_providers.dart';
 import '../auth/sign_in_prompt.dart';
 import 'community_copy.dart';
-import 'state/community_write.dart';
 import 'state/invitation_join_controller.dart';
 import 'widgets/community_change.dart';
 
@@ -33,6 +34,16 @@ class InviteScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(invitationJoinProvider);
+    // Joined: to the community, in place of this screen — the link is used,
+    // and there is no going back to it. Only this screen's own invitation
+    // gets here (a link opened meanwhile stays on screen), and only while
+    // the screen is up: a viewer who has left is not moved.
+    ref.listen(invitationJoinProvider, (previous, next) {
+      if (next is JoinedInvitation && previous is! JoinedInvitation) {
+        context.toast(CommunityCopy.inTheCommunity);
+        context.go(Routes.community(next.community.id));
+      }
+    });
     return Scaffold(
       appBar: AppBar(title: const Text(CommunityCopy.inviteTitle)),
       body: SafeArea(
@@ -153,9 +164,15 @@ class _Invitation extends ConsumerWidget {
             ],
             const SizedBox(height: Insets.xl),
             FilledButton(
-              onPressed: state.joining ? null : () => _join(context, ref),
+              onPressed: state.joining ? null : () => _join(ref),
               child: state.joining
-                  ? const BusyIndicator()
+                  // The spinner in the label's place: the name stays.
+                  ? Semantics(
+                      label: failure == null
+                          ? CommunityCopy.join
+                          : CommunityCopy.retry,
+                      child: const BusyIndicator(),
+                    )
                   : Text(
                       failure == null
                           ? CommunityCopy.join
@@ -173,15 +190,8 @@ class _Invitation extends ConsumerWidget {
     );
   }
 
-  /// One tap, one request. Joined: to the community, in place of this
-  /// screen — the link is used, and there is no going back to it.
-  Future<void> _join(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final router = GoRouter.of(context);
-    final outcome = await ref.read(invitationJoinProvider.notifier).join();
-    if (outcome case WriteDone(value: final community)) {
-      messenger.toast(CommunityCopy.inTheCommunity);
-      router.go(Routes.community(community.id));
-    }
-  }
+  /// One tap, one request. Where it leads is the screen's to say, once
+  /// the invitation shows as joined.
+  void _join(WidgetRef ref) =>
+      unawaited(ref.read(invitationJoinProvider.notifier).join());
 }

@@ -144,6 +144,12 @@ void main() {
         CommunityCopy.revokeGrantTooltip(CommunityCapability.membersInvite),
       ),
     );
+    await tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text(CommunityCopy.revokeGrant),
+      ),
+    );
     expect(find.text(CommunityCopy.granted), findsOneWidget);
     Navigator.of(tester.element(find.byType(MemberCapabilitiesSheet))).pop();
     await tester.pumpAndSettle();

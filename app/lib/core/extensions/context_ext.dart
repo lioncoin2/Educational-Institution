@@ -17,11 +17,19 @@ extension AppMessengerX on ScaffoldMessengerState {
   /// The app's one short message: it replaces any shown, for 3 s. Taken
   /// from a messenger held before an await, it still shows when the widget
   /// that asked is gone by the time the answer comes.
-  void toast(String message) {
+  ///
+  /// With an [action] it stays until the person answers it or closes it: a
+  /// message that offers something is not taken away mid-read.
+  void toast(String message, {SnackBarAction? action}) {
     this
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(seconds: 3),
+          action: action,
+          showCloseIcon: action != null,
+        ),
       );
   }
 }

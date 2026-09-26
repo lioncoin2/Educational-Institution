@@ -252,13 +252,13 @@ class MockCommunityRepository implements CommunityRepository {
     final invitation = isInvitationTokenShaped(token)
         ? _invitationsByToken[token]
         : null;
-    if (invitation == null) {
-      throw const CommunityException(
-        'communities.invitation_invalid',
-        'This invitation link is not valid.',
-      );
-    }
+    if (invitation == null) throw _invalidLink;
     final c = _communities[invitation.communityId]!;
+    // PROVISIONAL, Q48 — the server's table: the link's creator still holds
+    // what making it needed, asked first of their account (one that can
+    // sign in — this mock's stand-in for the act's ceiling), before
+    // anything else; a creator who does not fails as an unknown link does.
+    if (!_accountSignsIn(c, invitation.createdBy)) throw _invalidLink;
     switch (c.stint) {
       case _Stint.active:
         // A member already: the community, and no use of the link.
@@ -293,6 +293,11 @@ class MockCommunityRepository implements CommunityRepository {
       case InvitationState.active || InvitationState.unknown:
         break;
     }
+    // PROVISIONAL, Q48 — the server's table: ...then of their standing, once
+    // the link's own state is known and before the lock: an ACTIVE member
+    // who owns the community or holds an ACTIVE grant of
+    // community.members.invite. A demoted creator's links stop admitting.
+    if (!_standsBehind(c, invitation.createdBy)) throw _invalidLink;
     // PROVISIONAL, Q46 — the server's table: a LOCKED community takes
     // nobody, and its links are suspended, neither used nor revoked.
     if (!c.acceptsMembers) {
@@ -543,6 +548,19 @@ class MockCommunityRepository implements CommunityRepository {
   void restoreMembership(String communityId) =>
       _begin(_communities[communityId]!);
 
+  /// Another member of [communityId] — [userId] — made a link, as they could
+  /// then: its token, seven days and no limit on uses, as the server's
+  /// default terms. Whether it admits is asked when it is used.
+  String linkMadeBy(String communityId, String userId) {
+    final now = _now();
+    return _add(
+      _communities[communityId]!,
+      createdBy: userId,
+      createdAt: now,
+      expiresAt: now.add(const Duration(days: 7)),
+    ).token;
+  }
+
   /// The owner changed what it delegates to the viewer.
   void delegate(String communityId, Set<CommunityCapability> capabilities) {
     final c = _communities[communityId]!;
@@ -722,6 +740,14 @@ class MockCommunityRepository implements CommunityRepository {
   /// The row of [userId] while they are a member of [c] — null for anyone
   /// else, without building a row.
   static int? _activeRow(_MockCommunity c, String userId) {
+    final index = _rowOf(c, userId);
+    if (index == null || c.removedRows.contains(index)) return null;
+    return index;
+  }
+
+  /// The row [userId] has, or had, in [c] — whether or not they are a member
+  /// now; null for anyone who never had one.
+  static int? _rowOf(_MockCommunity c, String userId) {
     final int? index;
     if (userId == viewer) {
       index = c.viewerRow;
@@ -735,10 +761,25 @@ class MockCommunityRepository implements CommunityRepository {
       index = null;
     }
     if (index == null || index < 0 || index >= c.rowCount) return null;
-    if (c.removedRows.contains(index)) return null;
     // Round trip: '-member-07', or a teacher's position under the member
     // prefix, names nobody.
     return _userIdAt(c, index) == userId ? index : null;
+  }
+
+  /// Whether [userId] — a member of [c] or not — has an account that can
+  /// sign in, by this mock's fiction ([_accountActive]).
+  static bool _accountSignsIn(_MockCommunity c, String userId) {
+    final index = _rowOf(c, userId);
+    return index != null && _accountActive(c, index);
+  }
+
+  /// Whether [userId] could make a link in [c] now: an ACTIVE member who
+  /// owns it, or holds an ACTIVE grant of community.members.invite.
+  static bool _standsBehind(_MockCommunity c, String userId) {
+    final row = _activeRow(c, userId);
+    return row != null &&
+        (row == c.ownerRow ||
+            c.grantedTo(userId).contains(CommunityCapability.membersInvite));
   }
 
   /// Two in every 25 members teach: the 3rd and the 10th of each 25.
@@ -837,6 +878,13 @@ class MockCommunityRepository implements CommunityRepository {
         'This community is locked.',
         details: {'act': capability.wire},
       );
+
+  /// Malformed, unknown, or its creator no longer standing behind it: one
+  /// answer for all, never saying which (Q48).
+  static const _invalidLink = CommunityException(
+    'communities.invitation_invalid',
+    'This invitation link is not valid.',
+  );
 
   static const _notOwner = CommunityException(
     'communities.not_community_owner',

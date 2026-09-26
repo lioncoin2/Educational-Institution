@@ -54,6 +54,10 @@ class ConversationListState {
 ///                             list at once, then the list is fetched again —
 ///                             the server's word stands over the frame's
 ///
+/// — and so does the server's answer to the viewer's own leave or join
+/// ([communityLeft], [communityJoined]): a frame may never come (the demo
+/// has none; a connection may be down).
+///
 /// Whenever the connection comes (back) up, the first page is fetched again
 /// over HTTP: whatever happened while it was down is in there.
 class ConversationListController extends AsyncNotifier<ConversationListState> {
@@ -198,20 +202,9 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
       case ParticipantAddedEvent() when event.userId == _viewerId:
         unawaited(_resync());
       case CommunityMemberAddedEvent() when event.userId == _viewerId:
-        unawaited(_resyncAfterRunning());
+        unawaited(communityJoined(event.communityId));
       case CommunityMemberRemovedEvent() when event.userId == _viewerId:
-        final current = state.value;
-        if (current == null) return;
-        _generation += 1;
-        state = AsyncData(
-          current.copyWith(
-            items: [
-              for (final c in current.items)
-                if (c.communityId != event.communityId) c,
-            ],
-          ),
-        );
-        unawaited(_resyncAfterRunning());
+        unawaited(communityLeft(event.communityId));
       case ParticipantRemovedEvent() when event.userId == _viewerId:
         final current = state.value;
         if (current == null) return;
@@ -229,6 +222,30 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
     }
   }
 
+  /// The viewer is a member of [communityId] now: its chat may be theirs —
+  /// the list is fetched again. Completes once that read has landed (or
+  /// failed, keeping what is shown).
+  Future<void> communityJoined(String communityId) => _resyncAfterRunning();
+
+  /// The viewer is no longer a member of [communityId]: its chat leaves the
+  /// list at once, then the list is fetched again — the server's word stands
+  /// over what was taken out.
+  Future<void> communityLeft(String communityId) {
+    final current = state.value;
+    if (current != null) {
+      _generation += 1;
+      state = AsyncData(
+        current.copyWith(
+          items: [
+            for (final c in current.items)
+              if (c.communityId != communityId) c,
+          ],
+        ),
+      );
+    }
+    return _resyncAfterRunning();
+  }
+
   void _onStatus(RealtimeStatus status) {
     if (status.isLive) unawaited(_resync());
   }
@@ -241,9 +258,18 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
     );
   }
 
-  /// A first-page read that starts after the one in flight, if any: that
-  /// one may have been answered before the change now being caught up with.
+  /// A first-page read that starts after the one in flight, if any — the
+  /// list's own first read included: that one may have been answered before
+  /// the change now being caught up with. A first read that fails leaves a
+  /// retry, which reads anew.
   Future<void> _resyncAfterRunning() async {
+    if (state.isLoading) {
+      try {
+        await future;
+      } on Object {
+        return;
+      }
+    }
     await _resyncing;
     if (ref.mounted) await _resync();
   }

@@ -112,6 +112,9 @@ class CommunityListController extends AsyncNotifier<CommunityListState> {
         unawaited(_resync());
       }
     });
+    // A first page is on its way: a next page asked for before is cut from
+    // one no longer shown.
+    _generation += 1;
     final built = ref;
     for (;;) {
       final sentAt = ++_sent;
@@ -123,13 +126,27 @@ class CommunityListController extends AsyncNotifier<CommunityListState> {
 
   /// A change the viewer made to [communityId] — a lock, a member removed,
   /// the community handed over — was answered by the server: what any read
-  /// sent before now says about it is dropped, and it is read again. One not
-  /// shown comes with the next first page.
-  Future<void> reconcileCommunity(String communityId) {
+  /// sent before now says about it is dropped, [confirmed] (what the change
+  /// answered, when it answered the community) is shown at once unless a
+  /// newer lock or unlock already is, and it is read again. One not shown
+  /// comes with the next first page.
+  Future<void> reconcileCommunity(String communityId, {Community? confirmed}) {
     _mark(communityId);
-    if (state.isLoading) return Future.value(); // build() asks again for it
-    final shown = state.value?.items.any((c) => c.id == communityId) ?? false;
-    return shown ? _refetch(communityId) : Future.value();
+    final current = state.isLoading ? null : state.value;
+    // Loading: build() asks again for it.
+    if (current == null) return Future.value();
+    if (!current.items.any((c) => c.id == communityId)) return Future.value();
+    if (confirmed != null) {
+      state = AsyncData(
+        current.copyWith(
+          items: [
+            for (final c in current.items)
+              c.id == communityId ? _newer(c, confirmed) : c,
+          ],
+        ),
+      );
+    }
+    return _refetch(communityId);
   }
 
   /// The server confirmed that the viewer left [communityId]: it leaves the

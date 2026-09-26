@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -11,6 +13,8 @@ import 'package:quran_institution_app/data/models/communities.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_community_repository.dart';
 import 'package:quran_institution_app/features/communities/community_copy.dart';
 import 'package:quran_institution_app/features/communities/community_invitations_screen.dart';
+import 'package:quran_institution_app/features/communities/widgets/invitation_tile.dart';
+import 'package:quran_institution_app/features/communities/widgets/member_capabilities_sheet.dart';
 import 'package:quran_institution_app/providers/app_providers.dart';
 
 import '../realtime/fake_realtime_client.dart';
@@ -89,7 +93,78 @@ void main() {
   Finder options(String? name) =>
       find.byTooltip(CommunityCopy.memberOptions(named(name)));
 
+  /// The button — of whichever kind — that shows [label].
+  Finder buttonOf(String label) => find.ancestor(
+    of: find.text(label),
+    matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+  );
+
+  /// Enough frames for a dialog or a sheet to go, without waiting on what
+  /// is held.
+  Future<void> frames(WidgetTester tester) async {
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+  }
+
+  /// A control whose request is on its way: still a button, still named —
+  /// never the spinner's role, which takes the button's away on the web.
+  void namedWhileBusy(
+    WidgetTester tester,
+    Finder control, {
+    String? label,
+    String? tooltip,
+  }) {
+    final node = tester.getSemantics(control);
+    expect(
+      node,
+      isSemantics(
+        label: label,
+        tooltip: tooltip,
+        isButton: true,
+        isEnabled: false,
+      ),
+    );
+    expect(node.getSemanticsData().role, SemanticsRole.none);
+  }
+
   group('a community’s management, from me alone', () {
+    testWidgets('draws the leave icon right to left, its arrow toward the '
+        'end of the line', (tester) async {
+      repo = AnsweredAs(
+        communityJson(id: 'c-1', operations: const ['community.leave']),
+      );
+      await open_(tester, '/communities/c-1');
+      final leave = buttonOf(CommunityCopy.leave);
+      final icon = find.descendant(of: leave, matching: find.byType(Icon));
+      expect(Directionality.of(tester.element(icon)), TextDirection.rtl);
+      final mirrored = tester
+          .widgetList<Transform>(
+            find.descendant(of: leave, matching: find.byType(Transform)),
+          )
+          .where((t) => t.transform.storage[0] == -1.0);
+      expect(mirrored, isNotEmpty);
+    });
+
+    testWidgets('a lock on its way keeps its button’s name', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await open_(tester, '/communities/$owned');
+      final hold = repo.holdWrites = Completer<void>();
+      await tester.tap(find.text(CommunityCopy.lock));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(CommunityCopy.confirmLock));
+      await frames(tester);
+      expect(repo.writes, ['lock $owned']);
+      namedWhileBusy(
+        tester,
+        buttonOf(CommunityCopy.lock),
+        label: CommunityCopy.lock,
+      );
+      hold.complete();
+      await tester.pumpAndSettle();
+      semantics.dispose();
+    });
+
     const everyAction = [
       CommunityCopy.invitationLinks,
       CommunityCopy.lock,
@@ -264,6 +339,61 @@ void main() {
   });
 
   group('a roster row’s actions', () {
+    testWidgets('fit a small phone at the largest text size, a long name '
+        'and all: the sheet scrolls, every action within reach', (
+      tester,
+    ) async {
+      final member = CommunityMember(
+        userId: 'someone-else',
+        // 119 code points: within the server's 120.
+        displayName: List.filled(15, 'عبدالله').join(' '),
+        active: true,
+        joinedAt: DateTime.utc(2026, 9, 3),
+      );
+      repo = _OneRow(member);
+      await open_(
+        tester,
+        '/communities/$owned/members',
+        size: const Size(360, 690),
+        extra: [textScaleProvider.overrideWith(() => _TextScale(1.35))],
+      );
+      await tester.tap(find.byTooltip(CommunityCopy.memberOptions(member)));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final remove = find.text(CommunityCopy.removeMember);
+      await tester.ensureVisible(remove);
+      await tester.pumpAndSettle();
+      await tester.tap(remove);
+      await tester.pumpAndSettle();
+      expect(
+        inDialog(find.text(CommunityCopy.removeQuestion(member))),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a row whose change is on its way keeps its button’s name', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await open_(tester, '/communities/$owned/members');
+      final hold = repo.holdWrites = Completer<void>();
+      await tester.tap(options(studentName));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(CommunityCopy.removeMember));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(CommunityCopy.confirmRemove));
+      await frames(tester);
+      expect(repo.writes, hasLength(1));
+      namedWhileBusy(
+        tester,
+        options(studentName),
+        tooltip: CommunityCopy.memberOptions(named(studentName)),
+      );
+      hold.complete();
+      await tester.pumpAndSettle();
+      semantics.dispose();
+    });
+
     testWidgets('are on every row but the viewer’s own', (tester) async {
       await open_(tester, '/communities/$owned/members');
       expect(options(teacherName), findsOneWidget);
@@ -383,7 +513,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(repo.writes, ['transferOwnership $owned $teacherId']);
       expect(locationIn(container), '/communities/$owned');
-      expect(find.text(CommunityCopy.ownershipTransferred), findsOneWidget);
+      expect(
+        find.text(CommunityCopy.ownerNow(named(teacherName))),
+        findsOneWidget,
+      );
       expect(find.text('مالك المجتمع'), findsNothing);
       expect(find.text(CommunityCopy.leave), findsOneWidget);
       expect(find.text(CommunityCopy.lock), findsNothing);
@@ -407,6 +540,105 @@ void main() {
     });
   });
 
+  group('a hand-over the server confirmed', () {
+    const communityId = 'c-1';
+    const ownerName = 'معلّم ألف';
+    const otherName = 'معلّم باء';
+    late String owner;
+    late List<String> handedOver;
+    late CommunityServer server;
+
+    // The viewer oversees the community without owning it: the hand-over
+    // is offered on every row but their own — the owner's too.
+    Map<String, Object?> overseen() => communityJson(
+      id: communityId,
+      capabilities: const ['community.members.view'],
+      operations: const [
+        'community.invitations.manage',
+        'community.ownership.transfer',
+        'community.leave',
+      ],
+    );
+
+    setUp(() {
+      owner = 'owner-a';
+      handedOver = [];
+      server = CommunityServer({
+        'GET /auth/me': (_) => jsonResponse(200, signedInUser),
+        'GET /communities': (_) => jsonResponse(200, {
+          'items': [overseen()],
+          'nextCursor': null,
+        }),
+        'GET /communities/$communityId': (_) => jsonResponse(200, overseen()),
+        'GET /communities/$communityId/members': (_) => jsonResponse(200, {
+          'items': [
+            memberJson('user-2', displayName: 'طالبة الخادم'), // the viewer
+            memberJson('owner-a', displayName: ownerName),
+            memberJson('member-b', displayName: otherName),
+          ],
+          'nextCursor': null,
+        }),
+        // As the server does: naming the owner changes nothing and is 200
+        // too, with the very body a hand-over that moved would bring.
+        'PUT /communities/$communityId/owner': (request) {
+          final body = jsonDecode(request.body) as Map<String, Object?>;
+          final named = body['userId']! as String;
+          if (named != owner) handedOver.add(owner = named);
+          return jsonResponse(200, overseen());
+        },
+      });
+    });
+
+    Future<void> handOverTo(WidgetTester tester, String name) async {
+      container = await openApp(
+        tester,
+        '/communities/$communityId',
+        size: const Size(390, 1400),
+        overrides: backendOverrides(server, signedIn: true),
+      );
+      await tester.tap(find.text(CommunityCopy.viewMembers));
+      await tester.pumpAndSettle();
+      await tester.tap(options(name));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(CommunityCopy.makeOwner));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(CommunityCopy.confirmTransfer));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('to the owner already: nothing moved, and nothing said '
+        'moved — who owns it now', (tester) async {
+      await handOverTo(tester, ownerName);
+      expect(handedOver, isEmpty);
+      expect(find.text('نُقلت ملكية المجتمع.'), findsNothing);
+      expect(
+        find.text(CommunityCopy.ownerNow(named(ownerName))),
+        findsOneWidget,
+      );
+      // What is shown after is the server's, read again after its answer.
+      final answered = server.calls.indexOf(
+        'PUT /communities/$communityId/owner',
+      );
+      expect(
+        server.calls.skip(answered + 1),
+        containsAll([
+          'GET /communities/$communityId',
+          'GET /communities/$communityId/members',
+        ]),
+      );
+    });
+
+    testWidgets('to another member: the very same words', (tester) async {
+      await handOverTo(tester, otherName);
+      expect(handedOver, ['member-b']);
+      expect(find.text('نُقلت ملكية المجتمع.'), findsNothing);
+      expect(
+        find.text(CommunityCopy.ownerNow(named(otherName))),
+        findsOneWidget,
+      );
+    });
+  });
+
   group('a member’s capabilities', () {
     Future<void> openCapabilities(WidgetTester tester, String name) async {
       await tester.tap(options(name));
@@ -414,6 +646,107 @@ void main() {
       await tester.tap(find.text(CommunityCopy.memberCapabilities));
       await tester.pumpAndSettle();
     }
+
+    testWidgets('are never all "not granted" on a me gone stale: read with '
+        'the grants, a me without grants.manage says "not available"', (
+      tester,
+    ) async {
+      final server = repo = _OwnerLosesCeiling();
+      await open_(tester, '/communities/$owned/members');
+      await openCapabilities(tester, teacherName);
+      expect(find.text(CommunityCopy.granted), findsOneWidget);
+      await tester.tapAt(const Offset(20, 20)); // the sheet closed
+      await tester.pumpAndSettle();
+      // The owner's account loses what granting needs: no frame says so.
+      server.ceilingLost = true;
+      final reads = server.communityRequests.length;
+      await openCapabilities(tester, teacherName);
+      expect(server.communityRequests.length, greaterThan(reads));
+      expect(find.text(CommunityCopy.notGranted), findsNothing);
+      expect(find.text(CommunityCopy.grantChosen), findsNothing);
+      expect(find.text(CommunityCopy.notYours), findsOneWidget);
+      // And the roster follows: no row offers the capabilities any more.
+      await tester.tapAt(const Offset(20, 20));
+      await tester.pumpAndSettle();
+      await tester.tap(options(teacherName));
+      await tester.pumpAndSettle();
+      expect(find.text(CommunityCopy.makeOwner), findsOneWidget);
+      expect(find.text(CommunityCopy.memberCapabilities), findsNothing);
+    });
+
+    testWidgets('are revoked only once asked, naming what and whom', (
+      tester,
+    ) async {
+      await open_(tester, '/communities/$owned/members');
+      await openCapabilities(tester, teacherName);
+      expect(find.text(CommunityCopy.granted), findsOneWidget);
+      await tester.tap(find.text(CommunityCopy.revokeGrant));
+      await tester.pumpAndSettle();
+      expect(
+        inDialog(
+          find.text(
+            CommunityCopy.revokeGrantQuestion(
+              CommunityCapability.membersView,
+              named(teacherName),
+            ),
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(repo.writes, isEmpty);
+      await tester.tap(inDialog(find.text(CommunityCopy.revokeGrant)));
+      await tester.pumpAndSettle();
+      expect(repo.writes.single, startsWith('revokeGrant $owned '));
+      expect(find.text(CommunityCopy.granted), findsNothing);
+    });
+
+    testWidgets('a grant on its way keeps its button’s name', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await open_(tester, '/communities/$owned/members');
+      await openCapabilities(tester, teacherName);
+      await tester.tap(
+        find.text(CommunityCopy.capability(CommunityCapability.lock)),
+      );
+      await tester.pump();
+      final hold = repo.holdWrites = Completer<void>();
+      await tester.tap(find.text(CommunityCopy.grantChosen));
+      await tester.pump();
+      expect(repo.writes, ['grant $owned $teacherId']);
+      namedWhileBusy(
+        tester,
+        find.descendant(
+          of: find.byType(MemberCapabilitiesSheet),
+          matching: find.byType(FilledButton),
+        ),
+        label: CommunityCopy.grantChosen,
+      );
+      hold.complete();
+      await tester.pumpAndSettle();
+      semantics.dispose();
+    });
+
+    testWidgets('a revoke on its way keeps its button’s name', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await open_(tester, '/communities/$owned/members');
+      await openCapabilities(tester, teacherName);
+      final hold = repo.holdWrites = Completer<void>();
+      await tester.tap(find.text(CommunityCopy.revokeGrant));
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text(CommunityCopy.revokeGrant)));
+      await frames(tester);
+      expect(repo.writes, hasLength(1));
+      namedWhileBusy(
+        tester,
+        find.descendant(
+          of: find.byType(MemberCapabilitiesSheet),
+          matching: find.byType(TextButton),
+        ),
+        label: CommunityCopy.revokeGrant,
+      );
+      hold.complete();
+      await tester.pumpAndSettle();
+      semantics.dispose();
+    });
 
     testWidgets('are the server’s list: granted, or not; the chosen granted '
         'in one request, one revoked', (tester) async {
@@ -447,6 +780,8 @@ void main() {
           CommunityCopy.revokeGrantTooltip(CommunityCapability.membersInvite),
         ),
       );
+      await tester.pumpAndSettle();
+      await tester.tap(inDialog(find.text(CommunityCopy.revokeGrant)));
       await tester.pumpAndSettle();
       expect(repo.writes.last, startsWith('revokeGrant $owned '));
       expect(find.text(CommunityCopy.granted), findsNWidgets(2));
@@ -532,6 +867,40 @@ void main() {
       );
       return copied;
     }
+
+    testWidgets('are each read once: their facts in one sentence, and their '
+        'revoke a button of its own', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await open_(tester, '/communities/$owned/invitations');
+      const uses = 'مرات الاستخدام';
+      const expiry = 'تاريخ الانتهاء';
+      final rows = find.semantics
+          .byPredicate((node) => node.label.contains(uses))
+          .evaluate()
+          .toList();
+      // One node a row: no fact said again apart from its sentence.
+      final tiles = find.byType(InvitationTile).evaluate().length;
+      expect(tiles, greaterThanOrEqualTo(2));
+      expect(rows, hasLength(tiles));
+      for (final row in rows) {
+        for (final fact in [uses, expiry, CommunityCopy.createdByYou]) {
+          expect(
+            fact.allMatches(row.label).length,
+            lessThanOrEqualTo(1),
+            reason: row.label,
+          );
+        }
+      }
+      final revokes = find.byTooltip(CommunityCopy.revokeLink);
+      expect(revokes, findsNWidgets(2));
+      for (final revoke in revokes.evaluate()) {
+        expect(
+          tester.getSemantics(find.byWidget(revoke.widget)),
+          isSemantics(tooltip: CommunityCopy.revokeLink, isButton: true),
+        );
+      }
+      semantics.dispose();
+    });
 
     testWidgets('are listed as the server gives them — the viewer’s own '
         'marked, never a token or an id', (tester) async {
@@ -711,6 +1080,89 @@ void main() {
     });
   });
 
+  group('a change asked about and answered anything but yes', () {
+    /// Answers the dialog on screen [how]: its Cancel, a tap outside it, or
+    /// Escape — each a no.
+    Future<void> answerNo(WidgetTester tester, String how) async {
+      expect(find.byType(AlertDialog), findsOneWidget);
+      switch (how) {
+        case 'cancel':
+          await tester.tap(inDialog(find.text(CommunityCopy.cancel)));
+        case 'outside':
+          await tester.tapAt(const Offset(8, 8)); // the barrier
+        default:
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      }
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+    }
+
+    Future<void> tapThen(WidgetTester tester, List<Finder> taps) async {
+      for (final finder in taps) {
+        await tester.tap(finder);
+        await tester.pumpAndSettle();
+      }
+    }
+
+    for (final (what, path, ask)
+        in <(String, String, Future<void> Function(WidgetTester))>[
+          (
+            'leaving',
+            '/communities/$open',
+            (t) => tapThen(t, [find.text(CommunityCopy.leave)]),
+          ),
+          (
+            'locking',
+            '/communities/$owned',
+            (t) => tapThen(t, [find.text(CommunityCopy.lock)]),
+          ),
+          (
+            'removing a member',
+            '/communities/$owned/members',
+            (t) => tapThen(t, [
+              options(studentName),
+              find.text(CommunityCopy.removeMember),
+            ]),
+          ),
+          (
+            'handing the community over',
+            '/communities/$owned/members',
+            (t) => tapThen(t, [
+              options(teacherName),
+              find.text(CommunityCopy.makeOwner),
+            ]),
+          ),
+          (
+            'revoking a link',
+            '/communities/$owned/invitations',
+            (t) => tapThen(t, [find.byTooltip(CommunityCopy.revokeLink).first]),
+          ),
+          (
+            'revoking a capability',
+            '/communities/$owned/members',
+            (t) => tapThen(t, [
+              // The sheet stays open under a dialog answered no.
+              if (find.byType(MemberCapabilitiesSheet).evaluate().isEmpty) ...[
+                options(teacherName),
+                find.text(CommunityCopy.memberCapabilities),
+              ],
+              find.text(CommunityCopy.revokeGrant),
+            ]),
+          ),
+        ]) {
+      testWidgets('$what: a Cancel, a tap outside or Escape sends '
+          'nothing', (tester) async {
+        await open_(tester, path);
+        for (final how in ['cancel', 'outside', 'escape']) {
+          await ask(tester);
+          await answerNo(tester, how);
+          expect(repo.writes, isEmpty, reason: how);
+        }
+        expect(locationIn(container), path);
+      });
+    }
+  });
+
   group('what a refusal says', () {
     const refusals = [
       'communities.capability_required',
@@ -817,4 +1269,86 @@ class _DormantGrants extends ScriptedCommunities {
       ],
     );
   }
+}
+
+/// The scripted server after the owner's account lost what granting needs
+/// (a role change: no community frame): its `me` no longer holds
+/// community.grants.manage, and another member's grants come back empty —
+/// the server's answer to anyone it does not let see them.
+class _OwnerLosesCeiling extends ScriptedCommunities {
+  bool ceilingLost = false;
+
+  @override
+  Future<Community> community(String communityId) async {
+    final c = await super.community(communityId);
+    if (!ceilingLost) return c;
+    return Community(
+      id: c.id,
+      title: c.title,
+      status: c.status,
+      lifecycleVersion: c.lifecycleVersion,
+      memberCount: c.memberCount,
+      createdAt: c.createdAt,
+      origin: c.origin,
+      me: CommunityMe(
+        standing: c.me.standing,
+        joinedAt: c.me.joinedAt,
+        participation: c.me.participation,
+        capabilities: c.me.capabilities,
+        operations: {...c.me.operations}
+          ..remove(CommunityOperation.grantsManage),
+      ),
+    );
+  }
+
+  @override
+  Future<GrantPage> grants(
+    String communityId, {
+    required String userId,
+    String? cursor,
+  }) async {
+    if (ceilingLost && userId != viewer) {
+      grantRequests.add(userId);
+      return const GrantPage(items: []);
+    }
+    return super.grants(communityId, userId: userId, cursor: cursor);
+  }
+}
+
+/// The text size the Profile offers, fixed.
+class _TextScale extends TextScaleNotifier {
+  _TextScale(this.scale);
+
+  final double scale;
+
+  @override
+  double build() => scale;
+}
+
+/// The viewer owns the community, with every row action, and its roster is
+/// one member: [member].
+class _OneRow extends AnsweredAs {
+  _OneRow(this.member)
+    : super(
+        communityJson(
+          id: MockCommunityRepository.ownedId,
+          standing: 'OWNER',
+          capabilities: const [
+            'community.members.view',
+            'community.members.remove',
+          ],
+          operations: const [
+            'community.grants.manage',
+            'community.ownership.transfer',
+          ],
+        ),
+      );
+
+  final CommunityMember member;
+
+  @override
+  Future<CommunityMemberPage> members(
+    String communityId, {
+    String? cursor,
+  }) async => CommunityMemberPage(items: [member]);
 }

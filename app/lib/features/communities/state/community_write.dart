@@ -12,9 +12,14 @@ sealed class WriteOutcome<T> {
 
 /// The server did it. [value] is the part of its answer the screen needs.
 final class WriteDone<T> extends WriteOutcome<T> {
-  const WriteDone(this.value);
+  const WriteDone(this.value, {this.refreshed = true});
 
   final T value;
+
+  /// Whether what the screen shows was read again after the change. False:
+  /// the change is done, and shown as the server answered it, but the read
+  /// after it did not land — the screen says so, and offers to read again.
+  final bool refreshed;
 }
 
 /// The server refused, or no answer came: nothing is known to have changed.

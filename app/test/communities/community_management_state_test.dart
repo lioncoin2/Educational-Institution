@@ -149,16 +149,18 @@ void main() {
       await loadCommunity(owned);
       final hold = repo.holdWrites = Completer<void>();
       final first = detailOf(owned).lock();
-      for (final again in [
-        detailOf(owned).lock,
-        detailOf(owned).unlock,
-        detailOf(owned).leave,
-      ]) {
-        expect(await again(), isA<WriteNotSent<void>>());
-      }
+      // Tapped again meanwhile, and not awaited: a second request is caught
+      // here by name, not by waiting on the held one.
+      final again = [
+        detailOf(owned).lock(),
+        detailOf(owned).unlock(),
+        detailOf(owned).leave(),
+      ];
+      await pumpEventQueue();
+      expect(repo.writes, ['lock $owned']);
       hold.complete();
       expect(await first, isA<WriteDone<void>>());
-      expect(repo.writes, ['lock $owned']);
+      expect(await Future.wait(again), everyElement(isA<WriteNotSent<void>>()));
     });
 
     test('sends nothing before the community is shown', () async {
@@ -391,19 +393,20 @@ void main() {
       await loadRoster(owned);
       final hold = repo.holdWrites = Completer<void>();
       final first = rosterOf(owned).remove(student);
-      expect(await rosterOf(owned).remove(student), isA<WriteNotSent<void>>());
-      expect(
-        await rosterOf(owned).transferOwnership(student),
-        isA<WriteNotSent<void>>(),
-      );
+      final again = [
+        rosterOf(owned).remove(student),
+        rosterOf(owned).transferOwnership(student),
+      ];
       final other = rosterOf(owned).remove('$owned-member-4');
       expect(roster(owned).writing.keys, {student, '$owned-member-4'});
-      hold.complete();
-      await Future.wait([first, other]);
+      await pumpEventQueue();
       expect(repo.writes, [
         'removeMember $owned $student',
         'removeMember $owned $owned-member-4',
       ]);
+      hold.complete();
+      await Future.wait([first, other]);
+      expect(await Future.wait(again), everyElement(isA<WriteNotSent<void>>()));
     });
 
     test('never brings a removed member back with a page asked for before '
@@ -483,6 +486,34 @@ void main() {
       await removing;
       expect(shown.skip(confirmedAt), isNotEmpty);
       for (final state in shown.skip(confirmedAt)) {
+        expect(state.items.map((m) => m.userId), isNot(contains(student)));
+      }
+    });
+
+    test('never shows a roster a rebuild read before a removal was '
+        'confirmed', () async {
+      final gated = _GatedWrites();
+      repo = gated;
+      boot();
+      await loadRoster(owned);
+      final gate = gated.gate = Completer<void>();
+      final removing = rosterOf(owned).remove(student);
+      await pumpEventQueue();
+      // Rebuilt (a dependency changed): its first page is read — the member
+      // still on it — before the removal is done...
+      final stale = repo.holdMembers = Completer<void>();
+      container.invalidate(communityMembersProvider(owned));
+      await pumpEventQueue();
+      repo.holdMembers = null;
+      // ...and handed over once the removal was confirmed.
+      gate.complete();
+      await pumpEventQueue();
+      final shown = record(communityMembersProvider(owned));
+      stale.complete();
+      expect(await removing, isA<WriteDone<void>>());
+      await pumpEventQueue();
+      expect(shown, isNotEmpty);
+      for (final state in shown) {
         expect(state.items.map((m) => m.userId), isNot(contains(student)));
       }
     });
@@ -610,13 +641,12 @@ void main() {
       final hold = repo.holdWrites = Completer<void>();
       final first = linksOf(owned).create();
       expect(links(owned).creating, isTrue);
-      expect(
-        await linksOf(owned).create(),
-        isA<WriteNotSent<CreatedInvitation>>(),
-      );
+      final again = linksOf(owned).create();
+      await pumpEventQueue();
+      expect(repo.writes, hasLength(2));
       hold.complete();
       await first;
-      expect(repo.writes, hasLength(2));
+      expect(await again, isA<WriteNotSent<CreatedInvitation>>());
     });
 
     test('revokes with one request per link, and reads the list '
@@ -627,9 +657,12 @@ void main() {
       final hold = repo.holdWrites = Completer<void>();
       final revoking = linksOf(owned).revoke(active.id);
       expect(links(owned).revoking, {active.id});
-      expect(await linksOf(owned).revoke(active.id), isA<WriteNotSent<void>>());
+      final again = linksOf(owned).revoke(active.id);
+      await pumpEventQueue();
+      expect(repo.writes, ['revokeInvitation $owned ${active.id}']);
       hold.complete();
       expect(await revoking, isA<WriteDone<void>>());
+      expect(await again, isA<WriteNotSent<void>>());
       expect(links(owned).items.first.state, InvitationState.revoked);
       expect(links(owned).revoking, isEmpty);
       expect(repo.writes, ['revokeInvitation $owned ${active.id}']);
@@ -673,22 +706,66 @@ void main() {
       expect(links(owned).items.first.id, created.value.invitation.id);
     });
 
-    test('drops a next page asked for before a change was answered', () async {
+    test('drops a next page asked for before a change was answered — while '
+        'the read after it is still on its way', () async {
       repo = ScriptedCommunities(invitationPageSize: 1);
       boot();
       await loadLinks(owned);
+      final shownBefore = links(owned).items.single.id;
       final stalePage = repo.holdInvitations = Completer<void>();
       final more = linksOf(owned).loadMore();
       await pumpEventQueue();
-      repo.holdInvitations = null;
-      await linksOf(owned).create();
+      // The read after the new link is held too, so only the change itself
+      // can have dropped the page.
+      final reload = repo.holdInvitations = Completer<void>();
+      final creating = linksOf(owned).create();
+      await pumpEventQueue();
+      expect(repo.writes, ['createInvitation $owned']);
       stalePage.complete();
       await more;
+      // The new link, as the server answered it, over the page shown — and
+      // nothing of the page cut before it.
+      expect(links(owned).items, hasLength(2));
+      expect(links(owned).items.last.id, shownBefore);
+      expect(links(owned).loadingMore, isFalse);
+      reload.complete();
+      await creating;
       // The first page, read after the new link: that link, and more.
       expect(links(owned).items, hasLength(1));
       expect(links(owned).items.single.state, InvitationState.active);
       expect(links(owned).hasMore, isTrue);
       expect(links(owned).loadingMore, isFalse);
+    });
+
+    test('never shows a first page a rebuild read before a revoke was '
+        'confirmed', () async {
+      final gated = _GatedWrites();
+      repo = gated;
+      boot();
+      await loadLinks(owned);
+      final target = links(owned).items
+          .firstWhere((i) => i.state == InvitationState.active);
+      final gate = gated.gate = Completer<void>();
+      final revoking = linksOf(owned).revoke(target.id);
+      await pumpEventQueue();
+      // Rebuilt (a dependency changed): its first page is read — the link
+      // still ACTIVE — before the revoke is done...
+      final stale = repo.holdInvitations = Completer<void>();
+      container.invalidate(communityInvitationsProvider(owned));
+      await pumpEventQueue();
+      repo.holdInvitations = null;
+      // ...and handed over once the revoke was confirmed.
+      gate.complete();
+      await pumpEventQueue();
+      final shown = record(communityInvitationsProvider(owned));
+      stale.complete();
+      expect(await revoking, isA<WriteDone<void>>());
+      await pumpEventQueue();
+      expect(shown, isNotEmpty);
+      for (final state in shown) {
+        final link = state.items.firstWhere((i) => i.id == target.id);
+        expect(link.state, InvitationState.revoked);
+      }
     });
 
     test('reads the list again when the viewer’s access changes, and on '
@@ -768,36 +845,41 @@ void main() {
       expect(await grantsOf(key).grant({}), isA<WriteNotSent<GrantChange>>());
       final hold = repo.holdWrites = Completer<void>();
       final first = grantsOf(key).grant({CommunityCapability.lock});
-      expect(
-        await grantsOf(key).grant({CommunityCapability.lock}),
-        isA<WriteNotSent<GrantChange>>(),
-      );
-      expect(
-        await grantsOf(key).revoke('any-grant'),
-        isA<WriteNotSent<void>>(),
-      );
+      final again = grantsOf(key).grant({CommunityCapability.lock});
+      final revoking = grantsOf(key).revoke('any-grant');
+      await pumpEventQueue();
+      expect(repo.writes, ['grant $owned $teacher']);
       hold.complete();
       await first;
-      expect(repo.writes, ['grant $owned $teacher']);
+      expect(await again, isA<WriteNotSent<GrantChange>>());
+      expect(await revoking, isA<WriteNotSent<void>>());
     });
 
     test('a refusal reads the grants and the community again', () async {
       const other = (communityId: owned, userId: student);
       await loadCommunity(owned);
       await loadGrants(other);
+      final read = repo.communityRequests.length;
       final outcome = await grantsOf(other).grant({CommunityCapability.lock});
       expect(
         (outcome as WriteFailed<GrantChange>).error.code,
         'communities.grantee_ineligible',
       );
       expect(repo.grantRequests, [student, student]);
-      expect(repo.communityRequests, [owned, owned]);
+      // Once with the grants (their `me`), once for the community's screen.
+      expect(repo.communityRequests.skip(read), [owned, owned]);
     });
 
     test('shows none of another member’s grants to a viewer the server does '
         'not let manage them', () async {
-      final member = (communityId: delegated, userId: founder);
-      expect((await loadGrants(member)).grants, isEmpty);
+      // Handed over: the viewer is a member now, and the teacher's grant
+      // stays in effect — the server lists it to them all the same as none.
+      await repo.transferOwnership(owned, '$founder-9');
+      expect((await repo.grants(owned, userId: teacher)).items, isEmpty);
+      final shown = await loadGrants(key);
+      expect(shown.grants, isEmpty);
+      // The server's empty answer is not "none granted": not the viewer's.
+      expect(shown.forbidden, isTrue);
     });
 
     test('never shows grants read before a change was confirmed', () async {
@@ -815,6 +897,49 @@ void main() {
       expect(shown, hasLength(before));
       fresh.complete();
       await granting;
+      expect(held(key), contains(CommunityCapability.lock));
+    });
+
+    test('never shows grants a rebuild read before a grant was '
+        'confirmed', () async {
+      final gated = _GatedWrites();
+      repo = gated;
+      boot();
+      await loadGrants(key);
+      final gate = gated.gate = Completer<void>();
+      final granting = grantsOf(key).grant({CommunityCapability.lock});
+      await pumpEventQueue();
+      final stale = repo.holdGrants = Completer<void>();
+      container.invalidate(memberGrantsProvider(key));
+      await pumpEventQueue();
+      repo.holdGrants = null;
+      gate.complete();
+      await pumpEventQueue();
+      final shown = record(memberGrantsProvider(key));
+      stale.complete();
+      expect(await granting, isA<WriteDone<GrantChange>>());
+      await pumpEventQueue();
+      expect(shown, isNotEmpty);
+      for (final state in shown) {
+        expect({
+          for (final g in state.grants) g.capability,
+        }, contains(CommunityCapability.lock));
+      }
+    });
+
+    test('a change asked for while the grants are read again is sent — '
+        'what is shown stays usable', () async {
+      await loadGrants(key);
+      final stale = repo.holdGrants = Completer<void>();
+      final refreshing = grantsOf(key).refresh();
+      await pumpEventQueue();
+      repo.holdGrants = null;
+      final granting = grantsOf(key).grant({CommunityCapability.lock});
+      await pumpEventQueue();
+      expect(repo.writes, ['grant $owned $teacher']);
+      stale.complete();
+      await refreshing;
+      expect(await granting, isA<WriteDone<GrantChange>>());
       expect(held(key), contains(CommunityCapability.lock));
     });
 
@@ -857,6 +982,27 @@ void main() {
       expect(item(owned).lifecycleVersion, version + 1);
     });
 
+    test('never shows a first page a refresh read before a leave was '
+        'confirmed', () async {
+      await loadCommunity(open);
+      await loadList();
+      final stale = repo.holdList = Completer<void>();
+      final refreshing = container
+          .read(communityListProvider.notifier)
+          .refresh();
+      await pumpEventQueue();
+      repo.holdList = null;
+      final shown = record(communityListProvider);
+      expect(await detailOf(open).leave(), isA<WriteDone<void>>());
+      stale.complete();
+      await refreshing;
+      await pumpEventQueue();
+      expect(shown, isNotEmpty);
+      for (final state in shown) {
+        expect(state.items.map((c) => c.id), isNot(contains(open)));
+      }
+    });
+
     test('reads the first page again for a community joined', () async {
       await loadList();
       await repo.join(MockCommunityRepository.demoActiveToken);
@@ -871,6 +1017,7 @@ void main() {
     test('signed out meanwhile: a change sends nothing, and reads '
         'nothing', () async {
       final server = CommunityServer({
+        'GET /auth/me': (_) => jsonResponse(200, signedInUser),
         'GET /communities/c-1': (_) => jsonResponse(
           200,
           communityJson(id: 'c-1', capabilities: ['community.lock']),
@@ -881,11 +1028,15 @@ void main() {
         demo: false,
         extra: backendOverrides(server, signedIn: true, tokens: tokens),
       );
+      // Signed in, as the app knows before it opens a community.
+      await container.read(sessionUserProvider.future);
       await loadCommunity('c-1');
       await tokens.clear();
       final outcome = await detailOf('c-1').lock();
       expect((outcome as WriteFailed<void>).error.needsSignIn, isTrue);
-      expect(server.calls, ['GET /communities/c-1']);
+      expect(server.calls.where((c) => c.contains('/communities')), [
+        'GET /communities/c-1',
+      ]);
       expect(detail('c-1').writing, isNull);
     });
   });
@@ -944,12 +1095,15 @@ void main() {
       final hold = repo.holdWrites = Completer<void>();
       final first = join().join();
       expect((state() as OpenInvitation).joining, isTrue);
-      for (var i = 0; i < 3; i++) {
-        expect(await join().join(), isA<WriteNotSent<Community>>());
-      }
-      hold.complete();
-      await first;
+      final again = [for (var i = 0; i < 3; i++) join().join()];
+      await pumpEventQueue();
       expect(repo.writes, ['join']);
+      hold.complete();
+      expect(await first, isA<WriteDone<Community>>());
+      expect(
+        await Future.wait(again),
+        everyElement(isA<WriteNotSent<Community>>()),
+      );
     });
 
     test('forgets a link refused for good, and says so', () async {
@@ -1090,5 +1244,24 @@ class _GatedWrites extends ScriptedCommunities {
   Future<void> removeMember(String communityId, String userId) async {
     await gate?.future;
     return super.removeMember(communityId, userId);
+  }
+
+  @override
+  Future<CommunityInvitation> revokeInvitation(
+    String communityId,
+    String invitationId,
+  ) async {
+    await gate?.future;
+    return super.revokeInvitation(communityId, invitationId);
+  }
+
+  @override
+  Future<GrantChange> grant(
+    String communityId, {
+    required String userId,
+    required Set<CommunityCapability> capabilities,
+  }) async {
+    await gate?.future;
+    return super.grant(communityId, userId: userId, capabilities: capabilities);
   }
 }

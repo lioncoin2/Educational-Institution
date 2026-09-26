@@ -6,6 +6,7 @@ import '../../../data/models/communities.dart';
 import '../../../providers/app_providers.dart';
 import 'community_list_controller.dart';
 import 'community_write.dart';
+import 'membership_reconcile.dart';
 import 'pending_invitation.dart';
 
 /// Where the invitation link the app was handed stands, as the invite
@@ -114,7 +115,9 @@ class InvitationJoinController extends Notifier<InvitationJoinState> {
     final serial = pending.serial;
     // Seen through to the end, even if the screen is left meanwhile: a link
     // used is forgotten either way.
-    final alive = ref.keepAlive();
+    final owner = ref;
+    final container = ref.container;
+    final alive = owner.keepAlive();
     state = OpenInvitation(serial: serial, joining: true);
     try {
       final Community community;
@@ -123,20 +126,19 @@ class InvitationJoinController extends Notifier<InvitationJoinState> {
             .read(communityRepositoryProvider)
             .join(pending.token);
       } on CommunityException catch (error) {
-        if (ref.mounted) _refused(serial, error);
+        _refused(container, serial, error);
         return WriteFailed(error);
       }
-      if (ref.mounted) {
-        _forget(serial);
-        if (ref.exists(communityListProvider)) {
-          unawaited(
-            ref
-                .read(communityListProvider.notifier)
-                .reconcileJoined(community.id),
-          );
-        }
-        if (_shows(serial)) state = JoinedInvitation(community);
+      _forget(container, serial);
+      if (container.exists(communityListProvider)) {
+        unawaited(
+          container
+              .read(communityListProvider.notifier)
+              .reconcileJoined(community.id),
+        );
       }
+      reconcileMembership(container, community.id, left: false);
+      if (ref.mounted && _shows(serial)) state = JoinedInvitation(community);
       return WriteDone(community);
     } finally {
       // Whatever else ended the request, the button is not left spinning.
@@ -146,7 +148,8 @@ class InvitationJoinController extends Notifier<InvitationJoinState> {
           state = OpenInvitation(serial: serial);
         }
       }
-      alive.close();
+      // Only the Ref that took the link lets it go.
+      if (owner.mounted) alive.close();
     }
   }
 
@@ -164,15 +167,20 @@ class InvitationJoinController extends Notifier<InvitationJoinState> {
     // No token's shape: no invitation at all. Nothing is sent for it, and it
     // is forgotten — once this build is over: no provider may change another
     // while it is being built.
-    unawaited(Future.microtask(() => _forget(pending.serial)));
+    final container = ref.container;
+    unawaited(Future.microtask(() => _forget(container, pending.serial)));
     return const ClosedInvitation(null);
   }
 
-  void _refused(int serial, CommunityException error) {
+  void _refused(
+    ProviderContainer container,
+    int serial,
+    CommunityException error,
+  ) {
     final forGood = _refusedForGood.contains(error.code);
-    if (forGood) _forget(serial);
+    if (forGood) _forget(container, serial);
     // Another link was opened meanwhile: that one is what is shown.
-    if (!_shows(serial)) return;
+    if (!ref.mounted || !_shows(serial)) return;
     state = forGood
         ? ClosedInvitation(error.code)
         : error.needsSignIn
@@ -181,11 +189,10 @@ class InvitationJoinController extends Notifier<InvitationJoinState> {
   }
 
   /// Empties the holder — if it still holds offer [serial], and not one
-  /// made since.
-  void _forget(int serial) {
-    if (!ref.mounted) return;
-    if (ref.read(pendingInvitationProvider)?.serial == serial) {
-      ref.read(pendingInvitationProvider.notifier).clear();
+  /// made since. Through the [container], which outlives this screen.
+  void _forget(ProviderContainer container, int serial) {
+    if (container.read(pendingInvitationProvider)?.serial == serial) {
+      container.read(pendingInvitationProvider.notifier).clear();
     }
   }
 

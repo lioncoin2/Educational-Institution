@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -203,6 +204,27 @@ void main() {
     expect(held(), isNull);
   });
 
+  testWidgets('a Join on its way keeps its name, and stays a button', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await start(tester, atStartup: token);
+    final hold = repo.holdWrites = Completer<void>();
+    await tester.tap(find.text(CommunityCopy.join));
+    await tester.pump();
+    expect(repo.writes, ['join']);
+    final node = tester.getSemantics(find.byType(FilledButton));
+    expect(
+      node,
+      isSemantics(label: CommunityCopy.join, isButton: true, isEnabled: false),
+    );
+    // Not the spinner's role, which takes the button's away on the web.
+    expect(node.getSemanticsData().role, SemanticsRole.none);
+    hold.complete();
+    await tester.pumpAndSettle();
+    semantics.dispose();
+  });
+
   testWidgets('a double tap sends one request', (tester) async {
     await start(tester, atStartup: token);
     final hold = repo.holdWrites = Completer<void>();
@@ -212,13 +234,14 @@ void main() {
     // either.
     expect(find.text(CommunityCopy.join), findsNothing);
     await tester.tap(find.byType(FilledButton), warnIfMissed: false);
-    expect(
-      await container.read(invitationJoinProvider.notifier).join(),
-      isA<WriteNotSent<Object?>>(),
-    );
+    // Not awaited while the first is held: a second request is caught here
+    // by name, not by waiting on it.
+    final again = container.read(invitationJoinProvider.notifier).join();
+    await tester.pump();
+    expect(repo.writes, ['join']);
     hold.complete();
     await tester.pumpAndSettle();
-    expect(repo.writes, ['join']);
+    expect(await again, isA<WriteNotSent<Object?>>());
     expect(locationIn(container), '/communities/$invited');
   });
 

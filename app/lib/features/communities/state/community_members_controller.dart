@@ -81,11 +81,15 @@ class CommunityMembersState {
 ///
 /// Removing a member and handing the community over are one request each,
 /// per member, and the roster changes only once the server has answered —
+/// a removed member's row goes at once, the server having confirmed it —
 /// then the first page is read again, with the community and its row in the
-/// list. Every read is numbered as it is sent, and [reconcile] marks the
-/// moment an answer came: a first page asked for before it is dropped and
-/// asked for again, and a next page asked for before it is dropped — so a
-/// page read while a removal was on its way never brings the member back.
+/// list (a hand-over shows them what it answered first). Every read is
+/// numbered as it is sent, and [reconcile] marks the moment an answer came:
+/// a first page asked for before it is dropped and asked for again, and a
+/// next page asked for before it is dropped — so a page read while a
+/// removal was on its way never brings the member back. If the read after a
+/// change fails, what the change confirmed stays, and the screen says it
+/// could not be read again.
 class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
   CommunityMembersController(this.communityId);
 
@@ -105,14 +109,19 @@ class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
 
   /// Every first page is numbered as it is asked for; [_marked] is the
   /// number taken when the server last answered a change this app made. An
-  /// answer to one numbered below it is dropped.
+  /// answer to one numbered below it is dropped. [_landed] is the number of
+  /// the last first page shown.
   int _sent = 0;
   int _marked = 0;
+  int _landed = 0;
 
   final Map<String, MemberWrite> _writing = {};
 
   @override
   Future<CommunityMembersState> build() async {
+    // A sign-in, a sign-out or another account is another viewer: read
+    // again — not while the session merely resolves to the same one.
+    ref.watch(sessionUserProvider.select((session) => session.value?.id));
     final repository = ref.watch(communityRepositoryProvider);
     final realtime = ref.watch(realtimeConnectionProvider);
     final events = realtime.events.listen(_onEvent);
@@ -127,6 +136,9 @@ class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
         unawaited(_reload());
       }
     });
+    // A first page is on its way: a next page asked for before is cut from
+    // one no longer shown.
+    _generation += 1;
     final built = ref;
     for (;;) {
       final sentAt = ++_sent;
@@ -138,6 +150,7 @@ class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
         rethrow;
       }
       if (_stale(sentAt) && built.mounted) continue;
+      _landed = sentAt;
       return first.copyWith(writing: Map.unmodifiable(_writing));
     }
   }
@@ -198,44 +211,62 @@ class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
     }
   }
 
-  Future<void> refresh() async {
+  /// Reads the first page again at the viewer's request. What is shown
+  /// stays shown — and usable, a change on its way included — until it
+  /// lands: this is the one-at-a-time, numbered read a confirmed change
+  /// uses, and a next page on its way is dropped. Only a screen with nothing
+  /// to show (its first read failed) starts over.
+  Future<void> refresh() {
+    if (state.hasValue) return reconcile().then<void>((_) {});
     ref.invalidateSelf();
-    await future;
+    return future.then<void>((_) {}, onError: (Object _) {});
   }
 
   /// The server has just answered a change the viewer made to this
   /// community: no page asked for before now is shown after it, and the
-  /// first page is read again. Completes once it has landed.
-  Future<void> reconcile() {
-    _marked = ++_sent;
+  /// first page is read again. Completes once it has landed: true when it
+  /// did, false when it failed.
+  Future<bool> reconcile() => _readBack();
+
+  /// [reconcile], showing first what the change confirmed ([confirmed]
+  /// applied to what is shown) — under the mark, so no page read before is
+  /// shown after it.
+  Future<bool> _readBack({
+    CommunityMembersState Function(CommunityMembersState shown)? confirmed,
+  }) {
+    final mark = _marked = ++_sent;
     _generation += 1;
-    return _reload();
+    final shown = state.isLoading ? null : state.value;
+    if (confirmed != null && shown != null) state = AsyncData(confirmed(shown));
+    return _reload().then((_) => _landed > mark);
   }
 
   /// Ends [userId]'s membership: one request, one at a time per member.
   /// Once answered — done or refused — the roster, the community (its
   /// count) and its row in the list are read again; the row's spinner stays
   /// until they are shown.
-  Future<WriteOutcome<void>> remove(String userId) => _write(
-    userId,
-    MemberWrite.remove,
-    (repository) => repository.removeMember(communityId, userId),
-  );
+  Future<WriteOutcome<void>> remove(String userId) =>
+      _write(userId, MemberWrite.remove, (repository) async {
+        await repository.removeMember(communityId, userId);
+        return null;
+      });
 
   /// Hands the community to [userId], as [remove] ends a membership. What
-  /// the server answers is the community as the viewer now stands in it; it
-  /// is not shown as it is — the community is read again, as is the roster,
-  /// which may no longer be the viewer's to see.
+  /// the server answers — the community as the viewer now stands in it — is
+  /// shown on the community and in the list at once; then they are read
+  /// again, as is the roster, which may no longer be the viewer's to see.
   Future<WriteOutcome<void>> transferOwnership(String userId) => _write(
     userId,
     MemberWrite.transfer,
     (repository) => repository.transferOwnership(communityId, userId),
   );
 
+  /// [send] answers the community as the viewer now stands in it — or null,
+  /// for a removal, which answers nothing.
   Future<WriteOutcome<void>> _write(
     String userId,
     MemberWrite write,
-    Future<void> Function(CommunityRepository repository) send,
+    Future<Community?> Function(CommunityRepository repository) send,
   ) async {
     if (_writing.containsKey(userId) ||
         state.isLoading ||
@@ -243,26 +274,64 @@ class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
       return const WriteNotSent();
     }
     // Seen through to the end, even if the screen is left meanwhile: what
-    // the answer changed is still reconciled.
-    final alive = ref.keepAlive();
+    // the answer changed is still reconciled — through the container, which
+    // outlives this controller.
+    final owner = ref;
+    final container = ref.container;
+    final alive = owner.keepAlive();
     _setWriting(userId, write);
     try {
+      final Community? answer;
       try {
-        await send(ref.read(communityRepositoryProvider));
+        answer = await send(ref.read(communityRepositoryProvider));
       } on CommunityException catch (error) {
-        if (ref.mounted && answersForTheCommunity(error)) await _reconcile();
+        if (answersForTheCommunity(error)) await _reconcile(container);
         return WriteFailed(error);
       }
-      if (ref.mounted) await _reconcile();
-      return const WriteDone(null);
+      final refreshed = await _reconcile(
+        container,
+        confirmed: answer,
+        removed: write == MemberWrite.remove ? userId : null,
+      );
+      return WriteDone(null, refreshed: refreshed);
     } finally {
       if (ref.mounted) _setWriting(userId, null);
-      alive.close();
+      // Only the Ref that took the link lets it go: after a rebuild Riverpod
+      // has dropped it already, and after a dispose, closing it could only
+      // dispose whatever element came after — a screen opened since.
+      if (owner.mounted) alive.close();
     }
   }
 
-  Future<void> _reconcile() =>
-      Future.wait([reconcile(), reconcileCommunity(ref, communityId)]);
+  /// The roster — while this controller is still the one showing it, the
+  /// [removed] member's row gone at once — and the community and its row in
+  /// the list, wherever those are open, [confirmed] shown first. True unless
+  /// this screen's own read after it failed.
+  Future<bool> _reconcile(
+    ProviderContainer container, {
+    Community? confirmed,
+    String? removed,
+  }) async {
+    final results = await Future.wait<bool>([
+      if (ref.mounted)
+        _readBack(
+          confirmed: removed == null
+              ? null
+              : (shown) => shown.copyWith(
+                  items: [
+                    for (final m in shown.items)
+                      if (m.userId != removed) m,
+                  ],
+                ),
+        ),
+      reconcileCommunity(
+        container,
+        communityId,
+        confirmed: confirmed,
+      ).then((_) => true),
+    ]);
+    return !results.contains(false);
+  }
 
   void _setWriting(String userId, MemberWrite? write) {
     if (write == null) {
@@ -363,6 +432,7 @@ class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
         _reloadAgain = true;
         continue;
       }
+      _landed = sentAt;
       _generation += 1;
       // A next page on its way stays on its way — to be dropped.
       state = AsyncData(

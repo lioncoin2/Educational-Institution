@@ -649,7 +649,16 @@ the truth. In the app (`app/lib/features/communities/state/`,
   also answers whether the links are still theirs: 403 → "not yours to
   see", 404 → gone), and whenever the connection comes up.
 - **`MemberGrantsController`** (P5.1): one member's grants, read whole (at
-  most one grant per capability), on the same occasions.
+  most one grant per capability), on the same occasions — always with the
+  community's `me`: without `community.grants.manage` the server answers
+  only the viewer's own grants, so the view says "not available" rather than
+  show another member's empty list as "not granted".
+- **Every community view depends on the signed-in account** (P5.1): a
+  sign-in, including one from a screen's own prompt, or a switch of account
+  reads them again. The links and roster screens take what they offer from
+  the community's `me`; when that read failed they say so, with a retry or a
+  sign-in, rather than silently offering nothing, and a reconnect reads a
+  community whose first read failed.
 - **Messaging's controllers**, for a community chat: the viewer's removal →
   the conversation subscribes and catches up again, and the server's
   `CONVERSATION_NOT_FOUND` marks it removed, never the frame alone; the
@@ -658,7 +667,9 @@ the truth. In the app (`app/lib/features/communities/state/`,
   stint, carrying nothing of the old one over; a lock, an unlock or
   `access.changed` → the conversation is read again (`canPost`).
   The list drops that community's chat when the viewer is removed and reads
-  its first page again when they are added or removed.
+  its first page again when they are added or removed — and, since P5.1,
+  after the viewer's own confirmed leave or join too, in demo mode as well,
+  where no frame comes.
 - **Whenever the connection comes up** (connected or reconnected), each open
   community view reads again over HTTP: a frame missed meanwhile is in the
   answer.
@@ -683,11 +694,22 @@ the truth. In the app (`app/lib/features/communities/state/`,
   answers. Then what the change touched is read again, each part through its
   own controller's one-at-a-time read: the community (`me`, status, count)
   and its row in the list, the roster, the links, the member's grants
-  (`community_reconcile.dart`). The answer to a lock or a transfer is not
-  shown as it is; the read after it is, so a lock's echo frame finds its
-  version already held. Two changes end otherwise: a confirmed leave shows
-  the community as removed and takes it out of the list at once, then reads
-  the list's first page again; a join reads the list's first page again.
+  (`community_reconcile.dart`). What the server answered is shown first,
+  under the mark below — a revoked link's row, the community after a lock,
+  an unlock or a transfer, a removed member's row gone, the grants made or
+  ended — and then read again; should that read fail, the confirmed answer
+  stays and the screen says the view could not be refreshed, with a
+  refresh. Two changes end otherwise: a confirmed leave shows the community
+  as removed and takes it out of the list at once, then reads the list's
+  first page again; a join reads the list's first page again.
+- **A change is seen through, whatever the screen does meanwhile** (P5.1).
+  A refresh runs the controller's own marked read, never a rebuild under a
+  change on its way (only a retry from an error rebuilds); the re-reads a
+  change asks for go through the app's provider container, so they run even
+  if the screen that made the change was left; and a screen moves on after
+  an answer — back from the roster after a hand-over, to the list after a
+  leave, to the community after a join — only while it is still the one
+  shown.
 - **A read sent before a confirmed change never overwrites what came after
   it.** Each controller numbers its reads as they are sent, the build's first
   read included, and marks the moment the server answered one of the
@@ -852,10 +874,15 @@ Flutter (`flutter test`):
   community routes at every viewport; Profile → communities → a community →
   its chat. Since P5.1 also an owned community's links and `/invite`, and
   the way from a community to its links and from `/invite` to the list.
-- Beyond the suites (P5.1), two one-off checks that are not committed: the
+- Beyond the suites (P5.1), one-off checks that are not committed: the
   app's `HttpCommunityRepository` driven against a running backend on
-  PostgreSQL through every P5.1 call and refusal, and a Playwright run
-  (Chromium) of the release web build against it, 17 of 17 checks passed
+  PostgreSQL through every P5.1 call and refusal; and two Playwright runs
+  (Chromium) of the release web build against it — `/invite` (cold start,
+  scrub, sign-in, one join request, revoked, warm, malformed: 17 of 17,
+  run again after the review's fixes) and an owner's management through the
+  real screens (sign-in from the community screen, a link created, copied
+  and redeemed, revoked, lock and unlock, a removal, a hand-over, one
+  request each, each confirmed on the server: 17 of 17)
   ([hub §22](communities-live-attendance.md#22-testing-strategy)).
 
 ## C9. Deliberately deferred

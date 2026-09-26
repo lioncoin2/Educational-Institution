@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -38,7 +40,10 @@ class CommunityInvitationsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final provider = communityInvitationsProvider(communityId);
     final value = ref.watch(provider);
-    final detail = ref.watch(communityProvider(communityId)).value;
+    // What this screen offers is the community's own `me`.
+    final community = communityProvider(communityId);
+    final meRead = ref.watch(community);
+    final detail = meRead.value;
     final me = detail == null || detail.removed ? null : detail.community?.me;
     return AppScreen(
       title: CommunityCopy.invitationLinks,
@@ -46,13 +51,30 @@ class CommunityInvitationsScreen extends ConsumerWidget {
       actions: [
         IconButton(
           tooltip: CommunityCopy.refresh,
-          onPressed: () => ref.invalidate(provider),
+          // Reads again under what is shown — the links, and the `me` they
+          // are offered by; never starts the screen over.
+          onPressed: () {
+            unawaited(ref.read(provider.notifier).refresh());
+            unawaited(ref.read(community.notifier).refresh());
+          },
           icon: const Icon(Icons.refresh_rounded),
         ),
         const SizedBox(width: Insets.sm),
       ],
       slivers: [
         const SliverToBoxAdapter(child: ConnectionBanner()),
+        // `me` could not be read: said, rather than an owner's page that
+        // looks like no rights at all. The links' own failure says it for
+        // both.
+        if (meRead.hasError && !meRead.hasValue && !value.hasError)
+          SliverGutter(
+            top: Insets.lg,
+            child: CommunityErrorView(
+              compact: true,
+              error: meRead.error!,
+              onRetry: () => ref.invalidate(community),
+            ),
+          ),
         ...value.when(
           loading: () => const [
             SliverGutter(top: Insets.lg, child: CommunitySkeleton(height: 96)),
@@ -62,7 +84,10 @@ class CommunityInvitationsScreen extends ConsumerWidget {
               top: Insets.lg,
               child: CommunityErrorView(
                 error: error,
-                onRetry: () => ref.invalidate(provider),
+                onRetry: () {
+                  ref.invalidate(provider);
+                  if (!ref.read(community).hasValue) ref.invalidate(community);
+                },
               ),
             ),
           ],
@@ -175,13 +200,24 @@ class CommunityInvitationsScreen extends ConsumerWidget {
     );
     if (!yes || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
+    final refresh = refreshLinks(context, communityId);
     final outcome = await ref
         .read(communityInvitationsProvider(communityId).notifier)
         .revoke(invitation.id);
-    if (outcome case WriteFailed(:final error)) {
-      messenger.toast(CommunityCopy.writeFailed(error.code));
-    }
+    sayWriteOutcome(messenger, outcome, refresh: refresh, confirmed: true);
   }
+}
+
+/// Reads the links again — if their screen is still open: a message
+/// offering this may outlive the screen.
+VoidCallback refreshLinks(BuildContext context, String communityId) {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final links = communityInvitationsProvider(communityId);
+  return () {
+    if (container.exists(links)) {
+      unawaited(container.read(links.notifier).refresh());
+    }
+  };
 }
 
 /// Making a new link — where this build can write one. It is one request,
@@ -229,11 +265,12 @@ class _CreateLink extends ConsumerWidget {
     InviteLinkBuilder linkFor,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
+    final refresh = refreshLinks(context, communityId);
     final outcome = await ref
         .read(communityInvitationsProvider(communityId).notifier)
         .create();
     switch (outcome) {
-      case WriteDone(value: final created):
+      case WriteDone(value: final created, :final refreshed):
         final link = linkFor(created.token);
         if (link == null || !context.mounted) {
           // Made, and not to be shown: it can still be revoked from the
@@ -242,10 +279,11 @@ class _CreateLink extends ConsumerWidget {
           return;
         }
         await showOneTimeLinkSheet(context, link);
-      case WriteFailed(:final error):
-        messenger.toast(CommunityCopy.writeFailed(error.code));
-      case WriteNotSent():
-        break;
+        // Said once the link is put away: under the sheet it would go
+        // unseen.
+        if (!refreshed) sayWriteOutcome(messenger, outcome, refresh: refresh);
+      case WriteFailed() || WriteNotSent():
+        sayWriteOutcome(messenger, outcome, refresh: refresh);
     }
   }
 }

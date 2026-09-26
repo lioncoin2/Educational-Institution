@@ -401,6 +401,97 @@ void main() {
       }
     });
 
+    test(
+      'refuses a link whose creator no longer stands as it does an '
+      'unknown one — after the link’s own state, before the lock (Q48)',
+      () async {
+        // The owner makes a link, hands the community over, and leaves.
+        final mine = await repo.createInvitation(owned);
+        await repo.transferOwnership(owned, '$founder-2');
+        await repo.leave(owned);
+        await expectLater(
+          repo.join(mine.token),
+          refusedWith('communities.invitation_invalid'),
+        );
+        repo.changeStatus(owned, CommunityStatus.locked);
+        await expectLater(
+          repo.join(mine.token),
+          refusedWith('communities.invitation_invalid'),
+        );
+
+        // A delegate makes two links and revokes one; the grant ends, and
+        // they leave.
+        repo.delegate(open, {CommunityCapability.membersInvite});
+        final kept = await repo.createInvitation(open);
+        final revoked = await repo.createInvitation(open);
+        await repo.revokeInvitation(open, revoked.invitation.id);
+        repo.delegate(open, {});
+        await repo.leave(open);
+        await expectLater(
+          repo.join(kept.token),
+          refusedWith('communities.invitation_invalid'),
+        );
+        await expectLater(
+          repo.join(revoked.token),
+          refusedWith('communities.invitation_revoked'),
+        );
+
+        // A link whose creator — the owner — still stands lets whoever left
+        // back in.
+        await repo.join(MockCommunityRepository.demoActiveToken);
+        await repo.leave(invited);
+        final back = await repo.join(MockCommunityRepository.demoActiveToken);
+        expect(back.id, invited);
+      },
+    );
+
+    group('a link another member made', () {
+      const teacher = '$founder-2';
+
+      /// The viewer hands [owned] to another teacher and leaves it: a link
+      /// is theirs to use again.
+      Future<void> handOverAndLeave() async {
+        await repo.transferOwnership(owned, '$founder-9');
+        await repo.leave(owned);
+      }
+
+      test('admits while its maker holds community.members.invite', () async {
+        await repo.grant(
+          owned,
+          userId: teacher,
+          capabilities: {CommunityCapability.membersInvite},
+        );
+        final token = repo.linkMadeBy(owned, teacher);
+        await handOverAndLeave();
+        expect((await repo.join(token)).id, owned);
+      });
+
+      test('stops admitting once that grant ends', () async {
+        final granted = await repo.grant(
+          owned,
+          userId: teacher,
+          capabilities: {CommunityCapability.membersInvite},
+        );
+        final token = repo.linkMadeBy(owned, teacher);
+        await repo.revokeGrant(owned, granted.created.single.grantId);
+        await handOverAndLeave();
+        await expectLater(
+          repo.join(token),
+          refusedWith('communities.invitation_invalid'),
+        );
+      });
+
+      test('is refused once its maker’s account cannot sign in — asked '
+          'before anything else, the viewer a member already', () async {
+        // Row 11 of the demo's rosters: an account that cannot sign in.
+        final token = repo.linkMadeBy(owned, '$owned-member-11');
+        await expectLater(
+          repo.join(token),
+          refusedWith('communities.invitation_invalid'),
+        );
+      });
+    });
+
     test('never says the token in a refusal', () async {
       for (final token in [
         MockCommunityRepository.demoExpiredToken,
@@ -687,13 +778,33 @@ void main() {
         )).items;
         expect(own.single.capability, CommunityCapability.membersView);
         expect(own.single.grantedBy, founder);
-        expect((await repo.grants(delegated, userId: founder)).items, isEmpty);
         await expectLater(
           repo.grants(invited, userId: founder),
           refusedWith('communities.community_not_found'),
         );
       },
     );
+
+    test('are none of anyone else’s to a viewer who no longer manages them '
+        '— active as that member’s grant is', () async {
+      const holder = '$founder-2'; // holds members.view in the owned one
+      expect(
+        (await repo.grants(
+          owned,
+          userId: holder,
+        )).items.map((g) => g.capability),
+        [CommunityCapability.membersView],
+      );
+      final after = await repo.transferOwnership(owned, '$founder-9');
+      expect(after.me.allows(CommunityOperation.grantsManage), isFalse);
+      expect((await repo.grants(owned, userId: holder)).items, isEmpty);
+      // Still in effect: the holder's grant outranks what the viewer holds.
+      repo.delegate(owned, {CommunityCapability.membersRemove});
+      await expectLater(
+        repo.removeMember(owned, holder),
+        refusedWith('communities.member_holds_more_capabilities'),
+      );
+    });
 
     test('are the owner’s to make', () async {
       await expectLater(
@@ -874,11 +985,6 @@ void main() {
   });
 
   group('handing the community over', () {
-    Future<String> teacherIn(String id) async =>
-        (await repo.members(id)).items
-            .firstWhere((m) => m.userId.startsWith('$founder-'))
-            .userId;
-
     test('is the owner’s', () async {
       await expectLater(
         repo.transferOwnership(delegated, founder),
@@ -912,15 +1018,18 @@ void main() {
     });
 
     test('leaves the former owner a member holding nothing', () async {
-      final heir = await teacherIn(owned);
+      // Not the first teacher: their grant — ended by becoming the owner —
+      // stays in effect, and is still not the former owner's to see.
+      const heir = '$founder-9';
       repo.changeStatus(owned, CommunityStatus.locked); // no gate on it
       final after = await repo.transferOwnership(owned, heir);
       expect(after.me.standing, CommunityStanding.member);
       expect(after.me.capabilities, isEmpty);
       expect(after.me.operations, {CommunityOperation.leave});
       expect(after.memberCount, 12);
-      // Grants are no longer the former owner's to see: their own only.
-      expect((await repo.grants(owned, userId: heir)).items, isEmpty);
+      // Grants are no longer the former owner's to see: their own only —
+      // not the first teacher's, in effect as it is.
+      expect((await repo.grants(owned, userId: '$founder-2')).items, isEmpty);
       await expectLater(
         repo.grant(
           owned,

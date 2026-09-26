@@ -2254,8 +2254,9 @@ refusals rule by rule; buttons follow `me` (capabilities, operations,
 status) only; the invite flow (a link at start or while running, sign-in,
 one request per tap, refusals, a malformed token sending nothing) never puts
 the token in a route, storage, a log or a `toString`. Beyond the suites, a
-one-off contract check against a running backend on PostgreSQL and a
-Playwright run of the release web build, neither committed
+one-off contract check against a running backend on PostgreSQL and two
+Playwright runs of the release web build (`/invite`, and an owner's
+management through the real screens), none committed
 ([hub §22](communities-live-attendance.md#22-testing-strategy)).
 
 **Load** (P8, measured, never guessed): profile 4 — the 30,000-member community,

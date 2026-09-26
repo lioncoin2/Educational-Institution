@@ -76,10 +76,13 @@ class CommunityInvitationsState {
 /// A new link is one request, never sent again on its own: a lost answer
 /// leaves a link nobody saw, which can only be revoked — sending again would
 /// make another. Its token is handed to the screen in the answer and kept
-/// nowhere here. A revocation is one request per link. Every first page is
-/// numbered as it is asked for, and an answer to one asked for before the
-/// server answered a change is dropped and asked for again; a next page
-/// asked for before is dropped.
+/// nowhere here. A revocation is one request per link. What either answers
+/// — the link as the server now has it — is shown at once; then the first
+/// page is read again, and if that read fails, the answer stays and the
+/// screen says it could not be read again. Every first page is numbered as
+/// it is asked for, and an answer to one asked for before the server
+/// answered a change is dropped and asked for again; a next page asked for
+/// before is dropped.
 class CommunityInvitationsController
     extends AsyncNotifier<CommunityInvitationsState> {
   CommunityInvitationsController(this.communityId);
@@ -93,11 +96,17 @@ class CommunityInvitationsController
   int _sent = 0;
   int _marked = 0;
 
+  /// The number of the last first page shown.
+  int _landed = 0;
+
   bool _creating = false;
   final Set<String> _revoking = {};
 
   @override
   Future<CommunityInvitationsState> build() async {
+    // A sign-in, a sign-out or another account is another viewer: read
+    // again — not while the session merely resolves to the same one.
+    ref.watch(sessionUserProvider.select((session) => session.value?.id));
     final repository = ref.watch(communityRepositoryProvider);
     final realtime = ref.watch(realtimeConnectionProvider);
     final events = realtime.events.listen(_onEvent);
@@ -112,6 +121,9 @@ class CommunityInvitationsController
         unawaited(_reload());
       }
     });
+    // A first page is on its way: a next page asked for before is cut from
+    // one no longer shown.
+    _generation += 1;
     final built = ref;
     for (;;) {
       final sentAt = ++_sent;
@@ -123,6 +135,7 @@ class CommunityInvitationsController
         rethrow;
       }
       if (_stale(sentAt) && built.mounted) continue;
+      _landed = sentAt;
       return _withWrites(first);
     }
   }
@@ -180,18 +193,38 @@ class CommunityInvitationsController
     }
   }
 
-  Future<void> refresh() async {
+  /// Reads the first page again at the viewer's request. What is shown
+  /// stays shown — and usable, a change on its way included — until it
+  /// lands: this is the one-at-a-time, numbered read a confirmed change
+  /// uses, and a next page on its way is dropped. Only a screen with nothing
+  /// to show (its first read failed) starts over.
+  Future<void> refresh() {
+    if (state.hasValue) return reconcile().then<void>((_) {});
     ref.invalidateSelf();
-    await future;
+    return future.then<void>((_) {}, onError: (Object _) {});
   }
 
   /// The server has just answered a change the viewer made: no page asked
   /// for before now is shown after it, and the first page is read again.
-  /// Completes once it has landed.
-  Future<void> reconcile() {
-    _marked = ++_sent;
+  /// Completes once it has landed: true when it did, false when it failed.
+  Future<bool> reconcile() => _readBack();
+
+  /// [reconcile], showing first what the change answered ([confirmed]
+  /// applied to what is shown) — under the mark, so no page read before is
+  /// shown after it.
+  Future<bool> _readBack({
+    List<CommunityInvitation> Function(List<CommunityInvitation> shown)?
+    confirmed,
+  }) {
+    final mark = _marked = ++_sent;
     _generation += 1;
-    return _reload();
+    final shown = state.isLoading ? null : state.value;
+    if (confirmed != null && shown != null) {
+      state = AsyncData(
+        shown.copyWith(items: List.unmodifiable(confirmed(shown.items))),
+      );
+    }
+    return _reload().then((_) => _landed > mark);
   }
 
   /// A new link, on the server's own terms: one request, one at a time, and
@@ -202,7 +235,9 @@ class CommunityInvitationsController
     if (_creating || state.isLoading || state.value == null) {
       return const WriteNotSent();
     }
-    final alive = ref.keepAlive();
+    final owner = ref;
+    final container = ref.container;
+    final alive = owner.keepAlive();
     _creating = true;
     _showWrites();
     try {
@@ -212,15 +247,25 @@ class CommunityInvitationsController
             .read(communityRepositoryProvider)
             .createInvitation(communityId);
       } on CommunityException catch (error) {
-        if (ref.mounted && answersForTheCommunity(error)) await _reconcile();
+        if (answersForTheCommunity(error)) await _reconcile(container);
         return WriteFailed(error);
       }
-      if (ref.mounted) await reconcile();
-      return WriteDone(created);
+      // Newest first: the new link heads the list.
+      final refreshed =
+          !ref.mounted ||
+          await _readBack(
+            confirmed: (shown) => [
+              created.invitation,
+              for (final i in shown)
+                if (i.id != created.invitation.id) i,
+            ],
+          );
+      return WriteDone(created, refreshed: refreshed);
     } finally {
       _creating = false;
       if (ref.mounted) _showWrites();
-      alive.close();
+      // Only the Ref that took the link lets it go (see [revoke]).
+      if (owner.mounted) alive.close();
     }
   }
 
@@ -233,29 +278,45 @@ class CommunityInvitationsController
         state.value == null) {
       return const WriteNotSent();
     }
-    final alive = ref.keepAlive();
+    final owner = ref;
+    final container = ref.container;
+    final alive = owner.keepAlive();
     _revoking.add(invitationId);
     _showWrites();
     try {
+      final CommunityInvitation revoked;
       try {
-        await ref
+        revoked = await ref
             .read(communityRepositoryProvider)
             .revokeInvitation(communityId, invitationId);
       } on CommunityException catch (error) {
-        if (ref.mounted && answersForTheCommunity(error)) await _reconcile();
+        if (answersForTheCommunity(error)) await _reconcile(container);
         return WriteFailed(error);
       }
-      if (ref.mounted) await reconcile();
-      return const WriteDone(null);
+      final refreshed =
+          !ref.mounted ||
+          await _readBack(
+            confirmed: (shown) => [
+              for (final i in shown) i.id == revoked.id ? revoked : i,
+            ],
+          );
+      return WriteDone(null, refreshed: refreshed);
     } finally {
       _revoking.remove(invitationId);
       if (ref.mounted) _showWrites();
-      alive.close();
+      // Only the Ref that took the link lets it go: after a rebuild Riverpod
+      // has dropped it already, and after a dispose, closing it could only
+      // dispose whatever element came after — a screen opened since.
+      if (owner.mounted) alive.close();
     }
   }
 
-  Future<void> _reconcile() =>
-      Future.wait([reconcile(), reconcileCommunity(ref, communityId)]);
+  /// The links — while this controller is still the one showing them — and
+  /// the community and its row in the list, wherever those are open.
+  Future<void> _reconcile(ProviderContainer container) => Future.wait([
+    if (ref.mounted) reconcile(),
+    reconcileCommunity(container, communityId),
+  ]);
 
   void _showWrites() {
     final current = state.isLoading ? null : state.value;
@@ -339,6 +400,7 @@ class CommunityInvitationsController
         _reloadAgain = true;
         continue;
       }
+      _landed = sentAt;
       _generation += 1;
       state = AsyncData(
         _withWrites(next.copyWith(loadingMore: state.value?.loadingMore)),

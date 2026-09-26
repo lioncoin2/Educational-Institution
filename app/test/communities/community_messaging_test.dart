@@ -6,6 +6,7 @@ import 'package:quran_institution_app/data/models/messaging.dart';
 import 'package:quran_institution_app/data/realtime/realtime_client.dart';
 import 'package:quran_institution_app/data/realtime/realtime_frames.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_community_repository.dart';
+import 'package:quran_institution_app/features/communities/state/community_controller.dart';
 import 'package:quran_institution_app/features/messaging/messaging_copy.dart';
 import 'package:quran_institution_app/features/messaging/state/conversation_controller.dart';
 import 'package:quran_institution_app/features/messaging/state/conversation_list_controller.dart';
@@ -296,6 +297,61 @@ void main() {
         expect(ids(), contains(chatOf(MockCommunityRepository.openId)));
       },
     );
+
+    group('after the viewer’s own leave, answered — with no frame', () {
+      const open = MockCommunityRepository.openId;
+      final openChat = chatOf(open);
+
+      /// The open community on screen, over [ScriptedCommunities].
+      Future<CommunityController> onScreen() async {
+        container = ProviderContainer(
+          overrides: [
+            messagingRepositoryProvider.overrideWithValue(repo),
+            realtimeConnectionProvider.overrideWithValue(realtime),
+            communityRepositoryProvider.overrideWithValue(
+              ScriptedCommunities(),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        final shown = container.listen(communityProvider(open), (_, _) {});
+        addTearDown(shown.close);
+        await container.read(communityProvider(open).future);
+        return container.read(communityProvider(open).notifier);
+      }
+
+      test('the chat goes at once, then the server is asked again', () async {
+        final community = await onScreen();
+        await load();
+        expect(ids(), contains(openChat));
+        final asked = repo.holdList = Completer<void>();
+        repo.leftCommunities.add(open);
+        await community.leave();
+        expect(ids(), isNot(contains(openChat)));
+        asked.complete();
+        await pumpEventQueue();
+        expect(repo.listRequests, 2);
+        expect(ids(), isNot(contains(openChat)));
+      });
+
+      test('a first read of the list on its way, answered before the leave, '
+          'never brings the chat back', () async {
+        final community = await onScreen();
+        // The list's first read takes its answer — the chat still in it...
+        final first = repo.holdList = Completer<void>();
+        final loading = load();
+        await pumpEventQueue();
+        repo.holdList = null;
+        // ...then the leave is answered, before that read lands.
+        repo.leftCommunities.add(open);
+        await community.leave();
+        first.complete();
+        await loading;
+        await pumpEventQueue();
+        expect(repo.listRequests, 2);
+        expect(ids(), isNot(contains(openChat)));
+      });
+    });
 
     test('ignores a community frame about someone else', () async {
       await load();

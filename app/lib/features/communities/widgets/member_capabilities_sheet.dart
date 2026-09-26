@@ -53,6 +53,10 @@ class _MemberCapabilitiesSheetState
   final Set<CommunityCapability> _chosen = {};
   String? _failure;
 
+  /// A change went through, and the grants could not be read again after
+  /// it: they show what the server answered to it.
+  bool _notRefreshed = false;
+
   MemberKey get _member =>
       (communityId: widget.communityId, userId: widget.member.userId);
 
@@ -60,27 +64,53 @@ class _MemberCapabilitiesSheetState
       ref.read(memberGrantsProvider(_member).notifier);
 
   Future<void> _grant() async {
-    setState(() => _failure = null);
+    _clearNotes();
     final outcome = await _grants.grant({..._chosen});
     if (!mounted) return;
     setState(() {
-      switch (outcome) {
-        case WriteDone():
-          _chosen.clear();
-        case WriteFailed(:final error):
-          _failure = CommunityCopy.writeFailed(error.code);
-        case WriteNotSent():
-          break;
-      }
+      if (outcome is WriteDone) _chosen.clear();
+      _note(outcome);
     });
   }
 
-  Future<void> _revoke(CommunityGrant grant) async {
-    setState(() => _failure = null);
+  /// Asked first, as every change that takes something away is: only an
+  /// explicit yes sends it.
+  Future<void> _revoke(
+    CommunityCapability capability,
+    CommunityGrant grant,
+  ) async {
+    final yes = await confirmCommunityChange(
+      context,
+      question: CommunityCopy.revokeGrantQuestion(capability, widget.member),
+      confirmLabel: CommunityCopy.revokeGrant,
+      destructive: true,
+    );
+    if (!yes || !mounted) return;
+    _clearNotes();
     final outcome = await _grants.revoke(grant.grantId);
     if (!mounted) return;
-    if (outcome case WriteFailed(:final error)) {
-      setState(() => _failure = CommunityCopy.writeFailed(error.code));
+    setState(() => _note(outcome));
+  }
+
+  /// Reads the grants again; the note goes once they are read.
+  Future<void> _refresh() async {
+    final landed = await _grants.reconcile();
+    if (mounted && landed) setState(() => _notRefreshed = false);
+  }
+
+  void _clearNotes() => setState(() {
+    _failure = null;
+    _notRefreshed = false;
+  });
+
+  void _note(WriteOutcome<Object?> outcome) {
+    switch (outcome) {
+      case WriteFailed(:final error):
+        _failure = CommunityCopy.writeFailed(error.code);
+      case WriteDone(refreshed: false):
+        _notRefreshed = true;
+      case WriteDone() || WriteNotSent():
+        break;
     }
   }
 
@@ -163,7 +193,7 @@ class _MemberCapabilitiesSheetState
                 grant: grant,
                 revoking:
                     writing is Revoking && writing.grantId == grant.grantId,
-                onRevoke: writing == null ? () => _revoke(grant) : null,
+                onRevoke: writing == null ? () => _revoke(c, grant) : null,
               )
             else
               CheckboxListTile(
@@ -187,12 +217,30 @@ class _MemberCapabilitiesSheetState
               ),
             ),
           ],
+          if (_notRefreshed) ...[
+            const SizedBox(height: Insets.sm),
+            Wrap(
+              spacing: Insets.sm,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(CommunityCopy.doneNotShown, style: context.text.bodySmall),
+                TextButton(
+                  onPressed: writing == null ? _refresh : null,
+                  child: const Text(CommunityCopy.refresh),
+                ),
+              ],
+            ),
+          ],
           if (grantable.isNotEmpty) ...[
             const SizedBox(height: Insets.lg),
             FilledButton(
               onPressed: _chosen.isEmpty || writing != null ? null : _grant,
               child: writing is Granting
-                  ? const BusyIndicator()
+                  // The spinner in the label's place: the name stays.
+                  ? Semantics(
+                      label: CommunityCopy.grantChosen,
+                      child: const BusyIndicator(),
+                    )
                   : const Text(CommunityCopy.grantChosen),
             ),
           ],
@@ -234,7 +282,11 @@ class _GrantedRow extends StatelessWidget {
         child: TextButton(
           onPressed: revoking ? null : onRevoke,
           child: revoking
-              ? const BusyIndicator()
+              // The spinner in the label's place: the name stays.
+              ? Semantics(
+                  label: CommunityCopy.revokeGrant,
+                  child: const BusyIndicator(),
+                )
               : const Text(CommunityCopy.revokeGrant),
         ),
       ),
