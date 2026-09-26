@@ -10,14 +10,18 @@ extension AppContextX on BuildContext {
   Breakpoint get breakpoint => Breakpoint.of(MediaQuery.sizeOf(this).width);
   double get gutter => breakpoint.gutter;
 
+  void toast(String message) => ScaffoldMessenger.of(this).toast(message);
+}
+
+extension AppMessengerX on ScaffoldMessengerState {
+  /// The app's one short message: it replaces any shown, for 3 s. Taken
+  /// from a messenger held before an await, it still shows when the widget
+  /// that asked is gone by the time the answer comes.
   void toast(String message) {
-    ScaffoldMessenger.of(this)
+    this
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration: const Duration(seconds: 3),
-        ),
+        SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
       );
   }
 }

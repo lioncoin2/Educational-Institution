@@ -65,12 +65,9 @@ void main() {
   /// repeat a tab's label — /path renders the word "مساري" as its heading as
   /// well — so nav taps are scoped to the NavigationBar.
   Future<void> tapNav(WidgetTester tester, String label) => tapAt(
-        tester,
-        find.descendant(
-          of: find.byType(NavigationBar),
-          matching: find.text(label),
-        ),
-      );
+    tester,
+    find.descendant(of: find.byType(NavigationBar), matching: find.text(label)),
+  );
 
   testWidgets('splash hands over to home on its own', (tester) async {
     await boot(tester);
@@ -81,8 +78,9 @@ void main() {
     expect(location(), '/home');
   });
 
-  testWidgets('programs → details → levels → episode → lesson, and back',
-      (tester) async {
+  testWidgets('programs → details → levels → episode → lesson, and back', (
+    tester,
+  ) async {
     await boot(tester);
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
@@ -136,8 +134,9 @@ void main() {
     }
   });
 
-  testWidgets('the ladder jumps into the levels of a department',
-      (tester) async {
+  testWidgets('the ladder jumps into the levels of a department', (
+    tester,
+  ) async {
     await boot(tester);
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
@@ -161,8 +160,9 @@ void main() {
     expect(location(), '/certificates/c1');
   });
 
-  testWidgets('profile reaches progress, notifications and announcements',
-      (tester) async {
+  testWidgets('profile reaches progress, notifications and announcements', (
+    tester,
+  ) async {
     await boot(tester);
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
@@ -183,8 +183,9 @@ void main() {
     expect(location(), '/notifications');
   });
 
-  testWidgets('profile reaches communities, a community and its chat',
-      (tester) async {
+  testWidgets('profile reaches communities, a community and its chat', (
+    tester,
+  ) async {
     await boot(tester);
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
@@ -205,8 +206,45 @@ void main() {
     expect(location(), '/communities/mock-community-tajweed');
   });
 
-  testWidgets('marking notifications read clears the home badge',
-      (tester) async {
+  testWidgets('a community’s owner reaches its invitation links, and back', (
+    tester,
+  ) async {
+    await boot(tester);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    await tapNav(tester, 'حسابي');
+    await tapText(tester, 'مجتمعاتي');
+    await tapText(tester, 'مجتمع أسرة الحفظ');
+    expect(location(), '/communities/mock-community-family');
+
+    await tapText(tester, 'روابط الدعوة');
+    expect(location(), '/communities/mock-community-family/invitations');
+
+    container.read(routerProvider).pop();
+    await tester.pumpAndSettle();
+    expect(location(), '/communities/mock-community-family');
+  });
+
+  testWidgets('an invitation link lands on /invite, which leads on to the '
+      'communities', (tester) async {
+    await boot(tester);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    // The token never reaches the router: the route is bare.
+    container.read(routerProvider).go('/invite');
+    await tester.pumpAndSettle();
+    expect(location(), '/invite');
+    expect(find.text('لا توجد دعوة لفتحها.'), findsOneWidget);
+
+    await tapText(tester, 'الذهاب إلى مجتمعاتي');
+    expect(location(), '/communities');
+  });
+
+  testWidgets('marking notifications read clears the home badge', (
+    tester,
+  ) async {
     await boot(tester);
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();

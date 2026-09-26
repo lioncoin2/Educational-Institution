@@ -58,6 +58,13 @@ class CommunityListState {
 /// The first page and a single community are read side by side, and an
 /// answer about a community older than the one shown for it is dropped,
 /// whichever lands last.
+///
+/// A change the viewer made on a community's own screens — a lock, a member
+/// removed, the community left or joined, handed over — is answered there;
+/// once the server has answered, those screens reconcile the list through
+/// [reconcileCommunity], [reconcileLeft] or [reconcileJoined]. From then on
+/// an answer to a read sent before is dropped for that community, and it is
+/// read again: a read answered before the change never shows it undone.
 class CommunityListController extends AsyncNotifier<CommunityListState> {
   Future<void>? _resyncing;
   bool _resyncAgain = false;
@@ -78,6 +85,11 @@ class CommunityListController extends AsyncNotifier<CommunityListState> {
   /// answer from a read sent before that one changes nothing.
   int _sent = 0;
   final Map<String, int> _answeredBy = {};
+
+  /// The number taken when the server last answered a change this app made
+  /// to any community: a first page build() asked for before then may show
+  /// the list as it was, so it is asked for again.
+  int _marked = 0;
 
   /// Moves on whenever what is shown stops being the pages [loadMore]
   /// extends — the first page replaced, or a community taken out — so a
@@ -100,8 +112,58 @@ class CommunityListController extends AsyncNotifier<CommunityListState> {
         unawaited(_resync());
       }
     });
-    final page = await repository.communities();
-    return CommunityListState(items: page.items, nextCursor: page.nextCursor);
+    final built = ref;
+    for (;;) {
+      final sentAt = ++_sent;
+      final page = await repository.communities();
+      if (_marked > sentAt && built.mounted) continue;
+      return CommunityListState(items: page.items, nextCursor: page.nextCursor);
+    }
+  }
+
+  /// A change the viewer made to [communityId] — a lock, a member removed,
+  /// the community handed over — was answered by the server: what any read
+  /// sent before now says about it is dropped, and it is read again. One not
+  /// shown comes with the next first page.
+  Future<void> reconcileCommunity(String communityId) {
+    _mark(communityId);
+    if (state.isLoading) return Future.value(); // build() asks again for it
+    final shown = state.value?.items.any((c) => c.id == communityId) ?? false;
+    return shown ? _refetch(communityId) : Future.value();
+  }
+
+  /// The server confirmed that the viewer left [communityId]: it leaves the
+  /// list at once — and a next page on its way, which may still hold it, is
+  /// dropped — then the first page is read again.
+  Future<void> reconcileLeft(String communityId) {
+    _mark(communityId);
+    final current = state.isLoading ? null : state.value;
+    if (current != null) {
+      _generation += 1;
+      state = AsyncData(
+        current.copyWith(
+          items: [
+            for (final c in current.items)
+              if (c.id != communityId) c,
+          ],
+        ),
+      );
+    }
+    return _resync();
+  }
+
+  /// The viewer joined [communityId] — or was in it already: the first page
+  /// again, where it now stands.
+  Future<void> reconcileJoined(String communityId) {
+    _mark(communityId);
+    return _resync();
+  }
+
+  /// From now on, an answer about [communityId] from a read sent before is
+  /// dropped.
+  void _mark(String communityId) {
+    _marked = ++_sent;
+    _answeredBy[communityId] = _marked;
   }
 
   /// The next page, appended — one at a time, and never while the first is
@@ -275,8 +337,11 @@ class CommunityListController extends AsyncNotifier<CommunityListState> {
       _refetchAgain.add(communityId);
       return running;
     }
-    return _refetching[communityId] = _runRefetch(communityId)
-        .whenComplete(() => _refetching.remove(communityId));
+    // A block, not an arrow: `remove` answers the entry — this very future —
+    // and whenComplete would wait for it, forever.
+    return _refetching[communityId] = _runRefetch(communityId).whenComplete(() {
+      _refetching.remove(communityId);
+    });
   }
 
   Future<void> _runRefetch(String communityId) async {

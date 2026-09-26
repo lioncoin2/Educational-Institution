@@ -125,7 +125,10 @@ final Provider<ApiClient> apiClientProvider = Provider<ApiClient>(
     baseUri: BackendConfig.baseUri,
     httpClient: ref.watch(httpClientProvider),
     tokenStore: ref.watch(tokenStoreProvider),
-    onSignedOut: () => ref.invalidate(sessionUserProvider),
+    // Through the container: the session is read through this very client,
+    // and a debug build refuses a provider invalidating one that depends on
+    // it (a CircularDependencyError in place of the sign-out).
+    onSignedOut: () => ref.container.invalidate(sessionUserProvider),
   ),
 );
 

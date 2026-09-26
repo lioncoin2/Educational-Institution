@@ -17,6 +17,8 @@ import '../messaging/widgets/connection_banner.dart';
 import 'community_copy.dart';
 import 'state/community_chat_opener.dart';
 import 'state/community_controller.dart';
+import 'state/community_write.dart';
+import 'widgets/community_change.dart';
 import 'widgets/community_states.dart';
 
 /// One community, as the viewer may see it now: whether it is locked, how
@@ -25,6 +27,10 @@ import 'widgets/community_states.dart';
 ///
 /// A locked community says it is locked and nothing more: what a lock closes
 /// is the server's to decide, and shows only as the actions still offered.
+///
+/// What the viewer may change about the community — its links, its lock,
+/// their own membership — is a section of its own, there only when the
+/// server offers at least one of them.
 class CommunityScreen extends ConsumerWidget {
   const CommunityScreen({super.key, required this.communityId});
 
@@ -58,7 +64,7 @@ class CommunityScreen extends ConsumerWidget {
             ),
             builder: (context, state) => state.removed
                 ? CommunityGoneView(wasShown: state.community != null)
-                : _Details(community: state.community!),
+                : _Details(community: state.community!, writing: state.writing),
           ),
         ),
       ],
@@ -67,9 +73,10 @@ class CommunityScreen extends ConsumerWidget {
 }
 
 class _Details extends StatelessWidget {
-  const _Details({required this.community});
+  const _Details({required this.community, required this.writing});
 
   final Community community;
+  final CommunityWrite? writing;
 
   @override
   Widget build(BuildContext context) {
@@ -183,8 +190,134 @@ class _Details extends StatelessWidget {
               label: const Text(CommunityCopy.viewMembers),
             ),
         ],
+        _Management(community: community, writing: writing),
       ],
     );
+  }
+}
+
+/// What the viewer may change about the community, each shown if and only if
+/// the server's `me` holds it — nothing at all when it holds none:
+///
+///   invitation links  `me.capabilities` ∋ community.members.invite, or
+///                     `me.operations` ∋ community.invitations.manage
+///   lock / unlock     `me.capabilities` ∋ community.lock, by the status the
+///                     server gives (one it does not name offers neither)
+///   leave             `me.operations` ∋ community.leave
+///
+/// One change at a time: while one is on its way every button waits, and
+/// the one tapped spins. Locking and leaving are asked first; unlocking is
+/// not.
+class _Management extends ConsumerWidget {
+  const _Management({required this.community, required this.writing});
+
+  final Community community;
+  final CommunityWrite? writing;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final me = community.me;
+    final links =
+        me.has(CommunityCapability.membersInvite) ||
+        me.allows(CommunityOperation.invitationsManage);
+    final locks = me.has(CommunityCapability.lock);
+    final canLock = locks && community.status == CommunityStatus.open;
+    final canUnlock = locks && community.status == CommunityStatus.locked;
+    final canLeave = me.allows(CommunityOperation.leave);
+    final idle = writing == null;
+    final buttons = [
+      if (links)
+        OutlinedButton.icon(
+          onPressed: () =>
+              context.push(Routes.communityInvitations(community.id)),
+          icon: const Icon(Icons.link_rounded),
+          label: const Text(CommunityCopy.invitationLinks),
+        ),
+      if (canLock)
+        OutlinedButton.icon(
+          onPressed: idle ? () => _lock(context, ref) : null,
+          icon: writing == CommunityWrite.lock
+              ? const BusyIndicator()
+              : const Icon(Icons.lock_outline_rounded),
+          label: const Text(CommunityCopy.lock),
+        ),
+      if (canUnlock)
+        OutlinedButton.icon(
+          onPressed: idle ? () => _unlock(context, ref) : null,
+          icon: writing == CommunityWrite.unlock
+              ? const BusyIndicator()
+              : const Icon(Icons.lock_open_rounded),
+          label: const Text(CommunityCopy.unlock),
+        ),
+      if (canLeave)
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: context.colors.error,
+            side: BorderSide(color: context.colors.error),
+          ),
+          onPressed: idle ? () => _leave(context, ref) : null,
+          icon: writing == CommunityWrite.leave
+              ? const BusyIndicator()
+              : const Icon(Icons.logout_rounded),
+          label: const Text(CommunityCopy.leave),
+        ),
+    ];
+    if (buttons.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: Insets.xxl),
+        const SectionHeader(title: CommunityCopy.managementTitle),
+        for (final button in buttons) ...[
+          const SizedBox(height: Insets.md),
+          button,
+        ],
+      ],
+    );
+  }
+
+  CommunityController _controller(WidgetRef ref) =>
+      ref.read(communityProvider(community.id).notifier);
+
+  Future<void> _lock(BuildContext context, WidgetRef ref) async {
+    final yes = await confirmCommunityChange(
+      context,
+      question: CommunityCopy.lockQuestion(community),
+      confirmLabel: CommunityCopy.confirmLock,
+    );
+    if (!yes || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    _sayFailure(messenger, await _controller(ref).lock());
+  }
+
+  Future<void> _unlock(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    _sayFailure(messenger, await _controller(ref).unlock());
+  }
+
+  /// Done, the viewer goes to their list — which no longer has it.
+  Future<void> _leave(BuildContext context, WidgetRef ref) async {
+    final yes = await confirmCommunityChange(
+      context,
+      question: CommunityCopy.leaveQuestion(community),
+      confirmLabel: CommunityCopy.confirmLeave,
+      destructive: true,
+    );
+    if (!yes || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+    final outcome = await _controller(ref).leave();
+    if (outcome is WriteDone) router.go(Routes.communities);
+    _sayFailure(messenger, outcome);
+  }
+
+  static void _sayFailure(
+    ScaffoldMessengerState messenger,
+    WriteOutcome<void> outcome,
+  ) {
+    if (outcome case WriteFailed(:final error)) {
+      messenger.toast(CommunityCopy.writeFailed(error.code));
+    }
   }
 }
 

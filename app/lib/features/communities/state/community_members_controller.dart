@@ -7,7 +7,12 @@ import '../../../data/realtime/realtime_client.dart';
 import '../../../data/realtime/realtime_frames.dart';
 import '../../../data/repositories/repositories.dart';
 import '../../../providers/app_providers.dart';
+import 'community_reconcile.dart';
 import 'community_viewer.dart';
+import 'community_write.dart';
+
+/// A change to one member, on its way to the server.
+enum MemberWrite { remove, transfer }
 
 class CommunityMembersState {
   const CommunityMembersState({
@@ -18,6 +23,7 @@ class CommunityMembersState {
     this.forbidden = false,
     this.gone = false,
     this.removed = false,
+    this.writing = const {},
   });
 
   /// The pages loaded so far, in the server's order; each member once.
@@ -37,6 +43,10 @@ class CommunityMembersState {
   /// and no longer are. A 404 from the start says only "not yours".
   final bool removed;
 
+  /// By member: the change sent about them and not yet answered — one per
+  /// member at a time.
+  final Map<String, MemberWrite> writing;
+
   bool get hasMore => nextCursor != null;
 
   CommunityMembersState copyWith({
@@ -44,6 +54,7 @@ class CommunityMembersState {
     String? Function()? nextCursor,
     bool? loadingMore,
     bool? loadMoreFailed,
+    Map<String, MemberWrite>? writing,
   }) => CommunityMembersState(
     items: items ?? this.items,
     nextCursor: nextCursor == null ? this.nextCursor : nextCursor(),
@@ -52,6 +63,7 @@ class CommunityMembersState {
     forbidden: forbidden,
     gone: gone,
     removed: removed,
+    writing: writing ?? this.writing,
   );
 }
 
@@ -66,6 +78,14 @@ class CommunityMembersState {
 /// that comes while the first page (or a refresh's) is on its way fetches
 /// it once more after it lands; a next page asked for before the first was
 /// fetched again is dropped.
+///
+/// Removing a member and handing the community over are one request each,
+/// per member, and the roster changes only once the server has answered —
+/// then the first page is read again, with the community and its row in the
+/// list. Every read is numbered as it is sent, and [reconcile] marks the
+/// moment an answer came: a first page asked for before it is dropped and
+/// asked for again, and a next page asked for before it is dropped — so a
+/// page read while a removal was on its way never brings the member back.
 class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
   CommunityMembersController(this.communityId);
 
@@ -78,9 +98,18 @@ class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
   /// fetched once more once that lands.
   bool _reloadAfterLoad = false;
 
-  /// Moves on whenever the first page is fetched again, so a next page
-  /// asked for before is dropped rather than spliced onto it.
+  /// Moves on whenever the first page is fetched again, or a change is
+  /// answered, so a next page asked for before is dropped rather than
+  /// spliced on.
   int _generation = 0;
+
+  /// Every first page is numbered as it is asked for; [_marked] is the
+  /// number taken when the server last answered a change this app made. An
+  /// answer to one numbered below it is dropped.
+  int _sent = 0;
+  int _marked = 0;
+
+  final Map<String, MemberWrite> _writing = {};
 
   @override
   Future<CommunityMembersState> build() async {
@@ -98,7 +127,19 @@ class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
         unawaited(_reload());
       }
     });
-    return _firstPage(repository);
+    final built = ref;
+    for (;;) {
+      final sentAt = ++_sent;
+      final CommunityMembersState first;
+      try {
+        first = await _firstPage(repository);
+      } on CommunityException {
+        if (_stale(sentAt) && built.mounted) continue;
+        rethrow;
+      }
+      if (_stale(sentAt) && built.mounted) continue;
+      return first.copyWith(writing: Map.unmodifiable(_writing));
+    }
   }
 
   /// The next page, appended — one at a time, and never while the first is
@@ -147,9 +188,11 @@ class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
         generation != _generation
             ? now.copyWith(loadingMore: false)
             : error.isForbidden
-            ? const CommunityMembersState(forbidden: true)
+            ? _withWriting(const CommunityMembersState(forbidden: true))
             : error.isGone
-            ? const CommunityMembersState(gone: true, removed: true)
+            ? _withWriting(
+                const CommunityMembersState(gone: true, removed: true),
+              )
             : now.copyWith(loadingMore: false, loadMoreFailed: true),
       );
     }
@@ -159,6 +202,83 @@ class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
     ref.invalidateSelf();
     await future;
   }
+
+  /// The server has just answered a change the viewer made to this
+  /// community: no page asked for before now is shown after it, and the
+  /// first page is read again. Completes once it has landed.
+  Future<void> reconcile() {
+    _marked = ++_sent;
+    _generation += 1;
+    return _reload();
+  }
+
+  /// Ends [userId]'s membership: one request, one at a time per member.
+  /// Once answered — done or refused — the roster, the community (its
+  /// count) and its row in the list are read again; the row's spinner stays
+  /// until they are shown.
+  Future<WriteOutcome<void>> remove(String userId) => _write(
+    userId,
+    MemberWrite.remove,
+    (repository) => repository.removeMember(communityId, userId),
+  );
+
+  /// Hands the community to [userId], as [remove] ends a membership. What
+  /// the server answers is the community as the viewer now stands in it; it
+  /// is not shown as it is — the community is read again, as is the roster,
+  /// which may no longer be the viewer's to see.
+  Future<WriteOutcome<void>> transferOwnership(String userId) => _write(
+    userId,
+    MemberWrite.transfer,
+    (repository) => repository.transferOwnership(communityId, userId),
+  );
+
+  Future<WriteOutcome<void>> _write(
+    String userId,
+    MemberWrite write,
+    Future<void> Function(CommunityRepository repository) send,
+  ) async {
+    if (_writing.containsKey(userId) ||
+        state.isLoading ||
+        state.value == null) {
+      return const WriteNotSent();
+    }
+    // Seen through to the end, even if the screen is left meanwhile: what
+    // the answer changed is still reconciled.
+    final alive = ref.keepAlive();
+    _setWriting(userId, write);
+    try {
+      try {
+        await send(ref.read(communityRepositoryProvider));
+      } on CommunityException catch (error) {
+        if (ref.mounted && answersForTheCommunity(error)) await _reconcile();
+        return WriteFailed(error);
+      }
+      if (ref.mounted) await _reconcile();
+      return const WriteDone(null);
+    } finally {
+      if (ref.mounted) _setWriting(userId, null);
+      alive.close();
+    }
+  }
+
+  Future<void> _reconcile() =>
+      Future.wait([reconcile(), reconcileCommunity(ref, communityId)]);
+
+  void _setWriting(String userId, MemberWrite? write) {
+    if (write == null) {
+      _writing.remove(userId);
+    } else {
+      _writing[userId] = write;
+    }
+    final current = state.isLoading ? null : state.value;
+    if (current == null) return; // build() carries it when it lands
+    state = AsyncData(current.copyWith(writing: Map.unmodifiable(_writing)));
+  }
+
+  CommunityMembersState _withWriting(CommunityMembersState next) =>
+      next.copyWith(writing: Map.unmodifiable(_writing));
+
+  bool _stale(int sentAt) => _marked > sentAt;
 
   /// [wasTheirs]: the server has answered for the community as the
   /// viewer's before, so a "not found" now is a removal.
@@ -203,12 +323,14 @@ class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
 
   /// The first page again, replacing what is shown — never the pages after
   /// it. One at a time, re-run once if asked for meanwhile; a failure other
-  /// than a refusal keeps what is shown. Asked for while the build's first
-  /// page is on its way, it runs once that lands.
+  /// than a refusal keeps what is shown, and an answer to a page asked for
+  /// before the server last answered a change is dropped and asked for
+  /// again. Asked for while the build's first page is on its way, it runs
+  /// once that lands.
   Future<void> _reload() {
     if (state.isLoading) {
       _reloadAfterLoad = true;
-      return Future.value();
+      return future.then<void>((_) {}, onError: (Object _) {});
     }
     final running = _reloading;
     if (running != null) {
@@ -223,6 +345,7 @@ class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
       _reloadAgain = false;
       final shown = state.value;
       if (shown == null) return; // Failed: a retry reads anew.
+      final sentAt = ++_sent;
       final CommunityMembersState next;
       try {
         next = await _firstPage(
@@ -230,12 +353,24 @@ class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
           wasTheirs: !shown.gone || shown.removed,
         );
       } on CommunityException {
+        if (!ref.mounted) return;
+        if (_stale(sentAt)) _reloadAgain = true;
         continue;
       }
       if (!ref.mounted) return;
+      if (_stale(sentAt)) {
+        // Asked before the server answered a change: it may not show it.
+        _reloadAgain = true;
+        continue;
+      }
       _generation += 1;
       // A next page on its way stays on its way — to be dropped.
-      state = AsyncData(next.copyWith(loadingMore: state.value?.loadingMore));
+      state = AsyncData(
+        next.copyWith(
+          loadingMore: state.value?.loadingMore,
+          writing: Map.unmodifiable(_writing),
+        ),
+      );
     } while (_reloadAgain && ref.mounted);
   }
 }

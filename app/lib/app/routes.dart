@@ -15,6 +15,11 @@ abstract final class Routes {
   static const String communities = '/communities';
   static const String signIn = '/sign-in';
 
+  /// Where an invitation link opens. Its token is never in this path, a
+  /// query or `extra`: it rides in the link's fragment, which the app takes
+  /// out of the address bar before routing (lib/app/invite_link.dart).
+  static const String invite = '/invite';
+
   static String program(String programId) => '$programs/$programId';
 
   static String levels(String programId) => '$programs/$programId/levels';
@@ -33,6 +38,9 @@ abstract final class Routes {
 
   static String communityMembers(String communityId) =>
       '${community(communityId)}/members';
+
+  static String communityInvitations(String communityId) =>
+      '${community(communityId)}/invitations';
 
   static String certificate(String certificateId) =>
       '$certificates/$certificateId';

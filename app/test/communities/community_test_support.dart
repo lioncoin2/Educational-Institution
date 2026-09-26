@@ -2,13 +2,23 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
+import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:quran_institution_app/app/app.dart';
+import 'package:quran_institution_app/data/api/api_client.dart';
+import 'package:quran_institution_app/data/api/token_store.dart';
 import 'package:quran_institution_app/data/models/communities.dart';
 import 'package:quran_institution_app/data/models/messaging.dart';
+import 'package:quran_institution_app/data/realtime/realtime_client.dart';
 import 'package:quran_institution_app/data/realtime/realtime_frames.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_community_repository.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_messaging_repository.dart';
+import 'package:quran_institution_app/data/repositories/mock/mock_notifications_repository.dart';
+import 'package:quran_institution_app/providers/app_providers.dart';
 
 const viewer = MockCommunityRepository.viewer;
 
@@ -198,6 +208,22 @@ class ScriptedCommunities extends MockCommunityRepository {
   }
 }
 
+/// The scripted server, answering every read of one community — whatever
+/// id is asked for — with [json] exactly as the server sent it: a `me` no
+/// seed has. Everything else (the roster, the links, the writes) is the
+/// mock's. A test may change [json]: the next read answers the new one.
+class AnsweredAs extends ScriptedCommunities {
+  AnsweredAs(this.json);
+
+  Map<String, Object?> json;
+
+  @override
+  Future<Community> community(String communityId) async {
+    communityRequests.add(communityId);
+    return Community.fromJson(json);
+  }
+}
+
 const seededIds = [
   MockCommunityRepository.openId,
   MockCommunityRepository.ownedId,
@@ -366,6 +392,73 @@ CommunityAccessChangedEvent accessChanged(String communityId) =>
       occurredAt: _at,
       communityId: communityId,
     );
+
+// ── The real app ────────────────────────────────────────────────────────────
+
+/// The whole app in a widget test, on a container of its own with
+/// [overrides]: the splash timer run out, then [path] opened.
+Future<ProviderContainer> openApp(
+  WidgetTester tester,
+  String path, {
+  List<Override> overrides = const [],
+  Size size = const Size(390, 844),
+}) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+  final container = ProviderContainer(overrides: overrides);
+  addTearDown(container.dispose);
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: const QuranInstitutionApp(),
+    ),
+  );
+  await tester.pump(const Duration(seconds: 3)); // the splash timer
+  await tester.pumpAndSettle();
+  container.read(routerProvider).go(path);
+  await tester.pumpAndSettle();
+  return container;
+}
+
+/// Where the app is: the deepest matched route (for a push, go_router leaves
+/// its own location on the base).
+String locationIn(ProviderContainer container) => container
+    .read(routerProvider)
+    .routerDelegate
+    .currentConfiguration
+    .last
+    .matchedLocation;
+
+/// The app against [server] over HTTP — signed in (tokens held, in [tokens]
+/// when given) or not — with no live connection and an empty inbox.
+List<Override> backendOverrides(
+  CommunityServer server, {
+  required bool signedIn,
+  InMemoryTokenStore? tokens,
+}) {
+  final store = tokens ?? InMemoryTokenStore();
+  if (signedIn) {
+    store.write(const Tokens(accessToken: 'a1', refreshToken: 'r1'));
+  }
+  return [
+    backendModeProvider.overrideWithValue(true),
+    httpClientProvider.overrideWithValue(server.client),
+    tokenStoreProvider.overrideWithValue(store),
+    apiClientProvider.overrideWith(
+      (ref) => ApiClient(
+        baseUri: Uri.parse('https://api.test/'),
+        httpClient: server.client,
+        tokenStore: store,
+        onSignedOut: () => ref.container.invalidate(sessionUserProvider),
+      ),
+    ),
+    realtimeClientProvider.overrideWithValue(const DisabledRealtimeClient()),
+    notificationsRepositoryProvider.overrideWithValue(
+      MockNotificationsRepository(latency: Duration.zero, seed: false),
+    ),
+  ];
+}
 
 // ── The HTTP side ───────────────────────────────────────────────────────────
 

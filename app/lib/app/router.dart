@@ -7,8 +7,10 @@ import '../features/auth/sign_in_screen.dart';
 import '../features/certificates/certificate_detail_screen.dart';
 import '../features/certificates/certificates_screen.dart';
 import '../features/communities/communities_screen.dart';
+import '../features/communities/community_invitations_screen.dart';
 import '../features/communities/community_members_screen.dart';
 import '../features/communities/community_screen.dart';
+import '../features/communities/invite_screen.dart';
 import '../features/episode/episode_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/learning_path/learning_path_screen.dart';
@@ -105,9 +107,25 @@ GoRouter buildRouter() {
                   communityId: state.pathParameters['communityId']!,
                 ),
               ),
+              GoRoute(
+                path: 'invitations',
+                name: 'community-invitations',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => CommunityInvitationsScreen(
+                  communityId: state.pathParameters['communityId']!,
+                ),
+              ),
             ],
           ),
         ],
+      ),
+      // An invitation link. It carries nothing the route reads: the token
+      // was taken from the link's fragment before the router existed.
+      GoRoute(
+        path: Routes.invite,
+        name: 'invite',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const InviteScreen(),
       ),
       GoRoute(
         path: Routes.signIn,
@@ -164,8 +182,7 @@ GoRouter buildRouter() {
                                 path: 'lessons/:lessonId',
                                 name: 'lesson',
                                 builder: (context, state) => LessonScreen(
-                                  programId:
-                                      state.pathParameters['programId']!,
+                                  programId: state.pathParameters['programId']!,
                                   halaqaId: state.pathParameters['halaqaId']!,
                                   lessonId: state.pathParameters['lessonId']!,
                                 ),

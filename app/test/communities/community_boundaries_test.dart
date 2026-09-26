@@ -58,6 +58,17 @@ void main() {
       'lib/features/communities/state/community_members_controller.dart',
       'lib/features/communities/state/community_chat_opener.dart',
       'lib/features/communities/state/pending_invitation.dart',
+      'lib/features/communities/community_invitations_screen.dart',
+      'lib/features/communities/invite_screen.dart',
+      'lib/features/communities/state/community_write.dart',
+      'lib/features/communities/state/community_reconcile.dart',
+      'lib/features/communities/state/community_invitations_controller.dart',
+      'lib/features/communities/state/member_grants_controller.dart',
+      'lib/features/communities/state/invitation_join_controller.dart',
+      'lib/features/communities/widgets/community_change.dart',
+      'lib/features/communities/widgets/invitation_tile.dart',
+      'lib/features/communities/widgets/member_capabilities_sheet.dart',
+      'lib/features/communities/widgets/one_time_link_sheet.dart',
       'lib/app/invite_link.dart',
       'lib/app/invite_link_parts.dart',
       'lib/app/invite_link_stub.dart',
@@ -66,7 +77,7 @@ void main() {
     ]) {
       expect(sources.keys, contains(path));
     }
-    expect(community.length, greaterThanOrEqualTo(10));
+    expect(community.length, greaterThanOrEqualTo(24));
   });
 
   test(

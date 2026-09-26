@@ -9,11 +9,16 @@ import '../community_copy.dart';
 
 /// One roster row: the name the directory has (or a neutral word — never an
 /// id or an email in its place), when they joined, and whether the ACCOUNT
-/// is inactive.
+/// is inactive — and, at its end, what may be done with this member, if
+/// anything.
 class MemberTile extends StatelessWidget {
-  const MemberTile({super.key, required this.member});
+  const MemberTile({super.key, required this.member, this.action});
 
   final CommunityMember member;
+
+  /// The row's actions button; null when nothing may be done with this
+  /// member — never anything on the viewer's own row.
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -76,6 +81,10 @@ class MemberTile extends StatelessWidget {
               ],
             ),
           ),
+          if (action case final action?) ...[
+            const SizedBox(width: Insets.sm),
+            action,
+          ],
         ],
       ),
     );

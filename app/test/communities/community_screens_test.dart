@@ -2,14 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:quran_institution_app/app/app.dart';
 import 'package:quran_institution_app/core/widgets/foundations/mock_ribbon.dart';
-import 'package:quran_institution_app/data/api/api_client.dart';
-import 'package:quran_institution_app/data/api/token_store.dart';
 import 'package:quran_institution_app/data/models/communities.dart';
-import 'package:quran_institution_app/data/realtime/realtime_client.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_community_repository.dart';
-import 'package:quran_institution_app/data/repositories/mock/mock_notifications_repository.dart';
 import 'package:quran_institution_app/features/communities/communities_screen.dart';
 import 'package:quran_institution_app/features/communities/community_copy.dart';
 import 'package:quran_institution_app/features/communities/community_members_screen.dart';
@@ -33,12 +28,7 @@ void main() {
   late ScriptedMessaging messaging;
   late ProviderContainer container;
 
-  String location() => container
-      .read(routerProvider)
-      .routerDelegate
-      .currentConfiguration
-      .last
-      .matchedLocation;
+  String location() => locationIn(container);
 
   Future<void> open_(
     WidgetTester tester,
@@ -47,10 +37,10 @@ void main() {
     Size size = const Size(390, 844),
     bool demo = true,
   }) async {
-    tester.view.physicalSize = size;
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
-    container = ProviderContainer(
+    container = await openApp(
+      tester,
+      path,
+      size: size,
       overrides: [
         if (demo) ...[
           communityRepositoryProvider.overrideWithValue(repo),
@@ -59,17 +49,6 @@ void main() {
         ...extra,
       ],
     );
-    addTearDown(container.dispose);
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const QuranInstitutionApp(),
-      ),
-    );
-    await tester.pump(const Duration(seconds: 3)); // the splash timer
-    await tester.pumpAndSettle();
-    container.read(routerProvider).go(path);
-    await tester.pumpAndSettle();
   }
 
   setUp(() {
@@ -185,7 +164,7 @@ void main() {
         // What the server answers a former owner (an admin) after handing
         // the community over: a MEMBER holding, by oversight, what no owner
         // delegated. The answer carries no basis.
-        repo = _AnsweredAs(
+        repo = AnsweredAs(
           communityJson(
             id: 'c-1',
             capabilities: const [
@@ -427,31 +406,8 @@ void main() {
   group('against the backend', () {
     late CommunityServer server;
 
-    List<Override> backend({required bool signedIn}) {
-      final tokens = InMemoryTokenStore();
-      if (signedIn) {
-        tokens.write(const Tokens(accessToken: 'a1', refreshToken: 'r1'));
-      }
-      return [
-        backendModeProvider.overrideWithValue(true),
-        httpClientProvider.overrideWithValue(server.client),
-        tokenStoreProvider.overrideWithValue(tokens),
-        apiClientProvider.overrideWith(
-          (ref) => ApiClient(
-            baseUri: Uri.parse('https://api.test/'),
-            httpClient: server.client,
-            tokenStore: tokens,
-            onSignedOut: () => ref.invalidate(sessionUserProvider),
-          ),
-        ),
-        realtimeClientProvider.overrideWithValue(
-          const DisabledRealtimeClient(),
-        ),
-        notificationsRepositoryProvider.overrideWithValue(
-          MockNotificationsRepository(latency: Duration.zero, seed: false),
-        ),
-      ];
-    }
+    List<Override> backend({required bool signedIn}) =>
+        backendOverrides(server, signedIn: signedIn);
 
     setUp(() {
       server = CommunityServer({
@@ -536,15 +492,4 @@ void main() {
       },
     );
   });
-}
-
-/// Answers every community read with [json], as the server sent it.
-class _AnsweredAs extends ScriptedCommunities {
-  _AnsweredAs(this.json);
-
-  final Map<String, Object?> json;
-
-  @override
-  Future<Community> community(String communityId) async =>
-      Community.fromJson(json);
 }

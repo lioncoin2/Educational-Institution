@@ -8,9 +8,17 @@ import '../../data/models/academic.dart';
 /// "Sign in to see this" — for the screens whose data is someone's own record
 /// on the server, when nobody is signed in on this device.
 class SignInPrompt extends StatelessWidget {
-  const SignInPrompt({super.key, this.title = 'سجّلي الدخول للمتابعة'});
+  const SignInPrompt({
+    super.key,
+    this.title = 'سجّلي الدخول للمتابعة',
+    this.onReturn,
+  });
 
   final String title;
+
+  /// Called when the sign-in screen this prompt opened closes again —
+  /// signed in or not: the screen underneath asks the session itself.
+  final VoidCallback? onReturn;
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +26,10 @@ class SignInPrompt extends StatelessWidget {
       icon: Icons.lock_outline_rounded,
       title: title,
       actionLabel: 'تسجيل الدخول',
-      onAction: () => context.push(Routes.signIn),
+      onAction: () async {
+        await context.push(Routes.signIn);
+        if (context.mounted) onReturn?.call();
+      },
     );
   }
 
