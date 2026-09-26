@@ -95,11 +95,16 @@ class ApiClient {
   Future<Map<String, Object?>> get(String path, {Map<String, String>? query}) =>
       _json('GET', path, query: query);
 
+  /// Without a [body], nothing is sent — no content type either: the routes
+  /// that take none refuse unknown keys, and an empty request has none.
   Future<Map<String, Object?>> post(
     String path, {
     Object? body,
     bool authenticated = true,
   }) => _json('POST', path, body: body, authenticated: authenticated);
+
+  Future<Map<String, Object?>> put(String path, {Object? body}) =>
+      _json('PUT', path, body: body);
 
   Future<Map<String, Object?>> patch(String path, {Object? body}) =>
       _json('PATCH', path, body: body);

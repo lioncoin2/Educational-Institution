@@ -12,25 +12,44 @@ import 'package:quran_institution_app/data/repositories/mock/mock_messaging_repo
 
 const viewer = MockCommunityRepository.viewer;
 
-/// The mock server, with a record of every read and switches for the
+/// The mock server, with a record of every request and switches for the
 /// states the state layer must survive:
 ///
-///   [failWith]      every read refused with this code while set
-///   [holdList] /    a read takes its answer (or its refusal) NOW and hands
-///   [holdCommunity] it over only when released — a read that was answered
-///   [holdMembers]   before a change it arrives after, as a slow network
-///                   delivers one
+///   [failWith]          every read refused with this code while set
+///   [holdList],         a read takes its answer (or its refusal) NOW and
+///   [holdCommunity],    hands it over only when released — a read that was
+///   [holdMembers],      answered before a change it arrives after, as a
+///   [holdInvitations],  slow network delivers one
+///   [holdGrants]
+///   [failWritesWith]    every write refused with this code while set, and
+///                       not done
+///   [holdWrites]        a write is done NOW, its answer (or its refusal)
+///                       handed over only when released
+///
+/// [writes] records each write as `'<method> <community> <target>'` — a
+/// join as `'join'` alone: a token is recorded nowhere.
 class ScriptedCommunities extends MockCommunityRepository {
-  ScriptedCommunities({super.communityPageSize, super.memberPageSize})
-    : super(latency: Duration.zero);
+  ScriptedCommunities({
+    super.communityPageSize,
+    super.memberPageSize,
+    super.invitationPageSize,
+    super.clock,
+  }) : super(latency: Duration.zero);
 
   int listRequests = 0;
   final List<String> communityRequests = [];
   final List<String?> memberCursors = [];
+  final List<String?> invitationCursors = [];
+  final List<String> grantRequests = [];
+  final List<String> writes = [];
   String? failWith;
+  String? failWritesWith;
   Completer<void>? holdList;
   Completer<void>? holdCommunity;
   Completer<void>? holdMembers;
+  Completer<void>? holdInvitations;
+  Completer<void>? holdGrants;
+  Completer<void>? holdWrites;
 
   @override
   Future<CommunityPage> communities({String? cursor}) async {
@@ -66,6 +85,95 @@ class ScriptedCommunities extends MockCommunityRepository {
     }
   }
 
+  @override
+  Future<InvitationPage> invitations(
+    String communityId, {
+    String? cursor,
+  }) async {
+    invitationCursors.add(cursor);
+    _fail();
+    try {
+      return await super.invitations(communityId, cursor: cursor);
+    } finally {
+      await holdInvitations?.future;
+    }
+  }
+
+  @override
+  Future<GrantPage> grants(
+    String communityId, {
+    required String userId,
+    String? cursor,
+  }) async {
+    grantRequests.add(userId);
+    _fail();
+    try {
+      return await super.grants(communityId, userId: userId, cursor: cursor);
+    } finally {
+      await holdGrants?.future;
+    }
+  }
+
+  @override
+  Future<CreatedInvitation> createInvitation(String communityId) => _write(
+    'createInvitation $communityId',
+    () => super.createInvitation(communityId),
+  );
+
+  @override
+  Future<CommunityInvitation> revokeInvitation(
+    String communityId,
+    String invitationId,
+  ) => _write(
+    'revokeInvitation $communityId $invitationId',
+    () => super.revokeInvitation(communityId, invitationId),
+  );
+
+  @override
+  Future<Community> join(String token) =>
+      _write('join', () => super.join(token));
+
+  @override
+  Future<void> removeMember(String communityId, String userId) => _write(
+    'removeMember $communityId $userId',
+    () => super.removeMember(communityId, userId),
+  );
+
+  @override
+  Future<void> leave(String communityId) =>
+      _write('leave $communityId', () => super.leave(communityId));
+
+  @override
+  Future<Community> lock(String communityId) =>
+      _write('lock $communityId', () => super.lock(communityId));
+
+  @override
+  Future<Community> unlock(String communityId) =>
+      _write('unlock $communityId', () => super.unlock(communityId));
+
+  @override
+  Future<GrantChange> grant(
+    String communityId, {
+    required String userId,
+    required Set<CommunityCapability> capabilities,
+  }) => _write(
+    'grant $communityId $userId',
+    () => super.grant(communityId, userId: userId, capabilities: capabilities),
+  );
+
+  @override
+  Future<void> revokeGrant(String communityId, String grantId) => _write(
+    'revokeGrant $communityId $grantId',
+    () => super.revokeGrant(communityId, grantId),
+  );
+
+  @override
+  Future<Community> transferOwnership(String communityId, String userId) =>
+      _write(
+        'transferOwnership $communityId $userId',
+        () => super.transferOwnership(communityId, userId),
+      );
+
   /// Ends the viewer's membership everywhere: an empty list.
   void leaveAll() {
     for (final id in seededIds) {
@@ -76,6 +184,17 @@ class ScriptedCommunities extends MockCommunityRepository {
   void _fail() {
     final code = failWith;
     if (code != null) throw CommunityException(code, code);
+  }
+
+  Future<T> _write<T>(String record, Future<T> Function() work) async {
+    writes.add(record);
+    final code = failWritesWith;
+    if (code != null) throw CommunityException(code, code);
+    try {
+      return await work();
+    } finally {
+      await holdWrites?.future;
+    }
   }
 }
 
@@ -256,8 +375,13 @@ http.Response jsonResponse(int status, Object body) => http.Response(
   headers: {'content-type': 'application/json; charset=utf-8'},
 );
 
-http.Response refusal(int status, String code) => jsonResponse(status, {
-  'error': {'kind': 'x', 'code': code, 'message': code},
+http.Response refusal(
+  int status,
+  String code, {
+  Map<String, Object?>? details,
+}) => jsonResponse(status, {
+  'error': {'kind': 'x', 'code': code, 'message': code, 'details': ?details},
+  'requestId': 'req-1',
 });
 
 /// A `CommunityResponse` exactly as backend/src/modules/communities/api/
@@ -276,6 +400,7 @@ Map<String, Object?> communityJson({
     'community.live.join',
     'community.live.raise_hand',
   ],
+  List<String> operations = const [],
 }) => {
   'id': id,
   'title': title,
@@ -288,7 +413,42 @@ Map<String, Object?> communityJson({
     'joinedAt': standing == null ? null : '2026-09-02T08:00:00.000Z',
     'capabilities': capabilities,
     'participation': participation,
+    'operations': operations,
   },
+};
+
+/// An `InvitationResponse` — never a token: the server has none to send.
+Map<String, Object?> invitationJson(
+  String id, {
+  String createdBy = 'user-1',
+  String state = 'ACTIVE',
+  int? maxUses,
+  int uses = 0,
+  String? revokedAt,
+}) => {
+  'id': id,
+  'createdBy': createdBy,
+  'createdAt': '2026-09-20T08:00:00.000Z',
+  'expiresAt': '2026-09-27T08:00:00.000Z',
+  'maxUses': maxUses,
+  'uses': uses,
+  'state': state,
+  'revokedAt': revokedAt,
+};
+
+/// A `GrantResponse`.
+Map<String, Object?> grantJson(
+  String grantId, {
+  String userId = 'user-2',
+  String capability = 'community.members.view',
+  bool dormant = false,
+}) => {
+  'grantId': grantId,
+  'userId': userId,
+  'capability': capability,
+  'grantedAt': '2026-09-21T08:00:00.000Z',
+  'grantedBy': 'user-1',
+  'dormant': dormant,
 };
 
 /// A `MemberResponse` row — exactly these four keys on the server.

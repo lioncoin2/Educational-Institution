@@ -1,16 +1,19 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../app/backend_config.dart';
+import '../app/invite_link.dart';
 import '../data/api/api_client.dart';
 import '../data/api/token_store.dart';
 import '../data/media/media_seams.dart';
 import '../data/models/auth.dart';
 
 import '../data/models/certificate.dart';
+import '../data/models/communities.dart';
 import '../data/models/feed.dart';
 import '../data/models/institution.dart';
 import '../data/models/learning.dart';
@@ -98,11 +101,12 @@ final feedRepositoryProvider = Provider<FeedRepository>(
   (ref) => const MockFeedRepository(),
 );
 
-final Provider<AuthRepository> authRepositoryProvider = Provider<AuthRepository>(
-  (ref) => ref.watch(backendModeProvider)
-      ? HttpAuthRepository(ref.watch(apiClientProvider))
-      : MockAuthRepository(),
-);
+final Provider<AuthRepository> authRepositoryProvider =
+    Provider<AuthRepository>(
+      (ref) => ref.watch(backendModeProvider)
+          ? HttpAuthRepository(ref.watch(apiClientProvider))
+          : MockAuthRepository(),
+    );
 
 // ── Backend access ─────────────────────────────────────────────────────────
 // Overridden in tests with package:http's MockClient.
@@ -128,20 +132,32 @@ final Provider<ApiClient> apiClientProvider = Provider<ApiClient>(
 /// Who is signed in on this device, if anyone.
 final FutureProvider<CurrentUser?> sessionUserProvider =
     FutureProvider<CurrentUser?>(
-  (ref) => ref.watch(authRepositoryProvider).currentUser(),
-  retry: (_, _) => null,
-);
+      (ref) => ref.watch(authRepositoryProvider).currentUser(),
+      retry: (_, _) => null,
+    );
 
 // ── Messaging ──────────────────────────────────────────────────────────────
 
-final messagingRepositoryProvider = Provider<MessagingRepository>(
-  (ref) => ref.watch(backendModeProvider)
-      ? HttpMessagingRepository(
-          ref.watch(apiClientProvider),
-          ref.watch(authRepositoryProvider),
-        )
-      : MockMessagingRepository(),
-);
+final messagingRepositoryProvider = Provider<MessagingRepository>((ref) {
+  if (ref.watch(backendModeProvider)) {
+    return HttpMessagingRepository(
+      ref.watch(apiClientProvider),
+      ref.watch(authRepositoryProvider),
+    );
+  }
+  // The demo's two mocks tell one story, as the server's modules do: a
+  // community's chat is read, and posted in, as that community's `me` says
+  // now — joined, left, locked or handed over.
+  final communities = ref.watch(communityRepositoryProvider);
+  if (communities is! MockCommunityRepository) return MockMessagingRepository();
+  return MockMessagingRepository(
+    mayReadIn: (id) =>
+        communities.meIn(id)?.takesPart(CommunityParticipation.chatRead) ??
+        false,
+    mayPostIn: (id) =>
+        communities.meIn(id)?.has(CommunityCapability.chatPost) ?? false,
+  );
+});
 
 // ── Communities ────────────────────────────────────────────────────────────
 // The lists, the open community and its roster live in
@@ -153,13 +169,25 @@ final communityRepositoryProvider = Provider<CommunityRepository>(
       : MockCommunityRepository(),
 );
 
+/// Writes the link to an invitation, given its token; null while nothing can.
+typedef InviteLinkBuilder = Uri? Function(String token);
+
+/// How an invitation's link is written: at the web app's own address. The
+/// native apps have none that a link could open, so there they write none
+/// (null). A provider, so a test can stand in for a browser.
+final inviteLinkBuilderProvider = Provider<InviteLinkBuilder?>(
+  (ref) => kIsWeb ? inviteLinkFor : null,
+);
+
 // ── Realtime ───────────────────────────────────────────────────────────────
 
 /// The live connection: a WebSocket to the backend when one is configured,
 /// nothing at all in the demo build.
 final Provider<RealtimeClient> realtimeClientProvider =
     Provider<RealtimeClient>((ref) {
-      if (!ref.watch(backendModeProvider)) return const DisabledRealtimeClient();
+      if (!ref.watch(backendModeProvider)) {
+        return const DisabledRealtimeClient();
+      }
       final api = ref.watch(apiClientProvider);
       final client = WebSocketRealtimeClient(
         endpoint: realtimeEndpoint(BackendConfig.baseUri),
@@ -288,12 +316,13 @@ final halaqaProvider = FutureProvider.family<Halaqa?, String>(
 );
 
 /// Keyed by "halaqaId/lessonId".
-final lessonProvider = FutureProvider.family<Lesson?, ({String halaqaId, String lessonId})>(
-  (ref, key) => ref
-      .watch(learningRepositoryProvider)
-      .getLesson(key.halaqaId, key.lessonId),
-  retry: _noRetry,
-);
+final lessonProvider =
+    FutureProvider.family<Lesson?, ({String halaqaId, String lessonId})>(
+      (ref, key) => ref
+          .watch(learningRepositoryProvider)
+          .getLesson(key.halaqaId, key.lessonId),
+      retry: _noRetry,
+    );
 
 final currentHalaqaProvider = FutureProvider<Halaqa?>(
   (ref) => ref.watch(learningRepositoryProvider).getCurrentHalaqa(),
@@ -328,12 +357,13 @@ class ThemeModeNotifier extends Notifier<ThemeMode> {
   @override
   ThemeMode build() => ThemeMode.light;
 
-  void toggle() => state =
-      state == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+  void toggle() =>
+      state = state == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
 }
 
-final themeModeProvider =
-    NotifierProvider<ThemeModeNotifier, ThemeMode>(ThemeModeNotifier.new);
+final themeModeProvider = NotifierProvider<ThemeModeNotifier, ThemeMode>(
+  ThemeModeNotifier.new,
+);
 
 /// Text scale, exposed in Profile. The profile's audiences include كبار السن
 /// and محو الأمية, so a larger type option is a requirement, not a nicety.
@@ -344,5 +374,6 @@ class TextScaleNotifier extends Notifier<double> {
   void set(double value) => state = value;
 }
 
-final textScaleProvider =
-    NotifierProvider<TextScaleNotifier, double>(TextScaleNotifier.new);
+final textScaleProvider = NotifierProvider<TextScaleNotifier, double>(
+  TextScaleNotifier.new,
+);

@@ -15,15 +15,31 @@ import 'mock_community_repository.dart';
 ///
 /// Each community of `MockCommunityRepository` has its chat here, as on the
 /// server: a CHANNEL carrying the community's id, listed with the others and
-/// resolved from the community by [conversationForCommunity]. Posting in it
-/// is what the community allows — its owner, while it is open and small
-/// enough to be served; everyone else reads.
+/// resolved from the community by [conversationForCommunity]. Whether the
+/// viewer reads it, and may post in it, is the community's to say: running
+/// beside the demo's communities, this mock asks them ([mayReadIn],
+/// [mayPostIn]) as the server's messaging asks its communities; on its own,
+/// the chats stand as seeded — one for each community the viewer starts in,
+/// and posting open in the one they own.
 class MockMessagingRepository implements MessagingRepository {
-  MockMessagingRepository({this.latency = AppConfig.fakeLatency}) {
+  MockMessagingRepository({
+    this.latency = AppConfig.fakeLatency,
+    this.mayReadIn,
+    this.mayPostIn,
+  }) {
     _seed();
   }
 
   final Duration latency;
+
+  /// Whether the viewer reads community [communityId]'s chat now: its `me`
+  /// takes part in `community.chat.read`. A chat not theirs to read is, to
+  /// them, one that does not exist.
+  final bool Function(String communityId)? mayReadIn;
+
+  /// Whether the viewer may post in community [communityId]'s chat now: its
+  /// `me` holds `community.chat.post`.
+  final bool Function(String communityId)? mayPostIn;
 
   static const String viewer = 'mock-student';
   static const String _teacher = 'mock-teacher';
@@ -39,15 +55,15 @@ class MockMessagingRepository implements MessagingRepository {
   @override
   Future<ConversationPage> conversations({String? cursor}) async {
     await _wait();
-    final all = _conversations.values.toList()
+    final all = _conversations.values.where(_readable).toList()
       ..sort((a, b) => b.activityAt.compareTo(a.activityAt));
-    return ConversationPage(items: [for (final c in all) c.view()]);
+    return ConversationPage(items: [for (final c in all) _view(c)]);
   }
 
   @override
   Future<Conversation> conversation(String conversationId) async {
     await _wait();
-    return _find(conversationId).view();
+    return _view(_find(conversationId));
   }
 
   @override
@@ -56,7 +72,7 @@ class MockMessagingRepository implements MessagingRepository {
     final chat = _conversations.values
         .where((c) => c.communityId == communityId)
         .firstOrNull;
-    if (chat == null) {
+    if (chat == null || !_readable(chat)) {
       // An unknown community and one that is not the viewer's are answered
       // alike.
       throw const MessagingException(
@@ -64,7 +80,7 @@ class MockMessagingRepository implements MessagingRepository {
         'No such conversation.',
       );
     }
-    return chat.view();
+    return _view(chat);
   }
 
   @override
@@ -221,7 +237,7 @@ class MockMessagingRepository implements MessagingRepository {
     List<Attachment> attachments,
   ) {
     final c = _find(conversationId);
-    if (!c.canPost) {
+    if (!_canPost(c)) {
       throw const MessagingException(
         'messaging.posting_not_allowed',
         'Only the owner and publishers may post in this channel.',
@@ -253,23 +269,42 @@ class MockMessagingRepository implements MessagingRepository {
     String conversationId, {
     required String senderId,
     required String body,
-  }) => _find(conversationId).add(
+  }) => _stored(conversationId).add(
     senderId: senderId,
     type: MessageType.text,
     body: body,
     at: DateTime.now().toUtc(),
   );
 
+  /// The conversation as the viewer may reach it: a community chat they do
+  /// not read is not found, like one that does not exist.
   _MockConversation _find(String id) {
-    final c = _conversations[id];
-    if (c == null) {
-      throw const MessagingException(
-        'messaging.conversation_not_found',
-        'No such conversation.',
-      );
-    }
+    final c = _stored(id);
+    if (!_readable(c)) throw _notFound;
     return c;
   }
+
+  _MockConversation _stored(String id) =>
+      _conversations[id] ?? (throw _notFound);
+
+  static const _notFound = MessagingException(
+    'messaging.conversation_not_found',
+    'No such conversation.',
+  );
+
+  bool _readable(_MockConversation c) {
+    final community = c.communityId;
+    return community == null || (mayReadIn?.call(community) ?? c.seededReader);
+  }
+
+  bool _canPost(_MockConversation c) {
+    final community = c.communityId;
+    return community == null
+        ? c.canPost
+        : mayPostIn?.call(community) ?? c.canPost;
+  }
+
+  Conversation _view(_MockConversation c) => c.view(canPost: _canPost(c));
 
   Future<void> _wait() =>
       latency == Duration.zero ? Future.value() : Future.delayed(latency);
@@ -363,49 +398,67 @@ class MockMessagingRepository implements MessagingRepository {
   }
 
   /// One chat per demo community, quieter than the conversations above:
-  /// everything in them has been read.
+  /// everything in them has been read. The last is the chat of the
+  /// community the viewer starts outside of, theirs to read once they join.
   List<_MockConversation> _communityChats() {
     final chats = <_MockConversation>[];
-    for (final (index, (communityId, title, members, canPost, lines)) in [
-      (
-        MockCommunityRepository.openId,
-        'مجتمع طلاب التجويد',
-        24,
-        false,
-        [
-          'مرحبًا بكم في مجتمع طلاب التجويد.',
-          'درس أحكام النون الساكنة يوم الأحد بإذن الله.',
-        ],
-      ),
-      (
-        MockCommunityRepository.ownedId,
-        'مجتمع أسرة الحفظ',
-        12,
-        true,
-        ['نلتقي بعد صلاة المغرب لمراجعة الورد.'],
-      ),
-      (
-        MockCommunityRepository.delegatedId,
-        'مجتمع حلقة المساء',
-        64,
-        false,
-        ['موعد حلقة المساء بعد صلاة العشاء.'],
-      ),
-      (
-        MockCommunityRepository.lockedId,
-        'مجتمع المراجعة الأسبوعية',
-        18,
-        false,
-        ['تمّت مراجعة جزء عمّ هذا الأسبوع بحمد الله.'],
-      ),
-      (
-        MockCommunityRepository.largeId,
-        'مجتمع طلاب المعهد',
-        30000,
-        false,
-        ['أهلًا بكم في مجتمع طلاب المعهد.'],
-      ),
-    ].indexed) {
+    for (final (index, (communityId, title, members, reader, canPost, lines))
+        in [
+          (
+            MockCommunityRepository.openId,
+            'مجتمع طلاب التجويد',
+            24,
+            true,
+            false,
+            [
+              'مرحبًا بكم في مجتمع طلاب التجويد.',
+              'درس أحكام النون الساكنة يوم الأحد بإذن الله.',
+            ],
+          ),
+          (
+            MockCommunityRepository.ownedId,
+            'مجتمع أسرة الحفظ',
+            12,
+            true,
+            true,
+            ['نلتقي بعد صلاة المغرب لمراجعة الورد.'],
+          ),
+          (
+            MockCommunityRepository.delegatedId,
+            'مجتمع حلقة المساء',
+            64,
+            true,
+            false,
+            ['موعد حلقة المساء بعد صلاة العشاء.'],
+          ),
+          (
+            MockCommunityRepository.lockedId,
+            'مجتمع المراجعة الأسبوعية',
+            18,
+            true,
+            false,
+            ['تمّت مراجعة جزء عمّ هذا الأسبوع بحمد الله.'],
+          ),
+          (
+            MockCommunityRepository.largeId,
+            'مجتمع طلاب المعهد',
+            30000,
+            true,
+            false,
+            ['أهلًا بكم في مجتمع طلاب المعهد.'],
+          ),
+          (
+            MockCommunityRepository.invitedId,
+            'مجتمع حلقة الفجر',
+            40,
+            false,
+            false,
+            [
+              'أهلًا بكم في مجتمع حلقة الفجر.',
+              'نلتقي بعد صلاة الفجر لتلاوة الورد اليومي.',
+            ],
+          ),
+        ].indexed) {
       final chat = _MockConversation(
         id: '$communityId-chat',
         type: ConversationType.channel,
@@ -413,6 +466,7 @@ class MockMessagingRepository implements MessagingRepository {
         memberCount: members,
         myRole: ParticipantRole.member,
         canPost: canPost,
+        seededReader: reader,
         createdAt: _start.subtract(Duration(days: 20 + index)),
         names: const {_teacher: 'الأستاذ عبدالله', viewer: 'طالب تجريبي'},
         communityId: communityId,
@@ -444,6 +498,7 @@ class _MockConversation {
     required this.names,
     this.counterpartUserId,
     this.communityId,
+    this.seededReader = true,
   });
 
   final String id;
@@ -452,8 +507,15 @@ class _MockConversation {
   final String? counterpartUserId;
   final int memberCount;
   final ParticipantRole myRole;
+
+  /// As seeded; a community's chat answers by its community when this mock
+  /// runs beside the demo's communities.
   final bool canPost;
   final DateTime createdAt;
+
+  /// A community chat the viewer reads as seeded: one of a community they
+  /// start in.
+  final bool seededReader;
   final Map<String, String> names;
   final String? communityId;
 
@@ -489,7 +551,7 @@ class _MockConversation {
     return message;
   }
 
-  Conversation view() {
+  Conversation view({required bool canPost}) {
     final unread = messages
         .where(
           (m) =>

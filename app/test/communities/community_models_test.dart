@@ -162,7 +162,314 @@ void main() {
     });
   });
 
+  group('what the viewer may do beyond the acts', () {
+    test('reads the server’s operations, in any order', () {
+      final me = Community.fromJson(
+        communityJson(
+          standing: 'OWNER',
+          operations: [
+            'community.ownership.transfer',
+            'community.invitations.manage',
+            'community.grants.manage',
+          ],
+        ),
+      ).me;
+      expect(me.operations, {
+        CommunityOperation.invitationsManage,
+        CommunityOperation.grantsManage,
+        CommunityOperation.ownershipTransfer,
+      });
+      expect(me.allows(CommunityOperation.grantsManage), isTrue);
+      expect(me.allows(CommunityOperation.leave), isFalse);
+    });
+
+    test('drops an operation it does not know — it unlocks nothing', () {
+      final me = Community.fromJson(
+        communityJson(
+          operations: ['community.archive', 'community.leave', '', 'unknown'],
+        ),
+      ).me;
+      expect(me.operations, {CommunityOperation.leave});
+      expect(me.allows(CommunityOperation.unknown), isFalse);
+      for (final wire in ['community.archive', 'unknown', null, 7]) {
+        expect(CommunityOperation.fromWire(wire), CommunityOperation.unknown);
+      }
+    });
+
+    test('reads none from an older server that sends none', () {
+      final json = communityJson();
+      (json['me']! as Map).remove('operations');
+      expect(Community.fromJson(json).me.operations, isEmpty);
+      (json['me']! as Map)['operations'] = 'community.leave';
+      expect(Community.fromJson(json).me.operations, isEmpty);
+      expect(const CommunityMe().operations, isEmpty);
+    });
+
+    test('knows the wire value of each', () {
+      expect(
+        [
+          for (final o in CommunityOperation.values)
+            if (o != CommunityOperation.unknown) o.wire,
+        ],
+        [
+          'community.invitations.manage',
+          'community.grants.manage',
+          'community.ownership.transfer',
+          'community.leave',
+        ],
+      );
+    });
+  });
+
+  group('an invitation link', () {
+    test('reads the server’s InvitationResponse', () {
+      final link = CommunityInvitation.fromJson(
+        invitationJson(
+          'inv-1',
+          createdBy: 'user-9',
+          state: 'REVOKED',
+          maxUses: 5,
+          uses: 2,
+          revokedAt: '2026-09-22T08:00:00.000Z',
+        ),
+      );
+      expect(link.id, 'inv-1');
+      expect(link.createdBy, 'user-9');
+      expect(link.createdAt, DateTime.utc(2026, 9, 20, 8));
+      expect(link.expiresAt, DateTime.utc(2026, 9, 27, 8));
+      expect(link.maxUses, 5);
+      expect(link.uses, 2);
+      expect(link.state, InvitationState.revoked);
+      expect(link.revokedAt, DateTime.utc(2026, 9, 22, 8));
+      expect(link.origin, DataOrigin.records);
+    });
+
+    test('keeps a state it does not know as unknown, and each it does', () {
+      for (final (wire, state) in [
+        ('ACTIVE', InvitationState.active),
+        ('EXPIRED', InvitationState.expired),
+        ('EXHAUSTED', InvitationState.exhausted),
+        ('REVOKED', InvitationState.revoked),
+        ('SUSPENDED', InvitationState.unknown),
+        (null, InvitationState.unknown),
+      ]) {
+        final json = invitationJson('inv-1')..['state'] = wire;
+        expect(CommunityInvitation.fromJson(json).state, state, reason: wire);
+      }
+    });
+
+    test('reads no limit, and no maker, where none is readable', () {
+      final json = invitationJson('inv-1', maxUses: 3)
+        ..['maxUses'] = 'three'
+        ..['uses'] = null
+        ..remove('createdBy')
+        ..['revokedAt'] = 'yesterday'
+        ..['token'] = 'never-sent'
+        ..['tokenHash'] = 'never-sent';
+      final link = CommunityInvitation.fromJson(json);
+      expect(link.maxUses, isNull);
+      expect(link.uses, 0);
+      expect(link.createdBy, isNull);
+      expect(link.revokedAt, isNull);
+    });
+
+    test('cannot be read without an id, or its dates', () {
+      for (final key in ['id', 'createdAt', 'expiresAt']) {
+        expect(
+          () => CommunityInvitation.fromJson(
+            invitationJson('inv-1')..remove(key),
+          ),
+          throwsFormatException,
+          reason: key,
+        );
+      }
+    });
+
+    test('pages newest first, skipping what it cannot read', () {
+      final page = InvitationPage.fromJson({
+        'items': [
+          invitationJson('inv-2'),
+          invitationJson('inv-1')..remove('expiresAt'),
+          42,
+          invitationJson('inv-0', state: 'EXPIRED'),
+        ],
+        'nextCursor': 'more',
+      }, origin: DataOrigin.mock);
+      expect(page.items.map((i) => i.id), ['inv-2', 'inv-0']);
+      expect(page.items.every((i) => i.origin == DataOrigin.mock), isTrue);
+      expect(page.nextCursor, 'more');
+      expect(InvitationPage.fromJson({}).items, isEmpty);
+    });
+
+    test('is made with its token — the one answer that carries it', () {
+      final created = CreatedInvitation.fromJson({
+        'invitation': invitationJson('inv-3'),
+        'token': 'A' * 43,
+      });
+      expect(created.invitation.id, 'inv-3');
+      expect(created.token, 'A' * 43);
+      for (final broken in [
+        {'invitation': invitationJson('inv-3')},
+        {'invitation': invitationJson('inv-3'), 'token': ''},
+        {'invitation': invitationJson('inv-3'), 'token': 43},
+        {'token': 'A' * 43},
+        {'invitation': 'inv-3', 'token': 'A' * 43},
+        {
+          'invitation': invitationJson('inv-3')..remove('id'),
+          'token': 'A' * 43,
+        },
+      ]) {
+        expect(
+          () => CreatedInvitation.fromJson(broken),
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'message',
+              isNot(contains('A' * 43)),
+            ),
+          ),
+          reason: '$broken',
+        );
+      }
+    });
+
+    test('has a token’s shape only as the server issues one', () {
+      expect(isInvitationTokenShaped('aZ09_-' * 7 + 'x'), isTrue);
+      for (final token in [
+        '',
+        'A' * 42,
+        'A' * 44,
+        '${'A' * 42}=',
+        '${'A' * 42}/',
+        '${'A' * 42}+',
+        '${'A' * 42} ',
+        '${'A' * 41}أb',
+      ]) {
+        expect(isInvitationTokenShaped(token), isFalse, reason: token);
+      }
+    });
+  });
+
+  group('grants', () {
+    test('read the server’s GrantResponse', () {
+      final grant = CommunityGrant.fromJson(
+        grantJson('g-1', capability: 'community.lock', dormant: true),
+      );
+      expect(grant.grantId, 'g-1');
+      expect(grant.userId, 'user-2');
+      expect(grant.capability, CommunityCapability.lock);
+      expect(grant.grantedAt, DateTime.utc(2026, 9, 21, 8));
+      expect(grant.grantedBy, 'user-1');
+      expect(grant.dormant, isTrue);
+    });
+
+    test('keep one of a capability they do not know, as unknown', () {
+      final page = GrantPage.fromJson({
+        'items': [
+          grantJson('g-1', capability: 'community.teleport'),
+          grantJson('g-2')..remove('dormant'),
+          grantJson('g-3')..remove('grantId'),
+          grantJson('g-4')..remove('userId'),
+          grantJson('g-5')..['grantedAt'] = 'then',
+        ],
+        'nextCursor': null,
+      });
+      expect(page.items.map((g) => g.grantId), ['g-1', 'g-2']);
+      expect(page.items.first.capability, CommunityCapability.unknown);
+      expect(page.items.last.dormant, isFalse); // missing boolean → false
+      expect(page.nextCursor, isNull);
+    });
+
+    test('say what a grant request created and what was already held', () {
+      final change = GrantChange.fromJson({
+        'created': [grantJson('g-1', capability: 'community.members.view')],
+        'unchanged': [
+          grantJson('g-0', capability: 'community.lock'),
+          {'grantId': 'g-x'},
+        ],
+      });
+      expect(change.created.single.capability, CommunityCapability.membersView);
+      expect(change.unchanged.single.grantId, 'g-0');
+      final nothing = GrantChange.fromJson({});
+      expect(nothing.created, isEmpty);
+      expect(nothing.unchanged, isEmpty);
+    });
+  });
+
   group('a refusal', () {
+    test('carries the server’s details, and sorts itself neutrally', () {
+      const limited = CommunityException(
+        'communities.too_many_attempts',
+        '',
+        details: {'retryAfterSeconds': 42},
+      );
+      expect(limited.isRateLimited, isTrue);
+      expect(limited.retryAfter, const Duration(seconds: 42));
+      expect(limited.details, {'retryAfterSeconds': 42});
+
+      for (final code in [
+        'communities.too_many_invitations',
+        'communities.too_many_grants',
+      ]) {
+        expect(CommunityException(code, '').isRateLimited, isTrue);
+        expect(CommunityException(code, '').retryAfter, isNull);
+      }
+      expect(
+        const CommunityException(
+          'communities.too_many_attempts',
+          '',
+          details: {'retryAfterSeconds': 'soon'},
+        ).retryAfter,
+        isNull,
+      );
+      expect(
+        const CommunityException(
+          'communities.too_many_attempts',
+          '',
+          details: {'retryAfterSeconds': 1.2},
+        ).retryAfter,
+        const Duration(seconds: 2),
+      );
+
+      expect(
+        const CommunityException('communities.conflict', '').isConflict,
+        isTrue,
+      );
+      expect(
+        const CommunityException('communities.owner_conflict', '').isConflict,
+        isTrue,
+      );
+      expect(
+        const CommunityException('communities.community_locked', '').isLocked,
+        isTrue,
+      );
+      expect(const CommunityException('unavailable', '').isUnavailable, isTrue);
+
+      const plain = CommunityException('communities.invitation_invalid', '');
+      expect(plain.details, isEmpty);
+      expect(
+        plain.isRateLimited ||
+            plain.isConflict ||
+            plain.isLocked ||
+            plain.isUnavailable ||
+            plain.isGone ||
+            plain.isForbidden,
+        isFalse,
+      );
+    });
+
+    test('never prints its details', () {
+      const refused = CommunityException(
+        'communities.members_not_eligible',
+        'Refused.',
+        details: {
+          'userIds': ['user-secret'],
+        },
+      );
+      expect('$refused', isNot(contains('user-secret')));
+      expect('$refused', contains('communities.members_not_eligible'));
+    });
+
     test('tells gone, forbidden, sign-in and network apart', () {
       const gone = CommunityException('communities.community_not_found', '');
       const capability = CommunityException(

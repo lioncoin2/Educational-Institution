@@ -73,6 +73,110 @@ void main() {
     },
   );
 
+  group('a PUT', () {
+    test('sends JSON with the bearer token, and decodes the answer', () async {
+      final seen = <http.Request>[];
+      final api = ApiClient(
+        baseUri: base,
+        httpClient: MockClient((request) async {
+          seen.add(request);
+          return json(200, {'id': 'c-1'});
+        }),
+        tokenStore: await signedIn(),
+      );
+      expect(await api.put('/communities/c-1/owner', body: {'userId': 'u-2'}), {
+        'id': 'c-1',
+      });
+      final request = seen.single;
+      expect(request.method, 'PUT');
+      expect(
+        request.url.toString(),
+        'https://api.example.org/communities/c-1/owner',
+      );
+      expect(request.headers['authorization'], 'Bearer access-1');
+      expect(request.headers['content-type'], startsWith('application/json'));
+      expect(jsonDecode(request.body), {'userId': 'u-2'});
+    });
+
+    test(
+      'renews an expired token once, then sends the same body again',
+      () async {
+        final seen = <http.Request>[];
+        final api = ApiClient(
+          baseUri: base,
+          httpClient: MockClient((request) async {
+            seen.add(request);
+            if (request.url.path == '/auth/refresh') {
+              return json(200, {
+                'accessToken': 'access-2',
+                'refreshToken': 'refresh-2',
+              });
+            }
+            return request.headers['authorization'] == 'Bearer access-2'
+                ? json(200, {'ok': true})
+                : error(401, 'identity.authentication_required');
+          }),
+          tokenStore: await signedIn(),
+        );
+        expect(await api.put('/x', body: {'userId': 'u-2'}), {'ok': true});
+        expect(seen.map((r) => '${r.method} ${r.url.path}'), [
+          'PUT /x',
+          'POST /auth/refresh',
+          'PUT /x',
+        ]);
+        expect(seen.last.body, seen.first.body);
+        expect(jsonDecode(seen.last.body), {'userId': 'u-2'});
+      },
+    );
+
+    test('maps a refusal, with its details', () async {
+      final api = ApiClient(
+        baseUri: base,
+        httpClient: MockClient(
+          (_) async => json(422, {
+            'error': {
+              'kind': 'validation',
+              'code': 'communities.owner_ineligible',
+              'message': 'x',
+              'details': {'field': 'userId'},
+            },
+            'requestId': 'r-1',
+          }),
+        ),
+        tokenStore: await signedIn(),
+      );
+      await expectLater(
+        api.put('/x', body: const {}),
+        throwsA(
+          isA<ApiException>()
+              .having((e) => e.status, 'status', 422)
+              .having((e) => e.code, 'code', 'communities.owner_ineligible')
+              .having((e) => e.details, 'details', {'field': 'userId'}),
+        ),
+      );
+    });
+  });
+
+  test('a POST without a body sends none — no content type either', () async {
+    final seen = <http.Request>[];
+    final api = ApiClient(
+      baseUri: base,
+      httpClient: MockClient((request) async {
+        seen.add(request);
+        return http.Response('', 204);
+      }),
+      tokenStore: await signedIn(),
+    );
+    expect(await api.post('/communities/c-1/leave'), isEmpty);
+    expect(await api.post('/x', body: const <String, Object?>{}), isEmpty);
+    expect(seen.first.body, isEmpty);
+    expect(seen.first.headers.containsKey('content-type'), isFalse);
+    expect(seen.first.headers['authorization'], 'Bearer access-1');
+    // An empty object is a body: sent as one.
+    expect(seen.last.body, '{}');
+    expect(seen.last.headers['content-type'], startsWith('application/json'));
+  });
+
   test(
     'refuses an authenticated call without tokens, without calling out',
     () async {

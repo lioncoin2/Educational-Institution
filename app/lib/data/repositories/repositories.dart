@@ -206,10 +206,14 @@ abstract interface class MessagingRepository {
 /// (`/communities`).
 ///
 /// Every method throws [CommunityException] with the server's code on
-/// refusal. Reading only: what the viewer may do in a community is the
-/// server's `me` block, and a community the viewer is not (or no longer) in
-/// is, to this API, one that does not exist. Pages are the server's, by
-/// opaque cursor — a roster is never loaded whole.
+/// refusal. What the viewer may do in a community is the server's `me`
+/// block, and a community the viewer is not (or no longer) in is, to this
+/// API, one that does not exist. Pages are the server's, by opaque cursor —
+/// a roster is never loaded whole.
+///
+/// Each write is one request, never retried here: creating a link is not
+/// idempotent, and a refusal is the server's answer, not a fault. Nobody is
+/// ever added by id — people join through a link, by their own request.
 abstract interface class CommunityRepository {
   /// The viewer's own communities, most recently joined first.
   Future<CommunityPage> communities({String? cursor});
@@ -219,6 +223,69 @@ abstract interface class CommunityRepository {
   /// The roster, a page at a time — for a viewer whose `me.capabilities`
   /// holds `community.members.view`; anyone else is refused.
   Future<CommunityMemberPage> members(String communityId, {String? cursor});
+
+  // ── Invitation links ──
+
+  /// A new link, on the server's own terms (none are asked for). Its token
+  /// is in this answer and in no other, ever.
+  Future<CreatedInvitation> createInvitation(String communityId);
+
+  /// The community's links, newest first, in every state — never a token.
+  Future<InvitationPage> invitations(String communityId, {String? cursor});
+
+  /// The link as it now stands: revoked — also when it already was.
+  Future<CommunityInvitation> revokeInvitation(
+    String communityId,
+    String invitationId,
+  );
+
+  /// Joins the community a link names, by its token — sent in the request
+  /// body, nowhere else. The community as the viewer now stands in it:
+  /// joined just now or a member already, alike.
+  Future<Community> join(String token);
+
+  // ── Membership ──
+
+  /// Ends [userId]'s membership.
+  Future<void> removeMember(String communityId, String userId);
+
+  /// Ends the viewer's own membership: from then on, to this API, the
+  /// community does not exist.
+  Future<void> leave(String communityId);
+
+  // ── Lifecycle ──
+
+  /// The community as it now stands: locked — also when it already was.
+  Future<Community> lock(String communityId);
+
+  /// The community as it now stands: open — also when it already was.
+  Future<Community> unlock(String communityId);
+
+  // ── Delegated capabilities and ownership ──
+
+  /// [userId]'s grants, as the server shows them to the viewer: to one it
+  /// allows `community.grants.manage`, anyone's; to anyone else, only their
+  /// own — another member's come back empty.
+  Future<GrantPage> grants(
+    String communityId, {
+    required String userId,
+    String? cursor,
+  });
+
+  /// Grants [capabilities] to [userId]: those created, and those the member
+  /// already held.
+  Future<GrantChange> grant(
+    String communityId, {
+    required String userId,
+    required Set<CommunityCapability> capabilities,
+  });
+
+  /// Ends a grant — also one already ended.
+  Future<void> revokeGrant(String communityId, String grantId);
+
+  /// Hands the community to [userId]. The answer is the community as the
+  /// VIEWER now stands in it, not as the new owner does.
+  Future<Community> transferOwnership(String communityId, String userId);
 }
 
 /// Notifications — the signed-in person's own inbox, preferences and push

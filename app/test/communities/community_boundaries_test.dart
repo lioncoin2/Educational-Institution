@@ -1,6 +1,9 @@
 import 'dart:io';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:quran_institution_app/data/models/communities.dart';
+import 'package:quran_institution_app/features/communities/state/pending_invitation.dart';
 
 /// The shape of communities in the app, asserted on the source:
 ///
@@ -13,7 +16,11 @@ import 'package:flutter_test/flutter_test.dart';
 ///   - what someone may do in a community is the server's `me` — nothing
 ///     here reads an account's permissions or roles;
 ///   - only the provider wiring decides which implementation runs;
+///   - the real repository makes exactly the calls listed here, and adds
+///     nobody by id;
 ///   - the community wire models are plain Dart;
+///   - web-only code stays in lib/app, out of the features;
+///   - an invitation token is never logged, and never printed;
 ///   - the screens are right-to-left safe: no hard-coded left or right;
 ///   - what the screens say lives in one place (community_copy.dart).
 void main() {
@@ -50,6 +57,12 @@ void main() {
       'lib/features/communities/state/community_controller.dart',
       'lib/features/communities/state/community_members_controller.dart',
       'lib/features/communities/state/community_chat_opener.dart',
+      'lib/features/communities/state/pending_invitation.dart',
+      'lib/app/invite_link.dart',
+      'lib/app/invite_link_parts.dart',
+      'lib/app/invite_link_stub.dart',
+      'lib/app/invite_link_web.dart',
+      'lib/main.dart',
     ]) {
       expect(sources.keys, contains(path));
     }
@@ -124,11 +137,111 @@ void main() {
     );
   });
 
-  test('reads communities and writes nothing to them', () {
+  group('the real repository', () {
     final http =
         sources['lib/data/repositories/http/http_community_repository.dart']!;
-    expect(RegExp(r'_api\.(post|patch|put|delete)\(').hasMatch(http), isFalse);
-    expect(RegExp(r'_api\.get\(').allMatches(http), hasLength(3));
+    // Each call as written: its method, and its path up to the first comma
+    // or closing parenthesis outside a string.
+    final calls = [
+      for (final m in RegExp(
+        r"""_api\.(\w+)\(\s*('[^'\n]*'|[\w.]+\([\w., ]*\)|[\w.]+)""",
+      ).allMatches(http))
+        '${m.group(1)} ${m.group(2)}',
+    ];
+
+    test('makes exactly these calls — a new one is a change to this list', () {
+      expect(calls, unorderedEquals(_allowedCalls));
+      // Nothing reaches the API client past the pattern above.
+      expect(RegExp(r'\b_api\.').allMatches(http), hasLength(calls.length));
+      expect(
+        RegExp(r'\b\w+\.(get|post|put|patch|delete)\(').allMatches(http),
+        hasLength(calls.length),
+      );
+    });
+
+    test('adds nobody by id: joining is by link, on one’s own request', () {
+      expect(
+        calls.where((c) => c.startsWith('post ') && c.contains('/members')),
+        isEmpty,
+      );
+      expect(http, isNot(contains('userIds')));
+    });
+  });
+
+  test('keeps web-only code in lib/app, out of the features', () {
+    final offenders = [
+      for (final MapEntry(key: path, value: uris) in imports.entries)
+        if (path.startsWith('lib/features/'))
+          for (final uri in uris)
+            if (uri.startsWith('package:flutter_web_plugins') ||
+                uri.startsWith('package:web/') ||
+                uri == 'dart:js_interop' ||
+                uri == 'dart:ui_web' ||
+                // A feature writes a link through inviteLinkBuilderProvider.
+                uri.contains('invite_link'))
+              '$path → $uri',
+    ];
+    expect(offenders, isEmpty);
+    // The browser is reached in one file, swapped in on the web alone.
+    expect(imports['lib/app/invite_link_web.dart'], [
+      'package:flutter_web_plugins/url_strategy.dart',
+      'invite_link_parts.dart',
+    ]);
+    expect(imports['lib/app/invite_link_stub.dart'], isEmpty);
+    expect(imports['lib/app/invite_link_parts.dart'], isEmpty);
+    expect(
+      RegExp(
+        r'''export\s+'invite_link_stub\.dart'\s+if\s+\(dart\.library\.js_interop\)\s+'invite_link_web\.dart';''',
+      ).hasMatch(sources['lib/app/invite_link.dart']!),
+      isTrue,
+    );
+  });
+
+  test('never logs where an invitation token passes', () {
+    final watched = [
+      for (final path in sources.keys)
+        if (path.startsWith('lib/features/communities/') ||
+            path.startsWith('lib/app/invite_link') ||
+            path == 'lib/main.dart' ||
+            path == 'lib/data/models/communities.dart' ||
+            path.endsWith('_community_repository.dart'))
+          path,
+    ];
+    expect(watched.length, greaterThanOrEqualTo(15));
+    final logging = RegExp(r'\b(print|debugPrint\w*|log)\(');
+    final offenders = [
+      for (final path in watched)
+        if (logging.hasMatch(sources[path]!) ||
+            imports[path]!.contains('dart:developer'))
+          path,
+    ];
+    expect(offenders, isEmpty);
+  });
+
+  test('never prints an invitation token', () {
+    const token = 'TokenThatMustNeverBePrinted_0000000000000000';
+    final created = CreatedInvitation(
+      invitation: CommunityInvitation(
+        id: 'invitation-1',
+        createdAt: DateTime.utc(2026, 9, 20),
+        expiresAt: DateTime.utc(2026, 9, 27),
+        uses: 0,
+        state: InvitationState.active,
+      ),
+      token: token,
+    );
+    expect('$created', isNot(contains(token)));
+    expect('$created', contains('invitation-1'));
+
+    const pending = PendingInvitation(serial: 7, token: token);
+    expect('$pending', isNot(contains(token)));
+
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container.read(pendingInvitationProvider.notifier).offer(token);
+    final held = container.read(pendingInvitationProvider);
+    expect(held?.token, token);
+    expect('$held', isNot(contains(token)));
   });
 
   test('lays out right to left: nothing pinned to a physical side', () {
@@ -169,3 +282,24 @@ void main() {
     );
   });
 }
+
+/// Every call the real repository makes: the three reads of P5, and what
+/// P5.1 builds on — links, joining, removing and leaving, the lifecycle,
+/// grants and ownership. Never `POST …/members`: no one is added by id.
+const _allowedCalls = [
+  "get '/communities'",
+  'get _community(communityId)',
+  r"get '${_community(communityId)}/members'",
+  r"post '${_community(communityId)}/invitations'",
+  r"get '${_community(communityId)}/invitations'",
+  r"post '${_community(communityId)}/invitations/${_segment(invitationId)}/revoke'",
+  "post '/communities/join'",
+  r"delete '${_community(communityId)}/members/${_segment(userId)}'",
+  r"post '${_community(communityId)}/leave'",
+  r"post '${_community(communityId)}/lock'",
+  r"post '${_community(communityId)}/unlock'",
+  r"get '${_community(communityId)}/grants'",
+  r"post '${_community(communityId)}/grants'",
+  r"delete '${_community(communityId)}/grants/${_segment(grantId)}'",
+  r"put '${_community(communityId)}/owner'",
+];
