@@ -1,4 +1,8 @@
-import type { CommunityCapability, CommunityParticipationAct } from '../contracts/capabilities';
+import type {
+  CommunityCapability,
+  CommunityOperation,
+  CommunityParticipationAct,
+} from '../contracts/capabilities';
 import type { InvitationState, MembershipStanding } from '../contracts/vocabulary';
 import type { Community } from '../domain/community';
 import type { CapabilityGrant } from '../domain/grant';
@@ -16,6 +20,8 @@ export interface MeView {
   /** Effective now: ceiling AND standing AND lifecycle. */
   readonly capabilities: readonly CommunityCapability[];
   readonly participation: readonly CommunityParticipationAct[];
+  /** The operations that are not acts, decided by the same rules as their routes. */
+  readonly operations: readonly CommunityOperation[];
 }
 
 /**

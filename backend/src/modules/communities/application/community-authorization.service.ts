@@ -9,17 +9,26 @@ import {
 import type { Permission } from '../../identity/contracts/permissions';
 import {
   COMMUNITY_CAPABILITIES,
+  COMMUNITY_OPERATIONS,
   COMMUNITY_PARTICIPATION,
   COMMUNITY_RESOURCE,
   type CommunityAct,
   type CommunityCapability,
+  type CommunityOperation,
 } from '../contracts/capabilities';
 import {
   MAX_AUTHORIZE_BATCH,
   type CommunityAuthorization,
   type CommunityPermit,
 } from '../contracts/authorization';
-import { ruleFor, type ActRule, type OwnerOperation } from '../domain/act-rules';
+import {
+  LINK_MANAGEMENT_RULE,
+  MANAGE_GRANTS,
+  TRANSFER_OWNERSHIP,
+  ruleFor,
+  type ActRule,
+  type OwnerOperation,
+} from '../domain/act-rules';
 import {
   decideCommunityAct,
   holdsAnyCeiling,
@@ -27,6 +36,7 @@ import {
   type HeldCeilings,
 } from '../domain/authority';
 import { decideOwnerOperation } from '../domain/delegation';
+import { mayLeave } from '../domain/membership';
 import { COMMUNITY_STORE, type CommunityAuthorityRead, type CommunityStore } from '../domain/ports';
 import type { MeView } from './views';
 
@@ -218,21 +228,44 @@ export class CommunityAuthorizationService implements CommunityAuthorization {
   /**
    * What the principal may do in the community, from a read already made:
    * every capability and participation act the same evaluator would permit
-   * right now. No further read.
+   * right now, and every operation its route would permit — by the same
+   * rules and decisions the routes use, so neither can drift. No further
+   * read.
    */
   me(principal: Principal, communityId: string, read: AuthorityRead): MeView {
-    const permits = (act: CommunityAct) => {
-      const rule = ruleFor(act);
-      return (
-        decideCommunityAct(rule, this.ceilings(principal, communityId, rule), read).kind ===
-        'permit'
-      );
+    const decide = (rule: ActRule) =>
+      decideCommunityAct(rule, this.ceilings(principal, communityId, rule), read);
+    const permits = (act: CommunityAct) => decide(ruleFor(act)).kind === 'permit';
+    const ownerPermits = (operation: OwnerOperation) =>
+      decideOwnerOperation(operation, this.ownerCeilings(principal, communityId, operation), read)
+        .kind === 'permit';
+    const allows = (operation: CommunityOperation): boolean => {
+      switch (operation) {
+        case 'community.invitations.manage':
+          return decide(LINK_MANAGEMENT_RULE).kind === 'permit';
+        case 'community.grants.manage':
+          return ownerPermits(MANAGE_GRANTS);
+        case 'community.ownership.transfer':
+          return ownerPermits(TRANSFER_OWNERSHIP);
+        case 'community.leave': {
+          // As `LeaveCommunityUseCase` asks it: view on the membership basis,
+          // then the stint the store will decide under lock.
+          const view = decide(ruleFor('community.view'));
+          return (
+            view.kind === 'permit' &&
+            view.basis === 'membership' &&
+            read.stint !== null &&
+            mayLeave(read.stint)
+          );
+        }
+      }
     };
     return {
       standing: read.stint?.standing ?? null,
       joinedAt: read.stint?.joinedAt ?? null,
       capabilities: COMMUNITY_CAPABILITIES.filter(permits),
       participation: COMMUNITY_PARTICIPATION.filter(permits),
+      operations: COMMUNITY_OPERATIONS.filter(allows),
     };
   }
 

@@ -13,7 +13,7 @@ import {
 } from '../domain/grant';
 import { invitationState, type Invitation } from '../domain/invitation';
 import { effectsOf } from '../domain/lifecycle';
-import { endStint, latestStint, memberStint, type Stint } from '../domain/membership';
+import { endStint, latestStint, mayLeave, memberStint, type Stint } from '../domain/membership';
 import type {
   ActingBasis,
   AddMembersOutcome,
@@ -214,7 +214,7 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     if (community === undefined) return { kind: 'not_found' };
     const stint = this.activeStint(input.communityId, input.userId);
     if (stint === null) return { kind: 'not_member' };
-    if (stint.standing === 'OWNER') return { kind: 'owner' };
+    if (!mayLeave(stint)) return { kind: 'owner' };
     const endedGrants = this.endGrantsOf(stint.id, 'membership_ended', input.userId, input.at);
     const ended = this.end(community, stint, 'LEFT', input.userId, input.at);
     return { kind: 'left', stint: ended, endedGrants };

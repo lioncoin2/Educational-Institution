@@ -105,7 +105,20 @@ describe('communities API', () => {
         'community.lock',
         'community.members.invite',
       ]) as string[],
+      // The owner's operations, decided on the server; an owner cannot leave.
+      operations: [
+        'community.invitations.manage',
+        'community.grants.manage',
+        'community.ownership.transfer',
+      ],
     });
+    expect(Object.keys(created.body.me as object).sort()).toEqual([
+      'capabilities',
+      'joinedAt',
+      'operations',
+      'participation',
+      'standing',
+    ]);
     communityId = created.body.id as string;
   });
 
@@ -154,7 +167,7 @@ describe('communities API', () => {
     expect(view.status).toBe(200);
     expect(view.body).toMatchObject({
       memberCount: 3,
-      me: { standing: 'MEMBER', capabilities: [] },
+      me: { standing: 'MEMBER', capabilities: [], operations: ['community.leave'] },
     });
 
     const studentRoster = await call('GET', `/communities/${communityId}/members`, student);
@@ -457,7 +470,13 @@ describe('communities API', () => {
     // Oversight hands it back — the recovery path.
     const back = await call('PUT', owner, r.owner, { userId: admin.id });
     expect(back.status).toBe(200);
-    expect(back.body).toMatchObject({ me: { standing: null } });
+    // An overseer without a stint: link management and transfer, nothing to leave.
+    expect(back.body).toMatchObject({
+      me: {
+        standing: null,
+        operations: ['community.invitations.manage', 'community.ownership.transfer'],
+      },
+    });
     expect((await call('GET', `/communities/${communityId}`, admin)).body).toMatchObject({
       me: { standing: 'OWNER' },
     });

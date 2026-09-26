@@ -3,12 +3,20 @@ import {
   COMMUNITY_ACTS,
   COMMUNITY_CAPABILITIES,
   COMMUNITY_CHAT_READ_CEILING,
+  COMMUNITY_OPERATIONS,
   COMMUNITY_PARTICIPATION,
   COMMUNITY_VIEW_CEILING,
   isCommunityAct,
   isCommunityCapability,
+  isCommunityOperation,
 } from '../contracts/capabilities';
-import { ACT_RULES, LINK_MANAGEMENT_RULE, backingCapability } from './act-rules';
+import {
+  ACT_RULES,
+  LINK_MANAGEMENT_RULE,
+  MANAGE_GRANTS,
+  TRANSFER_OWNERSHIP,
+  backingCapability,
+} from './act-rules';
 
 /**
  * Pins the PROVISIONAL act rules (§6.4). Answering Q43, Q44, Q46, Q51 or Q54
@@ -206,6 +214,17 @@ describe('the act vocabulary', () => {
     expect(namespaces.has('community')).toBe(false);
     // 3. And no permission reads as an act.
     for (const permission of ALL_PERMISSIONS) expect(isCommunityAct(permission)).toBe(false);
+  });
+
+  it('keeps the operations apart from the acts and from identity’s permissions', () => {
+    for (const operation of COMMUNITY_OPERATIONS) {
+      expect(isCommunityAct(operation)).toBe(false);
+      expect(isPermission(operation)).toBe(false);
+    }
+    for (const act of COMMUNITY_ACTS) expect(isCommunityOperation(act)).toBe(false);
+    // The owner's own operations are reported under their own names.
+    expect(isCommunityOperation(MANAGE_GRANTS.name)).toBe(true);
+    expect(isCommunityOperation(TRANSFER_OWNERSHIP.name)).toBe(true);
   });
 
   it('keeps the reserved names out until the migration that allows them', () => {

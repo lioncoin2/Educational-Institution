@@ -1,5 +1,5 @@
 import { newCommunity } from './community';
-import { endStint, latestStint, memberStint, ownerStint } from './membership';
+import { endStint, latestStint, mayLeave, memberStint, ownerStint } from './membership';
 import { normalizeTitle } from './text';
 
 const at = (ms: number) => new Date(ms);
@@ -22,6 +22,22 @@ describe('stints', () => {
       invitationId: null,
       version: community.membershipVersion,
     });
+  });
+
+  it('lets every member but the owner leave (PROVISIONAL, Q42)', () => {
+    const owner = ownerStint({ id: 's', communityId: 'c', userId: 'u', at: at(5) });
+    const member = memberStint({
+      id: 's1',
+      communityId: 'c',
+      userId: 'u1',
+      source: 'ADDED',
+      addedBy: 'u',
+      invitationId: null,
+      at: at(6),
+      version: 2,
+    });
+    expect(mayLeave(owner)).toBe(false);
+    expect(mayLeave(member)).toBe(true);
   });
 
   it('keeps the source and its detail consistent', () => {

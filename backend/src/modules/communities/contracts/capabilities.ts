@@ -87,6 +87,29 @@ export type CommunityDerivedAct = (typeof COMMUNITY_DERIVED_ACTS)[number];
 
 export type CommunityAct = CommunityCapability | CommunityParticipationAct | CommunityDerivedAct;
 
+/**
+ * Operations: what a caller may do here that is not an act, reported in
+ * `me` beside the acts so a client never works one out from standing or
+ * roles (§6.6). None is an act or a permission, and no grant gives one.
+ *
+ *   community.invitations.manage   list and revoke the community's links —
+ *                                  the link-management override
+ *                                  (`LINK_MANAGEMENT_RULE`)
+ *   community.grants.manage        see every grant, grant, revoke — the
+ *                                  owner's own (`MANAGE_GRANTS`)
+ *   community.ownership.transfer   hand ownership to a member
+ *                                  (`TRANSFER_OWNERSHIP`)
+ *   community.leave                end one's own ACTIVE stint (`mayLeave`)
+ */
+export const COMMUNITY_OPERATIONS = [
+  'community.invitations.manage',
+  'community.grants.manage',
+  'community.ownership.transfer',
+  'community.leave',
+] as const;
+
+export type CommunityOperation = (typeof COMMUNITY_OPERATIONS)[number];
+
 export const COMMUNITY_ACTS: readonly CommunityAct[] = Object.freeze([
   ...COMMUNITY_PARTICIPATION,
   ...COMMUNITY_CAPABILITIES,
@@ -96,6 +119,7 @@ export const COMMUNITY_ACTS: readonly CommunityAct[] = Object.freeze([
 const CAPABILITIES = new Set<string>(COMMUNITY_CAPABILITIES);
 const PARTICIPATION = new Set<string>(COMMUNITY_PARTICIPATION);
 const ACTS = new Set<string>(COMMUNITY_ACTS);
+const OPERATIONS = new Set<string>(COMMUNITY_OPERATIONS);
 
 export function isCommunityCapability(value: string): value is CommunityCapability {
   return CAPABILITIES.has(value);
@@ -107,4 +131,8 @@ export function isCommunityParticipationAct(value: string): value is CommunityPa
 
 export function isCommunityAct(value: string): value is CommunityAct {
   return ACTS.has(value);
+}
+
+export function isCommunityOperation(value: string): value is CommunityOperation {
+  return OPERATIONS.has(value);
 }

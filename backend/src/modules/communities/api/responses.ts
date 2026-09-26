@@ -1,4 +1,8 @@
-import type { CommunityCapability, CommunityParticipationAct } from '../contracts/capabilities';
+import type {
+  CommunityCapability,
+  CommunityOperation,
+  CommunityParticipationAct,
+} from '../contracts/capabilities';
 import type { InvitationState, MembershipStanding } from '../contracts/vocabulary';
 import type {
   AddMembersView,
@@ -28,6 +32,7 @@ export interface CommunityResponse {
     readonly joinedAt: string | null;
     readonly capabilities: readonly CommunityCapability[];
     readonly participation: readonly CommunityParticipationAct[];
+    readonly operations: readonly CommunityOperation[];
   };
 }
 
@@ -44,6 +49,7 @@ export function toCommunityResponse(view: CommunityView): CommunityResponse {
       joinedAt: view.me.joinedAt?.toISOString() ?? null,
       capabilities: view.me.capabilities,
       participation: view.me.participation,
+      operations: view.me.operations,
     },
   };
 }

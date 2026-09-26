@@ -10,7 +10,7 @@ import { effectiveCapabilities, mayGrant, mayRemove } from '../domain/delegation
 import { newGrant, type CapabilityGrant, type GrantEndReason } from '../domain/grant';
 import { invitationState, type Invitation } from '../domain/invitation';
 import { effectsOf } from '../domain/lifecycle';
-import { memberStint, type Stint } from '../domain/membership';
+import { mayLeave, memberStint, type Stint } from '../domain/membership';
 import type {
   ActingBasis,
   AddMembersOutcome,
@@ -396,7 +396,7 @@ export class DrizzleCommunityRepository implements CommunityStore {
       // 3: as it is once locked — a transfer may have made them the owner meanwhile.
       const own = (await this.lockStints(tx, [{ id: found.id, mode: 'update' }])).get(found.id);
       if (own === undefined) throw new Error(`stint ${found.id} vanished under its pair lock`);
-      if (own.standing === 'OWNER') return { kind: 'owner' };
+      if (!mayLeave(own)) return { kind: 'owner' };
       // 4: every grant on the stint ends with it.
       const endedGrants = await this.endGrantsOf(
         tx,

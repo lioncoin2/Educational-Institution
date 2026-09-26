@@ -38,6 +38,15 @@ export function isActive(stint: Stint): boolean {
   return stint.status === 'ACTIVE';
 }
 
+/**
+ * Whether the holder of an ACTIVE stint may end it themself (§3.2): anyone
+ * but the owner, who hands ownership over first (PROVISIONAL, Q42). The
+ * stores decide it under lock; `me` reports it from the same read.
+ */
+export function mayLeave(stint: { readonly standing: MembershipStanding }): boolean {
+  return stint.standing !== 'OWNER';
+}
+
 /** The creator's stint: the owner, and the community's first membership change. */
 export function ownerStint(input: {
   readonly id: string;
