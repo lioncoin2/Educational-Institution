@@ -192,7 +192,9 @@ of one capability, keyset-paged — never an overseer), `COMMUNITY_DIRECTORY`
 (titles, for display); the act vocabulary (`community.*`) with the identity
 ceilings that principal-less consumers narrow by (`COMMUNITY_CHAT_READ_CEILING`
 for messaging, P4; `COMMUNITY_VIEW_CEILING` for realtime, P5), the wire
-vocabulary and the event types.
+vocabulary (since P5.1 also `COMMUNITY_OPERATIONS`, the operations that are
+not acts, which the HTTP `me` block reports as `me.operations` for clients;
+no module consumes it) and the event types.
 
 **Events.** `communities.community.created|locked|unlocked`,
 `communities.member.added|removed`, `communities.invitation.created|revoked`,

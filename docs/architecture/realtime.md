@@ -404,6 +404,7 @@ notification type, a client frame or a protocol version.
              ConnectionManager               the same connections, the same socket
                  ▼
    Flutter: CommunityListController / CommunityController / CommunityMembersController,
+            CommunityInvitationsController / MemberGrantsController (P5.1),
             ConversationController / ConversationListController  ──▶  re-read over HTTP
 ```
 
@@ -632,12 +633,23 @@ the truth. In the app (`app/lib/features/communities/state/`,
   again (gone: it leaves the list). The first page and a single community
   are read side by side, so every read is numbered as it is sent, and an
   answer about a community (a row, or "not found") older than the one
-  applied for it is dropped, whichever lands last.
+  applied for it is dropped, whichever lands last. (As P5 left it, the
+  future of that one community's re-read awaited itself and never
+  completed: harmless while nothing awaited it, fixed in P5.1, whose writes
+  do, `community_list_controller.dart:340-344`.)
 - **`CommunityMembersController`**: pages of 50, never walked to the end on
   its own; `access.changed` or the viewer's `member.*` for this community →
   the first page again, which also answers whether the roster is still
   theirs (403 → "not yours to see"; 404 after the roster was theirs →
   "removed", a first 404 → the neutral "not available").
+- **`CommunityInvitationsController`** (P5.1): a community's links, 50 at a
+  time, newest first, only as far as someone asks. No frame carries a
+  link, so the first page is read again after each change the viewer makes,
+  on `access.changed` or the viewer's `member.*` for this community (which
+  also answers whether the links are still theirs: 403 → "not yours to
+  see", 404 → gone), and whenever the connection comes up.
+- **`MemberGrantsController`** (P5.1): one member's grants, read whole (at
+  most one grant per capability), on the same occasions.
 - **Messaging's controllers**, for a community chat: the viewer's removal →
   the conversation subscribes and catches up again, and the server's
   `CONVERSATION_NOT_FOUND` marks it removed, never the frame alone; the
@@ -659,12 +671,55 @@ the truth. In the app (`app/lib/features/communities/state/`,
   list controller moves a generation on whenever the first page is replaced
   or an entry is taken out; a next page asked for before is dropped, and it
   never clears a roster's "not yours" or "removed" state.
+- **The viewer's own changes (P5.1)**: lock, unlock and leave
+  (`CommunityController`); remove and make owner
+  (`CommunityMembersController`); create and revoke a link
+  (`CommunityInvitationsController`); grant and revoke a grant
+  (`MemberGrantsController`); join by link (`InvitationJoinController`).
+  Each is one request per target — the community, a member, a link — and a
+  tap while it is on its way sends nothing. None is ever sent again on its
+  own: a new link is not idempotent, and a lost answer leaves a link nobody
+  saw, which can only be revoked. Nothing is shown changed before the server
+  answers. Then what the change touched is read again, each part through its
+  own controller's one-at-a-time read: the community (`me`, status, count)
+  and its row in the list, the roster, the links, the member's grants
+  (`community_reconcile.dart`). The answer to a lock or a transfer is not
+  shown as it is; the read after it is, so a lock's echo frame finds its
+  version already held. Two changes end otherwise: a confirmed leave shows
+  the community as removed and takes it out of the list at once, then reads
+  the list's first page again; a join reads the list's first page again.
+- **A read sent before a confirmed change never overwrites what came after
+  it.** Each controller numbers its reads as they are sent, the build's first
+  read included, and marks the moment the server answered one of the
+  viewer's changes: an answer to a read sent before the mark is dropped and
+  the read asked for again, and a next page asked for before it is dropped.
+  A roster page read while a removal was on its way never brings the member
+  back; a refresh answered before a lock never undoes it.
+- **A refusal that answers for the community reads it again**, with its row
+  in the list and the screen's own list, so an action whose right is gone
+  disappears with its button. No answer (unreachable, signed out), a server
+  that could not serve the request (`unavailable`, a rate limit) or a
+  request it would not take in that shape (`bad_request`) reads nothing and
+  keeps what is shown (`community_write.dart:41-46`).
+- **The invite screen follows no frame.** A refusal for good
+  (`invitation_invalid`, `invitation_revoked`, `invitation_expired`,
+  `invitation_exhausted`, `rejoin_requires_manager`, `community_locked`)
+  forgets the link; anything else keeps it for an explicit retry, and a
+  request for a sign-in keeps it across one; a link opened while the screen
+  is up starts it over (`invitation_join_controller.dart:78-87`).
 - **Capabilities are shown as the server lists them.** `me.capabilities`
   says what the viewer may do, not on what basis (a grant, ownership or
-  oversight), so the app labels none of them "delegated".
+  oversight), so the app labels none of them "delegated". The one place that
+  says "granted" is a member's capabilities sheet (P5.1), whose source is
+  the server's grant list for that member; a dormant grant is "not in effect
+  now", with no reason given.
 - **Only the account id is compared** with a frame's `userId`
   (`community_viewer.dart`), never roles or permissions
-  (`community_boundaries_test.dart`).
+  (`community_boundaries_test.dart`). Since P5.1 it is also compared with a
+  roster row, which then offers no action (the viewer's own row), and with a
+  link's `createdBy` ("created by you"). While no account is known, any row
+  could be the viewer's, so no row offers an action, and no link is called
+  theirs.
 
 ## C7. When it fails
 
@@ -770,10 +825,38 @@ Flutter (`flutter test`):
   (community screens, widgets and state import no HTTP client, socket, API
   client or repository implementation, and read no permissions or roles; only
   `app_providers.dart` constructs a `CommunityRepository`; the wire models are
-  plain Dart; the HTTP repository only reads).
+  plain Dart; the HTTP repository only reads — since P5.1, makes exactly the
+  calls the test lists, and no POST to `…/members`).
+- P5.1, in `test/communities/`: `community_management_state_test.dart` —
+  every change one request per target however often tapped, read again once
+  answered (done or refused), never an answer read before a confirmed change
+  (an older roster page never brings a removed member back; a refresh
+  answered before a lock never undoes it), a lock's echo frame taken as a
+  hint, a frame during a removal, catching up on reconnect, a new link never
+  sent again on its own, and joining (one request; a refusal for good
+  forgets the link, a passing one keeps it, as does a sign-in in between; a
+  link opened meanwhile starts over); `community_management_screens_test.dart`
+  — each action offered exactly when `me` allows it, none on the viewer's own
+  row, confirmations, refusals said without their reason, a new link shown
+  once and gone when its sheet closes, no member named by an id;
+  `invite_flow_test.dart`,
+  `pending_invitation_test.dart` and `test/invite_link_test.dart` — the link
+  at start and while running, signed out and in, malformed, refused, no
+  connection then a retry, the token only in the body of one POST, the pure
+  address functions on the VM; `mock_community_management_test.dart` — the
+  mock's rules, `me.operations` included, and the 30,000-member roster still
+  lazy after removals; `http_community_repository_test.dart` — each call's
+  method, path, body and refusal details; `community_management_smoke_test.dart`
+  — the demo, end to end.
 - `test/layout_test.dart` and `test/navigation_test.dart` — the three
   community routes at every viewport; Profile → communities → a community →
-  its chat.
+  its chat. Since P5.1 also an owned community's links and `/invite`, and
+  the way from a community to its links and from `/invite` to the list.
+- Beyond the suites (P5.1), two one-off checks that are not committed: the
+  app's `HttpCommunityRepository` driven against a running backend on
+  PostgreSQL through every P5.1 call and refusal, and a Playwright run
+  (Chromium) of the release web build against it, 17 of 17 checks passed
+  ([hub §22](communities-live-attendance.md#22-testing-strategy)).
 
 ## C9. Deliberately deferred
 
@@ -784,8 +867,10 @@ Flutter (`flutter test`):
 - **In the app: the `/invite#<token>` link and every management action**
   (adding and removing members, leaving, creating and revoking invitations,
   joining by token, locking and unlocking, grants and their revocation,
-  ownership transfer). P5's `CommunityRepository` only reads. They are
-  deferred, to be scheduled
+  ownership transfer). P5's `CommunityRepository` only read. P5.1 built them
+  (§C6), with no new frame: adding members by id stays deferred until a
+  people-lookup policy exists, and invitation links open in the web app only
+  (no mobile app links)
   ([hub §25](communities-live-attendance.md#25-implementation-phases)).
 - **A frame for a change no event names**: a grant going dormant, or a role
   change that alters `me`. The next HTTP read shows it; a member who lost the

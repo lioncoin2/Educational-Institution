@@ -246,7 +246,20 @@ community frames, and three screens reached from Profile — the viewer's
 communities, one community, and its roster for those allowed to see it —
 showing only what the server's `me` block allows, never what a role
 suggests; a community's chat opens as an ordinary conversation. Managing a
-community from the app, and the `/invite` link, are deferred.
+community from the app, and the `/invite` link, were deferred.
+
+P5.1 added them. The server's `me` block now also lists the operations that
+are not acts (`me.operations`: managing links and grants, handing over
+ownership, leaving), so the app never works one out from a role or a
+standing. The repository gained the management calls, and the community,
+its roster and a new screen of invitation links offer lock and unlock,
+leaving, a member's capabilities, handing over and removal, each one request
+and read again once answered. An invitation link, `/invite#<token>`, works in
+the web app: the token is taken out of the address before the app starts,
+kept in memory only, and sent once when the viewer taps Join. Members are
+added only through links: adding someone by account waits for a policy on
+how a manager finds people, and mobile app links are not configured
+([communities-live-attendance.md §25](communities-live-attendance.md#25-implementation-phases)).
 
 The Flutter side holds **no secrets**. It never sees the LiveKit API secret; it
 receives a short-lived, capability-scoped join token minted server-side.

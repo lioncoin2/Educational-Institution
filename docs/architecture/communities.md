@@ -1,6 +1,6 @@
 # Communities
 
-**State: APPROVED (2026-09-23) — implemented in phases: P2 (core), P3 (delegation), and one contract constant each for P4 and P5.** What a phase has not delivered does not exist yet; [the hub's §25](communities-live-attendance.md#25-implementation-phases) records which phases have landed.
+**State: APPROVED (2026-09-23) — implemented in phases: P2 (core), P3 (delegation), one contract constant each for P4 and P5, and `me.operations` for P5.1.** What a phase has not delivered does not exist yet; [the hub's §25](communities-live-attendance.md#25-implementation-phases) records which phases have landed.
 
 The design of the `communities` module: the Community aggregate, membership,
 invitation links, the OPEN/LOCKED lifecycle (phase **P2**), and delegated
@@ -229,9 +229,73 @@ decides it. Nothing here decides an institutional policy.
 > through `RealtimeModule` importing `CommunitiesModule`; Communities still
 > imports nothing but identity. The frames, their audiences and their cost
 > are [realtime.md Part C](realtime.md#part-c--communities-in-real-time). The
-> app reads communities (list, one community, the roster) and does none of
-> the management acts yet; the `/invite` link is deferred too
+> app read communities (list, one community, the roster) and did none of the
+> management acts; the `/invite` link was deferred too. P5.1 built both
+> (below), except adding members by id and mobile app links
 > ([§12](#12-api), [§20](#20-deferred)).
+
+> **P5.1 landed (2026-09-26): `me.operations`, and the app manages
+> communities.** Four decisions, taken by the user on 2026-09-26 at the
+> review of P5.1's stop conditions, shape it: the server reports the
+> operations that are not acts, so a client never works one out from
+> standing or roles; members are added through invitation links only — the
+> direct add has no app UI, because no policy says how a manager may find the
+> people to add ([Q6](open-questions.md#q6--who-may-message-whom),
+> [Q22](open-questions.md#q22--who-may-see-who-is-in-a-conversation),
+> [Q31](open-questions.md#q31--teaching-scope-and-what-staff-may-see),
+> [Q50](open-questions.md#q50--communities-and-the-academic-structure));
+> invitation links are the web app's (it writes `<its base href>invite#<token>`
+> and redeems links; native builds write none, and no mobile app link is
+> configured); and joining asks first, with an explicit Join tap and one POST.
+>
+> Communities gained one contract constant, `COMMUNITY_OPERATIONS` in
+> `contracts/capabilities.ts:90-111` — `community.invitations.manage`,
+> `community.grants.manage`, `community.ownership.transfer`,
+> `community.leave` — none of them an act or a permission
+> (`act-rules.spec.ts`), so no grant reaches one. `me()` reports them as
+> `me.operations` ([§12](#12-api)), deciding each by the rule its route uses,
+> from the read it already made
+> (`application/community-authorization.service.ts:235-270`):
+>
+> - `community.invitations.manage`: `LINK_MANAGEMENT_RULE`, the operation-level
+>   override of [§6.6](#66-which-act-each-communities-operation-asks), so it
+>   reaches overseers and holds while LOCKED, where
+>   `community.members.invite` in `me.capabilities` does not;
+> - `community.grants.manage` and `community.ownership.transfer`:
+>   `decideOwnerOperation` over `MANAGE_GRANTS` and `TRANSFER_OWNERSHIP`
+>   ([§6.8](#68-delegation-and-the-no-escalation-rule-p3)), so an owner whose
+>   role lost `communities.moderate` is offered neither, and an overseer is
+>   offered the transfer;
+> - `community.leave`: as the leave route asks it — `community.view` on the
+>   membership basis, then `mayLeave(stint)` (`domain/membership.ts:41-48`),
+>   the owner-cannot-leave rule (PROVISIONAL,
+>   [Q42](open-questions.md#q42--community-ownership)), now one predicate that
+>   both stores also decide by under lock
+>   (`drizzle-community-repository.ts:399`, `in-memory-community-store.ts:217`).
+>
+> The field is additive: `CommunityResponse` gains it wherever it is
+> returned (creating, reading and listing communities, lock and unlock, a
+> join, a transfer's answer), and an older app ignores it. Nothing else here
+> changed: no rule, table, migration, event, route or frame.
+>
+> The app ([§12](#12-api)): the repository's management calls, all but the
+> direct add; `/invite` on the web; the management screens, each action shown
+> only as `me` allows. Its mock repository copies the rules above, each copy
+> labelled "PROVISIONAL, Qnn — the server's table"
+> (`app/lib/data/repositories/mock/mock_community_repository.dart`).
+>
+> Evidence: `application/me-operations.spec.ts` (for the owner, OPEN and
+> LOCKED; an owner by transfer; an owner whose role lost
+> `communities.moderate`; a member, OPEN and LOCKED; a delegate holding
+> `community.members.invite`, OPEN and LOCKED; an overseer without a stint
+> and one who is an ordinary member; a former owner — each listed operation
+> is exactly what its route then does, and the list, the lock and the
+> transfer answer as the community does); the `mayLeave` and vocabulary
+> cases of `membership.spec.ts` and `act-rules.spec.ts`; the API suite (the
+> `me` keys and the operations of an owner, a member and an overseer).
+> Beyond the suites, a one-off contract check drove the app's HTTP
+> repository against a running backend on PostgreSQL through every P5.1 call
+> and refusal; it is not committed.
 
 ---
 
@@ -269,7 +333,7 @@ only.
 
 *This section describes the repository before P2, and is kept as the record
 this design started from; P0 closed the gaps it lists, and the notes at the
-top of this document say what P2–P5 built.*
+top of this document say what P2–P5.1 built.*
 
 **Today there is no communities module**, and no community, invitation, invite
 link or lock concept anywhere in the backend or the app. The backend modules
@@ -893,6 +957,19 @@ keep revoking links open while LOCKED. Both hold if the rules table carries an
 link" only: oversight through `communities.manage` is admitted, and the
 lifecycle gate treats them as management (allowed while LOCKED). The exported
 vocabulary does not change, and no new act name is introduced.
+
+**What the client is told (P5.1).** `me.capabilities` lists acts, so it
+cannot say whether four of these operations are open to the viewer: listing
+and revoking links (the override above, open to oversight and while LOCKED),
+the grant operations and the transfer (the owner's own operations, not acts:
+[§6.8](#68-delegation-and-the-no-escalation-rule-p3)), and leaving (the
+caller's own stint, refused to the owner). `me.operations` reports them —
+`community.invitations.manage`, `community.grants.manage`,
+`community.ownership.transfer`, `community.leave` — each decided by the rule
+its route uses, from the same read, so what `me` lists is exactly what the
+route then does ([§12](#12-api); `me-operations.spec.ts`). The rows above do
+not change: the operations are a report, not a new rule, and the server
+decides every request again.
 
 ### 6.7 The owner
 
@@ -1645,8 +1722,8 @@ unwrap Results; no business logic.
 | `POST /communities/join {token}` | `communities.read` + `mayJoinByInvitation` | 201 `CommunityResponse` when joined, 200 when already a member | 404 `communities.invitation_invalid`; 412 `communities.invitation_revoked` / `_expired` / `_exhausted` / `community_locked`; 403 `communities.rejoin_requires_manager`; 429 `communities.too_many_attempts` |
 | `GET /communities/:communityId/grants?userId&capability&cursor&limit` (P3) | owner: all; holder: own | 200 `{items: [{grantId, userId, capability, grantedAt, grantedBy, dormant}], nextCursor}` | 404 |
 | `POST /communities/:communityId/grants {userId, capabilities[1..7]}` (P3) | owner (R1–R3) | 201 `{created, unchanged}` when any grant was created; 200 when all were already held | 403 `communities.not_community_owner`, 403 `identity.permission_denied`, 422 `communities.grantee_ineligible`, 404 |
-| `DELETE /communities/:communityId/grants/:grantId` (P3) | owner | 204 (idempotent) | 404 `communities.grant_not_found` |
-| `PUT /communities/:communityId/owner {userId}` (P3) | owner, or `communities.manage` | 200 `CommunityResponse` | 409 `communities.owner_conflict`, 422 `communities.owner_ineligible`, 403 `communities.owner_self_assignment` |
+| `DELETE /communities/:communityId/grants/:grantId` (P3) | owner | 204 (idempotent) | 404 `communities.grant_not_found`, 403 `communities.not_community_owner` |
+| `PUT /communities/:communityId/owner {userId}` (P3) | owner, or `communities.manage` | 200 `CommunityResponse` | 409 `communities.owner_conflict`, 422 `communities.owner_ineligible`, 403 `communities.owner_self_assignment`, 403 `communities.not_community_owner` (a member who is not the owner) |
 
 `communities.not_community_owner` follows the Community naming rule
 ([§1](#1-terminology)); an earlier draft of this design spelled it
@@ -1661,14 +1738,32 @@ CommunityResponse {
     standing: 'OWNER' | 'MEMBER' | null,   // null on the oversight basis
     joinedAt: string | null,
     capabilities: CommunityCapability[],   // effective now: ceiling AND standing AND gate
-    participation: (typeof COMMUNITY_PARTICIPATION)[number][]
+    participation: (typeof COMMUNITY_PARTICIPATION)[number][],
+    operations: CommunityOperation[]       // P5.1: allowed now, each by its route's own rule
   }
 }
 InvitationResponse { id, createdBy, createdAt, expiresAt, maxUses, uses, state, revokedAt }
 ```
 
 `me` is a UI courtesy, computed by the same evaluator (the Conversation
-`canPost` precedent); the server never trusts it back. `state` is derived at
+`canPost` precedent); the server never trusts it back. `me.operations` (P5.1)
+lists, in the order below, each operation that is not an act and that its
+route would allow the caller now
+([§6.6](#66-which-act-each-communities-operation-asks)):
+
+| Value | Allows | Decided by |
+| --- | --- | --- |
+| `community.invitations.manage` | listing the community's links and revoking them | `LINK_MANAGEMENT_RULE`: `community.members.invite` on the owner or grant basis, or oversight; allowed while LOCKED |
+| `community.grants.manage` | seeing every grant, granting, revoking | `decideOwnerOperation(MANAGE_GRANTS)`: the owner, holding `communities.moderate` (R1) |
+| `community.ownership.transfer` | handing the community to a member | `decideOwnerOperation(TRANSFER_OWNERSHIP)`: the owner, or oversight ([§6.9](#69-transfer)) |
+| `community.leave` | ending one's own ACTIVE stint | `community.view` on the membership basis, then `mayLeave`: anyone but the owner (PROVISIONAL, [Q42](open-questions.md#q42--community-ownership)) |
+
+For example: an owner gets the first three; a member,
+`[community.leave]`; a delegate holding `community.members.invite`,
+`[community.invitations.manage, community.leave]`, LOCKED or not; an
+overseer without a stint, `[community.invitations.manage,
+community.ownership.transfer]`. An operation listed here is still decided
+again by its route. `state` is derived at
 request time. The roster's `active` is the account's state from
 `AccountDirectory`, not the membership's.
 
@@ -1705,8 +1800,23 @@ an `/invite` route that reads the token from the link, holds it in memory,
 POSTs it once and never stores or logs it. Details in the hub. **As landed
 in P5:** the repository reads only (`GET /communities?scope=mine`,
 `GET /communities/:communityId`, `…/members`), and the screens show only what
-`me.capabilities` and `me.participation` allow; the `/invite` route and every
-write are deferred, to be scheduled.
+`me.capabilities` and `me.participation` allow. **As landed in P5.1:** every
+route above except the direct add (`POST …/members`, deferred until a
+people-lookup policy exists: [§20](#20-deferred)); a new link asks for no
+terms, so the server's defaults apply
+([Q48](open-questions.md#q48--invitation-links)). What is offered comes from
+`me` alone: invitation links when `me.capabilities` holds
+`community.members.invite` or `me.operations` holds
+`community.invitations.manage` (a new link needs the former); lock or unlock
+by `community.lock` and the status; leave by `community.leave`; on the
+roster, on every row but the viewer's own, a member's capabilities and make
+owner by the matching operation, and remove by `community.members.remove`.
+The `/invite` route is the web app's
+([hub §17](communities-live-attendance.md#17-flutter-architecture)): the link
+is `<the web app's base href>invite#<token>`, the token is held in memory
+only, and one Join tap sends it once. Every write is one request, never
+retried on its own, and what it changed is read again once the server has
+answered.
 
 ---
 
@@ -1752,7 +1862,9 @@ event bus).
 - 9: audit `communities.community.created`; events
   `communities.community.created` then `communities.member.added` (the owner).
 - 10: `me.standing` OWNER; `me.capabilities` every capability whose ceiling P
-  holds.
+  holds; since P5.1, `me.operations` the owner's three
+  (`community.invitations.manage`, `community.grants.manage`,
+  `community.ownership.transfer`), never `community.leave`.
 
 ### S2 — Create an invitation link (P2)
 
@@ -2081,6 +2193,11 @@ stint are compatible even when M is the creator.
 - Creator re-check (P2): a link whose owner-creator lost `communities.moderate`
   or was suspended answers 404 `invitation_invalid` and consumes no use.
 - Rate limits answer `rate_limited` with `retryAfterSeconds`.
+- `me.operations` (P5.1, `me-operations.spec.ts`): for owners (OPEN, LOCKED,
+  by transfer, without `communities.moderate`), members (OPEN, LOCKED), a
+  delegate holding `community.members.invite` (OPEN, LOCKED), overseers
+  (without a stint, and as ordinary members) and a former owner, the list is
+  exact, and each operation is listed exactly when its route then allows it.
 
 **Postgres** (P2 exit, then P3).
 - Constraints: every named CHECK, partial unique index and the token-hash index
@@ -2119,14 +2236,27 @@ stint are compatible even when M is the creator.
   method a critical section with no `await` inside).
 
 **API** (supertest): every status code of [§12](#12-api); a token in the query
-string is ignored; unauthenticated join is 401; no response contains `@`.
+string is ignored; unauthenticated join is 401; no response contains `@`;
+the `me` block has exactly its five keys, and an owner's, a member's and an
+overseer's `operations` are as [§12](#12-api) says (P5.1).
 
 **Architecture**: [§17](#17-module-layout-and-architecture-specs).
 
 **Flutter**: wire models parse unknown statuses and capabilities; HTTP and mock
 repositories behave alike (idempotent join, locked refusal, token shown once);
 screens import no HTTP client or repository implementation; the join flow never
-persists the token; buttons follow `me.capabilities` only.
+persists the token; buttons follow `me.capabilities` only. **As landed (P5
+reads, P5.1 the rest):** unknown operations and link states dropped or
+`unknown`; the HTTP repository's method, path, body and refusal details for
+every call against a `MockClient`, and exactly the calls
+`community_boundaries_test.dart` lists (no POST to `…/members`); the mock's
+refusals rule by rule; buttons follow `me` (capabilities, operations,
+status) only; the invite flow (a link at start or while running, sign-in,
+one request per tap, refusals, a malformed token sending nothing) never puts
+the token in a route, storage, a log or a `toString`. Beyond the suites, a
+one-off contract check against a running backend on PostgreSQL and a
+Playwright run of the release web build, neither committed
+([hub §22](communities-live-attendance.md#22-testing-strategy)).
 
 **Load** (P8, measured, never guessed): profile 4 — the 30,000-member community,
 a join storm through one link, full roster paging, `authorize` at join-storm
@@ -2250,7 +2380,25 @@ Every PROVISIONAL default above is one of these. Full text in
   one CHECK change.
 - **A member limit** (Q20): a nullable column in the same conditional `UPDATE`.
 - **The outbox and a Redis rate limiter** (P11), on ADR 0021's triggers.
-- **The app's management acts and the `/invite` link**: adding and removing
-  members, leaving, invitations and joining by token, locking and unlocking,
-  grants and ownership transfer. P5's Flutter repository reads only; these
-  are deferred from P5, to be scheduled.
+- **What the app still does not do.** P5 deferred the app's management acts
+  and the `/invite` link; P5.1 built them (the notes at the top), except:
+  - **Adding members directly** (`POST /communities/:communityId/members`),
+    until a people-lookup policy exists. The route takes account ids, and
+    nothing lets a community manager find the accounts they may add without
+    deciding who may reach whom: the one account list, `GET /admin/users`,
+    is staff administration (`users.read`, with emails and roles), and
+    drawing on academic rosters would link communities to the academic
+    structure ([Q6](open-questions.md#q6--who-may-message-whom),
+    [Q22](open-questions.md#q22--who-may-see-who-is-in-a-conversation),
+    [Q31](open-questions.md#q31--teaching-scope-and-what-staff-may-see),
+    [Q50](open-questions.md#q50--communities-and-the-academic-structure)).
+    People join through links meanwhile. The server's route is unchanged.
+  - **Mobile app links**: no Android intent filter and no iOS associated
+    domain or URL type, so a link opens only in the browser, in the web app.
+  - **A public app address for native builds**: a native build knows the
+    API's address only, so it writes no link; links are made in the web app.
+  - **Choosing a link's terms in the app** (`expiresInSeconds`, `maxUses`):
+    a new link asks for none, and the server's PROVISIONAL defaults apply
+    ([Q48](open-questions.md#q48--invitation-links)).
+  - **A link preview**: the invite screen says only that the viewer has been
+    invited; there is no preview endpoint, and one is Q48's to decide.

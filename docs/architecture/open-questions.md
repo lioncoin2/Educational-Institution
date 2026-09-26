@@ -179,6 +179,14 @@ Still open: may students message each other or a teacher of their choosing?
 Should a teacher reach only *their own* students (an academic relationship the
 academic module does not model yet)? Quiet hours? Parents?
 
+Communities (P5.1): whom a community's manager may find and add by account
+turns on the same question. The app's direct add waits on a people-lookup
+policy (this question with
+[Q22](#q22--who-may-see-who-is-in-a-conversation),
+[Q31](#q31--teaching-scope-and-what-staff-may-see) and
+[Q50](#q50--communities-and-the-academic-structure)); meanwhile people join
+through invitation links.
+
 **When answered.** Grants in the provisional matrix (a migration), and — for
 "only their own students" — a policy rule with the conversation's members as
 context, the mechanism from Q1. No contract changes.
@@ -529,6 +537,14 @@ carries the count and the caller's own `me` block, and the roster needs
 never emails. Since P5 a community's realtime frames tell only the person a
 membership or access change concerns
 ([realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs)).
+P5.1 built no way to look people up: the app adds members only through
+invitation links, and the direct add (`POST /communities/:communityId/members`,
+which takes account ids) has no app UI until a people-lookup policy exists —
+this question, [Q6](#q6--who-may-message-whom),
+[Q31](#q31--teaching-scope-and-what-staff-may-see) and
+[Q50](#q50--communities-and-the-academic-structure). The roster's rows show
+display names only, and offer management actions only as the server's `me`
+block allows.
 
 ---
 
@@ -923,9 +939,14 @@ distinct duties would be permissions checked in the future modules that act
 per halaqa.
 
 **Proposed design (Q40–Q72).** No proposed module would exercise
-`attendance.*`, and none built in P2–P5 does; community snapshots would be
+`attendance.*`, and none built in P2–P5.1 does; community snapshots would be
 scoped by community standing,
 which reviewers must accept ([Q69](#q69--who-records-and-who-views-snapshots)).
+Nor does P5.1 use a teacher's rosters to find people to add to a community:
+the app's direct add waits on a people-lookup policy (this question with
+[Q6](#q6--who-may-message-whom),
+[Q22](#q22--who-may-see-who-is-in-a-conversation) and
+[Q50](#q50--communities-and-the-academic-structure)).
 
 ---
 
@@ -1337,10 +1358,15 @@ audiences.
 > approved on 2026-09-23 and is implemented in phases; Q40 is answered. Each
 > **Built instead** below was written before implementation and reads
 > "nothing", followed by the default the design uses; the phase that builds a
-> default updates its entry (Q41–Q53 name the phase — P2, P3, P4 or P5 —
-> that built theirs; Q59, Q62 and Q66 name what P0, P1 and P5 built toward
-> theirs). Every such default is PROVISIONAL, belongs to the question it sits
-> under, and is not a decision — building it answered nothing.
+> default updates its entry (Q41–Q53 name the phase — P2, P3, P4, P5 or
+> P5.1 — that built theirs; Q59, Q62 and Q66 name what P0, P1 and P5 built
+> toward theirs). Every such default is PROVISIONAL, belongs to the question
+> it sits under, and is not a decision — building it answered nothing. P5.1
+> (2026-09-26) built the app's side of Q42–Q46, Q48 and Q49: it offers each
+> action only as the server's `me` block allows — `me.operations`, added
+> then, reports the operations that are not acts — so the app holds no copy
+> of these defaults; and it adds members only through links, the direct add
+> waiting on a people-lookup policy (Q6, Q22, Q31, Q50).
 >
 > The brief's "group" is the **Community** aggregate here: "group" already
 > means messaging's `GROUP` conversation type, and is used for Tahajji's
@@ -1422,7 +1448,7 @@ conversation owner, who can neither be removed nor leave, with no transfer
 (`membership.use-cases.ts:211-219, 297-302`); that was chosen for
 conversations, not for communities.
 
-**Built instead.** Implemented as the default below — P2 (one owner, who cannot leave or be removed), P3 (transfer)
+**Built instead.** Implemented as the default below — P2 (one owner, who cannot leave or be removed), P3 (transfer), P5.1 (`me.operations` reports leaving and handing over as these rules decide them, so the app offers Leave and Make owner only where the server allows them, never by standing, and says a refusal without its reason)
 ([communities.md §6.7](communities.md#67-the-owner),
 [§6.9](communities.md#69-transfer)). PROVISIONAL default:
 
@@ -1460,7 +1486,7 @@ permission never substitutes for membership, although `messaging.manage` may
 remove members (Q23). Academic's `academic.manage` acts on any halaqa.
 Access to children's rosters is a privacy decision.
 
-**Built instead.** Implemented as the default below — P2 (view, members, lock, links, removal, the audited reads), P3 (transfer), P4 (oversight never reads a community's chat: a permit without a stint is refused)
+**Built instead.** Implemented as the default below — P2 (view, members, lock, links, removal, the audited reads), P3 (transfer), P4 (oversight never reads a community's chat: a permit without a stint is refused), P5.1 (`me.operations` reports an overseer's link management and transfer, so the app offers an overseer those, and never a new link, which needs `community.members.invite` in `me.capabilities`)
 ([communities.md §6.11](communities.md#611-oversight-communitiesmanage);
 [ADR 0017](decisions/0017-community-scoped-authorization.md)). PROVISIONAL
 default: `communities.manage` is held by OWNER and ADMIN. It may view, list
@@ -1492,7 +1518,11 @@ role matrix (Q1).
 and building chains of delegation, are governance and safeguarding choices.
 The brief names only the teacher.
 
-**Built instead.** Implemented as the default below — P3
+**Built instead.** Implemented as the default below — P3; P5.1 builds the
+app's side: `community.grants.manage` in `me.operations` (the owner's)
+opens a member's capabilities, which offer every capability the app knows
+and leave eligibility and ceilings to the server's answer — no presets and
+no filtering
 ([communities.md §6.8](communities.md#68-delegation-and-the-no-escalation-rule-p3);
 [ADR 0017](decisions/0017-community-scoped-authorization.md)). PROVISIONAL
 default:
@@ -1532,7 +1562,11 @@ decision (Q22). Time-boxed grants are already deferred in
 
 **Built instead.** Implemented as the default below — P3, and P5 (the
 `community.access.changed` frame, to the affected user only:
-[realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs))
+[realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs)), and
+P5.1 (the app shows a member's grants only in that member's capabilities
+sheet, to a viewer the server lets manage grants, as the server lists them —
+a dormant grant as "not in effect now", without a reason; no badge on the
+roster, and nothing announced)
 ([communities.md §6.10](communities.md#610-how-grants-end-and-dormancy)).
 PROVISIONAL default:
 
@@ -1574,7 +1608,7 @@ grantee ([communities.md §6.14](communities.md#614-not-every-teacher-can-lock-e
 and adds `communities.manage` holders, which the brief does not name; both
 need institutional confirmation.
 
-**Built instead.** Implemented as the default below — P2 (P3 adds grant, revoke and transfer to management: never closed by LOCKED; P4 builds the chat's side: reading continues, posting stops for everyone, the owner included — [community-chat.md §20.4](community-chat.md#204-membership-changes-and-the-chat-p4-brief-9))
+**Built instead.** Implemented as the default below — P2 (P3 adds grant, revoke and transfer to management: never closed by LOCKED; P4 builds the chat's side: reading continues, posting stops for everyone, the owner included — [community-chat.md §20.4](community-chat.md#204-membership-changes-and-the-chat-p4-brief-9); P5.1 builds the app's: lock and unlock are offered by `community.lock` in `me.capabilities` and the status the server gives, the app says that a community is locked but never what that closes, and managing links while LOCKED is offered only as `me.operations` reports it)
 ([communities.md §8.2](communities.md#82-what-locked-means--provisional);
 [ADR 0016](decisions/0016-communities-module.md)). PROVISIONAL default, as
 one Communities table (`statePermits` plus `LifecycleEffects`):
@@ -1633,7 +1667,7 @@ appetite. Q2 forbids self-registration. Brief §4: a teacher can add members
 through a link; here "teacher" is the owner or a `community.members.invite`
 grantee.
 
-**Built instead.** Implemented as the default below — P2 (P3 adds the creator's grant lookup)
+**Built instead.** Implemented as the default below — P2 (P3 adds the creator's grant lookup; P5.1 builds the app's side: a new link asks for no terms, so these defaults apply; the invite screen shows no preview, says only that the viewer has been invited, and sends the token once, when they tap Join — no approval step is added; links are written and opened in the web app only)
 ([communities.md §7](communities.md#7-invitation-links);
 [ADR 0016](decisions/0016-communities-module.md)). PROVISIONAL default:
 
@@ -1671,7 +1705,7 @@ their creator's authority removes one check.
 **Why not guessed.** Removal is a moderation act with safeguarding weight.
 Announcing it discloses membership (Q22).
 
-**Built instead.** Implemented as the default below — P2 (P4: a community chat follows it — messaging refuses its own add, remove and leave there with 412 `messaging.membership_managed_by_community`, and a rejoin starts a new window and watermark; P5: the `community.member.removed` frame, to the person who left or was removed only — [realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs))
+**Built instead.** Implemented as the default below — P2 (P4: a community chat follows it — messaging refuses its own add, remove and leave there with 412 `messaging.membership_managed_by_community`, and a rejoin starts a new window and watermark; P5: the `community.member.removed` frame, to the person who left or was removed only — [realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs); P5.1: the app offers Leave only as `me.operations` reports it, and says a refused rejoin without its reason; it has no direct add yet — deferred until a people-lookup policy exists — so a manager cannot re-add a removed member from the app)
 ([communities.md §3.2](communities.md#32-membership-stints)).
 PROVISIONAL default:
 
@@ -1710,7 +1744,11 @@ so a synced copy would drift.
 
 **Built instead.** Implemented as the default below — P2: the module has
 no halaqa column and imports nothing of academic
-(`communities-boundaries.spec.ts`)
+(`communities-boundaries.spec.ts`); P5.1: nor does the app use academic
+rosters to find people to add to a community — its direct add waits on a
+people-lookup policy (this question with [Q6](#q6--who-may-message-whom),
+[Q22](#q22--who-may-see-who-is-in-a-conversation) and
+[Q31](#q31--teaching-scope-and-what-staff-may-see))
 ([communities.md §18](communities.md#18-relation-to-academic-q50)).
 PROVISIONAL default: no link, no enrollment-sourced membership and no
 derived capabilities in v1.
