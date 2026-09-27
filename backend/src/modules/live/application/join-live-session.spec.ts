@@ -268,6 +268,62 @@ describe('joining a live session', () => {
       expect(h.rtc.issued).toEqual([]);
     });
 
+    /** A media reset committed elsewhere: the session moves one epoch on (§11.4). */
+    const resetElsewhere = async (from: number) => {
+      const moved = await h.sessions.bumpEpoch(session.id, from, {
+        id: h.ids.next<'ModerationAction'>(),
+        sessionId: session.id,
+        actorUserId: null,
+        targetUserId: null,
+        type: 'reset_media',
+        at: h.clock.now(),
+      });
+      expect(moved?.mediaRoomEpoch).toBe(from + 1);
+    };
+
+    it('compares the epoch after ensuring: a reset in between ends the re-created old room, and admits into the new one', async () => {
+      await h.rtc.endRoom(h.room(session.id));
+      const gate = h.rtc.hold('ensureRoom');
+      const joining = join(student);
+      await gate.reached;
+      await resetElsewhere(0);
+      gate.release();
+
+      const joined = await joining;
+      if (!joined.ok) throw new Error(joined.error.code);
+      // The token is for the room the session uses now — never the deleted one.
+      expect(joined.value.token).toBe(`fake.${h.room(session.id, 1)}.student-1.sub`);
+      expect(h.rtc.issued.map((grant) => grant.roomName)).toEqual([h.room(session.id, 1)]);
+      expect(h.rtc.ensured.slice(-2).map((spec) => spec.roomName)).toEqual([
+        h.room(session.id, 0),
+        h.room(session.id, 1),
+      ]);
+      expect(h.rtc.ended.at(-1)).toBe(h.room(session.id, 0));
+      expect(h.rtc.roomNames()).toEqual([h.room(session.id, 1)]);
+    });
+
+    it('answers 503 live.media_unavailable, retryable, when the session moves again during the second admission', async () => {
+      await h.rtc.endRoom(h.room(session.id));
+      const first = h.rtc.hold('ensureRoom');
+      const joining = join(student);
+      await first.reached;
+      await resetElsewhere(0);
+      first.release();
+      const second = h.rtc.hold('ensureRoom');
+      await second.reached;
+      await resetElsewhere(1);
+      second.release();
+
+      const refused = await joining;
+      expect(codeOf(refused)).toBe('live.media_unavailable');
+      expect(refused).toMatchObject({ ok: false, error: { kind: 'unavailable' } });
+      expect(h.rtc.issued).toEqual([]);
+      // Neither room the call re-created is left behind.
+      expect(h.rtc.roomNames()).toEqual([]);
+      // The next try is admitted to the current room.
+      expect((await ticket(student)).token).toBe(`fake.${h.room(session.id, 2)}.student-1.sub`);
+    });
+
     it('lets a provider fault fail the join as the fault it is — never a token on a guess', async () => {
       h.rtc.failNext('listRooms', 'fault');
       await expect(join(student)).rejects.toThrow('refused listRooms');

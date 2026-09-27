@@ -1,5 +1,5 @@
-import { sourcesOf, type RtcCapabilities } from './rtc-provider';
-import { capabilitiesFor, roleOf, type ParticipantStanding } from './standing';
+import { sourcesOf, type RtcCapabilities, type RtcSource } from './rtc-provider';
+import { capabilityDrift, capabilitiesFor, roleOf, type ParticipantStanding } from './standing';
 
 const NOBODY: ParticipantStanding = {
   moderator: false,
@@ -114,5 +114,53 @@ describe('roleOf', () => {
     expect(roleOf({ ...NOBODY, moderator: true, speakerGrant: true })).toBe('moderator');
     // The presenter slot is a grant, not a role.
     expect(roleOf({ ...NOBODY, presenter: true })).toBe('listener');
+  });
+});
+
+describe('capabilityDrift — observed against desired (audit D22)', () => {
+  const SPEAKS: RtcCapabilities = { ...LISTENS_ONLY, canPublishAudio: true };
+  const held = (capabilities: RtcCapabilities, publishing: RtcSource[] = []) => ({
+    capabilities,
+    publishing,
+  });
+
+  it('is none when every field is equal and nothing is published beyond the set', () => {
+    expect(capabilityDrift(held(LISTENS_ONLY), LISTENS_ONLY)).toBe('none');
+    expect(capabilityDrift(held(SPEAKS, ['microphone']), SPEAKS)).toBe('none');
+  });
+
+  it('exceeds for every publish right, and `hidden`, held beyond the set', () => {
+    for (const field of [
+      'canPublishAudio',
+      'canPublishScreen',
+      'canPublishScreenAudio',
+      'canPublishData',
+      'hidden',
+    ] as const) {
+      expect({
+        field,
+        drift: capabilityDrift(held({ ...LISTENS_ONLY, [field]: true }), LISTENS_ONLY),
+      }).toEqual({
+        field,
+        drift: 'exceeds',
+      });
+    }
+  });
+
+  it('exceeds for a source published that the set does not allow, whatever the flags say', () => {
+    expect(capabilityDrift(held(LISTENS_ONLY, ['microphone']), LISTENS_ONLY)).toBe('exceeds');
+    expect(capabilityDrift(held(SPEAKS, ['screen_share']), SPEAKS)).toBe('exceeds');
+  });
+
+  it('is below — never exceeds — for a right not yet applied, or any other difference', () => {
+    expect(capabilityDrift(held(LISTENS_ONLY), SPEAKS)).toBe('below');
+    expect(capabilityDrift(held({ ...LISTENS_ONLY, canSubscribe: false }), LISTENS_ONLY)).toBe(
+      'below',
+    );
+  });
+
+  it('is exceeds when one right is missing and another held beyond the set', () => {
+    const screenInsteadOfMicrophone = { ...LISTENS_ONLY, canPublishScreen: true };
+    expect(capabilityDrift(held(screenInsteadOfMicrophone), SPEAKS)).toBe('exceeds');
   });
 });

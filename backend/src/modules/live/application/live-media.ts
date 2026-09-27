@@ -56,13 +56,14 @@ export const MEDIA_RECORD_LIMIT = 10_000;
  * In memory, per process, and deliberately small:
  *
  *   - `unsettled` — whoever's last push did not report `applied`. The
- *     reconciler's targeted watch (commit D) drains it, so a grant made while
+ *     reconciler's targeted watch drains it, so a grant made while
  *     the provider was down, or a revoked speaker who comes back with a
  *     refreshed token, is corrected within a watch tick. A restart loses it;
  *     the participant sweep backstops it (live.md §11.5).
  *   - the last observation of each person's connection, for the hands page
  *     (audit D7): a push that reached the provider observed them `connected`
- *     or `not_connected`; the reconciler's observations join it later.
+ *     or `not_connected`, and so does every reconciler check of them
+ *     (`noteObserved`).
  *
  * Both are dropped when the session ends.
  */
@@ -85,24 +86,44 @@ export class LiveMedia {
   /** Pushes `userId`'s full current set in `session`'s media room; never throws. */
   async push(session: LiveSession, userId: string): Promise<PushOutcome> {
     const outcome = await this.attempt(session, userId);
-    const key = personKey(session.id, userId);
+    this.noteOutcome(session.id, userId, outcome);
+    return outcome;
+  }
+
+  /**
+   * What a push reported — this class's own, or the reconciler's corrective
+   * one: `applied` settles the person and observes them connected;
+   * `not_connected` leaves them unsettled (the watch looks again, in case
+   * they come back holding what they had) and observes them gone; `pending`
+   * leaves them unsettled and observes nothing.
+   */
+  noteOutcome(sessionId: string, userId: string, outcome: PushOutcome): void {
+    const key = personKey(sessionId, userId);
     if (outcome === 'applied') {
       this.unsettledPushes.delete(key);
     } else {
       const earlier = this.unsettledPushes.get(key);
       bounded(this.unsettledPushes, key, {
-        sessionId: session.id,
+        sessionId,
         userId,
         since: earlier?.since ?? this.clock.now(),
       });
     }
-    if (outcome !== 'pending') {
-      bounded(this.observations, key, {
-        sessionId: session.id,
-        connected: outcome === 'applied',
-      });
-    }
-    return outcome;
+    if (outcome !== 'pending') this.noteObserved(sessionId, userId, outcome === 'applied');
+  }
+
+  /**
+   * The reconciler found the person holding exactly their set, or found
+   * nothing left to push (not connected — their next join computes it): no
+   * push of theirs is outstanding any more.
+   */
+  settle(sessionId: string, userId: string): void {
+    this.unsettledPushes.delete(personKey(sessionId, userId));
+  }
+
+  /** The reconciler observed the person in the room, or not (audit D7). */
+  noteObserved(sessionId: string, userId: string, connected: boolean): void {
+    bounded(this.observations, personKey(sessionId, userId), { sessionId, connected });
   }
 
   /** Everyone whose last push did not report `applied`, oldest first — the watch's to drain. */

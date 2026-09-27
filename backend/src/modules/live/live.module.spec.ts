@@ -17,7 +17,11 @@ import { DATABASE, type Database } from '../../platform/database';
 import { asId, CLOCK, FixedClock, type Clock } from '../../shared';
 import { CommunitiesModule } from '../communities/communities.module';
 import { IdentityModule } from '../identity/identity.module';
+import { LiveAudienceService } from './application/live-audience.service';
+import { LiveSessionsReader } from './application/live-sessions.reader';
 import { LIVE_SETTINGS, type LiveSettings } from './application/live-settings';
+import { ProtectLiveSessions } from './application/protect-live-sessions';
+import { LIVE_AUDIENCE, LIVE_SESSIONS } from './contracts';
 import { JOIN_TOKEN_TTL_SECONDS } from './domain/live-limits';
 import { newLiveSession } from './domain/live-session';
 import {
@@ -97,12 +101,22 @@ const REAL_MEDIA = {
 };
 
 describe('the Live module', () => {
-  it('imports identity and Communities, and exports nothing until its contracts do', () => {
+  it('imports identity and Communities, and exports its two contracts — nothing else', () => {
     expect(Reflect.getMetadata(MODULE_METADATA.IMPORTS, LiveModule)).toEqual([
       IdentityModule,
       CommunitiesModule,
     ]);
-    expect(Reflect.getMetadata(MODULE_METADATA.EXPORTS, LiveModule)).toBeUndefined();
+    expect(Reflect.getMetadata(MODULE_METADATA.EXPORTS, LiveModule)).toEqual([
+      LIVE_AUDIENCE,
+      LIVE_SESSIONS,
+    ]);
+  });
+
+  it('binds each contract to its implementation, and subscribes ProtectLiveSessions', () => {
+    const providers = Reflect.getMetadata(MODULE_METADATA.PROVIDERS, LiveModule) as unknown[];
+    expect(providers).toContainEqual({ provide: LIVE_SESSIONS, useClass: LiveSessionsReader });
+    expect(providers).toContainEqual({ provide: LIVE_AUDIENCE, useClass: LiveAudienceService });
+    expect(providers).toContain(ProtectLiveSessions);
   });
 
   it('binds the provider once, from the configuration and the clock, and every narrow port to it', () => {

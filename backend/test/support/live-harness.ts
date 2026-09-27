@@ -1,3 +1,5 @@
+import { Logger } from '@nestjs/common';
+
 import type { Principal } from '../../src/shared';
 import type { AuthorizationService } from '../../src/modules/identity/contracts';
 import type { KnownRoleCode } from '../../src/modules/identity/domain/role';
@@ -11,6 +13,7 @@ import { ListHandsUseCase } from '../../src/modules/live/application/list-hands.
 import { LiveAccess } from '../../src/modules/live/application/live-access';
 import { LiveJournal } from '../../src/modules/live/application/live-journal';
 import { LiveMedia } from '../../src/modules/live/application/live-media';
+import { LiveReconciler } from '../../src/modules/live/application/live-reconciler';
 import { LiveSessionLifecycle } from '../../src/modules/live/application/live-session-lifecycle';
 import type { LiveSettings } from '../../src/modules/live/application/live-settings';
 import { LiveStanding } from '../../src/modules/live/application/live-standing';
@@ -27,7 +30,8 @@ import { mediaRoomName, type LiveSession } from '../../src/modules/live/domain/l
 import type { RtcProvider } from '../../src/modules/live/domain/rtc-provider';
 import { FakeRtcProvider } from '../../src/modules/live/infrastructure/fake-rtc-provider';
 import { InMemoryLiveStore } from '../../src/modules/live/infrastructure/in-memory-live-repositories';
-import { Journal, META, communitiesHarness } from './communities-harness';
+import type { LiveStore } from '../../src/modules/live/live.module';
+import { Journal, META, communitiesHarness, type CommunitiesHarness } from './communities-harness';
 import { principalWith } from './principals';
 
 export { META, codeOf } from './communities-harness';
@@ -57,22 +61,38 @@ export const LIVE_TEST_SETTINGS: LiveSettings = Object.freeze({
  * a repository — so every test sees a session exactly as production makes
  * one.
  */
-export function liveHarness(
-  options: {
-    /** Identity's authorization service, for Communities and Live alike — a spy, say. */
-    readonly identity?: AuthorizationService;
-    /** The provider the use cases get; the fake by default (the disabled provider, say). */
-    readonly provider?: RtcProvider;
-    readonly settings?: Partial<LiveSettings>;
-  } = {},
-) {
-  const communities = communitiesHarness({ identity: options.identity });
+export function liveHarness(options: LiveHarnessOptions = {}) {
+  return assemble(new InMemoryLiveStore(), options);
+}
+
+/**
+ * The same assembly over another store behind Live's three ports — the
+ * Drizzle store, say, for a suite on Postgres. Everything else is new.
+ */
+export function liveHarnessOver<S extends LiveStore>(store: S, options: LiveHarnessOptions = {}) {
+  return assemble(store, options);
+}
+
+export interface LiveHarnessOptions {
+  /** Identity's authorization service, for Communities and Live alike — a spy, say. */
+  readonly identity?: AuthorizationService;
+  /**
+   * The Communities to run over — its clock, ids and directory become Live's
+   * too; by default a new in-memory one, with `identity`.
+   */
+  readonly communities?: CommunitiesHarness;
+  /** The provider the use cases get; the fake by default (the disabled provider, say). */
+  readonly provider?: RtcProvider;
+  readonly settings?: Partial<LiveSettings>;
+}
+
+function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
+  const communities = options.communities ?? communitiesHarness({ identity: options.identity });
   const { clock, ids, accounts, limiter, identity } = communities;
   const authorization = communities.authorization;
   const journal = new Journal();
   const rtc = new FakeRtcProvider(clock);
   const provider = options.provider ?? rtc;
-  const store = new InMemoryLiveStore();
   const settings: LiveSettings = { ...LIVE_TEST_SETTINGS, ...options.settings };
 
   const liveJournal = new LiveJournal(journal, journal);
@@ -96,6 +116,30 @@ export function liveHarness(
     media,
     liveJournal,
   );
+  /**
+   * The reconciler over the harness's stores, clock, standing and journal —
+   * and `media` (the provider it reconciles; the harness's by default, the
+   * disabled one, say). Never started: a test calls its ticks itself, so no
+   * timer runs unless it calls `onApplicationBootstrap`.
+   */
+  const reconcilerWith = (media_: RtcProvider = provider) =>
+    new LiveReconciler(
+      store.sessions,
+      store.requests,
+      store.presenters,
+      media_,
+      media_,
+      media_,
+      communities.membership,
+      standing,
+      media,
+      occupancy,
+      lifecycle,
+      liveJournal,
+      settings,
+      clock,
+      ids,
+    );
 
   const h = {
     communities,
@@ -119,6 +163,8 @@ export function liveHarness(
     occupancy,
     views,
     lifecycle,
+    reconciler: reconcilerWith(),
+    reconcilerWith,
 
     start: new StartLiveSessionUseCase(
       identity,
@@ -336,13 +382,16 @@ export type LiveHarness = ReturnType<typeof liveHarness>;
  * does not know — one a later migration added, say. Communities then closes
  * joining and raising, and keeps management open and a running session
  * going: nobody already in is ejected (Q46, `runningLiveContinues`). Live
- * never sees the status itself, only the answers. Undone by
+ * never sees the status itself, only the answers — authorization's, and the
+ * lifecycle effects `COMMUNITY_MEMBERSHIP.heads` reports. Undone by
  * `jest.restoreAllMocks()`.
  */
 export function withUnmappedStatus(h: LiveHarness): void {
   const store = h.communities.store;
   const authorityOf = store.authorityOf.bind(store);
   const authorityOfMany = store.authorityOfMany.bind(store);
+  const readModel = h.communities.readModel;
+  const communities = readModel.communities.bind(readModel);
   // The status is typed as the known vocabulary; a row from a later build is not.
   const unknown = 'ARCHIVED' as string as CommunityStatus;
   jest.spyOn(store, 'authorityOf').mockImplementation(async (communityId, userId) => {
@@ -351,6 +400,11 @@ export function withUnmappedStatus(h: LiveHarness): void {
       ? read
       : { ...read, community: { ...read.community, status: unknown } };
   });
+  jest
+    .spyOn(readModel, 'communities')
+    .mockImplementation(async (ids) =>
+      (await communities(ids)).map((community) => ({ ...community, status: unknown })),
+    );
   jest.spyOn(store, 'authorityOfMany').mockImplementation(async (communityId, userIds) => {
     const reads = await authorityOfMany(communityId, userIds);
     return new Map(
@@ -362,4 +416,33 @@ export function withUnmappedStatus(h: LiveHarness): void {
       ]),
     );
   });
+}
+
+/** One structured line, as a class logged it through Nest's `Logger`. */
+export interface LoggedLine {
+  readonly level: 'log' | 'warn' | 'error';
+  readonly fields: Record<string, unknown>;
+}
+
+/**
+ * Captures — and silences — every line any class logs through Nest's
+ * `Logger` from now on: its first argument, the structured fields (a line
+ * logged as bare text is kept as `{message}`). The reconciler's metrics are
+ * such lines (audit D15). Undone by `jest.restoreAllMocks()`.
+ */
+export function captureLogs(): { readonly lines: LoggedLine[]; events(): unknown[] } {
+  const lines: LoggedLine[] = [];
+  for (const level of ['log', 'warn', 'error'] as const) {
+    jest.spyOn(Logger.prototype, level).mockImplementation((...args: unknown[]) => {
+      const [message] = args;
+      lines.push({
+        level,
+        fields:
+          typeof message === 'object' && message !== null
+            ? (message as Record<string, unknown>)
+            : { message },
+      });
+    });
+  }
+  return { lines, events: () => lines.map((line) => line.fields.event) };
 }

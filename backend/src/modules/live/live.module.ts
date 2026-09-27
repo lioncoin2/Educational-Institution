@@ -6,6 +6,7 @@ import { CLOCK, type Clock } from '../../shared';
 import { CommunitiesModule } from '../communities/communities.module';
 import { IdentityModule } from '../identity/identity.module';
 import { LiveController } from './api/live.controller';
+import { LiveAudienceService } from './application/live-audience.service';
 import { EndLiveSessionUseCase } from './application/end-live-session.use-case';
 import { GetCurrentLiveSessionUseCase } from './application/get-current-live-session.use-case';
 import { GetLiveSessionUseCase } from './application/get-live-session.use-case';
@@ -14,7 +15,9 @@ import { ListHandsUseCase } from './application/list-hands.use-case';
 import { LiveAccess } from './application/live-access';
 import { LiveJournal } from './application/live-journal';
 import { LiveMedia } from './application/live-media';
+import { LiveReconciler } from './application/live-reconciler';
 import { LiveSessionLifecycle } from './application/live-session-lifecycle';
+import { LiveSessionsReader } from './application/live-sessions.reader';
 import {
   DEFAULT_ROOM_NAME_PREFIX,
   LIVE_SETTINGS,
@@ -24,10 +27,13 @@ import { LiveStanding } from './application/live-standing';
 import { LowerHandUseCase } from './application/lower-hand.use-case';
 import { ModerateSpeakerUseCase } from './application/moderate-speaker.use-case';
 import { PresenterUseCase } from './application/presenter.use-case';
+import { ProtectLiveSessions } from './application/protect-live-sessions';
 import { RaiseHandUseCase } from './application/raise-hand.use-case';
 import { RoomOccupancy } from './application/room-occupancy';
 import { LiveSessionViews } from './application/session-views';
 import { StartLiveSessionUseCase } from './application/start-live-session.use-case';
+import { LIVE_AUDIENCE } from './contracts/live-audience';
+import { LIVE_SESSIONS } from './contracts/live-sessions';
 import { JOIN_TOKEN_TTL_SECONDS } from './domain/live-limits';
 import {
   LIVE_SESSION_REPOSITORY,
@@ -147,7 +153,16 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
  * Sessions, hands, presenter grants and the moderation record are Live's own
  * tables (live.md §10), through the Drizzle adapters when a database is
  * configured; without one, the in-memory twins keep every guarantee (mock
- * mode). Live exports nothing until its contracts do (commit D).
+ * mode). `LiveReconciler` keeps the media provider in line with that record
+ * — rooms, eligibility and capabilities — on its own timers, never on a
+ * guess (live.md §11); `ProtectLiveSessions` has it look at once when
+ * Communities announces a removal, a revocation, a transfer or a lock
+ * (§11.6), and the sweep backstops any event that is lost.
+ *
+ * It exports its two contracts only (§13):
+ *
+ *   LIVE_SESSIONS   a session's scope, from Live's own record
+ *   LIVE_AUDIENCE   who a session's facts may reach, as Communities answers it
  */
 @Module({
   imports: [IdentityModule, CommunitiesModule],
@@ -203,6 +218,13 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
     ModerateSpeakerUseCase,
     ListHandsUseCase,
     PresenterUseCase,
+    // Brings the media provider in line with the record (live.md §11): a boot
+    // pass, then three unref'd timers on the periods of live-limits.ts.
+    LiveReconciler,
+    ProtectLiveSessions,
+    { provide: LIVE_SESSIONS, useClass: LiveSessionsReader },
+    { provide: LIVE_AUDIENCE, useClass: LiveAudienceService },
   ],
+  exports: [LIVE_AUDIENCE, LIVE_SESSIONS],
 })
 export class LiveModule {}

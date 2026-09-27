@@ -186,10 +186,14 @@ export function communitiesHarness(
     /** Other adapters behind the ports — the Postgres suite passes its own. */
     readonly store?: CommunityStore;
     readonly readModel?: CommunityReadModel;
+    /** Another clock — one that goes on from an earlier process's, say. */
+    readonly clock?: AdjustableClock;
+    /** Other ids — ones no earlier process over the same database can have used, say. */
+    readonly ids?: IdGenerator;
   } = {},
 ) {
-  const clock = new AdjustableClock(new Date('2026-09-23T08:00:00.000Z'));
-  const ids = new SequentialIds();
+  const clock = options.clock ?? new AdjustableClock(new Date('2026-09-23T08:00:00.000Z'));
+  const ids: IdGenerator = options.ids ?? new SequentialIds();
   const journal = new Journal();
   const accounts = new StubAccounts();
   const identity = options.identity ?? new PolicyAuthorizationService(PROVISIONAL_POLICY_RULES);

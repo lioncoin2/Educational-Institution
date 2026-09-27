@@ -11,6 +11,8 @@ import {
   type AuthorizationService,
 } from '../../src/modules/identity/contracts';
 import { LiveController } from '../../src/modules/live/api/live.controller';
+import { LiveReconciler } from '../../src/modules/live/application/live-reconciler';
+import { ProtectLiveSessions } from '../../src/modules/live/application/protect-live-sessions';
 import { LiveEvents } from '../../src/modules/live/contracts';
 import {
   LIVE_SESSION_REPOSITORY,
@@ -153,6 +155,19 @@ describe('live API', () => {
       { logger: logs },
     );
     rtc = r.api.app.get<FakeRtcProvider>(RTC_PROVIDER, { strict: false });
+    // The reconciler's boot pass and timers would otherwise run under these
+    // assertions — a room sweep ensuring or ending rooms, a participant sweep
+    // pushing capabilities — and race what each test counts on the fake.
+    // `stop()` waits for the boot pass and clears the timers; the reconciler
+    // is tested on its own, tick by tick (live-reconciler.spec.ts).
+    await r.api.app.get(LiveReconciler, { strict: false }).stop();
+    // For the same reason, ProtectLiveSessions lets go of Communities' events:
+    // each removal, revocation or lock below would otherwise have the
+    // reconciler expire a hand or remove someone at once, detached from the
+    // request, racing what the use cases are shown to do. It is tested on its
+    // own (protect-live-sessions.spec.ts), and over HTTP once, below, where
+    // it is subscribed again for that test alone.
+    await r.api.app.get(ProtectLiveSessions, { strict: false }).onModuleDestroy();
     const bus = r.api.app.get<EventSubscriber>(EVENT_SUBSCRIBER, { strict: false });
     for (const name of Object.values(LiveEvents)) {
       bus.subscribe(name, (event) => {
@@ -1091,6 +1106,40 @@ describe('live API', () => {
     expect(restarted.body).toMatchObject({ state: 'live', stateVersion: 1, hostUserId: host.id });
     expect(restarted.body.id).not.toBe(sessionId);
     nextSessionId = restarted.body.id as string;
+  });
+
+  it('removes a member from a running session at once when Communities announces the removal', async () => {
+    const protect = r.api.app.get(ProtectLiveSessions, { strict: false });
+    protect.onModuleInit();
+    try {
+      const guest = await r.provision('guest', 'STUDENT', 'حفصة');
+      await r.addToCommunity(host, communityId, [guest]);
+      const joined = await call('POST', `/sessions/${nextSessionId}/join`, guest);
+      expect(joined.status).toBe(200);
+      const [ticket] = rtc.issued.filter((grant) => grant.identity === guest.id);
+      rtc.connect(room(nextSessionId), guest.id, ticket.capabilities);
+      const removedAt = Date.now();
+
+      await r.removeFromCommunity(host, communityId, guest.id);
+      await protect.idle();
+
+      // No sweep ran: the event alone had the reconciler look, at once.
+      expect(rtc.removed.filter((removal) => removal.identity === guest.id)).toEqual([
+        {
+          roomName: room(nextSessionId),
+          identity: guest.id,
+          revokeTokensIssuedBefore: expect.any(Date),
+        },
+      ]);
+      expect(
+        rtc.removed
+          .find((removal) => removal.identity === guest.id)
+          ?.revokeTokensIssuedBefore?.getTime(),
+      ).toBeGreaterThanOrEqual(removedAt - 1000);
+      expect(rtc.observed(room(nextSessionId)).map((p) => p.identity)).not.toContain(guest.id);
+    } finally {
+      await protect.onModuleDestroy();
+    }
   });
 
   it('limits starts per person, and joins and raised hands per (session, person) — never per address', async () => {

@@ -1,5 +1,5 @@
 import type { LiveParticipantRole } from '../contracts/participant-role';
-import type { RtcCapabilities } from './rtc-provider';
+import { sourcesOf, type RtcCapabilities, type RtcSource } from './rtc-provider';
 
 /**
  * Where someone stands in a session right now (live.md §3.6) — decided from
@@ -53,4 +53,43 @@ export function capabilitiesFor(standing: ParticipantStanding): RtcCapabilities 
 export function roleOf(standing: ParticipantStanding): LiveParticipantRole {
   if (standing.moderator) return 'moderator';
   return standing.speakerGrant ? 'speaker' : 'listener';
+}
+
+/**
+ * How what the provider holds for someone compares with what their standing
+ * calls for (live.md §11.3–11.4; audit D22):
+ *
+ *   none      every field equal, and nothing published beyond the set
+ *   exceeds   they hold or use MORE than their set: a publish right
+ *             (microphone, screen, screen audio, the data channel) or
+ *             `hidden` observed where the set has none, or a source being
+ *             published that the set does not allow — a breach, which the
+ *             reconciler corrects and watches
+ *   below     any other difference — a right not yet applied, such as a grant
+ *             made while the provider was down: pushed, and never a violation
+ */
+export type CapabilityDrift = 'none' | 'exceeds' | 'below';
+
+export function capabilityDrift(
+  observed: { readonly capabilities: RtcCapabilities; readonly publishing: readonly RtcSource[] },
+  desired: RtcCapabilities,
+): CapabilityDrift {
+  const held = observed.capabilities;
+  const allowed = new Set(sourcesOf(desired));
+  const exceeds =
+    (held.canPublishAudio && !desired.canPublishAudio) ||
+    (held.canPublishScreen && !desired.canPublishScreen) ||
+    (held.canPublishScreenAudio && !desired.canPublishScreenAudio) ||
+    (held.canPublishData && !desired.canPublishData) ||
+    (held.hidden && !desired.hidden) ||
+    observed.publishing.some((source) => !allowed.has(source));
+  if (exceeds) return 'exceeds';
+  const equal =
+    held.canPublishAudio === desired.canPublishAudio &&
+    held.canPublishScreen === desired.canPublishScreen &&
+    held.canPublishScreenAudio === desired.canPublishScreenAudio &&
+    held.canSubscribe === desired.canSubscribe &&
+    held.canPublishData === desired.canPublishData &&
+    held.hidden === desired.hidden;
+  return equal ? 'none' : 'below';
 }

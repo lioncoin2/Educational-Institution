@@ -64,7 +64,9 @@ import { mediaOf, type JoinTicket } from './views';
  *      everyone else is a listener and publishes nothing, not even data;
  *   6. the room, from a sample at most two seconds old: missing → ensured,
  *      then the session read again, and a session that ended meanwhile gets
- *      its room ended and 412 (ensure-then-recheck, §4.4); a listener over
+ *      its room ended and 412 (ensure-then-recheck, §4.4) — one that a media
+ *      reset moved meanwhile gets the re-created old room ended and is
+ *      admitted to its current one, once; a listener over
  *      the soft cap → 412 live.session_full, moderators and speakers exempt;
  *      a provider outage skips both and fails open to the provider's hard
  *      cap;
@@ -126,10 +128,11 @@ export class JoinLiveSessionUseCase {
     );
     const role = roleOf(standing);
     const capabilities = capabilitiesFor(standing);
-    const room = currentMediaRoom(this.settings.roomNamePrefix, session);
 
-    const admitted = await this.admit(session, room, role);
+    const admitted = await this.admit(session, role);
     if (!admitted.ok) return admitted;
+    // The room the session uses now — a media reset may have moved it.
+    const room = admitted.value;
 
     const [account] = await this.directory.describe([principal.userId]);
     const ttlSeconds = this.settings.joinTokenTtlSeconds;
@@ -164,14 +167,27 @@ export class JoinLiveSessionUseCase {
     });
   }
 
-  /** Step 6: the room exists, and a listener fits under the soft cap — or the provider cannot say. */
+  /**
+   * Step 6: the room exists, and a listener fits under the soft cap — or the
+   * provider cannot say. Answers the room the token is for: the session's
+   * current one.
+   *
+   * The re-read after ensuring a missing room compares the media room epoch
+   * as well as the state. A media reset (§11.4) that committed meanwhile
+   * moved the session to a new room and deleted the old one — which this
+   * call has just re-created: it is nobody's, so it is ended, and the join is
+   * admitted again against the room the session uses now. Once: if the
+   * session moves again meanwhile, the answer is 503 live.media_unavailable,
+   * which the client retries.
+   */
   private async admit(
     session: LiveSession,
-    room: string,
     role: LiveParticipantRole,
-  ): Promise<Result<void>> {
+    moved = false,
+  ): Promise<Result<string>> {
+    const room = currentMediaRoom(this.settings.roomNamePrefix, session);
     const sample = await this.occupancy.sample(room);
-    if (sample.kind === 'unavailable') return ok(undefined);
+    if (sample.kind === 'unavailable') return ok(room);
     if (sample.kind === 'missing') {
       try {
         await this.rooms.ensureRoom({
@@ -181,24 +197,29 @@ export class JoinLiveSessionUseCase {
           departureTimeoutSeconds: ROOM_PROVIDER_TIMEOUT_SECONDS,
         });
       } catch (error) {
-        if (error instanceof RtcUnavailableError) return ok(undefined);
+        if (error instanceof RtcUnavailableError) return ok(room);
         throw error;
       }
-      // Without this read, a join racing End would bring the ended room back.
+      // Without this read, a join racing End — or a media reset — would
+      // bring a deleted room back.
       const now = await this.sessions.findById(session.id);
       if (now === null || !isLive(now)) {
         await this.endRoom(room, session);
         return err(LiveRefusals.sessionNotLive);
       }
+      if (now.mediaRoomEpoch !== session.mediaRoomEpoch) {
+        await this.endRoom(room, session);
+        return moved ? err(LiveRefusals.mediaUnavailable) : this.admit(now, role, true);
+      }
       this.occupancy.ensured(room);
-      return ok(undefined);
+      return ok(room);
     }
     // Moderators and current speakers skip the soft cap: the reserve is
     // theirs, so a teacher who drops out always gets back in.
     if (role === 'listener' && sample.occupancy >= session.participantCap) {
       return err(LiveRefusals.sessionFull);
     }
-    return ok(undefined);
+    return ok(room);
   }
 
   private async endRoom(room: string, session: LiveSession): Promise<void> {
@@ -212,7 +233,7 @@ export class JoinLiveSessionUseCase {
             sessionId: session.id,
             err: { name: error instanceof Error ? error.name : typeof error },
           },
-          'could not end the room of a session that ended; left to the room sweep',
+          'could not end a room the session no longer uses; left to the room sweep',
         );
       }
     }
