@@ -432,15 +432,20 @@ class DrizzleSpeakerRequests implements SpeakerRequestRepository {
       if (request.state !== 'pending') return answer('invalid');
       // The cap, counted under the session's lock, in the grant's own
       // transaction (R2): a racing grant waits on the lock, then counts this one.
-      const [floor] = await tx
-        .select({ granted: sql<number>`count(*)::int` })
+      // Never more than `cap` rows are read: a request path counts nothing
+      // unbounded (audit §15).
+      const held = tx
+        .select({ one: sql<number>`1`.as('one') })
         .from(liveSpeakerRequests)
         .where(
           and(
             eq(liveSpeakerRequests.sessionId, sessionId),
             eq(liveSpeakerRequests.state, 'granted'),
           ),
-        );
+        )
+        .limit(input.cap)
+        .as('held');
+      const [floor] = await tx.select({ granted: sql<number>`count(*)::int` }).from(held);
       if ((floor?.granted ?? 0) >= input.cap) return answer('slots_full');
       const granted = transition(request, 'granted', input.at, input.by);
       if (granted === null) return answer('invalid');

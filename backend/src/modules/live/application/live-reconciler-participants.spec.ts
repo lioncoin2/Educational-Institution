@@ -664,6 +664,35 @@ describe('LiveReconciler — participants', () => {
       expect(JSON.stringify(logs.lines)).not.toContain('10.0.0.7');
     });
 
+    it.each(['community.live.remain', 'community.live.moderate'] as const)(
+      'skips the session when only `permittedAmong(%s)` rejects: a partial answer is no answer — nobody ejected, demoted or expired',
+      async (failing) => {
+        // Everyone is still a member here: any action would be taken on a
+        // guess, from the other questions' answers alone.
+        const hand = await speaker();
+        const permittedAmong = h.authorization.permittedAmong.bind(h.authorization);
+        jest
+          .spyOn(h.authorization, 'permittedAmong')
+          .mockImplementation((id, userIds, act) =>
+            act === failing
+              ? Promise.reject(new Error('one query timed out'))
+              : permittedAmong(id, userIds, act),
+          );
+        const pushed = h.rtc.capabilityChanges.length;
+        h.journal.clear();
+
+        expect(await h.reconciler.sweepParticipants()).toMatchObject({
+          sessionsSkipped: 1,
+          removed: 0,
+          corrected: 0,
+        });
+        expect(h.rtc.removed).toEqual([]);
+        expect(h.rtc.capabilityChanges).toHaveLength(pushed);
+        expect(await requestState(hand)).toBe('granted');
+        expect(h.journal.order).toEqual([]);
+      },
+    );
+
     it('skips the session when identity’s `live.speak` lookup rejects: nobody demoted', async () => {
       h.rtc.connect(room, 'student-1', MICROPHONE, ['microphone']);
       jest.spyOn(h.accounts, 'withPermission').mockRejectedValue(new Error('directory down'));

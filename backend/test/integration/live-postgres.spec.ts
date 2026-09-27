@@ -56,8 +56,9 @@ import {
  * its own admission mutex, exactly as separate API processes would, so the
  * database — not the in-process queue — decides every race. Every connection
  * runs under a statement_timeout, so a deadlock or a lock that never frees
- * fails the test instead of hanging it. (Commit F adds the full race matrix
- * of the audit's §14.)
+ * fails the test instead of hanging it. (The full race matrix of the audit's
+ * §14, through the use cases, is live-races.spec.ts; the statement budgets and
+ * plans over a churned fixture, live-scale.spec.ts.)
  *
  * One scratch database serves every test: the contract suite creates its own
  * records with fresh ids, and every other test here keeps to instants months

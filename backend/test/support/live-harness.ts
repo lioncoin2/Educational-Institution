@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 
-import type { Principal } from '../../src/shared';
+import type { Principal, RateLimiter } from '../../src/shared';
 import type { AuthorizationService } from '../../src/modules/identity/contracts';
 import type { KnownRoleCode } from '../../src/modules/identity/domain/role';
 import type { CommunityCapability } from '../../src/modules/communities/contracts/capabilities';
@@ -83,12 +83,18 @@ export interface LiveHarnessOptions {
   readonly communities?: CommunitiesHarness;
   /** The provider the use cases get; the fake by default (the disabled provider, say). */
   readonly provider?: RtcProvider;
+  /**
+   * The limiter Live's use cases consume — another process's own, say, since
+   * the limits are per process; the Communities harness's by default.
+   */
+  readonly limiter?: RateLimiter;
   readonly settings?: Partial<LiveSettings>;
 }
 
 function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
   const communities = options.communities ?? communitiesHarness({ identity: options.identity });
-  const { clock, ids, accounts, limiter, identity } = communities;
+  const { clock, ids, accounts, identity } = communities;
+  const limiter = options.limiter ?? communities.limiter;
   const authorization = communities.authorization;
   const journal = new Journal();
   const rtc = new FakeRtcProvider(clock);
