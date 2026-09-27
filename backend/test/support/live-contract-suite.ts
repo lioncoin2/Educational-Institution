@@ -1,6 +1,8 @@
 import { UuidIdGenerator } from '../../src/platform/primitives/uuid-id-generator';
+import { asId } from '../../src/shared';
 import { MAX_CONCURRENT_SPEAKERS } from '../../src/modules/live/domain/live-limits';
 import {
+  endSession,
   liveSessionOrder,
   newLiveSession,
   type LiveSession,
@@ -16,6 +18,7 @@ import type {
   SpeakerRequestRepository,
 } from '../../src/modules/live/domain/ports';
 import {
+  closePresenterGrant,
   newPresenterGrant,
   type PresenterGrant,
   type PresenterStopReason,
@@ -268,6 +271,34 @@ export function liveRepositoryContract(
         const next = await started(first.communityId, at(90));
         expect(await s.sessions.findLiveByCommunity(first.communityId)).toEqual(next);
       });
+
+      it('stores whatever bounds configuration copied in — any whole number the domain accepts', async () => {
+        const vast = newLiveSession({
+          id: ids.next<'LiveSession'>(),
+          communityId: community(),
+          hostUserId: person(),
+          at: at(0),
+          participantCap: Number.MAX_SAFE_INTEGER,
+          moderatorReserve: Number.MAX_SAFE_INTEGER,
+        });
+        expect(await start(vast)).toEqual({ created: true, session: vast });
+        expect(await s.sessions.findById(vast.id)).toEqual(vast);
+      });
+
+      it('refuses to store a session that is not live — unless one runs, which is the answer', async () => {
+        const over = (communityId: string) =>
+          endSession(newSession(communityId), { at: at(1), endedBy: null, reason: 'idle' });
+        const refused = over(community());
+        await expect(start(refused)).rejects.toThrow(RangeError);
+        expect(await s.sessions.findById(refused.id)).toBeNull();
+        expect(await s.sessions.findLiveByCommunity(refused.communityId)).toBeNull();
+        // The running session is looked for first, as for any start.
+        const running = await started();
+        const late = over(running.communityId);
+        expect(await start(late)).toEqual({ created: false, session: running });
+        expect(await s.sessions.findById(late.id)).toBeNull();
+        expect(await rows(running)).toEqual(['start_session']);
+      });
     });
 
     describe('ending', () => {
@@ -371,7 +402,7 @@ export function liveRepositoryContract(
       it('refuses a moderator’s end that names no moderator, changing nothing (S2)', async () => {
         const session = await started();
         const hand = await raised(session, person(), at(1));
-        await expect(end(session, at(60), null, 'moderator')).rejects.toThrow();
+        await expect(end(session, at(60), null, 'moderator')).rejects.toThrow(RangeError);
         expect(await s.sessions.findById(session.id)).toMatchObject({ state: 'live' });
         expect(await request(hand.id)).toMatchObject({ state: 'pending' });
         expect(await rows(session)).toEqual(['start_session']);
@@ -379,6 +410,39 @@ export function liveRepositoryContract(
 
       it('answers null for an unknown session', async () => {
         expect(await end(newSession(), at(60))).toBeNull();
+      });
+
+      it('closes the presenter grant by nobody when the system ends the session', async () => {
+        const session = await started();
+        await claim(session, session.hostUserId, at(1));
+        await end(session, at(900), null, 'idle');
+        expect(await s.presenterGrantsOf(session.id)).toEqual([
+          expect.objectContaining({ endedAt: at(900), endedBy: null, endReason: 'session_ended' }),
+        ]);
+      });
+
+      it('touches no other session: its hands, its floor and its presenter stay as they were', async () => {
+        const ending = await started();
+        const other = await started();
+        // The same person holds an open hand in both: one per person in EACH session (R1).
+        const both = person();
+        const mine = await raised(ending, both, at(1));
+        const theirs = await raised(other, both, at(1));
+        const speaker = await raised(other, person(), at(2));
+        await grant(speaker, other.hostUserId, at(3));
+        const presenting = await claim(other, other.hostUserId, at(4));
+        const before = await version(other);
+
+        await end(ending, at(10));
+        expect(await request(mine.id)).toMatchObject({ state: 'expired' });
+        expect(await request(theirs.id)).toEqual(theirs);
+        expect(await s.requests.findOpen(other.id, both)).toEqual(theirs);
+        expect(await request(speaker.id)).toMatchObject({ state: 'granted', decidedAt: at(3) });
+        expect(await s.presenters.active(other.id)).toEqual(presenting.grant);
+        expect(await version(other)).toBe(before);
+        expect(await rows(other)).toEqual(['start_session', 'grant_speaker', 'grant_presenter']);
+        expect(await s.requests.floorClosedSince(other.id, at(0))).toEqual([]);
+        expect(await s.presenters.closedSince(other.id, at(0))).toEqual([]);
       });
     });
 
@@ -437,6 +501,41 @@ export function liveRepositoryContract(
         for (const limit of [0, 101, 1.5]) {
           await expect(s.sessions.listLive(null, limit)).rejects.toThrow(RangeError);
         }
+      });
+
+      it('pages through a tie one at a time, then on to a later session whose id sorts first', async () => {
+        // Farther still, so neither this test nor the one above sees the other's sessions.
+        const farther = (seconds: number) => at(60 * 24 * 60 * 60 + seconds);
+        const session = (id: string, when: Date) =>
+          newLiveSession({
+            id: asId<'LiveSession'>(id),
+            communityId: community(),
+            hostUserId: person(),
+            at: when,
+            participantCap: 300,
+            moderatorReserve: 10,
+          });
+        const ties = [0, 1, 2].map(() => session(`z-${ids.next()}`, farther(10)));
+        // Later, yet first by id: a keyset that compared ids alone past the tie would skip it.
+        const later = session(`a-${ids.next()}`, farther(20));
+        for (const each of [...ties, later]) {
+          expect(await start(each)).toEqual({ created: true, session: each });
+        }
+        const expected: string[] = [...[...ties].sort(liveSessionOrder), later].map(
+          (each) => each.id,
+        );
+
+        const seen: string[] = [];
+        let after: { startedAt: Date; id: string } = { startedAt: farther(0), id: '' };
+        for (let pages = 0; ; pages += 1) {
+          expect(pages).toBeLessThan(10);
+          const [last, ...more] = await s.sessions.listLive(after, 1);
+          expect(more).toEqual([]);
+          if (last === undefined) break;
+          seen.push(last.id);
+          after = { startedAt: last.startedAt, id: last.id };
+        }
+        expect(seen.filter((id) => expected.includes(id))).toEqual(expected);
       });
     });
 
@@ -582,6 +681,35 @@ export function liveRepositoryContract(
         expect(await raise(session, person(), at(61))).toBe('session_not_live');
         expect(await raise(newSession(), person(), at(61))).toBe('session_not_live');
       });
+
+      it('refuses to store a request that is not pending — unless the person has one open, which is the answer', async () => {
+        const session = await started();
+        const userId = person();
+        const decided = (): SpeakerRequest => ({
+          ...newSpeakerRequest({
+            id: ids.next<'SpeakerRequest'>(),
+            sessionId: session.id,
+            userId,
+            at: at(1),
+          }),
+          state: 'declined',
+          decidedAt: at(2),
+          decidedBy: session.hostUserId,
+        });
+        const refused = decided();
+        await expect(s.requests.raise(refused)).rejects.toThrow(RangeError);
+        expect(await s.requests.findById(refused.id)).toBeNull();
+        expect(await version(session)).toBe(1);
+        // The open request is looked for first, as for any raise.
+        const open = await raised(session, userId, at(3));
+        const late = decided();
+        expect(await s.requests.raise(late)).toEqual({
+          created: false,
+          request: open,
+          stateVersion: 2,
+        });
+        expect(await s.requests.findById(late.id)).toBeNull();
+      });
     });
 
     describe('reading hands', () => {
@@ -652,6 +780,57 @@ export function liveRepositoryContract(
           early.id,
           late.id,
         ]);
+      });
+
+      it('pages through a tie one at a time, then on to a later hand whose id sorts first', async () => {
+        const session = await started();
+        const hand = (id: string, when: Date) =>
+          newSpeakerRequest({
+            id: asId<'SpeakerRequest'>(id),
+            sessionId: session.id,
+            userId: person(),
+            at: when,
+          });
+        const ties = [0, 1, 2].map(() => hand(`z-${ids.next()}`, at(3)));
+        // Later, yet first by id: a keyset that compared ids alone past the tie would skip it.
+        const later = hand(`a-${ids.next()}`, at(4));
+        for (const each of [...ties, later]) {
+          expect(await s.requests.raise(each)).toMatchObject({ created: true });
+        }
+        const expected: string[] = [...[...ties].sort(queueOrder), later].map((each) => each.id);
+
+        const seen: string[] = [];
+        let after: { requestedAt: Date; id: string } | null = null;
+        for (let pages = 0; ; pages += 1) {
+          expect(pages).toBeLessThan(10);
+          const [last, ...more] = await s.requests.pendingPage(session.id, after, 1);
+          expect(more).toEqual([]);
+          if (last === undefined) break;
+          seen.push(last.id);
+          after = { requestedAt: last.requestedAt, id: last.id };
+        }
+        expect(seen).toEqual(expected);
+      });
+
+      it('reads each session’s hands on its own', async () => {
+        const quiet = await started();
+        const busy = await started();
+        const both = person();
+        const inQuiet = await raised(quiet, both, at(1));
+        const inBusy = await raised(busy, both, at(1));
+        const speaker = await raised(busy, person(), at(2));
+        await grant(speaker, busy.hostUserId, at(3));
+        await raised(busy, person(), at(4));
+
+        expect(await s.requests.findOpen(quiet.id, both)).toEqual(inQuiet);
+        expect(await s.requests.findOpen(busy.id, both)).toEqual(inBusy);
+        expect((await s.requests.pendingPage(quiet.id, null, 100)).map((hand) => hand.id)).toEqual([
+          inQuiet.id,
+        ]);
+        expect(await s.requests.countPending(quiet.id, 100)).toBe(1);
+        expect(await s.requests.countPending(busy.id, 100)).toBe(2);
+        expect(await s.requests.granted(quiet.id)).toEqual([]);
+        expect((await s.requests.granted(busy.id)).map((hand) => hand.id)).toEqual([speaker.id]);
       });
     });
 
@@ -898,6 +1077,44 @@ export function liveRepositoryContract(
         });
         expect(await lower(unknown, at(2))).toBeNull();
       });
+
+      it('refuses a malformed move before it looks for the request, an unknown one included', async () => {
+        const move = (to: SpeakerRequestState, by: string | null) =>
+          s.requests.transition({
+            requestId: ids.next<'SpeakerRequest'>(),
+            from: ['pending', 'granted'],
+            to,
+            at: at(1),
+            by,
+            moderation: null,
+          });
+        await expect(move('granted', person())).rejects.toThrow(RangeError);
+        await expect(move('pending', person())).rejects.toThrow(RangeError);
+        await expect(move('expired', person())).rejects.toThrow(RangeError);
+        await expect(move('revoked', null)).rejects.toThrow(RangeError);
+        expect(await move('expired', null)).toBeNull();
+      });
+
+      it('lets the system expire an open hand by compare-and-set, by nobody and with no row', async () => {
+        const session = await started();
+        const hand = await raised(session, person(), at(1));
+        const expire = () =>
+          s.requests.transition({
+            requestId: hand.id,
+            from: ['pending', 'granted'],
+            to: 'expired',
+            at: at(5),
+            by: null,
+            moderation: null,
+          });
+        expect(await expire()).toEqual({
+          kind: 'applied',
+          request: { ...hand, state: 'expired', decidedAt: at(5), decidedBy: null },
+          stateVersion: 3,
+        });
+        expect(await expire()).toMatchObject({ kind: 'unchanged', stateVersion: 3 });
+        expect(await rows(session)).toEqual(['start_session']);
+      });
     });
 
     describe('the presenter slot', () => {
@@ -1003,6 +1220,65 @@ export function liveRepositoryContract(
         expect(second.grant?.id).not.toBe(first.grant?.id);
         expect(await s.presenterGrantsOf(session.id)).toHaveLength(2);
       });
+
+      it('refuses to store a closed grant — unless the slot is taken, which is the answer', async () => {
+        const session = await started();
+        const presenter = session.hostUserId;
+        const closed = () =>
+          closePresenterGrant(
+            newPresenterGrant({
+              id: ids.next<'PresenterGrant'>(),
+              sessionId: session.id,
+              userId: presenter,
+              at: at(1),
+            }),
+            { at: at(2), by: presenter, reason: 'stopped' },
+          );
+        const row = () => action(session.id, 'grant_presenter', presenter, presenter, at(3));
+        await expect(s.presenters.open(closed(), row())).rejects.toThrow(RangeError);
+        expect(await s.presenterGrantsOf(session.id)).toEqual([]);
+        expect(await version(session)).toBe(1);
+        // The slot is read first, as for any claim.
+        const opened = await claim(session, presenter, at(4));
+        expect(await s.presenters.open(closed(), row())).toEqual({
+          kind: 'held',
+          grant: opened.grant,
+          stateVersion: 2,
+        });
+        expect(await rows(session)).toEqual(['start_session', 'grant_presenter']);
+      });
+
+      it('answers a claim and a stop in an unknown session at version 0, writing nothing', async () => {
+        const unknown = newSession();
+        expect(await claim(unknown, unknown.hostUserId, at(1))).toEqual({
+          kind: 'session_not_live',
+          grant: null,
+          stateVersion: 0,
+        });
+        expect(await stop(unknown, unknown.hostUserId, null, 'ineligible', at(2))).toEqual({
+          grant: null,
+          stateVersion: 0,
+        });
+        expect(await s.sessions.findById(unknown.id)).toBeNull();
+        expect(await s.presenterGrantsOf(unknown.id)).toEqual([]);
+      });
+
+      it('closes the holder’s grant in the named session only', async () => {
+        const here = await started();
+        const there = await started();
+        const presenter = person();
+        await claim(here, presenter, at(1));
+        const elsewhere = await claim(there, presenter, at(1));
+        expect(await stop(here, presenter, presenter, 'stopped', at(2))).toMatchObject({
+          grant: { sessionId: here.id, endReason: 'stopped' },
+          stateVersion: 3,
+        });
+        expect(await s.presenters.active(here.id)).toBeNull();
+        expect(await s.presenters.active(there.id)).toEqual(elsewhere.grant);
+        expect(await version(there)).toBe(2);
+        expect(await s.presenters.closedSince(here.id, at(0))).toEqual([presenter]);
+        expect(await s.presenters.closedSince(there.id, at(0))).toEqual([]);
+      });
     });
 
     describe('the ineligible expiry', () => {
@@ -1064,6 +1340,33 @@ export function liveRepositoryContract(
           presenter: null,
           stateVersion: 0,
         });
+      });
+
+      it('expires in the named session only: the person keeps what they hold elsewhere', async () => {
+        const here = await started();
+        const there = await started();
+        const userId = person();
+        await grant(await raised(here, userId, at(1)), here.hostUserId, at(2));
+        await claim(here, userId, at(3));
+        const floor = await raised(there, userId, at(1));
+        await grant(floor, there.hostUserId, at(2));
+        const presenting = await claim(there, userId, at(3));
+        const before = await version(there);
+
+        const outcome = await s.requests.expireIneligible(here.id, userId, at(10));
+        expect(outcome.request).toMatchObject({ sessionId: here.id, state: 'expired' });
+        expect(outcome.presenter).toMatchObject({ sessionId: here.id, endReason: 'ineligible' });
+        expect(await s.requests.findOpen(there.id, userId)).toEqual({
+          ...floor,
+          state: 'granted',
+          grantedAt: at(2),
+          decidedAt: at(2),
+          decidedBy: there.hostUserId,
+        });
+        expect(await s.presenters.active(there.id)).toEqual(presenting.grant);
+        expect(await version(there)).toBe(before);
+        expect(await s.requests.floorClosedSince(there.id, at(0))).toEqual([]);
+        expect(await s.requests.floorClosedSince(here.id, at(0))).toEqual([userId]);
       });
     });
 

@@ -1,17 +1,30 @@
 import { Logger } from '@nestjs/common';
 import { MODULE_METADATA } from '@nestjs/common/constants';
+import { sql } from 'drizzle-orm';
 
+import {
+  describeWithPostgres,
+  scratchDatabase,
+  type ScratchDatabase,
+} from '../../../test/support/postgres';
 import {
   APP_CONFIG,
   ConfigurationError,
   loadConfig,
   type AppConfig,
 } from '../../platform/config/app-config';
-import { CLOCK, FixedClock, type Clock } from '../../shared';
+import { DATABASE, type Database } from '../../platform/database';
+import { asId, CLOCK, FixedClock, type Clock } from '../../shared';
 import { CommunitiesModule } from '../communities/communities.module';
 import { IdentityModule } from '../identity/identity.module';
 import { LIVE_SETTINGS, type LiveSettings } from './application/live-settings';
 import { JOIN_TOKEN_TTL_SECONDS } from './domain/live-limits';
+import { newLiveSession } from './domain/live-session';
+import {
+  LIVE_SESSION_REPOSITORY,
+  PRESENTER_GRANT_REPOSITORY,
+  SPEAKER_REQUEST_REPOSITORY,
+} from './domain/ports';
 import {
   RTC_OBSERVER,
   RTC_PARTICIPANTS,
@@ -23,9 +36,11 @@ import {
 } from './domain/rtc-provider';
 import { capabilitiesFor } from './domain/standing';
 import { DisabledRtcProvider } from './infrastructure/disabled-rtc-provider';
+import { DrizzleLiveStore } from './infrastructure/drizzle-live-repositories';
 import { FakeRtcProvider } from './infrastructure/fake-rtc-provider';
+import { InMemoryLiveStore } from './infrastructure/in-memory-live-repositories';
 import { LiveKitRtcProvider } from './infrastructure/livekit-rtc-provider';
-import { LiveModule } from './live.module';
+import { LIVE_STORE, LiveModule, type LiveStore } from './live.module';
 
 /** A provider as the module declares it. */
 interface Declared {
@@ -120,6 +135,91 @@ describe('the Live module', () => {
       moderatorReserve: 0,
       joinTokenTtlSeconds: 120,
     });
+  });
+});
+
+/**
+ * Which store Live's three repository ports are bound to — through the
+ * module's OWN factories, as a boot resolves them: Postgres when a database
+ * is configured, the in-memory twin otherwise (mock mode), and in either mode
+ * ONE store behind all three, so a session and its hands are read as written
+ * and, in Postgres, share one admission mutex.
+ */
+function bindStore(config: AppConfig, db: Database, memory: InMemoryLiveStore): LiveStore {
+  return (declared(LIVE_STORE).useFactory as (...args: unknown[]) => LiveStore)(config, db, memory);
+}
+
+/** The three repository ports, as the module binds them over `store`. */
+function portsOver(store: LiveStore): unknown[] {
+  return [LIVE_SESSION_REPOSITORY, SPEAKER_REQUEST_REPOSITORY, PRESENTER_GRANT_REPOSITORY].map(
+    (token) => (declared(token).useFactory as (store: LiveStore) => unknown)(store),
+  );
+}
+
+describe('the store Live binds', () => {
+  it('decides from the configuration, with the database handle and the in-memory store to hand', () => {
+    expect(declared(LIVE_STORE).inject).toEqual([APP_CONFIG, DATABASE, InMemoryLiveStore]);
+    for (const token of [
+      LIVE_SESSION_REPOSITORY,
+      SPEAKER_REQUEST_REPOSITORY,
+      PRESENTER_GRANT_REPOSITORY,
+    ]) {
+      expect(declared(token).inject).toEqual([LIVE_STORE]);
+    }
+  });
+
+  it('binds the in-memory store without a database — one instance behind the three ports', () => {
+    const memory = new InMemoryLiveStore();
+    // Mock mode never touches the handle.
+    const store = bindStore(loadConfig({}), {} as Database, memory);
+    expect(store).toBe(memory);
+    expect(portsOver(store)).toEqual([memory.sessions, memory.requests, memory.presenters]);
+  });
+});
+
+describeWithPostgres('the store Live binds with a database', () => {
+  let scratch: ScratchDatabase;
+
+  beforeAll(async () => {
+    scratch = await scratchDatabase();
+  }, 60_000);
+
+  afterAll(async () => {
+    await scratch?.drop();
+  });
+
+  it('binds the Drizzle store — one instance behind the three ports — and writes to Postgres', async () => {
+    const memory = new InMemoryLiveStore();
+    const store = bindStore(loadConfig({ DATABASE_URL: scratch.url }), scratch.db, memory);
+    expect(store).toBeInstanceOf(DrizzleLiveStore);
+    expect(portsOver(store)).toEqual([store.sessions, store.requests, store.presenters]);
+
+    const at = new Date('2026-09-27T09:00:00.000Z');
+    const session = newLiveSession({
+      id: asId<'LiveSession'>('00000000-0000-4000-8000-00000000c0de'),
+      communityId: 'community-bound',
+      hostUserId: 'teacher-bound',
+      at,
+      participantCap: 300,
+      moderatorReserve: 10,
+    });
+    const started = await store.sessions.start(session, {
+      id: asId<'ModerationAction'>('00000000-0000-4000-8000-00000000a11d'),
+      sessionId: session.id,
+      actorUserId: session.hostUserId,
+      targetUserId: null,
+      type: 'start_session',
+      at,
+    });
+    expect(started).toEqual({ created: true, session });
+    // The row is Postgres': in the table, and nowhere in the in-memory store.
+    const rows = await scratch.db.execute(
+      sql`select community_id, state, state_version from live_sessions where id = ${session.id}`,
+    );
+    expect(rows.rows).toEqual([
+      { community_id: 'community-bound', state: 'live', state_version: '1' },
+    ]);
+    expect(await memory.sessions.findById(session.id)).toBeNull();
   });
 });
 

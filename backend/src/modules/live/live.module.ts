@@ -1,6 +1,7 @@
 import { Logger, Module } from '@nestjs/common';
 
 import { APP_CONFIG, type AppConfig } from '../../platform/config/app-config';
+import { DATABASE, type Database } from '../../platform/database';
 import { CLOCK, type Clock } from '../../shared';
 import { CommunitiesModule } from '../communities/communities.module';
 import { IdentityModule } from '../identity/identity.module';
@@ -32,6 +33,9 @@ import {
   LIVE_SESSION_REPOSITORY,
   PRESENTER_GRANT_REPOSITORY,
   SPEAKER_REQUEST_REPOSITORY,
+  type LiveSessionRepository,
+  type PresenterGrantRepository,
+  type SpeakerRequestRepository,
 } from './domain/ports';
 import {
   RTC_OBSERVER,
@@ -42,6 +46,7 @@ import {
   type RtcProvider,
 } from './domain/rtc-provider';
 import { DisabledRtcProvider } from './infrastructure/disabled-rtc-provider';
+import { DrizzleLiveStore } from './infrastructure/drizzle-live-repositories';
 import { FakeRtcProvider } from './infrastructure/fake-rtc-provider';
 import { InMemoryLiveStore } from './infrastructure/in-memory-live-repositories';
 import { LiveKitRtcProvider } from './infrastructure/livekit-rtc-provider';
@@ -96,6 +101,29 @@ export function rtcProviderFor(
   return new DisabledRtcProvider();
 }
 
+/**
+ * The one store behind Live's three repository ports: a session, its hands
+ * and its presenter grant are read as written, and in Postgres every
+ * transition of a session queues behind one admission mutex, whichever port
+ * it comes through (live.md §10.2).
+ */
+export const LIVE_STORE = Symbol('LIVE_STORE');
+
+export interface LiveStore {
+  readonly sessions: LiveSessionRepository;
+  readonly requests: SpeakerRequestRepository;
+  readonly presenters: PresenterGrantRepository;
+}
+
+/** Postgres when a database is configured; otherwise the in-memory twin (mock mode). */
+export function liveStoreFor(
+  config: AppConfig,
+  db: Database,
+  memory: InMemoryLiveStore,
+): LiveStore {
+  return config.database.configured ? new DrizzleLiveStore(db) : memory;
+}
+
 /** What the use cases read of the configuration (plan §2.5). */
 export function liveSettingsFor(config: AppConfig): LiveSettings {
   return Object.freeze({
@@ -116,9 +144,10 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
  * copies no rule. The media provider is bound once, here, and everything
  * above depends on the narrow RTC ports, each bound to that one provider.
  *
- * Sessions, hands and presenter grants are in memory until their Postgres
- * adapters land (commit C); Live exports nothing until its contracts do
- * (commit D).
+ * Sessions, hands, presenter grants and the moderation record are Live's own
+ * tables (live.md §10), through the Drizzle adapters when a database is
+ * configured; without one, the in-memory twins keep every guarantee (mock
+ * mode). Live exports nothing until its contracts do (commit D).
  */
 @Module({
   imports: [IdentityModule, CommunitiesModule],
@@ -134,23 +163,28 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
     { provide: RTC_PARTICIPANTS, useExisting: RTC_PROVIDER },
     { provide: RTC_OBSERVER, useExisting: RTC_PROVIDER },
     { provide: LIVE_SETTINGS, inject: [APP_CONFIG], useFactory: liveSettingsFor },
-    // One in-memory store serves the three ports, so a session and its hands
-    // and presenter grant are read as written.
+    // One store serves the three ports in either mode, so a session and its
+    // hands and presenter grant are read as written.
     InMemoryLiveStore,
     {
+      provide: LIVE_STORE,
+      inject: [APP_CONFIG, DATABASE, InMemoryLiveStore],
+      useFactory: liveStoreFor,
+    },
+    {
       provide: LIVE_SESSION_REPOSITORY,
-      inject: [InMemoryLiveStore],
-      useFactory: (store: InMemoryLiveStore) => store.sessions,
+      inject: [LIVE_STORE],
+      useFactory: (store: LiveStore) => store.sessions,
     },
     {
       provide: SPEAKER_REQUEST_REPOSITORY,
-      inject: [InMemoryLiveStore],
-      useFactory: (store: InMemoryLiveStore) => store.requests,
+      inject: [LIVE_STORE],
+      useFactory: (store: LiveStore) => store.requests,
     },
     {
       provide: PRESENTER_GRANT_REPOSITORY,
-      inject: [InMemoryLiveStore],
-      useFactory: (store: InMemoryLiveStore) => store.presenters,
+      inject: [LIVE_STORE],
+      useFactory: (store: LiveStore) => store.presenters,
     },
     LiveJournal,
     LiveAccess,

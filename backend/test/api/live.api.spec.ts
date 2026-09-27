@@ -22,6 +22,8 @@ import {
   type RtcParticipantObservation,
 } from '../../src/modules/live/domain/rtc-provider';
 import type { FakeRtcProvider } from '../../src/modules/live/infrastructure/fake-rtc-provider';
+import { InMemoryLiveStore } from '../../src/modules/live/infrastructure/in-memory-live-repositories';
+import { LIVE_STORE, type LiveStore } from '../../src/modules/live/live.module';
 import type { ApiResponse } from '../support/api-client';
 import { LogCapture, credentialsIn, serialize } from '../support/log-capture';
 import { startRealtimeApi, type Account, type RealtimeApi } from '../support/realtime-api';
@@ -275,6 +277,12 @@ describe('live API', () => {
   const firstComeFirstServed = (a: Hand, b: Hand) =>
     byText(a.requestedAt, b.requestedAt) || byText(a.id, b.id);
   const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+  it('runs on the in-memory store: mock mode, with no database configured', () => {
+    const store = r.api.app.get<LiveStore>(LIVE_STORE, { strict: false });
+    expect(store).toBeInstanceOf(InMemoryLiveStore);
+    expect(r.api.app.get(LIVE_SESSION_REPOSITORY, { strict: false })).toBe(store.sessions);
+  });
 
   it('refuses every route to an anonymous caller', async () => {
     const answers: Array<Record<string, unknown>> = [];
