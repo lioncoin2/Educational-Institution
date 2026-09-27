@@ -36,7 +36,7 @@ describe('capabilitiesFor — the capability matrix', () => {
         standing,
         capabilities: {
           canPublishAudio: standing.speakerGrant || standing.publishesByRight,
-          canPublishScreen: standing.presenter,
+          canPublishScreen: standing.presenter && standing.publishesByRight,
           canPublishScreenAudio: false,
           canSubscribe: true,
           canPublishData: false,
@@ -66,11 +66,17 @@ describe('capabilitiesFor — the capability matrix', () => {
     });
   });
 
-  it('gives the presenter the screen, never its audio', () => {
-    expect(capabilitiesFor({ ...NOBODY, presenter: true })).toEqual({
+  it('gives the presenter the screen, never its audio — only while they hold live.speak', () => {
+    const presenter = { ...NOBODY, moderator: true, publishesByRight: true, presenter: true };
+    expect(capabilitiesFor(presenter)).toEqual({
       ...LISTENS_ONLY,
+      canPublishAudio: true,
       canPublishScreen: true,
     });
+    // A moderator who lost live.speak, still holding the slot: no screen
+    // (P6 decision 1) — and no microphone by right either.
+    expect(capabilitiesFor({ ...presenter, publishesByRight: false })).toEqual(LISTENS_ONLY);
+    expect(capabilitiesFor({ ...NOBODY, presenter: true })).toEqual(LISTENS_ONLY);
     expect(
       sourcesOf(
         capabilitiesFor({

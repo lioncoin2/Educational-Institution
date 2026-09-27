@@ -308,20 +308,31 @@ Q40 and [Q69](open-questions.md#q69--who-records-and-who-views-snapshots).
 > for live facts (Q67); a reconciler lease (P11); and everything
 > [§2](#2-phases)'s P12 row names.
 >
-> **Open policy gaps, implemented literally and not decided.** Two cases the
-> design does not settle were built exactly as written, and are recorded for
-> the user in [open-questions.md](open-questions.md):
+> **Decisions closed in the P6 review (the user, 2026-09-27).**
 >
-> 1. A presenter who still moderates the session but has lost identity's
->    `live.speak` keeps the presenter grant, and with it the screen: the
->    design closes the grant only when its holder stops moderating
->    (`live-reconciler.ts`, `identityStep`; `domain/standing.ts`). Recorded
->    under [Q56](open-questions.md#q56--screen-sharing).
-> 2. A live session whose community Communities no longer reports (`heads`
->    answers nothing for it) is ended `community_closed` by the participant
->    sweep (`live-reconciler.ts`, `sweepStep`). No path reaches it today:
->    a community is never deleted. Recorded under
+> 1. **Presenter authority follows `live.speak`.** A moderator who loses
+>    identity's `live.speak` has the presenter grant closed (`ineligible`)
+>    by the reconciler's per-identity step and stays a moderator; no join
+>    token or pushed set carries the screen without `live.speak`
+>    (`domain/standing.ts`, `capabilitiesFor`; `live-reconciler.ts`,
+>    `identityStep`); getting it back restores nothing — presenting again is
+>    a new claim. [Q56](open-questions.md#q56--screen-sharing).
+> 2. **A missing community fails closed.** A running session whose community
+>    Communities can no longer resolve (`heads` answers nothing) is ended
+>    `community_closed` by the participant sweep (`sweepStep`); meanwhile
+>    every route answers it as unknown. No recovery mechanism.
 >    [Q47](open-questions.md#q47--retiring-a-community).
+> 3. **No student screen sharing in the current product (P6, P7).** Only a
+>    session moderator holding `live.speak` may present; students listen,
+>    raise hands, and speak when promoted. A student path later is additive
+>    (the `grantedBy` seam) and needs no core rewrite. Q56 is resolved for
+>    this scope.
+> 4. **300 + 10 is an initial, configurable safety limit — not capacity.**
+>    The targets — about 3,000 listeners per room with a teacher and one or
+>    two speakers, and about 10,000 concurrent live users across rooms — are
+>    unproven and wait for real load tests (P8); the limit is raised through
+>    configuration only after they measure it, never by changing a constant.
+>    [Q57](open-questions.md#q57--live-session-size-and-concurrency).
 >
 > **Evidence.** Unit and application suites under `src/modules/live/`;
 > `test/support/live-contract-suite.ts` on both stores;
@@ -778,7 +789,7 @@ is not a file or a message.
    (none) ── claim (a session moderator holding live.speak, for themself; session FOR UPDATE) ──▶ open
      open ── stop (the presenter) ───────────────────────────────▶ closed 'stopped'        event; not audited
      open ── revoke (another moderator; not the host's grant, Q54) ▶ closed 'revoked'        event; audited
-     open ── the presenter loses moderator standing ─────────────▶ closed 'ineligible'     event
+     open ── the presenter loses moderator standing or live.speak ▶ closed 'ineligible'     event (P6 review)
      open ── the session ends ───────────────────────────────────▶ closed 'session_ended'  no event (implied)
    A claim by the holder → 200. A claim while another holds it → 409 live.presenter_slot_taken.
    A stop with nothing open → 200.
@@ -1248,7 +1259,8 @@ overlapping. It runs at boot and then on each period.
      `removeParticipant(room, id, {revokeTokensIssuedBefore: now})`; the
      identity joins the watch set (already there: `noteViolation` and the
      media reset, §11.4);
-   - **eligible, but no longer a moderator while holding the presenter
+   - **eligible, but no longer a moderator — or no longer holding
+     `live.speak` (P6 review, decision 1) — while holding the presenter
      grant** → the grant closes (`ineligible`) in one transaction, with its
      event, before the capability step below;
    - **eligible, but observed capabilities ≠ `capabilitiesFor(desired)`** →
@@ -1942,7 +1954,7 @@ and nothing is missing after the final refetch; never more than 4 speakers or
 
 | Layer | What | Phase |
 | --- | --- | --- |
-| Domain | `ALLOWED_TRANSITIONS` over every (from, to) pair; `capabilitiesFor` total over every standing (listener publishes nothing; a grant adds the microphone only; a moderator without `live.speak` has no microphone; a presenter gets the screen; no standing maps to the camera; data, screen audio and hidden always false); `mediaRoomName` for epochs 0 and n | P1, P6 |
+| Domain | `ALLOWED_TRANSITIONS` over every (from, to) pair; `capabilitiesFor` total over every standing (listener publishes nothing; a grant adds the microphone only; a moderator without `live.speak` has no microphone; a presenter gets the screen only while holding `live.speak`; no standing maps to the camera; data, screen audio and hidden always false); `mediaRoomName` for epochs 0 and n | P1, P6 |
 | Use cases (fakes; the real `PolicyAuthorizationService` with `principalWith()`; a fake `COMMUNITY_AUTHORIZATION`) | Idempotent start (one session, one audit, one event; a conflict ends the stray room; a provider failure → 503 and nothing stored); start refusals (404, 403, 412); start, lock, retry → 200 with the running session; join: a non-member gets 404 like an unknown session, an ended session 412, the name from the directory, the role matrix (a delegated moderator who did not start is a moderator; a moderator of another community is a listener; OWNER without standing is a listener; a revoked grant gives no microphone; a grant survives a reconnect); ensure-then-recheck with End in between → 412; the soft cap (tokens since the sample count; moderators and speakers exempt; observer failure fails open); raise 201 then 200 with one event; withdraw and yield; grant, revoke and decline repeats; `target_is_host`; end expires everything with no per-hand events; the presenter rules | P1, P6 |
 | Authorization migration | An all-permission principal without standing cannot moderate, end or present, and nothing changes; no live use case passes `ownerUserId` (a spy on the context); `PROVISIONAL_POLICY_RULES` is `[]`; a speaker grant confers no community act | P6 |
 | Audit | An explicit audit action per moderation act (the regression for `moderate-speaker.use-case.ts:193`); joins, raises, withdrawals, self-stops and provider-only corrections write no audit; a system end is audited with a null actor | P1, P6 |

@@ -734,8 +734,11 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
     }
 
     let standing = account.standing;
-    if (standing.presenter && !standing.moderator) {
-      // The slot is a moderator's: it closes before the capability step.
+    if (standing.presenter && !standing.publishesByRight) {
+      // The slot is a moderator's who holds `live.speak` (P6 decision 1): a
+      // presenter who is no longer a moderator, or who lost `live.speak`
+      // and stays one, has it closed before the capability step. A later
+      // `live.speak` restores nothing: presenting again is a new claim.
       const closed = await this.presenters.close({
         sessionId: session.id,
         userId,

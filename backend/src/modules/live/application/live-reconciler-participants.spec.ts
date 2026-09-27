@@ -1,4 +1,5 @@
 import type { Principal } from '../../../shared';
+import { Permissions, type Permission } from '../../identity/contracts';
 import {
   META,
   captureLogs,
@@ -272,6 +273,130 @@ describe('LiveReconciler — participants', () => {
       // moderator, the microphone by right.
       expect(capabilitiesOf('teacher-2')).toEqual(LISTENER);
       expect(h.rtc.observed(room).find((p) => p.identity === 'teacher-2')?.publishing).toEqual([]);
+    });
+  });
+
+  describe('presenter authority follows live.speak (P6 decision 1)', () => {
+    /** teacher-2's TEACHER permissions without identity's `live.speak`, as identity would now answer. */
+    const withoutSpeak = (principal: Principal): Principal => {
+      const permissions = [...principal.permissions].filter(
+        (permission) => permission !== Permissions.live.speak,
+      ) as Permission[];
+      h.accounts.setPermissions(principal.userId, permissions);
+      return { ...principal, permissions: new Set(permissions) };
+    };
+    const restoreSpeak = (principal: Principal): Principal => {
+      const permissions = [...principal.permissions, Permissions.live.speak] as Permission[];
+      h.accounts.setPermissions(principal.userId, permissions);
+      return { ...principal, permissions: new Set(permissions) };
+    };
+
+    it('revokes the presenter slot of a moderator who loses live.speak; they stay a moderator, and the screen stops', async () => {
+      const moderator = await presenter();
+      h.rtc.connect(room, 'teacher-2', PRESENTING, ['microphone', 'screen_share']);
+      const grant = await h.presenters.active(session.id);
+      expect(grant?.userId).toBe('teacher-2');
+      const silenced = withoutSpeak(moderator);
+      h.journal.clear();
+
+      expect(await h.reconciler.sweepParticipants()).toMatchObject({
+        removed: 0,
+        corrected: 1,
+        violations: 0,
+        resets: 0,
+      });
+
+      // The slot is closed as `ineligible`, by the system, and announced.
+      expect(await h.presenters.active(session.id)).toBeNull();
+      expect(h.journal.eventNames()).toEqual(['live.screen_share.stopped']);
+      expect(h.journal.events[0]?.payload).toEqual(
+        expect.objectContaining({ userId: 'teacher-2', reason: 'ineligible', stoppedBy: null }),
+      );
+      // The screen cannot continue: the full set pushed has no screen (and,
+      // without live.speak, no microphone by right); nothing is published.
+      expect(capabilitiesOf('teacher-2')).toEqual(LISTENER);
+      expect(h.rtc.observed(room).find((p) => p.identity === 'teacher-2')?.publishing).toEqual([]);
+      // Still in the room, still a moderator of the session.
+      expect(h.rtc.removed).toEqual([]);
+      const view = await h.get.execute({ principal: silenced, sessionId: session.id });
+      if (!view.ok) throw new Error(view.error.code);
+      expect(view.value.me).toMatchObject({
+        role: 'moderator',
+        canModerate: true,
+        presenting: false,
+      });
+      expect(view.value.presenterUserId).toBeNull();
+      // A rejoin is issued no screen either.
+      const ticket = await h.join.execute({
+        principal: silenced,
+        sessionId: session.id,
+        meta: META,
+      });
+      if (!ticket.ok) throw new Error(ticket.error.code);
+      expect(ticket.value.media).toEqual({ microphone: false, screen: false, screenAudio: false });
+    });
+
+    it('closes the slot of a DISCONNECTED presenter who lost live.speak, too', async () => {
+      const moderator = await presenter(false);
+      withoutSpeak(moderator);
+      h.journal.clear();
+
+      await h.reconciler.sweepParticipants();
+      expect(await h.presenters.active(session.id)).toBeNull();
+      expect(h.journal.eventNames()).toEqual(['live.screen_share.stopped']);
+      expect(h.rtc.removed).toEqual([]);
+    });
+
+    it('does not give the slot back when live.speak returns: presenting again is an explicit new claim', async () => {
+      const moderator = await presenter();
+      h.rtc.connect(room, 'teacher-2', PRESENTING, ['microphone', 'screen_share']);
+      const first = await h.presenters.active(session.id);
+      withoutSpeak(moderator);
+      await h.reconciler.sweepParticipants();
+      expect(await h.presenters.active(session.id)).toBeNull();
+
+      const restored = restoreSpeak(moderator);
+      h.journal.clear();
+      await h.reconciler.sweepParticipants();
+      // Nothing restored by the sweep: no grant, no screen in any set pushed.
+      expect(await h.presenters.active(session.id)).toBeNull();
+      expect(h.journal.eventNames()).toEqual([]);
+      expect(capabilitiesOf('teacher-2')?.canPublishScreen).toBe(false);
+      const ticket = await h.join.execute({
+        principal: restored,
+        sessionId: session.id,
+        meta: META,
+      });
+      if (!ticket.ok) throw new Error(ticket.error.code);
+      expect(ticket.value.media.screen).toBe(false);
+
+      // Only an explicit claim opens a NEW grant.
+      const claimed = await h.presenter.claim({
+        principal: restored,
+        sessionId: session.id,
+        meta: META,
+      });
+      if (!claimed.ok) throw new Error(claimed.error.code);
+      expect(claimed.value.opened).toBe(true);
+      const second = await h.presenters.active(session.id);
+      expect(second?.userId).toBe('teacher-2');
+      expect(second?.id).not.toBe(first?.id);
+    });
+
+    it('refuses the claim itself to a moderator without live.speak', async () => {
+      const moderator = await h.delegate(
+        communityId,
+        owner,
+        'teacher-2',
+        'community.live.moderate',
+      );
+      const claimed = await h.presenter.claim({
+        principal: withoutSpeak(moderator),
+        sessionId: session.id,
+        meta: META,
+      });
+      expect(claimed.ok ? null : claimed.error.code).toBe('live.presenter_not_permitted');
+      expect(await h.presenters.active(session.id)).toBeNull();
     });
   });
 
@@ -833,6 +958,66 @@ describe('LiveReconciler — participants', () => {
       jest.spyOn(h.communities.membership, 'heads').mockResolvedValue([]);
       expect(await h.reconciler.sweepParticipants()).toMatchObject({ ended: 1 });
       expect((await h.session(session.id)).endReason).toBe('community_closed');
+    });
+
+    describe('a community Communities can no longer resolve fails closed (P6 decision 2)', () => {
+      /** Communities, asked about the community, knows nothing of it. */
+      const forgetCommunity = () => {
+        jest.spyOn(h.communities.membership, 'heads').mockResolvedValue([]);
+        jest.spyOn(h.authorization, 'authorize').mockResolvedValue({
+          ok: false,
+          error: { kind: 'not_found', code: 'communities.not_found', message: 'not found' },
+        });
+        jest.spyOn(h.authorization, 'permittedAmong').mockResolvedValue([]);
+      };
+
+      it('ends the session community_closed at the next sweep: everything open closes, the room ends, nobody is re-authorized', async () => {
+        const hand = await speaker();
+        await presenter();
+        h.rtc.connect(room, 'teacher-2', PRESENTING, ['microphone', 'screen_share']);
+        forgetCommunity();
+        h.journal.clear();
+        const pushedBefore = h.rtc.capabilityChanges.length;
+
+        expect(await h.reconciler.sweepParticipants()).toMatchObject({ ended: 1, checked: 0 });
+        expect(await h.session(session.id)).toMatchObject({
+          state: 'ended',
+          endReason: 'community_closed',
+          endedBy: null,
+        });
+        // One ended event implies every expiry and the presenter's close.
+        expect(h.journal.eventNames()).toEqual(['live.session.ended']);
+        expect(await requestState(hand)).toBe('expired');
+        expect(await h.presenters.active(session.id)).toBeNull();
+        expect(h.rtc.ended).toContain(room);
+        expect(h.rtc.roomNames()).not.toContain(room);
+        // No capability was pushed from membership nobody can vouch for.
+        expect(h.rtc.capabilityChanges).toHaveLength(pushedBefore);
+
+        // It stays ended: nothing restarts it, and no participant step runs.
+        expect(await h.reconciler.sweepParticipants()).toMatchObject({ sessions: 0, ended: 0 });
+        expect((await h.session(session.id)).state).toBe('ended');
+      });
+
+      it('never assumes membership meanwhile: before any sweep, join, raise and moderation are refused as unknown', async () => {
+        forgetCommunity();
+        const join = await h.join.execute({
+          principal: student,
+          sessionId: session.id,
+          meta: META,
+        });
+        expect(join.ok ? null : join.error.code).toBe('live.session_not_found');
+        const raise = await h.raise.execute({
+          principal: student,
+          sessionId: session.id,
+          meta: META,
+        });
+        expect(raise.ok ? null : raise.error.code).toBe('live.session_not_found');
+        const end = await h.end.execute({ principal: owner, sessionId: session.id, meta: META });
+        expect(end.ok ? null : end.error.code).toBe('live.session_not_found');
+        expect(h.rtc.issued.filter((grant) => grant.identity === 'student-1')).toEqual([]);
+        expect((await h.session(session.id)).state).toBe('live');
+      });
     });
   });
 

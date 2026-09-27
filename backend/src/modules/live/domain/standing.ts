@@ -26,7 +26,9 @@ export interface ParticipantStanding {
  * defaults (audit §8.4).
  *
  *   the microphone     a speaker grant, or a moderator publishing by right
- *   the screen         the presenter, through the one slot
+ *   the screen         the presenter, through the one slot — and only while
+ *                      they publish by right: a moderator who loses
+ *                      `live.speak` loses the screen with it (P6 decision 1)
  *   screen audio       never (Q56)
  *   subscribing        always: everyone listens
  *   the data channel   never: nothing uses it, and a listener must not broadcast
@@ -37,7 +39,7 @@ export interface ParticipantStanding {
 export function capabilitiesFor(standing: ParticipantStanding): RtcCapabilities {
   return {
     canPublishAudio: standing.speakerGrant || standing.publishesByRight,
-    canPublishScreen: standing.presenter,
+    canPublishScreen: standing.presenter && standing.publishesByRight,
     canPublishScreenAudio: false,
     canSubscribe: true,
     canPublishData: false,

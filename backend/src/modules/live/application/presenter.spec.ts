@@ -108,6 +108,31 @@ describe('the presenter slot', () => {
     expect(await h.presenters.active(session.id)).toBeNull();
   });
 
+  it('never gives a student screen-share authority — not even a promoted speaker (Q56, resolved for the current product)', async () => {
+    // A student may listen, raise a hand, be promoted and speak…
+    const raised = await h.raise.execute({ principal: student, sessionId: session.id, meta: META });
+    if (!raised.ok) throw new Error(raised.error.code);
+    const granted = await h.moderate.grant({
+      principal: owner,
+      requestId: raised.value.request.id,
+      meta: META,
+    });
+    expect(granted.ok).toBe(true);
+    const ticket = await h.join.execute({ principal: student, sessionId: session.id, meta: META });
+    if (!ticket.ok) throw new Error(ticket.error.code);
+    expect(ticket.value).toMatchObject({
+      role: 'speaker',
+      media: { microphone: true, screen: false, screenAudio: false },
+    });
+    // …but never present: no student role holds the ceiling the slot needs.
+    expect(PROVISIONAL_ROLE_PERMISSIONS.STUDENT).not.toContain('live.moderate');
+    expect(codeOf(await claim(student))).toBe('identity.permission_denied');
+    const view = await h.get.execute({ principal: student, sessionId: session.id });
+    if (!view.ok) throw new Error(view.error.code);
+    expect(view.value.me).toMatchObject({ canPresent: false, presenting: false });
+    expect(await h.presenters.active(session.id)).toBeNull();
+  });
+
   it('refuses a member who does not moderate with 403, a non-member as an unknown session, and after the end with 412', async () => {
     const member = await h.member(communityId, owner, 'teacher-3', ['TEACHER']);
     expect(codeOf(await claim(member))).toBe('live.not_a_moderator');

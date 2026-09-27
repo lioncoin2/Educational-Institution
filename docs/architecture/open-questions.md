@@ -1662,15 +1662,20 @@ for the same reason: its meaning is policy.
 ARCHIVED state; LOCKED is the only closed state. A community is never
 deleted: there is no delete route, and foreign keys RESTRICT.
 
-> **An open case (P6, 2026-09-27):** a running live session whose community
-> Communities no longer reports (`COMMUNITY_MEMBERSHIP.heads` answers nothing
-> for it) is ended with reason `community_closed` by Live's participant sweep
+> **Decided by the user (P6 review, 2026-09-27): a missing community fails
+> closed.** A running live session whose community Communities can no longer
+> resolve (`COMMUNITY_MEMBERSHIP.heads` answers nothing for it) is ended with
+> reason `community_closed` by Live's participant sweep
 > (`live/application/live-reconciler.ts`, `sweepStep`), exactly as a status
-> that stops running sessions would end it. No path reaches it today: a
-> community is never deleted, and no status stops a running session. If
-> retiring a community is ever answered with deletion or a new status, what a
-> running session does then is part of that answer; P6 decides nothing
-> ([live.md](live.md), the P6 note above §1).
+> that stops running sessions would end it: every open hand expires, the
+> presenter grant closes, the room is ended, and nothing is re-authorized
+> from a membership nobody can vouch for. Until that sweep runs, every route
+> answers the session as unknown, because Communities does. There is no
+> recovery mechanism: an ended session stays ended. No path reaches it today —
+> a community is never deleted — and retiring a community (this question)
+> stays open; this decides only what a running session does if its community
+> disappears. Tests: `live-reconciler-participants.spec.ts`, "a community
+> Communities can no longer resolve fails closed (P6 decision 2)"
 
 **When answered.** ARCHIVED is a vocabulary value, a CHECK migration and one
 row in the effects table; consumers do not change. Deleting anything is a
@@ -1970,23 +1975,28 @@ default:
 - opening a presenter grant is audited; closing it is audited when a
   moderator revoked it.
 
-> **P6 (2026-09-27): built as this default, and one gap recorded, not decided.**
-> P6 built the moderator presenter slot as above ([live.md](live.md), the P6
-> note above §1). **The pending confirmation stands:** the deferral of the
-> brief §11 path, a student presenting under an explicit capability, to P12
-> still needs the user's confirmation. P6 builds no student path; a "yes"
-> later is additive (a capability of its own, through the `grantedBy` seam),
-> and is that later phase's decision.
+> **Resolved for the current product (user's P6 review, 2026-09-27).**
+> Only moderators — authorized teachers: a session moderator who holds
+> identity's `live.speak` — may receive screen-share authority. Students may
+> listen, raise a hand, be promoted to speaker and speak when granted; they
+> MUST NOT receive screen-share authority in P6 or P7. The brief §11 path (a
+> student presenting under an explicit capability) is not built and is no
+> longer pending for this scope: if it is ever wanted, it is additive — a
+> capability of its own through the presenter grant's `grantedBy` seam — and
+> needs no rewrite of the Live core. P6 built exactly this
+> ([live.md](live.md), the P6 note above §1); a test pins that a promoted
+> student speaker gets the microphone and never the screen
+> (`presenter.spec.ts`, "never gives a student screen-share authority").
 >
-> **An open case (P6):** a presenter who still moderates the session but has
-> lost identity's `live.speak` keeps the presenter grant, and with it the
-> screen. The design closes a presenter grant when its holder stops being
-> eligible or stops moderating, and says nothing of `live.speak` after the
-> claim, which asks it only at the claim. P6 implements that literally
-> (`live/application/live-reconciler.ts`, `identityStep`;
-> `live/domain/standing.ts`). Whether losing `live.speak` should also close
-> the grant is the user's to decide; if yes, it is one more condition in the
-> reconciler's per-identity step.
+> **Presenter authority follows `live.speak` (user's decision, same
+> review).** A moderator who loses `live.speak` has their presenter grant
+> closed (`ineligible`) by the reconciler's per-identity step, exactly as one
+> who stops moderating; they remain a moderator. No capability set — a join
+> token or a pushed set — ever includes the screen without `live.speak`
+> (`live/domain/standing.ts`, `capabilitiesFor`), so the screen stops at the
+> next correction. Getting `live.speak` back restores nothing: presenting
+> again is a new, explicit claim. Tests: `live-reconciler-participants.spec.ts`,
+> "presenter authority follows live.speak (P6 decision 1)".
 
 **When answered.** Who may present is a rule in `LiveAccess` (P6). Delegated
 or audio sharing is P12. Recording would need its own ADR, storage and a Q3
@@ -2020,6 +2030,18 @@ load profiles 1–3. The 300 is the size of the brief's load profile 1 (§27),
 neither measured nor an institutional figure.
 
 > **P6 (2026-09-27):** built as this default, for community-scoped sessions ([live.md](live.md), the P6 note above §1). The cap and the reserve are `LIVE_MAX_PARTICIPANTS_PER_SESSION` (300) and `LIVE_MODERATOR_RESERVE` (10), copied onto each session at start; their sum is the room's `maxParticipants` (the hard cap), passed whenever a room is ensured.
+>
+> **Capacity: limits are not targets (user's P6 review, 2026-09-27).** The
+> 300 + 10 is an **initial, configurable safety and admission limit**, not
+> the product's live-room capacity. The product's **targets** are about
+> 3,000 listeners in one live room (a teacher and about one or two promoted
+> speakers) and about 10,000 concurrent live users spread across several
+> rooms. They are targets, not proven capacity: nothing has been
+> load-tested, and no document or test claims 3,000 per room. The limit is
+> not raised by changing a constant; it rises only through configuration,
+> after the load-testing phase (P8's profiles) measures what one room and one
+> node hold. Until then the question above stays open for its measured
+> answer.
 
 **When answered.** The measured knee (P8) sets the engineering ceiling; the
 institution may set a lower cap and chooses the full-session behaviour;
