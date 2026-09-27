@@ -1,7 +1,8 @@
 import { readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { PATH_METADATA } from '@nestjs/common/constants';
+import { RequestMethod } from '@nestjs/common';
+import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 
 import { PUBLIC_ROUTE } from '../../src/platform/http/public-route.decorator';
 import {
@@ -33,8 +34,21 @@ function controllerFiles(dir: string): string[] {
 
 type Constructor = abstract new (...args: never[]) => unknown;
 
+/** The method and full path a handler serves, e.g. `POST /live/sessions/:sessionId/join`. */
+function routeOf(controller: Constructor, handler: object): string {
+  const method = RequestMethod[Reflect.getMetadata(METHOD_METADATA, handler) as RequestMethod];
+  const path = [controller, handler]
+    .map((target) => Reflect.getMetadata(PATH_METADATA, target) as string)
+    .join('/')
+    .replace(/\/+/g, '/')
+    .replace(/(.)\/$/, '$1');
+  return `${method} /${path.replace(/^\//, '')}`;
+}
+
 interface Route {
   readonly name: string;
+  /** e.g. `POST /live/sessions/:sessionId/join`. */
+  readonly route: string;
   readonly isPublic: boolean;
   readonly authenticated: boolean;
   readonly permission: unknown;
@@ -58,6 +72,7 @@ async function discover(): Promise<{ controllers: string[]; routes: Route[] }> {
         if (Reflect.getMetadata(PATH_METADATA, handler) === undefined) continue;
         routes.push({
           name: `${controller.name}.${method}`,
+          route: routeOf(controller, handler),
           isPublic: Reflect.getMetadata(PUBLIC_ROUTE, handler) === true,
           authenticated: Reflect.getMetadata(REQUIRE_AUTHENTICATION, handler) === true,
           permission: Reflect.getMetadata(REQUIRE_PERMISSION, handler),
@@ -255,6 +270,42 @@ describe('route authorization', () => {
         .map((route) => [route.name, route.permission]),
     );
     expect(communityChat).toEqual({ 'CommunityChatController.conversation': 'messaging.read' });
+  });
+
+  // Live's edge: seeing and joining a session is live.join, asking for the
+  // floor live.raise_hand, and every moderator's act live.moderate — starting
+  // and ending included. Lowering one's own hand and stopping one's own screen
+  // share need an account and nothing more, because each only ever reduces the
+  // caller's own privilege (and a moderator stopping someone else's share is
+  // decided in the use case). None is public. The edge is never the decision:
+  // every use case asks Communities about the session's own community.
+  it('holds every live route to its edge permission', () => {
+    const live = Object.fromEntries(
+      routes
+        .filter((route) => route.name.startsWith('LiveController.'))
+        .map((route) => [
+          `${route.route} (${route.name})`,
+          route.isPublic ? 'public' : route.authenticated ? 'authenticated' : route.permission,
+        ]),
+    );
+    const join = 'live.join';
+    const moderate = 'live.moderate';
+    expect(live).toEqual({
+      'POST /live/communities/:communityId/sessions (LiveController.start)': moderate,
+      'GET /live/communities/:communityId/sessions/current (LiveController.current)': join,
+      'GET /live/sessions/:sessionId (LiveController.get)': join,
+      'POST /live/sessions/:sessionId/join (LiveController.join)': join,
+      'POST /live/sessions/:sessionId/end (LiveController.end)': moderate,
+      'POST /live/sessions/:sessionId/hand (LiveController.raise)': 'live.raise_hand',
+      'DELETE /live/sessions/:sessionId/hand (LiveController.lower)': 'authenticated',
+      'GET /live/sessions/:sessionId/hands (LiveController.hands)': moderate,
+      'POST /live/requests/:requestId/grant (LiveController.grant)': moderate,
+      'POST /live/requests/:requestId/decline (LiveController.decline)': moderate,
+      'POST /live/requests/:requestId/revoke (LiveController.revoke)': moderate,
+      'POST /live/sessions/:sessionId/screen-share (LiveController.claimScreenShare)': moderate,
+      'DELETE /live/sessions/:sessionId/screen-share (LiveController.stopScreenShare)':
+        'authenticated',
+    });
   });
 
   it('puts every administrative route behind a permission, never mere authentication', () => {

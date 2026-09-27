@@ -49,27 +49,6 @@ describe('PolicyAuthorizationService', () => {
     }
   });
 
-  describe('host-only moderation (provisional)', () => {
-    const teacher = (id: string) => principal([Permissions.live.moderate], id);
-    const room = { resourceType: 'live.session', resourceId: 's-1', ownerUserId: 'host' };
-
-    it('lets the host moderate their own room', () => {
-      expect(service.can(teacher('host'), Permissions.live.moderate, room)).toBe(true);
-    });
-
-    it("refuses another teacher in someone else's room", () => {
-      expect(service.can(teacher('other'), Permissions.live.moderate, room)).toBe(false);
-    });
-
-    it('refuses even an all-permission principal in a room they do not host', () => {
-      const owner = principal(
-        Object.values(Permissions).flatMap((g) => Object.values(g)),
-        'owner',
-      );
-      expect(service.can(owner, Permissions.live.moderate, room)).toBe(false);
-    });
-  });
-
   // Authorization is enforced at the application boundary, so a job or event
   // handler calling a use case is held to exactly the same rules as a person.
   describe('system principals', () => {

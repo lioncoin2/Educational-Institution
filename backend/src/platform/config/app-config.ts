@@ -54,6 +54,31 @@ export interface AppConfig {
     readonly apiKey: string;
     readonly apiSecret: string;
   };
+  readonly live: {
+    /**
+     * The listeners' soft cap per session, copied onto each session when it
+     * starts: an engineering bound (PROVISIONAL 300, Q57), raised only after
+     * load profiles measure more — never derived from a community's size.
+     */
+    readonly maxParticipantsPerSession: number;
+    /** Seats above the cap for moderators and current speakers (PROVISIONAL 10, Q57). */
+    readonly moderatorReserve: number;
+    /**
+     * The prefix of this deployment's media room names. The orphan sweep ends
+     * every room of this form that no live session claims, so on a media
+     * server other environments share it must be unique to the deployment.
+     * Required when real media is enabled; null when unset, and the fake then
+     * uses `live-`.
+     */
+    readonly roomNamePrefix: string | null;
+    /**
+     * `livekit` only when real media is explicitly enabled
+     * (`LIVE_MEDIA_PROVIDER=livekit`), which the LiveKit-integration phase
+     * turns on together with its hardening; null otherwise, and a deployment
+     * then binds a provider that refuses every call (P6 audit, D19).
+     */
+    readonly mediaProvider: 'livekit' | null;
+  };
   readonly storage: {
     readonly localRoot: string;
     /**
@@ -94,7 +119,8 @@ const PLACEHOLDER_SECRETS = new Set([
 /**
  * HS256 is only as strong as its key. RFC 7518 §3.2 requires a key at least
  * as long as the hash output: 256 bits, i.e. 32 bytes. The same bound applies
- * to the HMAC-SHA256 key that signs storage URLs.
+ * to the HMAC-SHA256 key that signs storage URLs, and to the LiveKit secret
+ * that signs media join tokens once real media is enabled.
  */
 const MIN_JWT_SECRET_BYTES = 32;
 const MIN_STORAGE_SECRET_BYTES = 32;
@@ -131,6 +157,31 @@ function readTrustProxy(raw: string | undefined): boolean | number {
   if (raw === 'true') return true;
   const hops = Number.parseInt(raw, 10);
   return Number.isNaN(hops) ? false : hops;
+}
+
+/**
+ * A whole number, or the fallback when unset. Anything else — `1.5`, `12abc`
+ * — is NaN, for the caller to refuse, rather than a number `parseInt` would
+ * quietly make of it.
+ */
+function readWholeNumber(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  return /^\s*-?\d+\s*$/.test(raw) ? Number(raw) : Number.NaN;
+}
+
+/**
+ * A media room name prefix: short, and only characters every media server
+ * accepts in a room name. The `.` that separates a media reset's epoch may
+ * appear in it: room names are matched as text, never as a pattern.
+ */
+const ROOM_NAME_PREFIX_SHAPE = /^[A-Za-z0-9._-]{1,48}$/;
+
+/** Real media is bound only on explicit opt-in (D19); anything but `livekit` is a mistake. */
+function readMediaProvider(raw: string | undefined, problems: string[]): 'livekit' | null {
+  if (raw === undefined || raw.trim() === '') return null;
+  if (raw === 'livekit') return 'livekit';
+  problems.push(`LIVE_MEDIA_PROVIDER must be "livekit" or unset, not ${JSON.stringify(raw)}`);
+  return null;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -184,6 +235,49 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     problems.push('REFRESH_SESSION_TTL_SECONDS must exceed a positive JWT_ACCESS_TTL');
   }
 
+  const livekitApiKey = required('LIVEKIT_API_KEY', 'devkey');
+  const livekitApiSecret = secret('LIVEKIT_API_SECRET', 'development-only-secret');
+
+  const maxParticipantsPerSession = readWholeNumber(env.LIVE_MAX_PARTICIPANTS_PER_SESSION, 300);
+  if (!Number.isSafeInteger(maxParticipantsPerSession) || maxParticipantsPerSession < 1) {
+    problems.push('LIVE_MAX_PARTICIPANTS_PER_SESSION must be a whole number of at least 1');
+  }
+  const moderatorReserve = readWholeNumber(env.LIVE_MODERATOR_RESERVE, 10);
+  if (!Number.isSafeInteger(moderatorReserve) || moderatorReserve < 0) {
+    problems.push('LIVE_MODERATOR_RESERVE must be a whole number, 0 or more');
+  }
+  const rawPrefix = env.LIVE_ROOM_NAME_PREFIX;
+  const roomNamePrefix = rawPrefix === undefined || rawPrefix.trim() === '' ? null : rawPrefix;
+  if (roomNamePrefix !== null && !ROOM_NAME_PREFIX_SHAPE.test(roomNamePrefix)) {
+    problems.push(
+      'LIVE_ROOM_NAME_PREFIX must be 1 to 48 characters, each a letter, a digit, ".", "_" or "-"',
+    );
+  }
+  const mediaProvider = readMediaProvider(env.LIVE_MEDIA_PROVIDER, problems);
+  if (mediaProvider === 'livekit') {
+    // Real media is enabled on purpose, so it must be real, whatever NODE_ENV
+    // says: this deployment's own room names (the orphan sweep ends every room
+    // of their form that no session claims), a key that is not a well-known
+    // placeholder, and a secret as strong as HS256 needs.
+    if (roomNamePrefix === null) {
+      problems.push('LIVE_ROOM_NAME_PREFIX is required when LIVE_MEDIA_PROVIDER=livekit');
+    }
+    if (PLACEHOLDER_SECRETS.has(livekitApiKey)) {
+      problems.push('LIVEKIT_API_KEY must not be a placeholder when LIVE_MEDIA_PROVIDER=livekit');
+    }
+    // In production a placeholder secret is refused already, whatever the provider.
+    if (!isProduction && PLACEHOLDER_SECRETS.has(livekitApiSecret)) {
+      problems.push(
+        'LIVEKIT_API_SECRET must not be a placeholder when LIVE_MEDIA_PROVIDER=livekit',
+      );
+    }
+    if (Buffer.byteLength(livekitApiSecret, 'utf8') < MIN_JWT_SECRET_BYTES) {
+      problems.push(
+        `LIVEKIT_API_SECRET must be at least ${MIN_JWT_SECRET_BYTES} bytes when LIVE_MEDIA_PROVIDER=livekit`,
+      );
+    }
+  }
+
   const config: AppConfig = Object.freeze({
     nodeEnv,
     port: readInt(env.PORT, 3000),
@@ -207,8 +301,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     }),
     livekit: Object.freeze({
       url: required('LIVEKIT_URL', 'ws://localhost:7880'),
-      apiKey: required('LIVEKIT_API_KEY', 'devkey'),
-      apiSecret: secret('LIVEKIT_API_SECRET', 'development-only-secret'),
+      apiKey: livekitApiKey,
+      apiSecret: livekitApiSecret,
+    }),
+    live: Object.freeze({
+      maxParticipantsPerSession,
+      moderatorReserve,
+      roomNamePrefix,
+      mediaProvider,
     }),
     storage: Object.freeze({
       localRoot: env.STORAGE_LOCAL_ROOT ?? './.storage',

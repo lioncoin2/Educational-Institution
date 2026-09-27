@@ -1,4 +1,4 @@
-import type { INestApplication } from '@nestjs/common';
+import type { INestApplication, LoggerService } from '@nestjs/common';
 
 export interface ApiResponse {
   readonly status: number;
@@ -25,8 +25,17 @@ export interface RunningApi {
  * Boots the real application — the same AppModule and the same configureApp()
  * the server uses — on a random port, with no database (in-memory adapters)
  * and silent logs. Imported lazily so the environment is set first.
+ *
+ * Given a `logger`, every line the application logs through Nest's logger —
+ * its own modules' lines and the audit trail's, which goes to the log without
+ * a database — is sent there instead, exactly as the application wrote it:
+ * before any redaction, for "never logged" assertions that do not depend on
+ * which key a value was logged under.
  */
-export async function startApi(env: Record<string, string> = {}): Promise<RunningApi> {
+export async function startApi(
+  env: Record<string, string> = {},
+  options: { readonly logger?: LoggerService } = {},
+): Promise<RunningApi> {
   delete process.env.DATABASE_URL;
   process.env.LOG_LEVEL = 'silent';
   process.env.JWT_SECRET = 'api-test-secret-that-is-at-least-32-bytes';
@@ -37,7 +46,7 @@ export async function startApi(env: Record<string, string> = {}): Promise<Runnin
   const { APP_CONFIG } = await import('../../src/platform/config/app-config');
   const { configureApp } = await import('../../src/platform/http/configure-app');
 
-  const app = await NestFactory.create(AppModule, { logger: false });
+  const app = await NestFactory.create(AppModule, { logger: options.logger ?? false });
   configureApp(app, app.get(APP_CONFIG));
   await app.listen(0, '127.0.0.1');
   const base = (await app.getUrl()).replace('[::1]', '127.0.0.1');

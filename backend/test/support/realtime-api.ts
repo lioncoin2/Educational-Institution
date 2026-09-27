@@ -20,8 +20,11 @@ export interface Account {
  * needs: a bootstrapped owner, accounts provisioned through the admin API,
  * and messaging and communities over HTTP.
  */
-export async function startRealtimeApi(env: Record<string, string> = {}) {
-  const api: RunningApi = await startApi(env);
+export async function startRealtimeApi(
+  env: Record<string, string> = {},
+  options: Parameters<typeof startApi>[1] = {},
+) {
+  const api: RunningApi = await startApi(env, options);
   const wsUrl = `${api.base.replace(/^http/, 'ws')}/realtime`;
 
   const bootstrapped = await api.app.get(BootstrapOwnerUseCase).execute({

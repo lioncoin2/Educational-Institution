@@ -1,85 +1,113 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { CLOCK, err, failure, ok, type Clock, type Result } from '../../../shared';
-import type { Principal } from '../../identity/contracts';
-import { speakerRequestWithdrawn } from '../domain/events';
-import { isJoinable, type LiveSessionId } from '../domain/live-room';
+import {
+  CLOCK,
+  err,
+  ok,
+  type CallMetadata,
+  type Clock,
+  type Principal,
+  type Result,
+} from '../../../shared';
+import { speakerWithdrawn } from '../domain/events';
 import {
   LIVE_SESSION_REPOSITORY,
   SPEAKER_REQUEST_REPOSITORY,
   type LiveSessionRepository,
   type SpeakerRequestRepository,
 } from '../domain/ports';
-import { CapabilityConvergence } from './capability-convergence';
+import { lastOpenState } from '../domain/speaker-request';
+import { LiveAccess } from './live-access';
 import { LiveJournal } from './live-journal';
+import { LiveMedia } from './live-media';
+import { LiveRefusals } from './live-settings';
 import { speakerRequestView, type LowerHandResult } from './views';
 
-export interface LowerHandCommand {
-  readonly principal: Principal;
-  readonly sessionId: string;
-}
-
 /**
- * A participant lowers their own hand: a pending hand is withdrawn, and a
- * speaker yields the floor (their microphone right ends at once). Nothing to
- * lower answers `{request: null}` — a retry, or a hand already decided, is
- * harmless. Only ever the caller's own hand: there is no request id to name
- * someone else's.
+ * A participant lowers their own hand (audit D9, D4): a pending hand is
+ * withdrawn, and a speaker yields the floor. Only ever the caller's own —
+ * there is no request id to name someone else's.
+ *
+ * The caller's open request comes first, found by (session, user). It needs
+ * no permit: lowering only ever reduces privilege, so even someone who has
+ * just lost their standing may put their hand down. The write is a
+ * compare-and-set from EITHER open state, so a lower racing a grant still
+ * wins, as a yield:
+ *
+ *   withdrawn from pending or granted   `live.speaker.withdrawn {from}`; a
+ *                                       yield also pushes the caller's full
+ *                                       set (the microphone off); 200
+ *   already withdrawn                   200, unchanged
+ *   already expired — the session       200 {request: null}: nothing is up
+ *   ended, or the caller was expired
+ *   already revoked or declined         409 live.invalid_transition: a
+ *                                       moderator decided it first
+ *
+ * With no open request, the answer must not reveal the session to someone
+ * who may not see it: 404 unless the session exists and the caller may see
+ * it (a member refused only by the lifecycle included), else 200
+ * {request: null} — a retry is harmless.
  *
  * Not moderation, so not audited: the person acted on their own request.
  */
 @Injectable()
 export class LowerHandUseCase {
   constructor(
+    private readonly access: LiveAccess,
     @Inject(LIVE_SESSION_REPOSITORY) private readonly sessions: LiveSessionRepository,
     @Inject(SPEAKER_REQUEST_REPOSITORY) private readonly requests: SpeakerRequestRepository,
     @Inject(CLOCK) private readonly clock: Clock,
-    private readonly convergence: CapabilityConvergence,
+    private readonly media: LiveMedia,
     private readonly journal: LiveJournal,
   ) {}
 
-  async execute(command: LowerHandCommand): Promise<Result<LowerHandResult>> {
-    const session = await this.sessions.findById(command.sessionId as LiveSessionId);
-    if (session === null) {
-      return err(failure('not_found', 'live.session_not_found', 'No such live session.'));
-    }
-    const open = await this.requests.findOpen(session.id, command.principal.userId);
-    if (open === null) return ok({ request: null });
-    if (!isJoinable(session)) {
-      return err(
-        failure('precondition_failed', 'live.session_not_live', 'This session is not live.'),
-      );
+  async execute(command: {
+    readonly principal: Principal;
+    readonly sessionId: string;
+    readonly meta: CallMetadata;
+  }): Promise<Result<LowerHandResult>> {
+    const { principal, sessionId } = command;
+    const open = await this.requests.findOpen(sessionId, principal.userId);
+    const session = await this.sessions.findById(sessionId);
+    if (session === null) return err(LiveRefusals.sessionNotFound);
+
+    if (open === null) {
+      const viewer = await this.access.viewer(principal, session, LiveRefusals.sessionNotFound);
+      return viewer.ok ? ok({ request: null }) : viewer;
     }
 
-    const now = this.clock.now();
     const outcome = await this.requests.transition({
       requestId: open.id,
-      from: [open.state],
+      // Either open state: a grant that committed since the read above is
+      // yielded, never refused.
+      from: ['pending', 'granted'],
       to: 'withdrawn',
-      at: now,
-      by: command.principal.userId,
+      at: this.clock.now(),
+      by: principal.userId,
       moderation: null,
     });
-    if (outcome === null || outcome.kind === 'invalid') {
-      // A moderator decided it first (revoked or declined): the hand is down,
-      // but not by this request.
-      return err(failure('conflict', 'live.invalid_transition', 'This hand was already decided.'));
+    if (outcome === null) return ok({ request: null });
+    switch (outcome.kind) {
+      case 'unchanged':
+        return ok({ request: speakerRequestView(outcome.request) });
+      case 'session_not_live':
+        return ok({ request: null });
+      case 'invalid':
+        return outcome.request.state === 'expired'
+          ? ok({ request: null })
+          : err(LiveRefusals.invalidTransition);
+      case 'applied':
+        break;
     }
-    if (outcome.kind === 'unchanged') return ok({ request: speakerRequestView(outcome.request) });
 
-    if (open.state === 'granted') {
-      // Yielding the floor: the microphone right ends now, on the wire too
-      // (or on a later tick, if the provider does not take it at once).
-      await this.convergence.apply(session.id, open.userId);
+    if (lastOpenState(outcome.request) === 'granted') {
+      // A yield: the microphone right ends now, on the wire too — or, if the
+      // provider does not take it, when the watch lands it.
+      await this.media.push(session, principal.userId);
     }
-    await this.journal.announced(
-      speakerRequestWithdrawn(
-        session.id,
-        open.userId,
-        open.state === 'granted' ? 'granted' : 'pending',
-        now,
-      ),
-    );
+    await this.journal.record(null, [
+      speakerWithdrawn(session, outcome.request, outcome.stateVersion, command.meta.correlationId),
+    ]);
     return ok({ request: speakerRequestView(outcome.request) });
   }
 }

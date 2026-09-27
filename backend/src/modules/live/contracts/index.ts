@@ -7,11 +7,16 @@
 export type { LiveParticipantRole } from './participant-role';
 export {
   LiveEvents,
+  type LiveEvent,
   type LiveSessionEnded,
   type LiveSessionStarted,
+  type LiveSpeakerFact,
+  type ScreenShareStarted,
+  type ScreenShareStopped,
   type SpeakerPermissionGranted,
   type SpeakerPermissionRevoked,
   type SpeakerRequestDeclined,
+  type SpeakerRequestExpired,
   type SpeakerRequestWithdrawn,
   type SpeakerRequested,
 } from './events';

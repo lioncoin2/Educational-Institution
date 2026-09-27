@@ -92,3 +92,141 @@ describe('loadConfig', () => {
     expect(config.database.configured).toBe(false);
   });
 });
+
+describe('loadConfig — live sessions', () => {
+  /** What real media needs besides the opt-in: its own room names, a real key, a strong secret. */
+  const REAL_MEDIA = {
+    LIVE_MEDIA_PROVIDER: 'livekit',
+    LIVE_ROOM_NAME_PREFIX: 'live-prod-',
+    LIVEKIT_API_KEY: 'APIa1b2c3d4e5f6',
+    LIVEKIT_API_SECRET: 's'.repeat(32),
+  };
+
+  it('seats 300 listeners plus a reserve of 10, with no prefix and real media off, unless told otherwise', () => {
+    expect(loadConfig({}).live).toEqual({
+      maxParticipantsPerSession: 300,
+      moderatorReserve: 10,
+      roomNamePrefix: null,
+      mediaProvider: null,
+    });
+    expect(
+      loadConfig({
+        LIVE_MAX_PARTICIPANTS_PER_SESSION: '1000',
+        LIVE_MODERATOR_RESERVE: '0',
+        LIVE_ROOM_NAME_PREFIX: 'live-staging.eu_1-',
+      }).live,
+    ).toEqual({
+      maxParticipantsPerSession: 1000,
+      moderatorReserve: 0,
+      roomNamePrefix: 'live-staging.eu_1-',
+      mediaProvider: null,
+    });
+    // Blank means unset.
+    expect(loadConfig({ LIVE_ROOM_NAME_PREFIX: ' ', LIVE_MEDIA_PROVIDER: '' }).live).toMatchObject({
+      roomNamePrefix: null,
+      mediaProvider: null,
+    });
+  });
+
+  it.each(['0', '-5', '1.5', '12abc', 'many', '99999999999999999999'])(
+    'refuses %j participants per session: a whole number of at least 1',
+    (value) => {
+      expect(() => loadConfig({ LIVE_MAX_PARTICIPANTS_PER_SESSION: value })).toThrow(
+        /LIVE_MAX_PARTICIPANTS_PER_SESSION must be a whole number of at least 1/,
+      );
+    },
+  );
+
+  it.each(['-1', '2.5', 'ten'])(
+    'refuses a moderator reserve of %j: a whole number, 0 or more',
+    (value) => {
+      expect(() => loadConfig({ LIVE_MODERATOR_RESERVE: value })).toThrow(/LIVE_MODERATOR_RESERVE/);
+    },
+  );
+
+  it.each(['live prod', 'live/', 'live*', 'ライブ-', 'x'.repeat(49)])(
+    'refuses the room name prefix %j: 1 to 48 letters, digits, ".", "_" or "-"',
+    (prefix) => {
+      expect(() => loadConfig({ LIVE_ROOM_NAME_PREFIX: prefix })).toThrow(/LIVE_ROOM_NAME_PREFIX/);
+    },
+  );
+
+  it('accepts a 48-character prefix', () => {
+    expect(loadConfig({ LIVE_ROOM_NAME_PREFIX: 'p'.repeat(48) }).live.roomNamePrefix).toBe(
+      'p'.repeat(48),
+    );
+  });
+
+  it.each(['LiveKit', 'fake', 'none', 'disabled', ' livekit'])(
+    'refuses LIVE_MEDIA_PROVIDER=%j: real media is enabled by exactly "livekit", or not at all',
+    (value) => {
+      expect(() => loadConfig({ LIVE_MEDIA_PROVIDER: value })).toThrow(/LIVE_MEDIA_PROVIDER/);
+    },
+  );
+
+  it('enables real media only on explicit opt-in, with a prefix, a real key and a 32-byte secret', () => {
+    expect(loadConfig(REAL_MEDIA).live).toMatchObject({
+      mediaProvider: 'livekit',
+      roomNamePrefix: 'live-prod-',
+    });
+    expect(loadConfig({ ...PRODUCTION, ...REAL_MEDIA }).live.mediaProvider).toBe('livekit');
+  });
+
+  it('refuses to boot real media without this deployment’s own room prefix', () => {
+    const { LIVE_ROOM_NAME_PREFIX: _omitted, ...withoutPrefix } = REAL_MEDIA;
+    expect(() => loadConfig(withoutPrefix)).toThrow(
+      /LIVE_ROOM_NAME_PREFIX is required when LIVE_MEDIA_PROVIDER=livekit/,
+    );
+  });
+
+  it.each(['devkey', 'change-me', 'secret', ''])(
+    'refuses to boot real media with the placeholder API key %j',
+    (key) => {
+      expect(() => loadConfig({ ...REAL_MEDIA, LIVEKIT_API_KEY: key })).toThrow(
+        /LIVEKIT_API_KEY must not be a placeholder/,
+      );
+    },
+  );
+
+  it('refuses to boot real media with a secret under 32 bytes, or a placeholder one', () => {
+    expect(() => loadConfig({ ...REAL_MEDIA, LIVEKIT_API_SECRET: 's'.repeat(31) })).toThrow(
+      /LIVEKIT_API_SECRET must be at least 32 bytes when LIVE_MEDIA_PROVIDER=livekit/,
+    );
+    expect(() =>
+      loadConfig({ ...REAL_MEDIA, LIVEKIT_API_SECRET: 'development-only-secret' }),
+    ).toThrow(/LIVEKIT_API_SECRET must not be a placeholder/);
+    expect(() =>
+      loadConfig({ ...PRODUCTION, ...REAL_MEDIA, LIVEKIT_API_SECRET: 'change-me' }),
+    ).toThrow(/LIVEKIT_API_SECRET still holds a placeholder value/);
+    // Bytes, not characters: 16 two-byte characters are 32 bytes.
+    expect(
+      loadConfig({ ...REAL_MEDIA, LIVEKIT_API_SECRET: 'ش'.repeat(16) }).live.mediaProvider,
+    ).toBe('livekit');
+  });
+
+  it('refuses the development defaults outright once real media is enabled', () => {
+    expect(() => loadConfig({ LIVE_MEDIA_PROVIDER: 'livekit' })).toThrow(
+      new RegExp(
+        [
+          'LIVE_ROOM_NAME_PREFIX is required',
+          'LIVEKIT_API_KEY must not be a placeholder',
+          'LIVEKIT_API_SECRET must not be a placeholder',
+          'LIVEKIT_API_SECRET must be at least 32 bytes',
+        ].join('[\\s\\S]*'),
+      ),
+    );
+  });
+
+  // The binding of audit D19 is the module's; configuration only says whether
+  // real media was asked for. Without the opt-in nothing new is required.
+  it('changes nothing for a configuration without LIVE_MEDIA_PROVIDER', () => {
+    expect(PRODUCTION.LIVEKIT_API_SECRET.length).toBeLessThan(32);
+    expect(loadConfig(PRODUCTION).live).toEqual({
+      maxParticipantsPerSession: 300,
+      moderatorReserve: 10,
+      roomNamePrefix: null,
+      mediaProvider: null,
+    });
+    expect(loadConfig({ ...PRODUCTION, LIVEKIT_API_KEY: 'devkey' }).livekit.apiKey).toBe('devkey');
+  });
+});

@@ -137,7 +137,11 @@ describe('provisional role matrix', () => {
     expect(holders(Permissions.communities.moderate)).toEqual(['ADMIN', 'OWNER', 'TEACHER']);
   });
 
-  it('registers the host-only moderation rule', () => {
-    expect(PROVISIONAL_POLICY_RULES.map((rule) => rule.id)).toEqual(['host-only-moderation']);
+  // Who moderates a live session is Communities' answer (Live's LiveAccess),
+  // never an identity rule: host-only moderation is retired (ADR 0017
+  // decision 10), and no resource rule of any kind is registered.
+  it('registers no resource-scoped rule — host-only moderation is retired', () => {
+    expect(PROVISIONAL_POLICY_RULES).toEqual([]);
+    expect(Object.isFrozen(PROVISIONAL_POLICY_RULES)).toBe(true);
   });
 });

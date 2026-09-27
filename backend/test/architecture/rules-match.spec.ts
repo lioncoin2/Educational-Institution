@@ -101,7 +101,7 @@ describe('every forbidden rule can fire', () => {
       to: real('node_modules/@nestjs/common/'),
     }),
     'domain-does-not-look-outward': () => ({
-      from: 'src/modules/live/domain/live-room.ts',
+      from: 'src/modules/live/domain/live-session.ts',
       to: 'src/modules/live/application/join-live-session.use-case.ts',
     }),
     'application-does-not-touch-adapters': () => ({
@@ -130,15 +130,15 @@ describe('every forbidden rule can fire', () => {
     }),
     'api-does-not-touch-domain-internals': () => ({
       from: 'src/modules/live/api/live.controller.ts',
-      to: 'src/modules/live/domain/live-room.ts',
+      to: 'src/modules/live/domain/live-session.ts',
     }),
     'no-cross-module-internals': () => ({
       from: 'src/modules/messaging/application/send-message.use-cases.ts',
-      to: 'src/modules/live/domain/live-room.ts',
+      to: 'src/modules/live/domain/live-session.ts',
     }),
     'contracts-are-self-contained': () => ({
       from: 'src/modules/live/contracts/events.ts',
-      to: 'src/modules/live/domain/live-room.ts',
+      to: 'src/modules/live/domain/live-session.ts',
     }),
     'platform-knows-no-modules': () => ({
       from: 'src/platform/http/http-failure.ts',

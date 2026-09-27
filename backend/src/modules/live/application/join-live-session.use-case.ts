@@ -1,103 +1,159 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import { err, failure, ok, type Result } from '../../../shared';
+import {
+  RATE_LIMITER,
+  err,
+  ok,
+  type CallMetadata,
+  type Principal,
+  type RateLimiter,
+  type Result,
+} from '../../../shared';
 import {
   ACCOUNT_DIRECTORY,
   AUTHORIZATION_SERVICE,
   Permissions,
   type AccountDirectory,
   type AuthorizationService,
-  type Principal,
 } from '../../identity/contracts';
-import { isJoinable, type LiveSessionId } from '../domain/live-room';
+import type { LiveParticipantRole } from '../contracts/participant-role';
 import {
-  LIVE_ROOM_REPOSITORY,
-  LIVE_SESSION_REPOSITORY,
-  type LiveRoomRepository,
-  type LiveSessionRepository,
-} from '../domain/ports';
-import { RTC_TOKENS, type RtcTokenIssuer } from '../domain/rtc-provider';
-import { capabilitiesFor } from '../domain/standing';
+  LiveRateLimits,
+  MAX_JOIN_TOKEN_TTL_SECONDS,
+  ROOM_PROVIDER_TIMEOUT_SECONDS,
+  isJoinTokenTtl,
+} from '../domain/live-limits';
+import { currentMediaRoom, isLive, type LiveSession } from '../domain/live-session';
+import { LIVE_SESSION_REPOSITORY, type LiveSessionRepository } from '../domain/ports';
+import {
+  RTC_ROOMS,
+  RTC_TOKENS,
+  RtcUnavailableError,
+  type RtcAccessToken,
+  type RtcRoomProvider,
+  type RtcTokenIssuer,
+} from '../domain/rtc-provider';
+import { capabilitiesFor, roleOf } from '../domain/standing';
+import { LiveAccess } from './live-access';
+import {
+  LIVE_SETTINGS,
+  LiveRefusals,
+  sessionUserKey,
+  tooMany,
+  type LiveSettings,
+} from './live-settings';
 import { LiveStanding } from './live-standing';
+import { RoomOccupancy } from './room-occupancy';
 import { mediaOf, type JoinTicket } from './views';
 
 /**
- * How long a join token is good for — to START a connection.
+ * Issues a join ticket (live.md S2) — the security boundary of live media.
+ * The client never states what it may do or who it is: the server decides
+ * both, here, and encodes them in the token.
  *
- * Short on purpose (approved: 120 s): a token that leaks is only good for a
- * fresh connection within two minutes. It does not limit how long anyone
- * stays: once connected, the media server itself sends the client a fresh
- * token straight away and every five minutes after, each valid ten minutes
- * and carrying the participant's current permissions, and the client SDK
- * reconnects with the newest one (verified in LiveKit's server and Flutter
- * SDK source, docs/architecture/live.md §9). Token expiry never disconnects
- * a connected participant. A client that could not connect within 120 s, or
- * was away longer than its refreshed token lasts, simply calls `/join` again.
- */
-export const JOIN_TOKEN_TTL_SECONDS = 120;
-
-export interface JoinLiveSessionCommand {
-  readonly principal: Principal;
-  readonly sessionId: string;
-}
-
-/**
- * Issues a join ticket for a live session — the security boundary of live
- * media. The client never states what it may do or who it is: the server
- * decides both here and encodes them in the token.
+ *   1. identity's `live.join` (the route's gate, asked again), then the
+ *      caller's limit in this session: 10 joins a minute, keyed by
+ *      (session, user) — never by address, which a school shares;
+ *   2. the session, by id → 404;
+ *   3. Communities, on the session's OWN community id: `community.live.join`,
+ *      or a moderator of the session → 404 like an unknown session, 412 for
+ *      the lifecycle's refusal, 503 when Communities cannot answer;
+ *   4. the session is live → else 412;
+ *   5. the caller's standing: a moderator holding `live.speak` and a speaker
+ *      holding a granted hand get the microphone; the presenter, the screen;
+ *      everyone else is a listener and publishes nothing, not even data;
+ *   6. the room, from a sample at most two seconds old: missing → ensured,
+ *      then the session read again, and a session that ended meanwhile gets
+ *      its room ended and 412 (ensure-then-recheck, §4.4); a listener over
+ *      the soft cap → 412 live.session_full, moderators and speakers exempt;
+ *      a provider outage skips both and fails open to the provider's hard
+ *      cap;
+ *   7. the name, from the account directory (never from the request);
+ *   8. the token, for exactly the session's current media room, with its
+ *      lifetime checked here first (audit D24) → 503 live.media_unavailable
+ *      when the provider cannot sign, the disabled provider included.
  *
- *   the host who may speak   -> moderator: may publish audio
- *   a person holding a grant -> speaker: may publish audio (survives a reconnect)
- *   everyone else            -> listener: subscribes only, no data channel
- *
- * Every call decides afresh from the current records, so calling it again is
- * always safe and always current. The name in the token comes from the
- * account directory, never from the request.
+ * Nothing is written, audited or published: a join is transport. Calling it
+ * again is always safe and always current — it is the way back in after a
+ * disconnect, and it decides afresh every time.
  */
 @Injectable()
 export class JoinLiveSessionUseCase {
+  private readonly logger = new Logger(JoinLiveSessionUseCase.name);
+
   constructor(
-    @Inject(AUTHORIZATION_SERVICE) private readonly authorization: AuthorizationService,
+    @Inject(AUTHORIZATION_SERVICE) private readonly identity: AuthorizationService,
     @Inject(ACCOUNT_DIRECTORY) private readonly directory: AccountDirectory,
-    @Inject(LIVE_SESSION_REPOSITORY) private readonly sessions: LiveSessionRepository,
-    @Inject(LIVE_ROOM_REPOSITORY) private readonly rooms: LiveRoomRepository,
-    @Inject(RTC_TOKENS) private readonly tokens: RtcTokenIssuer,
+    private readonly access: LiveAccess,
     private readonly standing: LiveStanding,
+    private readonly occupancy: RoomOccupancy,
+    @Inject(LIVE_SESSION_REPOSITORY) private readonly sessions: LiveSessionRepository,
+    @Inject(RTC_ROOMS) private readonly rooms: RtcRoomProvider,
+    @Inject(RTC_TOKENS) private readonly tokens: RtcTokenIssuer,
+    @Inject(RATE_LIMITER) private readonly limiter: RateLimiter,
+    @Inject(LIVE_SETTINGS) private readonly settings: LiveSettings,
   ) {}
 
-  async execute(command: JoinLiveSessionCommand): Promise<Result<JoinTicket>> {
-    const allowed = this.authorization.authorize(command.principal, Permissions.live.join);
+  async execute(command: {
+    readonly principal: Principal;
+    readonly sessionId: string;
+    readonly meta: CallMetadata;
+  }): Promise<Result<JoinTicket>> {
+    const { principal, sessionId } = command;
+    const allowed = this.identity.authorize(principal, Permissions.live.join);
     if (!allowed.ok) return allowed;
 
-    const session = await this.sessions.findById(command.sessionId as LiveSessionId);
-    if (session === null) {
-      return err(failure('not_found', 'live.session_not_found', 'No such live session.'));
-    }
-    if (!isJoinable(session)) {
-      return err(
-        failure(
-          'precondition_failed',
-          'live.session_not_live',
-          'This session is not currently live.',
-        ),
+    const throttle = await this.limiter.consume(
+      sessionUserKey(sessionId, principal.userId),
+      LiveRateLimits.joinsPerSessionUser,
+    );
+    if (!throttle.allowed) return err(tooMany('live.too_many_joins', throttle.retryAfterSeconds));
+
+    const session = await this.sessions.findById(sessionId);
+    if (session === null) return err(LiveRefusals.sessionNotFound);
+    const participant = await this.access.participant(
+      principal,
+      session,
+      LiveRefusals.sessionNotFound,
+    );
+    if (!participant.ok) return participant;
+    if (!isLive(session)) return err(LiveRefusals.sessionNotLive);
+
+    const { standing } = await this.standing.ofPrincipal(
+      principal,
+      session,
+      participant.value.moderator !== null,
+    );
+    const role = roleOf(standing);
+    const capabilities = capabilitiesFor(standing);
+    const room = currentMediaRoom(this.settings.roomNamePrefix, session);
+
+    const admitted = await this.admit(session, room, role);
+    if (!admitted.ok) return admitted;
+
+    const [account] = await this.directory.describe([principal.userId]);
+    const ttlSeconds = this.settings.joinTokenTtlSeconds;
+    // The provider's SDK reads a falsy lifetime as six hours: never ask it
+    // for anything but a whole number of seconds, 1 to 600 (audit D24).
+    if (!isJoinTokenTtl(ttlSeconds)) {
+      throw new RangeError(
+        `A join token lasts 1 to ${MAX_JOIN_TOKEN_TTL_SECONDS} whole seconds, not ${ttlSeconds}.`,
       );
     }
-    const room = await this.rooms.findById(session.roomId);
-    if (room === null) {
-      return err(failure('not_found', 'live.room_not_found', 'No such live room.'));
+    let token: RtcAccessToken;
+    try {
+      token = await this.tokens.issueAccessToken({
+        roomName: room,
+        identity: principal.userId,
+        displayName: account?.displayName ?? '',
+        capabilities,
+        ttlSeconds,
+      });
+    } catch (error) {
+      if (error instanceof RtcUnavailableError) return err(LiveRefusals.mediaUnavailable);
+      throw error;
     }
-
-    const role = await this.standing.ofPrincipal(command.principal, session, room);
-    const capabilities = capabilitiesFor(role);
-    const [account] = await this.directory.describe([command.principal.userId]);
-
-    const token = await this.tokens.issueAccessToken({
-      roomName: session.id,
-      identity: command.principal.userId,
-      displayName: account?.displayName ?? '',
-      capabilities,
-      ttlSeconds: JOIN_TOKEN_TTL_SECONDS,
-    });
+    if (role === 'listener') this.occupancy.listenerAdmitted(room);
 
     return ok({
       token: token.token,
@@ -106,5 +162,59 @@ export class JoinLiveSessionUseCase {
       role,
       media: mediaOf(capabilities),
     });
+  }
+
+  /** Step 6: the room exists, and a listener fits under the soft cap — or the provider cannot say. */
+  private async admit(
+    session: LiveSession,
+    room: string,
+    role: LiveParticipantRole,
+  ): Promise<Result<void>> {
+    const sample = await this.occupancy.sample(room);
+    if (sample.kind === 'unavailable') return ok(undefined);
+    if (sample.kind === 'missing') {
+      try {
+        await this.rooms.ensureRoom({
+          roomName: room,
+          maxParticipants: session.participantCap + session.moderatorReserve,
+          emptyTimeoutSeconds: ROOM_PROVIDER_TIMEOUT_SECONDS,
+          departureTimeoutSeconds: ROOM_PROVIDER_TIMEOUT_SECONDS,
+        });
+      } catch (error) {
+        if (error instanceof RtcUnavailableError) return ok(undefined);
+        throw error;
+      }
+      // Without this read, a join racing End would bring the ended room back.
+      const now = await this.sessions.findById(session.id);
+      if (now === null || !isLive(now)) {
+        await this.endRoom(room, session);
+        return err(LiveRefusals.sessionNotLive);
+      }
+      this.occupancy.ensured(room);
+      return ok(undefined);
+    }
+    // Moderators and current speakers skip the soft cap: the reserve is
+    // theirs, so a teacher who drops out always gets back in.
+    if (role === 'listener' && sample.occupancy >= session.participantCap) {
+      return err(LiveRefusals.sessionFull);
+    }
+    return ok(undefined);
+  }
+
+  private async endRoom(room: string, session: LiveSession): Promise<void> {
+    try {
+      await this.rooms.endRoom(room);
+    } catch (error) {
+      if (!(error instanceof RtcUnavailableError)) {
+        this.logger.error(
+          {
+            event: 'live.provider.error',
+            sessionId: session.id,
+            err: { name: error instanceof Error ? error.name : typeof error },
+          },
+          'could not end the room of a session that ended; left to the room sweep',
+        );
+      }
+    }
   }
 }

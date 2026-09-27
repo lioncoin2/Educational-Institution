@@ -1,245 +1,275 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import {
   CLOCK,
   ID_GENERATOR,
   err,
-  failure,
   ok,
+  type CallMetadata,
   type Clock,
   type IdGenerator,
+  type Principal,
   type Result,
 } from '../../../shared';
+import type { CommunityPermit } from '../../communities/contracts/authorization';
 import {
   AUTHORIZATION_SERVICE,
   Permissions,
   type AuthorizationService,
-  type Principal,
 } from '../../identity/contracts';
-import {
-  speakerPermissionGranted,
-  speakerPermissionRevoked,
-  speakerRequestDeclined,
-} from '../domain/events';
-import { isJoinable, type LiveSession, type LiveSessionId } from '../domain/live-room';
+import { speakerDeclined, speakerGranted, speakerRevoked } from '../domain/events';
+import { MAX_CONCURRENT_SPEAKERS } from '../domain/live-limits';
+import type { LiveSession } from '../domain/live-session';
 import type { ModerationAction, ModerationActionType } from '../domain/moderation';
 import {
-  LIVE_ROOM_REPOSITORY,
   LIVE_SESSION_REPOSITORY,
   SPEAKER_REQUEST_REPOSITORY,
-  type LiveRoomRepository,
   type LiveSessionRepository,
   type SpeakerRequestRepository,
+  type TransitionOutcome,
 } from '../domain/ports';
-import { MAX_CONCURRENT_SPEAKERS, type SpeakerRequest } from '../domain/speaker-request';
-import { CapabilityConvergence } from './capability-convergence';
-import { LiveJournal } from './live-journal';
-import { speakerRequestView, type ModerationResult, type SpeakerRequestView } from './views';
+import type { SpeakerRequest } from '../domain/speaker-request';
+import { askCommunities } from './community-calls';
+import { LiveAccess, permitOf } from './live-access';
+import { LiveJournal, moderationAudit } from './live-journal';
+import { LiveMedia } from './live-media';
+import { LiveRefusals } from './live-settings';
+import { LiveStanding } from './live-standing';
+import {
+  speakerRequestView,
+  type DeclineResult,
+  type MediaOutcome,
+  type ModerationResult,
+} from './views';
 
 export interface ModerateSpeakerCommand {
   readonly principal: Principal;
   readonly requestId: string;
+  readonly meta: CallMetadata;
 }
 
-const invalid = (message: string) => err(failure('conflict', 'live.invalid_transition', message));
-const notLive = () =>
-  err(failure('precondition_failed', 'live.session_not_live', 'This session is not live.'));
+/** A request, its session, and the permit its moderator acts on. */
+interface Moderated {
+  readonly request: SpeakerRequest;
+  readonly session: LiveSession;
+  readonly permit: CommunityPermit;
+}
 
 /**
- * A moderator giving, refusing or taking back the floor.
+ * A moderator giving, refusing or taking back the floor (live.md §5.1, S3).
  *
- * Authorization is asked of identity twice, deliberately. First coarsely —
- * "may this principal moderate at all?" — before anything is loaded, so a
- * caller without the permission cannot learn which requests exist. Then with
- * the room's host in context — "may they moderate THIS room?" — which is the
- * question that matters, and which identity's policy answers (Q1). Live never
- * decides access itself.
- *
- * Every decision is idempotent: repeating one already taken answers 200 with
- * the request as it is, changes nothing, and records nothing. A move outside
- * the state table is 409.
- *
- * Order: live's own record first (the source of truth), then the media
- * provider, then the audit entry and the event. The provider's answer is
- * reported, never assumed: `applied`, `not_connected` (the next join carries
- * it), or `pending` (the provider did not take it yet) — and in every case
- * the person is watched until the media plane has converged
- * (`CapabilityConvergence`), so neither a revoked speaker nor a granted one
- * is left with the wrong rights. A provider failure never fails the
- * decision: it is already stored, so it is always audited and announced.
+ *   1. identity's coarse `live.moderate`, before anything is read — a caller
+ *      who may not moderate at all learns nothing about which requests exist;
+ *   2. the request and its session → 404 live.request_not_found;
+ *   3. `LiveAccess.moderator` on the session's own community → 404 like an
+ *      unknown request, 403 live.not_a_moderator, 503;
+ *   4. the host's own request, acted on by anyone but the host → 403
+ *      live.target_is_host (PROVISIONAL, Q54): a delegated moderator — the
+ *      community's owner included — never acts on the host;
+ *   5. a repeat of the request's current state → 200, and nothing else
+ *      happens (audit D6);
+ *   6. grant only: the requester may still take part — Communities'
+ *      `community.live.remain`, or they moderate the session — else 412
+ *      live.target_not_eligible;
+ *   7. the compare-and-set, under the session's lock: 412
+ *      live.speaker_slots_full at the cap, 409 live.invalid_transition from
+ *      any other state, 412 live.session_not_live after the end;
+ *   8. after commit, for a grant or a revoke: the requester's full current set
+ *      pushed, reported as `media` — never a failure, since the decision is
+ *      stored (`LiveMedia`);
+ *   9. the journal: the act's own audit action, with the permit it ran on,
+ *      the target, the request and the media outcome, then the event with the
+ *      session's new version.
  */
 @Injectable()
 export class ModerateSpeakerUseCase {
+  private readonly logger = new Logger(ModerateSpeakerUseCase.name);
+
   constructor(
-    @Inject(AUTHORIZATION_SERVICE) private readonly authorization: AuthorizationService,
+    @Inject(AUTHORIZATION_SERVICE) private readonly identity: AuthorizationService,
+    private readonly access: LiveAccess,
+    private readonly standing: LiveStanding,
     @Inject(SPEAKER_REQUEST_REPOSITORY) private readonly requests: SpeakerRequestRepository,
-    @Inject(LIVE_SESSION_REPOSITORY) private readonly liveSessions: LiveSessionRepository,
-    @Inject(LIVE_ROOM_REPOSITORY) private readonly rooms: LiveRoomRepository,
+    @Inject(LIVE_SESSION_REPOSITORY) private readonly sessions: LiveSessionRepository,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
-    private readonly convergence: CapabilityConvergence,
+    private readonly media: LiveMedia,
     private readonly journal: LiveJournal,
   ) {}
 
   async grant(command: ModerateSpeakerCommand): Promise<Result<ModerationResult>> {
-    const loaded = await this.loadAuthorized(command);
+    const loaded = await this.load(command);
     if (!loaded.ok) return loaded;
-    const { request, session } = loaded.value;
-    if (request.state === 'granted')
-      return ok({ request: speakerRequestView(request), media: 'unchanged' });
-    if (!isJoinable(session)) return notLive();
+    const { request, session, permit } = loaded.value;
+    if (request.state === 'granted') return unchanged(request);
 
-    const now = this.clock.now();
-    const action = this.action('grant_speaker', command, request, now);
+    const eligible = await askCommunities(this.logger, () =>
+      this.standing.ofAccounts(session, [request.userId]),
+    );
+    if (!eligible.ok) return eligible;
+    if (eligible.value.get(request.userId)?.eligible !== true) {
+      return err(LiveRefusals.targetNotEligible);
+    }
+
+    const action = this.action('grant_speaker', command.principal, request);
     const outcome = await this.requests.grantWithinCap({
       requestId: request.id,
       cap: MAX_CONCURRENT_SPEAKERS,
-      at: now,
+      at: action.at,
       by: command.principal.userId,
       moderation: action,
     });
-    if (outcome === null) return this.notFound();
+    if (outcome === null) return err(LiveRefusals.requestNotFound);
     switch (outcome.kind) {
       case 'unchanged':
-        return ok({ request: speakerRequestView(outcome.request), media: 'unchanged' });
-      case 'invalid':
-        return invalid('This request can no longer be granted.');
+        return unchanged(outcome.request);
       case 'slots_full':
-        return err(
-          failure(
-            'precondition_failed',
-            'live.speaker_slots_full',
-            'The maximum number of speakers already hold the floor.',
-          ),
-        );
-      case 'granted': {
-        const media = await this.convergence.apply(session.id, outcome.request.userId);
-        await this.journal.moderated(
-          action,
-          speakerPermissionGranted(
-            session.id,
-            outcome.request.userId,
-            command.principal.userId,
-            now,
-          ),
-          { requestId: request.id, media },
-        );
-        return ok({ request: speakerRequestView(outcome.request), media });
-      }
+        return err(LiveRefusals.speakerSlotsFull);
+      case 'invalid':
+        return err(LiveRefusals.invalidTransition);
+      case 'session_not_live':
+        return err(LiveRefusals.sessionNotLive);
+      case 'granted':
+        break;
     }
-  }
 
-  async revoke(command: ModerateSpeakerCommand): Promise<Result<ModerationResult>> {
-    const loaded = await this.loadAuthorized(command);
-    if (!loaded.ok) return loaded;
-    const { request, session } = loaded.value;
-    if (request.state === 'revoked')
-      return ok({ request: speakerRequestView(request), media: 'unchanged' });
-    if (!isJoinable(session)) return notLive();
-
-    const now = this.clock.now();
-    const action = this.action('revoke_speaker', command, request, now);
-    const outcome = await this.requests.transition({
-      requestId: request.id,
-      from: ['granted'],
-      to: 'revoked',
-      at: now,
-      by: command.principal.userId,
-      moderation: action,
-    });
-    if (outcome === null) return this.notFound();
-    if (outcome.kind === 'unchanged') {
-      return ok({ request: speakerRequestView(outcome.request), media: 'unchanged' });
-    }
-    if (outcome.kind === 'invalid') return invalid('This request is not currently granted.');
-
-    // Demote on the wire: the participant stays in the room as a listener.
-    const media = await this.convergence.apply(session.id, outcome.request.userId);
-    await this.journal.moderated(
-      action,
-      speakerPermissionRevoked(session.id, outcome.request.userId, command.principal.userId, now),
-      { requestId: request.id, media },
+    // The microphone on, on the wire too — or when the watch lands it.
+    const media = await this.media.push(session, request.userId);
+    await this.journal.record(
+      moderationAudit(action, {
+        communityId: session.communityId,
+        detail: { requestId: request.id, media, permit: permitOf(permit) },
+        correlationId: command.meta.correlationId,
+      }),
+      [speakerGranted(session, outcome.request, outcome.stateVersion, command.meta.correlationId)],
     );
     return ok({ request: speakerRequestView(outcome.request), media });
   }
 
-  /** Passing over a pending hand. No media change: the person was never speaking. */
-  async decline(
-    command: ModerateSpeakerCommand,
-  ): Promise<Result<{ readonly request: SpeakerRequestView }>> {
-    const loaded = await this.loadAuthorized(command);
+  async revoke(command: ModerateSpeakerCommand): Promise<Result<ModerationResult>> {
+    const loaded = await this.load(command);
     if (!loaded.ok) return loaded;
-    const { request, session } = loaded.value;
-    if (request.state === 'declined') return ok({ request: speakerRequestView(request) });
-    if (!isJoinable(session)) return notLive();
+    const { request, session, permit } = loaded.value;
+    if (request.state === 'revoked') return unchanged(request);
 
-    const now = this.clock.now();
-    const action = this.action('decline_speaker', command, request, now);
+    const action = this.action('revoke_speaker', command.principal, request);
+    const outcome = await this.transition(action, request, ['granted'], 'revoked');
+    if (!outcome.ok) return outcome;
+    if (outcome.value.kind === 'unchanged') return unchanged(outcome.value.request);
+
+    // Demoted, not removed: the person stays in the room as a listener —
+    // unless they publish by right, which a recomputed set keeps.
+    const media = await this.media.push(session, request.userId);
+    await this.journal.record(
+      moderationAudit(action, {
+        communityId: session.communityId,
+        detail: { requestId: request.id, media, permit: permitOf(permit) },
+        correlationId: command.meta.correlationId,
+      }),
+      [
+        speakerRevoked(
+          session,
+          outcome.value.request,
+          outcome.value.stateVersion,
+          command.meta.correlationId,
+        ),
+      ],
+    );
+    return ok({ request: speakerRequestView(outcome.value.request), media });
+  }
+
+  /** Passing over a pending hand. No media change: the person was never speaking. */
+  async decline(command: ModerateSpeakerCommand): Promise<Result<DeclineResult>> {
+    const loaded = await this.load(command);
+    if (!loaded.ok) return loaded;
+    const { request, session, permit } = loaded.value;
+    if (request.state === 'declined') return ok({ request: speakerRequestView(request) });
+
+    const action = this.action('decline_speaker', command.principal, request);
+    const outcome = await this.transition(action, request, ['pending'], 'declined');
+    if (!outcome.ok) return outcome;
+    if (outcome.value.kind === 'applied') {
+      await this.journal.record(
+        moderationAudit(action, {
+          communityId: session.communityId,
+          detail: { requestId: request.id, permit: permitOf(permit) },
+          correlationId: command.meta.correlationId,
+        }),
+        [
+          speakerDeclined(
+            session,
+            outcome.value.request,
+            outcome.value.stateVersion,
+            command.meta.correlationId,
+          ),
+        ],
+      );
+    }
+    return ok({ request: speakerRequestView(outcome.value.request) });
+  }
+
+  /** Steps 1–4. */
+  private async load(command: ModerateSpeakerCommand): Promise<Result<Moderated>> {
+    const { principal } = command;
+    const allowed = this.identity.authorize(principal, Permissions.live.moderate);
+    if (!allowed.ok) return allowed;
+
+    const request = await this.requests.findById(command.requestId);
+    if (request === null) return err(LiveRefusals.requestNotFound);
+    const session = await this.sessions.findById(request.sessionId);
+    if (session === null) return err(LiveRefusals.requestNotFound);
+    const permit = await this.access.moderator(principal, session, LiveRefusals.requestNotFound);
+    if (!permit.ok) return permit;
+    if (request.userId === session.hostUserId && principal.userId !== session.hostUserId) {
+      return err(LiveRefusals.targetIsHost);
+    }
+    return ok({ request, session, permit: permit.value });
+  }
+
+  /** Step 7 for decline and revoke: applied or unchanged, or the refusal. */
+  private async transition(
+    action: ModerationAction,
+    request: SpeakerRequest,
+    from: readonly SpeakerRequest['state'][],
+    to: 'declined' | 'revoked',
+  ): Promise<Result<TransitionOutcome & { readonly kind: 'applied' | 'unchanged' }>> {
     const outcome = await this.requests.transition({
       requestId: request.id,
-      from: ['pending'],
-      to: 'declined',
-      at: now,
-      by: command.principal.userId,
+      from,
+      to,
+      at: action.at,
+      by: action.actorUserId,
       moderation: action,
     });
-    if (outcome === null) return this.notFound();
-    if (outcome.kind === 'unchanged') return ok({ request: speakerRequestView(outcome.request) });
-    if (outcome.kind === 'invalid') return invalid('Only a raised hand can be declined.');
-
-    await this.journal.moderated(
-      action,
-      speakerRequestDeclined(session.id, outcome.request.userId, command.principal.userId, now),
-      { requestId: request.id },
-    );
-    return ok({ request: speakerRequestView(outcome.request) });
+    if (outcome === null) return err(LiveRefusals.requestNotFound);
+    switch (outcome.kind) {
+      case 'invalid':
+        return err(LiveRefusals.invalidTransition);
+      case 'session_not_live':
+        return err(LiveRefusals.sessionNotLive);
+      case 'applied':
+      case 'unchanged':
+        return ok({ ...outcome, kind: outcome.kind });
+    }
   }
 
   private action(
     type: ModerationActionType,
-    command: ModerateSpeakerCommand,
+    principal: Principal,
     request: SpeakerRequest,
-    at: Date,
   ): ModerationAction {
     return {
       id: this.ids.next<'ModerationAction'>(),
       sessionId: request.sessionId,
-      actorUserId: command.principal.userId,
+      actorUserId: principal.userId,
       targetUserId: request.userId,
       type,
-      at,
+      at: this.clock.now(),
     };
   }
+}
 
-  private notFound() {
-    return err(failure('not_found', 'live.request_not_found', 'No such speaker request.'));
-  }
-
-  /**
-   * Coarse check, load, then the room-scoped check. A request whose session or
-   * room cannot be found is reported as not found — never "forbidden", which
-   * would confirm it exists.
-   */
-  private async loadAuthorized(
-    command: ModerateSpeakerCommand,
-  ): Promise<Result<{ readonly request: SpeakerRequest; readonly session: LiveSession }>> {
-    const allowed = this.authorization.authorize(command.principal, Permissions.live.moderate);
-    if (!allowed.ok) return allowed;
-
-    const request = await this.requests.findById(command.requestId);
-    if (request === null) return this.notFound();
-    const session = await this.liveSessions.findById(request.sessionId as LiveSessionId);
-    if (session === null) return this.notFound();
-    const room = await this.rooms.findById(session.roomId);
-    if (room === null) return this.notFound();
-
-    const inThisRoom = this.authorization.authorize(command.principal, Permissions.live.moderate, {
-      resourceType: 'live.session',
-      resourceId: session.id,
-      ownerUserId: room.hostUserId,
-    });
-    if (!inThisRoom.ok) return inThisRoom;
-
-    return ok({ request, session });
-  }
+/** A repeat of a decision already taken: 200 with the request as it is, and nothing sent. */
+function unchanged(request: SpeakerRequest): Result<ModerationResult> {
+  return ok({ request: speakerRequestView(request), media: 'unchanged' satisfies MediaOutcome });
 }

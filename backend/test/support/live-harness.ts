@@ -1,174 +1,365 @@
-import { asId, ok, type Id, type IdGenerator, type Principal } from '../../src/shared';
-import type {
-  AccountDirectory,
-  AccountSummary,
-  AuthorizationService,
-  Permission,
-} from '../../src/modules/identity/contracts';
-// The real decision point and the provisional rules — test-only reach into
-// identity's internals, so room scoping is tested end to end.
-import { PolicyAuthorizationService } from '../../src/modules/identity/application/authorization.service';
-import {
-  PROVISIONAL_POLICY_RULES,
-  PROVISIONAL_ROLE_PERMISSIONS,
-} from '../../src/modules/identity/domain/provisional-policy';
+import type { Principal } from '../../src/shared';
+import type { AuthorizationService } from '../../src/modules/identity/contracts';
 import type { KnownRoleCode } from '../../src/modules/identity/domain/role';
-import { CapabilityConvergence } from '../../src/modules/live/application/capability-convergence';
+import type { CommunityCapability } from '../../src/modules/communities/contracts/capabilities';
+import type { CommunityStatus } from '../../src/modules/communities/contracts/vocabulary';
+import { EndLiveSessionUseCase } from '../../src/modules/live/application/end-live-session.use-case';
+import { GetCurrentLiveSessionUseCase } from '../../src/modules/live/application/get-current-live-session.use-case';
+import { GetLiveSessionUseCase } from '../../src/modules/live/application/get-live-session.use-case';
 import { JoinLiveSessionUseCase } from '../../src/modules/live/application/join-live-session.use-case';
+import { ListHandsUseCase } from '../../src/modules/live/application/list-hands.use-case';
+import { LiveAccess } from '../../src/modules/live/application/live-access';
 import { LiveJournal } from '../../src/modules/live/application/live-journal';
+import { LiveMedia } from '../../src/modules/live/application/live-media';
+import { LiveSessionLifecycle } from '../../src/modules/live/application/live-session-lifecycle';
+import type { LiveSettings } from '../../src/modules/live/application/live-settings';
 import { LiveStanding } from '../../src/modules/live/application/live-standing';
 import { LowerHandUseCase } from '../../src/modules/live/application/lower-hand.use-case';
 import { ModerateSpeakerUseCase } from '../../src/modules/live/application/moderate-speaker.use-case';
+import { PresenterUseCase } from '../../src/modules/live/application/presenter.use-case';
 import { RaiseHandUseCase } from '../../src/modules/live/application/raise-hand.use-case';
-import type { LiveRoom, LiveSession } from '../../src/modules/live/domain/live-room';
-import type { SpeakerRequest } from '../../src/modules/live/domain/speaker-request';
+import { RoomOccupancy } from '../../src/modules/live/application/room-occupancy';
+import { LiveSessionViews } from '../../src/modules/live/application/session-views';
+import { StartLiveSessionUseCase } from '../../src/modules/live/application/start-live-session.use-case';
+import type { LiveSessionView, SpeakerRequestView } from '../../src/modules/live/application/views';
+import { JOIN_TOKEN_TTL_SECONDS } from '../../src/modules/live/domain/live-limits';
+import { mediaRoomName, type LiveSession } from '../../src/modules/live/domain/live-session';
+import type { RtcProvider } from '../../src/modules/live/domain/rtc-provider';
 import { FakeRtcProvider } from '../../src/modules/live/infrastructure/fake-rtc-provider';
-import {
-  InMemoryLiveRoomRepository,
-  InMemoryLiveSessionRepository,
-  InMemorySpeakerRequestRepository,
-} from '../../src/modules/live/infrastructure/in-memory-live-repositories';
-import { AdjustableClock, RecordingAuditLog, RecordingEvents } from './identity-harness';
+import { InMemoryLiveStore } from '../../src/modules/live/infrastructure/in-memory-live-repositories';
+import { Journal, META, communitiesHarness } from './communities-harness';
+import { principalWith } from './principals';
 
-export const HOST = 'teacher-1';
-export const SESSION = 'session-1';
-export const ROOM = 'room-1';
+export { META, codeOf } from './communities-harness';
 
-export class CountingIdGenerator implements IdGenerator {
-  private n = 0;
-  next<TBrand extends string>(): Id<TBrand> {
-    this.n += 1;
-    return asId<TBrand>(`generated-${this.n}`);
-  }
-}
+/** The settings the module binds for the fake — a test overrides what it is about. */
+export const LIVE_TEST_SETTINGS: LiveSettings = Object.freeze({
+  roomNamePrefix: 'live-',
+  participantCap: 300,
+  moderatorReserve: 10,
+  joinTokenTtlSeconds: JOIN_TOKEN_TTL_SECONDS,
+});
 
 /**
- * The account directory as live sees it: names, and identity's answer to
- * "may this account speak?". Unknown ids are absent, as in production.
- */
-export class StubDirectory implements AccountDirectory {
-  readonly names = new Map<string, string>([
-    [HOST, 'الأستاذة عائشة'],
-    ['student-1', 'مريم'],
-    ['student-2', 'زينب'],
-  ]);
-  /** Accounts that may speak (hold live.speak), as identity would answer. */
-  readonly speakers = new Set<string>([HOST]);
-
-  async describe(userIds: readonly string[]): Promise<readonly AccountSummary[]> {
-    return userIds.flatMap((userId) => {
-      const displayName = this.names.get(userId);
-      return displayName === undefined ? [] : [{ userId, displayName, active: true }];
-    });
-  }
-
-  async withPermission(
-    userIds: readonly string[],
-    permission: Permission,
-  ): Promise<ReadonlySet<string>> {
-    return new Set(
-      userIds.filter((userId) => permission !== 'live.speak' || this.speakers.has(userId)),
-    );
-  }
-}
-
-export const allowAll: AuthorizationService = {
-  can: () => true,
-  authorize: () => ok(undefined),
-};
-
-/** identity's real authorization service, with its provisional rules. */
-export const identityPolicy = (): AuthorizationService =>
-  new PolicyAuthorizationService(PROVISIONAL_POLICY_RULES);
-
-export function principalOf(userId: string, role: KnownRoleCode): Principal {
-  return {
-    userId,
-    roles: [role],
-    permissions: new Set<string>(PROVISIONAL_ROLE_PERMISSIONS[role]),
-  };
-}
-
-export const room: LiveRoom = {
-  id: asId<'LiveRoom'>(ROOM),
-  halaqaId: 'halaqa-1',
-  title: 'Tajweed',
-  hostUserId: HOST,
-  maxParticipants: 2500,
-  createdAt: new Date(0),
-};
-
-export const liveSession: LiveSession = {
-  id: asId<'LiveSession'>(SESSION),
-  roomId: room.id,
-  state: 'live',
-  startedAt: new Date(0),
-  endedAt: null,
-};
-
-export function pending(id: string, userId: string, requestedAt = new Date(1)): SpeakerRequest {
-  return {
-    id: asId<'SpeakerRequest'>(id),
-    sessionId: SESSION,
-    userId,
-    state: 'pending',
-    requestedAt,
-    grantedAt: null,
-    decidedAt: null,
-    decidedBy: null,
-  };
-}
-
-/**
- * Live, assembled exactly as the module wires it — in-memory stores, the
- * fake provider, a recording journal — with identity's real policy unless a
- * test swaps it.
+ * Live, assembled exactly as the module wires it without a database — over
+ * the REAL Communities: its authorization service on its in-memory store,
+ * membership, delegation and the lifecycle, all driven through Communities'
+ * own use cases, and identity's real policy (with its now-empty rule list).
+ * So Live is tested against Communities' actual rules, never a copy of them.
+ *
+ * Live's side: the in-memory repositories, the extended fake provider, the
+ * Communities harness's adjustable clock, sequential uuid-shaped ids and
+ * in-process rate limiter, and a journal of its own that records audit
+ * entries and events in the order written (Communities' own go to
+ * `communities.journal`).
+ *
+ * Sessions are ALWAYS started through StartLiveSession — never written into
+ * a repository — so every test sees a session exactly as production makes
+ * one.
  */
 export function liveHarness(
   options: {
-    readonly authorization?: AuthorizationService;
-    readonly session?: LiveSession;
-    readonly requests?: readonly SpeakerRequest[];
+    /** Identity's authorization service, for Communities and Live alike — a spy, say. */
+    readonly identity?: AuthorizationService;
+    /** The provider the use cases get; the fake by default (the disabled provider, say). */
+    readonly provider?: RtcProvider;
+    readonly settings?: Partial<LiveSettings>;
   } = {},
 ) {
-  const authorization = options.authorization ?? identityPolicy();
-  const clock = new AdjustableClock(new Date(1_700_000_000_000));
-  const ids = new CountingIdGenerator();
-  const audit = new RecordingAuditLog();
-  const events = new RecordingEvents();
-  const rtc = new FakeRtcProvider();
-  const directory = new StubDirectory();
-  const sessions = new InMemoryLiveSessionRepository([options.session ?? liveSession]);
-  const rooms = new InMemoryLiveRoomRepository([room]);
-  const requests = new InMemorySpeakerRequestRepository(options.requests ?? []);
-  const journal = new LiveJournal(audit, events);
-  const standing = new LiveStanding(authorization, directory, sessions, rooms, requests);
-  const convergence = new CapabilityConvergence(standing, rtc, clock);
+  const communities = communitiesHarness({ identity: options.identity });
+  const { clock, ids, accounts, limiter, identity } = communities;
+  const authorization = communities.authorization;
+  const journal = new Journal();
+  const rtc = new FakeRtcProvider(clock);
+  const provider = options.provider ?? rtc;
+  const store = new InMemoryLiveStore();
+  const settings: LiveSettings = { ...LIVE_TEST_SETTINGS, ...options.settings };
 
-  return {
+  const liveJournal = new LiveJournal(journal, journal);
+  const access = new LiveAccess(authorization);
+  const standing = new LiveStanding(
+    identity,
+    accounts,
+    authorization,
+    store.requests,
+    store.presenters,
+  );
+  const media = new LiveMedia(provider, standing, settings, clock);
+  const occupancy = new RoomOccupancy(provider, clock);
+  const views = new LiveSessionViews(access, standing, store.requests);
+  const lifecycle = new LiveSessionLifecycle(
+    store.sessions,
+    provider,
+    settings,
     clock,
-    audit,
-    events,
+    ids,
+    media,
+    liveJournal,
+  );
+
+  const h = {
+    communities,
+    clock,
+    ids,
+    accounts,
+    limiter,
+    identity,
+    authorization,
+    journal,
     rtc,
-    directory,
-    sessions,
-    requests,
-    convergence,
-    join: new JoinLiveSessionUseCase(authorization, directory, sessions, rooms, rtc, standing),
-    raise: new RaiseHandUseCase(authorization, sessions, requests, clock, ids, journal),
-    lower: new LowerHandUseCase(sessions, requests, clock, convergence, journal),
-    moderate: new ModerateSpeakerUseCase(
-      authorization,
-      requests,
-      sessions,
-      rooms,
+    provider,
+    store,
+    sessions: store.sessions,
+    requests: store.requests,
+    presenters: store.presenters,
+    settings,
+    access,
+    standing,
+    media,
+    occupancy,
+    views,
+    lifecycle,
+
+    start: new StartLiveSessionUseCase(
+      identity,
+      access,
+      store.sessions,
+      provider,
+      limiter,
+      settings,
       clock,
       ids,
-      convergence,
-      journal,
+      views,
+      liveJournal,
     ),
-    eventNames: () => events.published.map((event) => event.name),
+    end: new EndLiveSessionUseCase(identity, access, store.sessions, lifecycle, views),
+    get: new GetLiveSessionUseCase(identity, access, store.sessions, views),
+    current: new GetCurrentLiveSessionUseCase(identity, access, store.sessions, views),
+    join: new JoinLiveSessionUseCase(
+      identity,
+      accounts,
+      access,
+      standing,
+      occupancy,
+      store.sessions,
+      provider,
+      provider,
+      limiter,
+      settings,
+    ),
+    raise: new RaiseHandUseCase(
+      identity,
+      access,
+      store.sessions,
+      store.requests,
+      limiter,
+      clock,
+      ids,
+      liveJournal,
+    ),
+    lower: new LowerHandUseCase(access, store.sessions, store.requests, clock, media, liveJournal),
+    moderate: new ModerateSpeakerUseCase(
+      identity,
+      access,
+      standing,
+      store.requests,
+      store.sessions,
+      clock,
+      ids,
+      media,
+      liveJournal,
+    ),
+    hands: new ListHandsUseCase(identity, accounts, access, store.sessions, store.requests, media),
+    presenter: new PresenterUseCase(
+      identity,
+      access,
+      store.sessions,
+      store.presenters,
+      clock,
+      ids,
+      media,
+      views,
+      liveJournal,
+    ),
+
+    /** A signed-in person with these roles, known to the directory by `name`. */
+    person(userId: string, roles: readonly KnownRoleCode[], name = userId): Principal {
+      accounts.add(userId, roles, name);
+      return principalWith(userId, roles);
+    },
+
+    /**
+     * A community owned by a TEACHER, with STUDENT members. Only OWNER and
+     * ADMIN create communities (Q41), so an ADMIN creates it, hands it to the
+     * teacher and leaves: nobody but the people named here has any standing
+     * in it.
+     */
+    async community(
+      ownerId = 'teacher-1',
+      ...studentIds: string[]
+    ): Promise<{
+      readonly id: string;
+      readonly owner: Principal;
+      readonly students: readonly Principal[];
+    }> {
+      const admin = h.person('admin-1', ['ADMIN']);
+      const id = await communities.community(admin);
+      const owner = h.person(ownerId, ['TEACHER']);
+      const students = studentIds.map((studentId) => h.person(studentId, ['STUDENT']));
+      await communities.addPeople(admin, id, ownerId, ...studentIds);
+      const transferred = await communities.transfer.execute({
+        principal: admin,
+        communityId: id,
+        userId: ownerId,
+        meta: META,
+      });
+      if (!transferred.ok) throw new Error(`could not transfer: ${transferred.error.code}`);
+      const left = await communities.leave.execute({
+        principal: admin,
+        communityId: id,
+        meta: META,
+      });
+      if (!left.ok) throw new Error(`the admin could not leave: ${left.error.code}`);
+      return { id, owner, students };
+    },
+
+    /** Someone added to the community by its owner — a STUDENT unless roles say otherwise. */
+    async member(
+      communityId: string,
+      owner: Principal,
+      userId: string,
+      roles: readonly KnownRoleCode[] = ['STUDENT'],
+    ): Promise<Principal> {
+      const principal = h.person(userId, roles);
+      await communities.addPeople(owner, communityId, userId);
+      return principal;
+    },
+
+    /** A TEACHER member to whom the owner delegated these capabilities. */
+    async delegate(
+      communityId: string,
+      owner: Principal,
+      userId: string,
+      ...capabilities: CommunityCapability[]
+    ): Promise<Principal> {
+      const principal = await h.member(communityId, owner, userId, ['TEACHER']);
+      await communities.delegate(owner, communityId, userId, ...capabilities);
+      return principal;
+    },
+
+    /**
+     * The ids of `userId`'s ACTIVE grants of these capabilities, in the order
+     * named — through the grant use case, which answers a grant already held
+     * as unchanged, so nothing changes.
+     */
+    async grantsOf(
+      communityId: string,
+      owner: Principal,
+      userId: string,
+      ...capabilities: CommunityCapability[]
+    ): Promise<string[]> {
+      return communities.delegate(owner, communityId, userId, ...capabilities);
+    },
+
+    async lock(communityId: string, by: Principal): Promise<void> {
+      await h.setStatus(communityId, by, 'LOCKED');
+    },
+
+    async unlock(communityId: string, by: Principal): Promise<void> {
+      await h.setStatus(communityId, by, 'OPEN');
+    },
+
+    async setStatus(communityId: string, by: Principal, to: 'OPEN' | 'LOCKED'): Promise<void> {
+      const changed = await communities.status.execute({
+        principal: by,
+        communityId,
+        to,
+        meta: META,
+      });
+      if (!changed.ok) throw new Error(`could not set ${to}: ${changed.error.code}`);
+    },
+
+    /** Removes a member, as the owner would. */
+    async remove(communityId: string, by: Principal, userId: string): Promise<void> {
+      const removed = await communities.remove.execute({
+        principal: by,
+        communityId,
+        userId,
+        meta: META,
+      });
+      if (!removed.ok) throw new Error(`could not remove: ${removed.error.code}`);
+    },
+
+    /** Suspends an account: identity's directory no longer vouches for it. */
+    suspend(userId: string): void {
+      accounts.suspend(userId);
+    },
+
+    /** A session started through StartLiveSession, as `by` starts it. */
+    async startSession(by: Principal, communityId: string): Promise<LiveSessionView> {
+      const started = await h.start.execute({ principal: by, communityId, meta: META });
+      if (!started.ok) throw new Error(`could not start: ${started.error.code}`);
+      return started.value.session;
+    },
+
+    /** A hand raised through RaiseHand. */
+    async raised(by: Principal, sessionId: string): Promise<SpeakerRequestView> {
+      const raised = await h.raise.execute({ principal: by, sessionId, meta: META });
+      if (!raised.ok) throw new Error(`could not raise: ${raised.error.code}`);
+      return raised.value.request;
+    },
+
+    /** The session as stored now. */
+    async session(sessionId: string): Promise<LiveSession> {
+      const session = await store.sessions.findById(sessionId);
+      if (session === null) throw new Error(`no session ${sessionId}`);
+      return session;
+    },
+
+    /** A session's media room at an epoch (0 until a media reset). */
+    room(sessionId: string, epoch = 0): string {
+      return mediaRoomName(settings.roomNamePrefix, sessionId, epoch);
+    },
+
+    /** Live's audit actions, in order. */
+    audits: () => journal.actions(),
+    /** Live's event names, in order. */
+    eventNames: () => journal.eventNames(),
   };
+  return h;
 }
 
 export type LiveHarness = ReturnType<typeof liveHarness>;
+
+/**
+ * Makes Communities read every community as carrying a status this build
+ * does not know — one a later migration added, say. Communities then closes
+ * joining and raising, and keeps management open and a running session
+ * going: nobody already in is ejected (Q46, `runningLiveContinues`). Live
+ * never sees the status itself, only the answers. Undone by
+ * `jest.restoreAllMocks()`.
+ */
+export function withUnmappedStatus(h: LiveHarness): void {
+  const store = h.communities.store;
+  const authorityOf = store.authorityOf.bind(store);
+  const authorityOfMany = store.authorityOfMany.bind(store);
+  // The status is typed as the known vocabulary; a row from a later build is not.
+  const unknown = 'ARCHIVED' as string as CommunityStatus;
+  jest.spyOn(store, 'authorityOf').mockImplementation(async (communityId, userId) => {
+    const read = await authorityOf(communityId, userId);
+    return read.community === null
+      ? read
+      : { ...read, community: { ...read.community, status: unknown } };
+  });
+  jest.spyOn(store, 'authorityOfMany').mockImplementation(async (communityId, userIds) => {
+    const reads = await authorityOfMany(communityId, userIds);
+    return new Map(
+      [...reads].map(([userId, read]) => [
+        userId,
+        read.community === null
+          ? read
+          : { ...read, community: { ...read.community, status: unknown } },
+      ]),
+    );
+  });
+}

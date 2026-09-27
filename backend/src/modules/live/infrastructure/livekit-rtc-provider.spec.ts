@@ -8,12 +8,7 @@ import {
 } from 'livekit-server-sdk';
 
 import type { AppConfig } from '../../../platform/config/app-config';
-import {
-  LISTENER,
-  RtcUnavailableError,
-  SPEAKER,
-  type RtcCapabilities,
-} from '../domain/rtc-provider';
+import { RtcUnavailableError, type RtcCapabilities } from '../domain/rtc-provider';
 import {
   LiveKitRtcProvider,
   classify,
@@ -21,6 +16,18 @@ import {
   permissionOf,
   type LiveKitRoomService,
 } from './livekit-rtc-provider';
+
+// Capability sets as the adapter receives them — literals, so this spec tests
+// the mapping to LiveKit, not the standing that produces a set.
+const LISTENER: RtcCapabilities = {
+  canPublishAudio: false,
+  canPublishScreen: false,
+  canPublishScreenAudio: false,
+  canSubscribe: true,
+  canPublishData: false,
+  hidden: false,
+};
+const SPEAKER: RtcCapabilities = { ...LISTENER, canPublishAudio: true };
 
 const SECRET = 'a-test-secret-that-is-long-enough-for-hs256-signing';
 

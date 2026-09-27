@@ -1,5 +1,5 @@
 import { ALL_PERMISSIONS, type Permission, Permissions } from '../contracts/permissions';
-import { restrictToResourceOwner, type PolicyRule } from './policy';
+import type { PolicyRule } from './policy';
 import { Roles, type KnownRoleCode } from './role';
 
 /**
@@ -140,12 +140,21 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
   };
 
 /**
- * Provisional resource-scoped rules, evaluated after the role baseline.
+ * Provisional resource-scoped rules, evaluated after the role baseline — none.
  *
- * `live.moderate` is restricted to the room's host: holding the permission
- * means "may moderate rooms you run", not "may moderate any room". Whether a
- * supervisor, admin or owner may step into someone else's room is Q1.
+ * The one rule this list held, `host-only-moderation`, restricted
+ * `live.moderate` to a room's host. It is retired (ADR 0017 decision 10) in
+ * the same change that gives Live its community-scoped `LiveAccess`: who
+ * moderates a live session is now Communities' answer — holders of
+ * `community.live.moderate` in the session's community, and the host while
+ * `community.live.host` holds — within identity's `live.moderate` ceiling, and
+ * no identity role, OWNER included, moderates without community standing
+ * (Q1, revised by ADR 0017 decision 11; Q54). Live passes no `ownerUserId`
+ * anywhere.
+ *
+ * Retired rather than left registered but inert: any future caller passing
+ * `ownerUserId` with `live.moderate` would silently re-activate the veto on
+ * every delegate. `restrictToResourceOwner` and `ownerOfResourceRule` stay in
+ * `policy.ts`, with their own specs, for whoever needs one next.
  */
-export const PROVISIONAL_POLICY_RULES: readonly PolicyRule[] = Object.freeze([
-  restrictToResourceOwner('host-only-moderation', [Permissions.live.moderate]),
-]);
+export const PROVISIONAL_POLICY_RULES: readonly PolicyRule[] = Object.freeze([]);

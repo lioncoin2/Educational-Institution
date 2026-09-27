@@ -39,22 +39,6 @@ export interface RtcCapabilities {
   readonly hidden: boolean;
 }
 
-/** Subscribes only. Every participant who is not speaking. */
-export const LISTENER: RtcCapabilities = Object.freeze({
-  canPublishAudio: false,
-  canPublishScreen: false,
-  canPublishScreenAudio: false,
-  canSubscribe: true,
-  canPublishData: false,
-  hidden: false,
-});
-
-/** A granted hand, or the host: the microphone and nothing else. */
-export const SPEAKER: RtcCapabilities = Object.freeze({
-  ...LISTENER,
-  canPublishAudio: true,
-});
-
 /** The explicit source list a capability set allows. Never empty-means-all. */
 export function sourcesOf(capabilities: RtcCapabilities): readonly RtcSource[] {
   const sources: RtcSource[] = [];
@@ -67,7 +51,7 @@ export function sourcesOf(capabilities: RtcCapabilities): readonly RtcSource[] {
 }
 
 export interface RtcRoomSpec {
-  /** Provider-facing room name; today the LiveSession id. */
+  /** Provider-facing room name: `mediaRoomName(prefix, session id, epoch)`, never an identity. */
   readonly roomName: string;
   /** Hard ceiling enforced by the provider, independent of our own checks. */
   readonly maxParticipants: number;

@@ -1,42 +1,148 @@
-import { Controller, Delete, HttpCode, HttpStatus, Param, Post, Res } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+  Res,
+  UseInterceptors,
+} from '@nestjs/common';
 import type { Response } from 'express';
 
-import type { Principal } from '../../../shared';
+import type { CallMetadata, Principal } from '../../../shared';
+import { RequestMetadata } from '../../../platform/http/call-metadata.decorator';
 import { CurrentPrincipal } from '../../../platform/http/current-principal.decorator';
+import { DatabaseUnavailableInterceptor } from '../../../platform/http/database-unavailable.interceptor';
 import { unwrap } from '../../../platform/http/http-failure';
 import { Authenticated, Permissions, RequirePermission } from '../../identity/contracts';
+import { EndLiveSessionUseCase } from '../application/end-live-session.use-case';
+import { GetCurrentLiveSessionUseCase } from '../application/get-current-live-session.use-case';
+import { GetLiveSessionUseCase } from '../application/get-live-session.use-case';
 import { JoinLiveSessionUseCase } from '../application/join-live-session.use-case';
+import { ListHandsUseCase } from '../application/list-hands.use-case';
 import { LowerHandUseCase } from '../application/lower-hand.use-case';
 import { ModerateSpeakerUseCase } from '../application/moderate-speaker.use-case';
+import { PresenterUseCase } from '../application/presenter.use-case';
 import { RaiseHandUseCase } from '../application/raise-hand.use-case';
+import { StartLiveSessionUseCase } from '../application/start-live-session.use-case';
+import { HandsQuery } from './dto/live.dto';
+import {
+  toCurrentSessionResponse,
+  toHandsPageResponse,
+  toJoinTicketResponse,
+  toLiveSessionResponse,
+  toModerationResponse,
+  toRequestResponse,
+} from './responses';
 
 /**
- * The live-session edge.
+ * /live — community-scoped live sessions (live.md §15; the P6 audit §11).
  *
- * Every route declares the access it needs; the guard resolves it through
- * identity. Nothing here decides access, and nothing here talks to LiveKit.
- * No route takes a body: who the caller is, what they may do and what they
- * are called are all the server's to know — a display name or a role sent by
- * a client would be a claim nobody checks.
+ * Every route declares the access it needs, and the guard resolves that
+ * through identity: `live.join` to see and join, `live.raise_hand` to ask for
+ * the floor, `live.moderate` for every moderator's act — and an account alone
+ * to lower one's own hand or stop one's own screen share, which only ever
+ * reduce the caller's own privilege. The edge is never the decision: every use
+ * case asks Communities again, about the community the session's own record
+ * names, so a caller learns nothing about a session they may not see — one
+ * 404, whether it exists or not.
+ *
+ * No route takes a body. Who the caller is, which hand is theirs, what they
+ * may publish and what they are called are the server's to know; a name, a
+ * role or a user id sent by a client would be a claim nobody checks. Nothing
+ * here decides access, and nothing here talks to the media provider.
+ *
+ * Fail closed, and say so: a store that cannot be reached answers 503
+ * `unavailable` (the interceptor, as on every Communities route), and so does
+ * Communities when it cannot answer (the use cases map that) — never an
+ * answer computed from roles alone.
  */
 @Controller('live')
+@UseInterceptors(DatabaseUnavailableInterceptor)
 export class LiveController {
   constructor(
-    private readonly join: JoinLiveSessionUseCase,
+    private readonly startSession: StartLiveSessionUseCase,
+    private readonly currentSession: GetCurrentLiveSessionUseCase,
+    private readonly getSession: GetLiveSessionUseCase,
+    private readonly joinSession: JoinLiveSessionUseCase,
+    private readonly endSession: EndLiveSessionUseCase,
     private readonly raiseHand: RaiseHandUseCase,
     private readonly lowerHand: LowerHandUseCase,
+    private readonly listHands: ListHandsUseCase,
     private readonly moderate: ModerateSpeakerUseCase,
+    private readonly presenter: PresenterUseCase,
   ) {}
 
-  /** A short-lived, capability-scoped join ticket. Call it again to re-join. */
+  /**
+   * 201 with the new session, the caller its host; 200 with the one already
+   * running — a repeat, a start that lost a race, or one retried after the
+   * community was locked. 503 `live.media_unavailable`, with nothing stored,
+   * when the media room cannot be made.
+   */
+  @Post('communities/:communityId/sessions')
+  @RequirePermission(Permissions.live.moderate)
+  async start(
+    @CurrentPrincipal() principal: Principal,
+    @Param('communityId') communityId: string,
+    @RequestMetadata() meta: CallMetadata,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = unwrap(await this.startSession.execute({ principal, communityId, meta }));
+    response.status(result.created ? HttpStatus.CREATED : HttpStatus.OK);
+    return toLiveSessionResponse(result.session);
+  }
+
+  /** "Live now": the community's running session, or `{session: null}`. */
+  @Get('communities/:communityId/sessions/current')
+  @RequirePermission(Permissions.live.join)
+  async current(
+    @CurrentPrincipal() principal: Principal,
+    @Param('communityId') communityId: string,
+  ) {
+    const result = unwrap(await this.currentSession.execute({ principal, communityId }));
+    return toCurrentSessionResponse(result.session);
+  }
+
+  /** One session as the caller sees it — ended ones included. */
+  @Get('sessions/:sessionId')
+  @RequirePermission(Permissions.live.join)
+  async get(@CurrentPrincipal() principal: Principal, @Param('sessionId') sessionId: string) {
+    return toLiveSessionResponse(unwrap(await this.getSession.execute({ principal, sessionId })));
+  }
+
+  /**
+   * A short-lived join ticket for the session's media room, scoped to what
+   * the caller may publish now — the only response that carries a
+   * credential. Decided afresh on every call: it is also the way back in.
+   */
   @Post('sessions/:sessionId/join')
   @RequirePermission(Permissions.live.join)
   @HttpCode(HttpStatus.OK)
-  async joinSession(
+  async join(
     @CurrentPrincipal() principal: Principal,
     @Param('sessionId') sessionId: string,
+    @RequestMetadata() meta: CallMetadata,
   ) {
-    return unwrap(await this.join.execute({ principal, sessionId }));
+    return toJoinTicketResponse(
+      unwrap(await this.joinSession.execute({ principal, sessionId, meta })),
+    );
+  }
+
+  /** Any of the session's moderators may end it; ending an ended session answers 200 and changes nothing. */
+  @Post('sessions/:sessionId/end')
+  @RequirePermission(Permissions.live.moderate)
+  @HttpCode(HttpStatus.OK)
+  async end(
+    @CurrentPrincipal() principal: Principal,
+    @Param('sessionId') sessionId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toLiveSessionResponse(
+      unwrap(await this.endSession.execute({ principal, sessionId, meta })),
+    );
   }
 
   /** 201 with a new hand; 200 with the hand already up. */
@@ -45,39 +151,109 @@ export class LiveController {
   async raise(
     @CurrentPrincipal() principal: Principal,
     @Param('sessionId') sessionId: string,
+    @RequestMetadata() meta: CallMetadata,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const result = unwrap(await this.raiseHand.execute({ principal, sessionId }));
+    const result = unwrap(await this.raiseHand.execute({ principal, sessionId, meta }));
     response.status(result.created ? HttpStatus.CREATED : HttpStatus.OK);
-    return { request: result.request };
+    return toRequestResponse(result);
   }
 
   /** Lowers the caller's own hand, or yields the floor. `{request: null}` when nothing was up. */
   @Delete('sessions/:sessionId/hand')
   @Authenticated()
   @HttpCode(HttpStatus.OK)
-  async lower(@CurrentPrincipal() principal: Principal, @Param('sessionId') sessionId: string) {
-    return unwrap(await this.lowerHand.execute({ principal, sessionId }));
+  async lower(
+    @CurrentPrincipal() principal: Principal,
+    @Param('sessionId') sessionId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toRequestResponse(unwrap(await this.lowerHand.execute({ principal, sessionId, meta })));
   }
 
+  /**
+   * The moderators' view of the hands: the queue, first come first served,
+   * in keyset pages — or who holds the floor. Names from the directory.
+   */
+  @Get('sessions/:sessionId/hands')
+  @RequirePermission(Permissions.live.moderate)
+  async hands(
+    @CurrentPrincipal() principal: Principal,
+    @Param('sessionId') sessionId: string,
+    @Query() query: HandsQuery,
+  ) {
+    return toHandsPageResponse(
+      unwrap(
+        await this.listHands.execute({
+          principal,
+          sessionId,
+          state: query.state,
+          cursor: query.cursor,
+          limit: query.limit,
+        }),
+      ),
+    );
+  }
+
+  /** Gives the floor; `media` says whether the provider already has it. A repeat answers `unchanged`. */
   @Post('requests/:requestId/grant')
   @RequirePermission(Permissions.live.moderate)
   @HttpCode(HttpStatus.OK)
-  async grant(@CurrentPrincipal() principal: Principal, @Param('requestId') requestId: string) {
-    return unwrap(await this.moderate.grant({ principal, requestId }));
+  async grant(
+    @CurrentPrincipal() principal: Principal,
+    @Param('requestId') requestId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toModerationResponse(unwrap(await this.moderate.grant({ principal, requestId, meta })));
   }
 
+  /** Passes over a pending hand. */
   @Post('requests/:requestId/decline')
   @RequirePermission(Permissions.live.moderate)
   @HttpCode(HttpStatus.OK)
-  async decline(@CurrentPrincipal() principal: Principal, @Param('requestId') requestId: string) {
-    return unwrap(await this.moderate.decline({ principal, requestId }));
+  async decline(
+    @CurrentPrincipal() principal: Principal,
+    @Param('requestId') requestId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toRequestResponse(unwrap(await this.moderate.decline({ principal, requestId, meta })));
   }
 
+  /** Takes the floor back; the speaker stays in the room as a listener. */
   @Post('requests/:requestId/revoke')
   @RequirePermission(Permissions.live.moderate)
   @HttpCode(HttpStatus.OK)
-  async revoke(@CurrentPrincipal() principal: Principal, @Param('requestId') requestId: string) {
-    return unwrap(await this.moderate.revoke({ principal, requestId }));
+  async revoke(
+    @CurrentPrincipal() principal: Principal,
+    @Param('requestId') requestId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toModerationResponse(unwrap(await this.moderate.revoke({ principal, requestId, meta })));
+  }
+
+  /** The presenter slot, for the caller themself: 201 when this call took it, 200 when they held it. */
+  @Post('sessions/:sessionId/screen-share')
+  @RequirePermission(Permissions.live.moderate)
+  async claimScreenShare(
+    @CurrentPrincipal() principal: Principal,
+    @Param('sessionId') sessionId: string,
+    @RequestMetadata() meta: CallMetadata,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = unwrap(await this.presenter.claim({ principal, sessionId, meta }));
+    response.status(result.opened ? HttpStatus.CREATED : HttpStatus.OK);
+    return toLiveSessionResponse(result.session);
+  }
+
+  /** The presenter stops, or a moderator takes the slot back; nothing open answers 200 too. */
+  @Delete('sessions/:sessionId/screen-share')
+  @Authenticated()
+  @HttpCode(HttpStatus.OK)
+  async stopScreenShare(
+    @CurrentPrincipal() principal: Principal,
+    @Param('sessionId') sessionId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toLiveSessionResponse(unwrap(await this.presenter.stop({ principal, sessionId, meta })));
   }
 }
