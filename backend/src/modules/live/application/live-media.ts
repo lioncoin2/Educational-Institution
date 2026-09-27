@@ -64,8 +64,11 @@ export const MEDIA_RECORD_LIMIT = 10_000;
  *     (audit D7): a push that reached the provider observed them `connected`
  *     or `not_connected`, and so does every reconciler check of them
  *     (`noteObserved`).
+ *   - when each person's pushes ran (`pushedSince`): a push changes the
+ *     provider under a reconciler step's feet, so the step counts no
+ *     violation on an observation a push may have overtaken (audit D22).
  *
- * Both are dropped when the session ends.
+ * All are dropped when the session ends — but a push still under way.
  */
 @Injectable()
 export class LiveMedia {
@@ -74,6 +77,19 @@ export class LiveMedia {
   private readonly observations = new Map<
     string,
     { readonly sessionId: string; readonly connected: boolean }
+  >();
+  /** Stepped as every push starts and as it ends; `pushMark` reads it. */
+  private pushSequence = 0;
+  /** Per person, the pushes under way; a person with none has no entry. */
+  private readonly pushesUnderWay = new Map<string, number>();
+  /**
+   * Per person, `pushSequence` when their last push started or ended —
+   * bounded like the rest: to lose one that still matters, MEDIA_RECORD_LIMIT
+   * other people would have to be pushed during one reconciler step.
+   */
+  private readonly lastPushed = new Map<
+    string,
+    { readonly sessionId: string; readonly sequence: number }
   >();
 
   constructor(
@@ -85,9 +101,37 @@ export class LiveMedia {
 
   /** Pushes `userId`'s full current set in `session`'s media room; never throws. */
   async push(session: LiveSession, userId: string): Promise<PushOutcome> {
-    const outcome = await this.attempt(session, userId);
+    const key = personKey(session.id, userId);
+    this.pushesUnderWay.set(key, (this.pushesUnderWay.get(key) ?? 0) + 1);
+    this.notePushed(session.id, key);
+    let outcome: PushOutcome;
+    try {
+      outcome = await this.attempt(session, userId);
+    } finally {
+      const left = (this.pushesUnderWay.get(key) ?? 1) - 1;
+      if (left > 0) this.pushesUnderWay.set(key, left);
+      else this.pushesUnderWay.delete(key);
+      this.notePushed(session.id, key);
+    }
     this.noteOutcome(session.id, userId, outcome);
     return outcome;
+  }
+
+  /** A point in the pushes' order, taken before the provider is observed (`pushedSince`). */
+  pushMark(): number {
+    return this.pushSequence;
+  }
+
+  /**
+   * Whether a push of this person's set was under way at any time since
+   * `mark` — one still going, or one that started or ended since. If so,
+   * what the provider was observed holding after `mark` may be older than
+   * what it holds now, or is about to. Only this class's pushes count: the
+   * reconciler's own corrections are serialized with its observations.
+   */
+  pushedSince(sessionId: string, userId: string, mark: number): boolean {
+    const key = personKey(sessionId, userId);
+    return this.pushesUnderWay.has(key) || (this.lastPushed.get(key)?.sequence ?? 0) > mark;
   }
 
   /**
@@ -146,6 +190,14 @@ export class LiveMedia {
     for (const [key, observation] of this.observations) {
       if (observation.sessionId === sessionId) this.observations.delete(key);
     }
+    for (const [key, pushed] of this.lastPushed) {
+      if (pushed.sessionId === sessionId) this.lastPushed.delete(key);
+    }
+  }
+
+  private notePushed(sessionId: string, key: string): void {
+    this.pushSequence += 1;
+    bounded(this.lastPushed, key, { sessionId, sequence: this.pushSequence });
   }
 
   private async attempt(session: LiveSession, userId: string): Promise<PushOutcome> {

@@ -29,7 +29,7 @@ import { newPresenterGrant } from '../domain/presenter-grant';
 import { LiveAccess, permitOf } from './live-access';
 import { LiveJournal, moderationAudit } from './live-journal';
 import { LiveMedia } from './live-media';
-import { LiveRefusals } from './live-settings';
+import { LiveRefusals, isLiveId } from './live-settings';
 import { LiveSessionViews } from './session-views';
 import type { ClaimResult, LiveSessionView } from './views';
 
@@ -79,6 +79,7 @@ export class PresenterUseCase {
     const { principal } = command;
     const allowed = this.identity.authorize(principal, Permissions.live.moderate);
     if (!allowed.ok) return allowed;
+    if (!isLiveId(command.sessionId)) return err(LiveRefusals.sessionNotFound);
 
     const session = await this.sessions.findById(command.sessionId);
     if (session === null) return err(LiveRefusals.sessionNotFound);
@@ -128,6 +129,7 @@ export class PresenterUseCase {
 
   async stop(command: PresenterCommand): Promise<Result<LiveSessionView>> {
     const { principal } = command;
+    if (!isLiveId(command.sessionId)) return err(LiveRefusals.sessionNotFound);
     const session = await this.sessions.findById(command.sessionId);
     if (session === null) return err(LiveRefusals.sessionNotFound);
 

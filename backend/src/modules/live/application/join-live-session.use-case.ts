@@ -38,6 +38,7 @@ import { LiveAccess } from './live-access';
 import {
   LIVE_SETTINGS,
   LiveRefusals,
+  isLiveId,
   sessionUserKey,
   tooMany,
   type LiveSettings,
@@ -51,8 +52,9 @@ import { mediaOf, type JoinTicket } from './views';
  * The client never states what it may do or who it is: the server decides
  * both, here, and encodes them in the token.
  *
- *   1. identity's `live.join` (the route's gate, asked again), then the
- *      caller's limit in this session: 10 joins a minute, keyed by
+ *   1. identity's `live.join` (the route's gate, asked again); an id this
+ *      API could never have issued → 404 like an unknown one, uncounted;
+ *      then the caller's limit in this session: 10 joins a minute, keyed by
  *      (session, user) — never by address, which a school shares;
  *   2. the session, by id → 404;
  *   3. Communities, on the session's OWN community id: `community.live.join`,
@@ -104,6 +106,8 @@ export class JoinLiveSessionUseCase {
     const { principal, sessionId } = command;
     const allowed = this.identity.authorize(principal, Permissions.live.join);
     if (!allowed.ok) return allowed;
+    // Before the limiter: its key holds the id (`isLiveId`).
+    if (!isLiveId(sessionId)) return err(LiveRefusals.sessionNotFound);
 
     const throttle = await this.limiter.consume(
       sessionUserKey(sessionId, principal.userId),

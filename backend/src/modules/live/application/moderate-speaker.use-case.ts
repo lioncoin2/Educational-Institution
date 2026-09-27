@@ -33,7 +33,7 @@ import { askCommunities } from './community-calls';
 import { LiveAccess, permitOf } from './live-access';
 import { LiveJournal, moderationAudit } from './live-journal';
 import { LiveMedia } from './live-media';
-import { LiveRefusals } from './live-settings';
+import { LiveRefusals, isLiveId } from './live-settings';
 import { LiveStanding } from './live-standing';
 import {
   speakerRequestView,
@@ -60,7 +60,8 @@ interface Moderated {
  *
  *   1. identity's coarse `live.moderate`, before anything is read — a caller
  *      who may not moderate at all learns nothing about which requests exist;
- *   2. the request and its session → 404 live.request_not_found;
+ *   2. the request and its session → 404 live.request_not_found — at once
+ *      for an id this API could never have issued;
  *   3. `LiveAccess.moderator` on the session's own community → 404 like an
  *      unknown request, 403 live.not_a_moderator, 503;
  *   4. the host's own request, acted on by anyone but the host → 403
@@ -213,6 +214,7 @@ export class ModerateSpeakerUseCase {
     const { principal } = command;
     const allowed = this.identity.authorize(principal, Permissions.live.moderate);
     if (!allowed.ok) return allowed;
+    if (!isLiveId(command.requestId)) return err(LiveRefusals.requestNotFound);
 
     const request = await this.requests.findById(command.requestId);
     if (request === null) return err(LiveRefusals.requestNotFound);

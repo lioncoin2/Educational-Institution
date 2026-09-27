@@ -156,6 +156,18 @@ interface StepOutcome {
 }
 
 /**
+ * What a step's comparison rests on (audit D22): the provider was observed
+ * after `mark` (`LiveMedia.pushMark`), and `unchanged` says whether the
+ * session stayed as it was read before that observation — live, on the same
+ * epoch, at the same state version — until the standing it is compared with
+ * had been read.
+ */
+interface Observation {
+  readonly mark: number;
+  readonly unchanged: boolean;
+}
+
+/**
  * The level-triggered reconciler (live.md §11): Postgres, Communities and
  * identity say what should be; the media provider says what is; this brings
  * the provider in line with the record, on a period, and never the reverse.
@@ -525,7 +537,10 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
   /** The participant sweep's step for one live session (§11.3), under its lock. */
   private async sweepStep(session: LiveSession): Promise<SessionCheckReport> {
     const room = currentMediaRoom(this.settings.roomNamePrefix, session);
-    // 1. Who is in the room. Only standard identities are people.
+    // 1. Who is in the room. Only standard identities are people. `session`
+    //    was read under the lock just before, and the mark is taken now:
+    //    both before the provider is observed.
+    const mark = this.media.pushMark();
     const connected = new Map<string, RtcParticipantObservation>();
     for (const participant of await this.provider(() => this.observer.listParticipants(room))) {
       if (participant.standard) connected.set(participant.identity, participant);
@@ -553,7 +568,7 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
     const presenter = await this.presenters.active(session.id);
     if (presenter !== null) holders.push(presenter.userId);
     const people = [...new Set([...connected.keys(), ...holders])];
-    return this.stepAll(session, people, connected);
+    return this.stepAll(session, people, connected, mark);
   }
 
   /** The targeted watch's step for one live session (§11.4), under its lock. */
@@ -583,12 +598,15 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
     userIds: readonly string[],
   ): Promise<SessionCheckReport> {
     const room = currentMediaRoom(this.settings.roomNamePrefix, session);
+    // `session` was read under the lock before any of this; the mark is taken
+    // before the first observation.
+    const mark = this.media.pushMark();
     const connected = new Map<string, RtcParticipantObservation>();
     for (const userId of userIds) {
       const participant = await this.provider(() => this.observer.getParticipant(room, userId));
       if (participant !== null && participant.standard) connected.set(userId, participant);
     }
-    return this.stepAll(session, userIds, connected);
+    return this.stepAll(session, userIds, connected, mark);
   }
 
   /**
@@ -596,11 +614,17 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
    * all of them before anyone is touched, so a failure in any batch leaves
    * everyone as they are — then runs the per-identity step for each. A media
    * reset moves everyone to a new room: the rest wait for the next tick.
+   *
+   * Between the standing and the first step, whether the session changed
+   * since it was read before the observation (`Observation`) — read here,
+   * before this step's own writes (an expiry, a presenter's close) step the
+   * version themselves.
    */
   private async stepAll(
     session: LiveSession,
     userIds: readonly string[],
     connected: ReadonlyMap<string, RtcParticipantObservation>,
+    mark: number,
   ): Promise<SessionCheckReport> {
     const standings = new Map<string, AccountStanding>();
     for (let start = 0; start < userIds.length; start += MAX_AUTHORIZE_BATCH) {
@@ -609,6 +633,10 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
         standings.set(userId, account);
       }
     }
+    const observation: Observation = {
+      mark,
+      unchanged: await this.unchangedSince(session, userIds, connected),
+    };
     let tally = NO_TALLY;
     for (const userId of userIds) {
       const account = standings.get(userId);
@@ -620,6 +648,7 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
         userId,
         connected.get(userId) ?? null,
         account,
+        observation,
         this.clock.now(),
       );
       tally = {
@@ -635,6 +664,32 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
     return { ...tally, outcome: 'checked' };
   }
 
+  /**
+   * Whether the session is still live, on the same epoch and at the same
+   * state version as `session`, read before the observation. Every change a
+   * moderator can see steps the version (an epoch move does not: compared on
+   * its own). Read only when a violation is possible — someone connected is
+   * under the watch of an applied correction — so an ordinary tick costs
+   * nothing more; otherwise true, and moot.
+   */
+  private async unchangedSince(
+    session: LiveSession,
+    userIds: readonly string[],
+    connected: ReadonlyMap<string, RtcParticipantObservation>,
+  ): Promise<boolean> {
+    const now = this.clock.now();
+    if (!userIds.some((userId) => connected.has(userId) && this.armed(session.id, userId, now))) {
+      return true;
+    }
+    const current = await this.sessions.findById(session.id);
+    return (
+      current !== null &&
+      isLive(current) &&
+      current.mediaRoomEpoch === session.mediaRoomEpoch &&
+      current.stateVersion === session.stateVersion
+    );
+  }
+
   // ── The per-identity step ──────────────────────────────────────────────
 
   /**
@@ -646,6 +701,7 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
     userId: string,
     observed: RtcParticipantObservation | null,
     account: AccountStanding,
+    observation: Observation,
     now: Date,
   ): Promise<StepOutcome> {
     const room = currentMediaRoom(this.settings.roomNamePrefix, session);
@@ -667,7 +723,7 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
         this.media.settle(session.id, userId);
         return {};
       }
-      return this.breach(session, userId, now, 'removed', async () => {
+      return this.breach(session, userId, observation, now, 'removed', async () => {
         const outcome = await this.provider(() =>
           this.participants.removeParticipant(room, userId, { revokeTokensIssuedBefore: now }),
         );
@@ -720,7 +776,7 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
       await push();
       return { pushed: true };
     }
-    return this.breach(session, userId, now, 'corrected', push);
+    return this.breach(session, userId, observation, now, 'corrected', push);
   }
 
   /**
@@ -731,17 +787,41 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
    * watched — not a violation (audit D22). Seen again while the entry is
    * live AND its correction applied: a violation — counted, the window
    * extended, corrected again, and the media reset (§11.4).
+   *
+   * But only on a current observation. The provider is observed first and
+   * the standing read after, with no lock shared with moderators' commands:
+   * a revoke, a yield or a presenter's close that commits in between — and
+   * its own push, which may land before or after the observation — makes
+   * the comparison show a breach the person never committed. So a breach
+   * counts as a violation only if the session was unchanged from before the
+   * observation until the standing was read (`Observation`), and no push of
+   * the person's set ran meanwhile (`LiveMedia.pushedSince`): otherwise it is
+   * a correction — the full set pushed and the window refreshed, nothing
+   * counted and nothing reset. A genuine repeat is counted on the next tick.
+   *
+   * Communities needs no such guard, and steps no version. A standing lost
+   * there is never pushed out of band: the provider moves only through this
+   * reconciler, whose steps for a session run one at a time, so an
+   * observation taken before the loss shows what the provider still held
+   * when the standing was read. The breach is real either way, and the race
+   * changes nothing: after an applied correction the person holds what it
+   * left them, and more only through a join or a push made on standing they
+   * had regained — each checked against Communities when it was made. (Who
+   * regains it, joins again and loses it again inside the window is counted
+   * — with or without a race: that is the rule above, not an ordering.)
    */
   private async breach(
     session: LiveSession,
     userId: string,
+    observation: Observation,
     now: Date,
     kind: 'removed' | 'corrected',
     correct: () => Promise<RtcApplyOutcome>,
   ): Promise<StepOutcome> {
-    const key = watchKey(session.id, userId);
-    const entry = this.watch.get(key);
-    const violation = entry !== undefined && entry.until.getTime() > now.getTime() && entry.applied;
+    const violation =
+      this.armed(session.id, userId, now) &&
+      observation.unchanged &&
+      !this.media.pushedSince(session.id, userId, observation.mark);
     const until = new Date(now.getTime() + ENFORCEMENT_WATCH_SECONDS * 1000);
     if (violation) {
       const count = await this.sessions.noteViolation(session.id, now);
@@ -788,6 +868,13 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
    * and join again. A provider failure after the bump is left to the room
    * sweep: the new room is ensured as missing, the old one ends as an orphan
    * after its grace. Audited with a null actor; no event.
+   *
+   * Ensure-then-recheck (§4.4), as join and the room sweep do: an End — which
+   * takes no lock of the reconciler's — or another reset that committed while
+   * the new room was being made has ended, or will never use, the room this
+   * call has just created. The session is read again: unless it is still
+   * live on the new epoch, the new room is ended (best effort) and never
+   * reported ensured. The old room is ended either way.
    */
   private async resetMedia(session: LiveSession, violator: string, now: Date): Promise<boolean> {
     const action: ModerationAction = {
@@ -805,7 +892,12 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
     const to = currentMediaRoom(prefix, moved);
     try {
       await this.provider(() => this.rooms.ensureRoom(roomSpec(to, moved)));
-      this.occupancy.ensured(to);
+      const after = await this.sessions.findById(session.id);
+      if (after !== null && isLive(after) && after.mediaRoomEpoch === moved.mediaRoomEpoch) {
+        this.occupancy.ensured(to);
+      } else {
+        await this.endQuietly(session.id, to);
+      }
       await this.provider(() => this.rooms.endRoom(from));
     } catch (error) {
       if (!(error instanceof RtcUnavailableError)) this.logSkipped('reset', session.id, error);
@@ -825,6 +917,15 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
       'reset a live session’s media room after a repeated violation',
     );
     return true;
+  }
+
+  /** Ends a room nobody may use, best effort: what is left is the orphan sweep's. */
+  private async endQuietly(sessionId: string, roomName: string): Promise<void> {
+    try {
+      await this.provider(() => this.rooms.endRoom(roomName));
+    } catch (error) {
+      if (!(error instanceof RtcUnavailableError)) this.logSkipped('reset', sessionId, error);
+    }
   }
 
   // ── Plumbing ───────────────────────────────────────────────────────────
@@ -928,6 +1029,12 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
       }
       throw error;
     }
+  }
+
+  /** Under the watch of a correction that reported `applied`: a breach now may be a violation. */
+  private armed(sessionId: string, userId: string, now: Date): boolean {
+    const entry = this.watch.get(watchKey(sessionId, userId));
+    return entry !== undefined && entry.until.getTime() > now.getTime() && entry.applied;
   }
 
   private remember(entry: WatchEntry): void {

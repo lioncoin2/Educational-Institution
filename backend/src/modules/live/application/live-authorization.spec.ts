@@ -114,6 +114,59 @@ describe('live authorization after host-only moderation', () => {
       }).toEqual(before);
     });
 
+    it('answers an id this API could never have issued exactly as an unknown one — before any limiter, store or Communities call', async () => {
+      /** Every use case that takes a session or request id from the path, for these ids. */
+      const byId = (principal: Principal, sessionId: string, requestId: string) =>
+        ({
+          get: () => h.get.execute({ principal, sessionId }),
+          join: () => h.join.execute({ principal, sessionId, meta: META }),
+          raise: () => h.raise.execute({ principal, sessionId, meta: META }),
+          lower: () => h.lower.execute({ principal, sessionId, meta: META }),
+          hands: () => h.hands.execute({ principal, sessionId }),
+          grant: () => h.moderate.grant({ principal, requestId, meta: META }),
+          decline: () => h.moderate.decline({ principal, requestId, meta: META }),
+          revoke: () => h.moderate.revoke({ principal, requestId, meta: META }),
+          claim: () => h.presenter.claim({ principal, sessionId, meta: META }),
+          stop: () => h.presenter.stop({ principal, sessionId, meta: META }),
+          end: () => h.end.execute({ principal, sessionId, meta: META }),
+        }) satisfies Record<string, () => Promise<Result<unknown>>>;
+      // Every role a route could ask for: the owner may moderate, the student
+      // may join and raise.
+      const callers = [owner, student];
+      const unknown = '00000000-0000-4000-8000-0000000000a1';
+      const answersFor = async (sessionId: string, requestId: string) => {
+        const answers: Record<string, Result<unknown>> = {};
+        for (const principal of callers) {
+          for (const [name, run] of Object.entries(byId(principal, sessionId, requestId))) {
+            answers[`${principal.userId} ${name}`] = await run();
+          }
+        }
+        return answers;
+      };
+      const expected = await answersFor(unknown, unknown);
+
+      const consume = jest.spyOn(h.limiter, 'consume');
+      const reads = [
+        jest.spyOn(h.sessions, 'findById'),
+        jest.spyOn(h.requests, 'findById'),
+        jest.spyOn(h.requests, 'findOpen'),
+        jest.spyOn(h.presenters, 'active'),
+        jest.spyOn(h.authorization, 'authorize'),
+        jest.spyOn(h.authorization, 'permittedAmong'),
+      ];
+      const calls = h.rtc.calls.length;
+      for (const malformed of ['x'.repeat(15_000), `${unknown}.1`, 'a/b', '']) {
+        // The same answer, to the byte: nothing tells a malformed id from an unknown one.
+        expect(await answersFor(malformed, malformed)).toEqual(expected);
+      }
+      expect(Object.values(expected).filter((answer) => answer.ok)).toEqual([]);
+      // Refused before anything: no limiter window, no read, no Communities call.
+      expect(consume).not.toHaveBeenCalled();
+      for (const read of reads) expect(read).not.toHaveBeenCalled();
+      expect(h.rtc.calls).toHaveLength(calls);
+      expect(h.journal.order).toEqual([]);
+    });
+
     it('passes no ownerUserId to identity, from any use case', async () => {
       const delegate = await h.delegate(communityId, owner, 'teacher-2', 'community.live.moderate');
       contexts.length = 0;

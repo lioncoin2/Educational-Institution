@@ -675,11 +675,13 @@ session".
 
 ### 4.4 Ensure-then-recheck
 
-Any path that re-creates a missing room — `/join` and the room sweep — calls
-`ensureRoom`, then **re-reads the session**. If it has ended meanwhile, it
-calls `endRoom` and refuses (412 `live.session_not_live`). Without the
-re-check, a join racing End would bring a deleted room back. With
-`room.auto_create=false`, only these two paths and Start can create a room.
+Any path that re-creates a missing room — `/join`, the room sweep and the
+media reset (§11.4) — calls `ensureRoom`, then **re-reads the session**. If
+it has ended meanwhile, or moved to another epoch, it calls `endRoom` (`/join`
+refuses, 412 `live.session_not_live`; the reset never reports the room
+ensured). Without the re-check, a join or a reset racing End would bring a
+deleted room back. With `room.auto_create=false`, only these three paths and
+Start can create a room.
 
 ### 4.5 `state_version`
 
@@ -835,6 +837,12 @@ never caches an answer across requests.
 | Hands, grant, decline, revoke, end | `live.moderate` | `LiveAccess.moderator` | 404; 403 `live.not_a_moderator`; 403 `live.target_is_host` |
 | Presenter claim | `live.moderate` | `LiveAccess.moderator` and identity `live.speak` | 404; 403 `live.not_a_moderator`; 403 `live.presenter_not_permitted` |
 | Presenter stop | authenticated | the presenter, or `LiveAccess.moderator` | 404; 403 |
+
+A session or request id in the path that this API could never have issued —
+anything but 1 to 128 of `[A-Za-z0-9:_-]` (`isLiveId`, `live-settings.ts`) —
+answers exactly as an unknown id does (404), right after the identity ceiling
+and before any rate limit, store or Communities call: a rate-limit key never
+holds text of a client's choosing and length.
 
 A Communities store failure rejects the call: Live answers **503
 `unavailable`** and never falls back to a role-only answer.
@@ -1270,13 +1278,18 @@ the reconciler has already removed or demoted an identity inside its
 enforcement window and observes it again not eligible to stay, or holding a
 source it is not entitled to publish (its second violation), it resets the
 room: a compare-and-set `bumpEpoch` with the `reset_media` moderation row,
-then `ensureRoom` of the new name, then `endRoom` of the old; the audit
+then `ensureRoom` of the new name — re-checked (§4.4) — then `endRoom` of the
+old; the audit
 `live.session.media_reset` has a null actor. Every token the violator holds
 names the deleted room, which `auto_create=false` keeps deleted; eligible
 clients follow `ROOM_DELETED` → refetch → `/join` (§17) and receive tokens for
 the new room computed from Postgres. If LiveKit fails midway, the room sweep
 ensures the new room and deletes the old as an orphan. A capability observed
-below its desired set (a grant not yet applied) is never a violation. The
+below its desired set (a grant not yet applied) is never a violation, and
+neither is a breach seen on an observation a moderator's change may have
+overtaken: the provider is observed before the standing is read, so if the
+session changed in between (live, epoch, `state_version`), or a push of the
+person's set ran meanwhile, the breach is corrected but not counted. The
 cost is a brief reconnect for everyone in the room (measured in §21). The
 automatic reset is PROVISIONAL under
 [Q63](open-questions.md#q63--losing-standing-during-a-running-session), whose
@@ -1309,6 +1322,9 @@ at most one sweep period.
 Exactly one API instance runs until P11. Two reconcilers would only duplicate
 idempotent calls; P11 adds a lease (`pg_try_advisory_lock` on a pinned
 connection, or a `live_worker_leases` row) for efficiency, not correctness.
+One residual belongs to P11: a reconciler sees only its own process's pushes
+(§11.4), so a revoke committed on another instance whose push is still on
+its way when observed could count a violation there.
 
 ---
 

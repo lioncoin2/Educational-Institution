@@ -486,6 +486,206 @@ describe('LiveReconciler — participants', () => {
       expect(h.audits()).not.toContain('live.session.media_reset');
     });
 
+    it('ends the new room of a reset whose session ended while it was being made — ensure-then-recheck (§4.4)', async () => {
+      h.rtc.connect(room, 'student-1', MICROPHONE, ['microphone']);
+      await h.reconciler.sweepParticipants();
+      h.rtc.connect(room, 'student-1', MICROPHONE, ['microphone']);
+      const newRoom = h.room(session.id, 1);
+
+      // The epoch is bumped, and the new room is on its way when End commits:
+      // End ends the new room, which is not there yet.
+      const ensuring = h.rtc.hold('ensureRoom');
+      const watching = h.reconciler.watchTick();
+      await ensuring.reached;
+      expect(
+        (await h.end.execute({ principal: owner, sessionId: session.id, meta: META })).ok,
+      ).toBe(true);
+      ensuring.release();
+
+      expect(await watching).toMatchObject({ violations: 1, resets: 1 });
+      expect(await h.session(session.id)).toMatchObject({ state: 'ended', mediaRoomEpoch: 1 });
+      // Ending is final: neither room of the ended session is left.
+      expect(h.rtc.roomNames()).toEqual([]);
+      expect(h.rtc.ended).toEqual([newRoom, newRoom, room]);
+      // Never reported as ensured: a join's sample asks the provider, which has no such room.
+      expect(await h.occupancy.sample(newRoom)).toEqual({ kind: 'missing' });
+    });
+
+    it('ends the new room of a reset that another reset moved on while it was being made', async () => {
+      h.rtc.connect(room, 'student-1', MICROPHONE, ['microphone']);
+      await h.reconciler.sweepParticipants();
+      h.rtc.connect(room, 'student-1', MICROPHONE, ['microphone']);
+
+      const ensuring = h.rtc.hold('ensureRoom');
+      const watching = h.reconciler.watchTick();
+      await ensuring.reached;
+      expect((await resetElsewhere(1))?.mediaRoomEpoch).toBe(2);
+      ensuring.release();
+
+      expect(await watching).toMatchObject({ violations: 1, resets: 1 });
+      // Epoch 1 is nobody's room: ended with the old one. Epoch 2's room is its
+      // own reset's — or the room sweep's — to make.
+      expect(h.rtc.roomNames()).toEqual([]);
+      expect(h.rtc.ended).toEqual([h.room(session.id, 1), room]);
+    });
+
+    describe('a moderator’s change racing the check (D22)', () => {
+      /** The next standing read of student-1 runs `act` first — landing between observation and standing. */
+      function beforeStanding(act: () => Promise<void>): void {
+        const read = h.standing.ofAccounts.bind(h.standing);
+        let pending: (() => Promise<void>) | null = act;
+        jest.spyOn(h.standing, 'ofAccounts').mockImplementation(async (at, userIds) => {
+          if (pending !== null && userIds.includes('student-1')) {
+            const running = pending;
+            pending = null;
+            await running();
+          }
+          return read(at, userIds);
+        });
+      }
+
+      /** The floor given again, and the speaker speaking on it. */
+      async function speaking(): Promise<SpeakerRequestView> {
+        const hand = await speaker();
+        h.rtc.connect(room, 'student-1', MICROPHONE, ['microphone']);
+        return hand;
+      }
+
+      it('counts no violation, and resets nothing, for a breach observed before a revoke that landed — a genuine repeat still resets once', async () => {
+        const first = await speaking();
+        beforeStanding(async () => {
+          await revokeFloor(first);
+        });
+        // Observed on the microphone, compared with no floor: corrected.
+        expect(await h.reconciler.sweepParticipants()).toMatchObject({
+          corrected: 1,
+          violations: 0,
+        });
+        jest.restoreAllMocks();
+
+        h.clock.advance(60);
+        const second = await speaking();
+        beforeStanding(async () => {
+          await revokeFloor(second);
+          // The moderator's own push applied before the standing was read.
+          expect(capabilitiesOf('student-1')).toEqual(LISTENER);
+        });
+        h.clock.advance(WATCH_TICK_SECONDS);
+        // The same again, inside the window of an applied correction: still a
+        // correction — the observation predates the revoke.
+        expect(await h.reconciler.watchTick()).toMatchObject({
+          corrected: 1,
+          violations: 0,
+          resets: 0,
+        });
+        expect(await h.session(session.id)).toMatchObject({
+          mediaRoomEpoch: 0,
+          enforcementViolations: 0,
+        });
+        expect(h.audits()).not.toContain('live.session.media_reset');
+        jest.restoreAllMocks();
+
+        // Back on the microphone with no floor, and nothing changed meanwhile:
+        // a violation, and exactly one reset.
+        h.clock.advance(WATCH_TICK_SECONDS);
+        h.rtc.connect(room, 'student-1', MICROPHONE, ['microphone']);
+        expect(await h.reconciler.watchTick()).toMatchObject({ violations: 1, resets: 1 });
+        expect(await h.reconciler.watchTick()).toMatchObject({ violations: 0, resets: 0 });
+        expect(await h.session(session.id)).toMatchObject({
+          mediaRoomEpoch: 1,
+          enforcementViolations: 1,
+        });
+      });
+
+      it('counts no violation for a breach observed while the moderator’s push was still on its way', async () => {
+        // An applied correction, and so a live window.
+        h.rtc.connect(room, 'student-1', MICROPHONE, ['microphone']);
+        expect(await h.reconciler.sweepParticipants()).toMatchObject({ corrected: 1 });
+        const hand = await speaking();
+
+        // The revoke has committed; its push waits at the provider while the
+        // watch observes the microphone and reads no floor.
+        const pushing = h.rtc.hold('updateCapabilities');
+        const revoking = revokeFloor(hand);
+        await pushing.reached;
+        const pushes = () => h.rtc.calls.filter((c) => c.operation === 'updateCapabilities');
+        const before = pushes().length;
+        const watching = h.reconciler.watchTick();
+        while (pushes().length === before) await new Promise((resolve) => setImmediate(resolve));
+        pushing.release();
+
+        expect((await revoking).media).toBe('applied');
+        expect(await watching).toMatchObject({ corrected: 1, violations: 0, resets: 0 });
+        expect(await h.session(session.id)).toMatchObject({
+          mediaRoomEpoch: 0,
+          enforcementViolations: 0,
+        });
+        expect(capabilitiesOf('student-1')).toEqual(LISTENER);
+      });
+
+      it('counts no violation for a breach observed before a revoke another instance committed — its push not yet made', async () => {
+        h.rtc.connect(room, 'student-1', MICROPHONE, ['microphone']);
+        expect(await h.reconciler.sweepParticipants()).toMatchObject({ corrected: 1 });
+        const hand = await speaking();
+        // Committed elsewhere: this process pushes nothing, and knows only the
+        // session's version.
+        beforeStanding(async () => {
+          const revoked = await h.requests.transition({
+            requestId: hand.id,
+            from: ['granted'],
+            to: 'revoked',
+            at: h.clock.now(),
+            by: 'teacher-1',
+            moderation: null,
+          });
+          expect(revoked?.kind).toBe('applied');
+        });
+
+        expect(await h.reconciler.watchTick()).toMatchObject({
+          corrected: 1,
+          violations: 0,
+          resets: 0,
+        });
+        expect(await h.session(session.id)).toMatchObject({
+          mediaRoomEpoch: 0,
+          enforcementViolations: 0,
+        });
+      });
+
+      it('counts no violation when a reset elsewhere moved the session between observation and standing', async () => {
+        h.rtc.connect(room, 'student-1', MICROPHONE, ['microphone']);
+        await h.reconciler.sweepParticipants();
+        h.rtc.connect(room, 'student-1', MICROPHONE, ['microphone']);
+        beforeStanding(async () => {
+          expect((await resetElsewhere(0))?.mediaRoomEpoch).toBe(1);
+        });
+
+        expect(await h.reconciler.watchTick()).toMatchObject({ violations: 0, resets: 0 });
+        expect(await h.session(session.id)).toMatchObject({
+          mediaRoomEpoch: 1,
+          enforcementViolations: 0,
+        });
+      });
+
+      it('counts no violation when the session ended between observation and standing', async () => {
+        h.rtc.connect(room, 'student-1', MICROPHONE, ['microphone']);
+        await h.reconciler.sweepParticipants();
+        h.rtc.connect(room, 'student-1', MICROPHONE, ['microphone']);
+        beforeStanding(async () => {
+          expect(
+            (await h.end.execute({ principal: owner, sessionId: session.id, meta: META })).ok,
+          ).toBe(true);
+        });
+
+        expect(await h.reconciler.watchTick()).toMatchObject({ violations: 0, resets: 0 });
+        expect(await h.session(session.id)).toMatchObject({
+          state: 'ended',
+          mediaRoomEpoch: 0,
+          enforcementViolations: 0,
+        });
+      });
+    });
+
     it('acts on nobody else in the room a reset just deleted: the rest wait for the next tick, in the new room', async () => {
       for (const userId of ['student-1', 'student-2']) {
         h.rtc.connect(room, userId, MICROPHONE, ['microphone']);

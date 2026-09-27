@@ -18,7 +18,7 @@ import {
 import type { QueueKey, SpeakerRequest } from '../domain/speaker-request';
 import { LiveAccess } from './live-access';
 import { LiveMedia } from './live-media';
-import { LiveRefusals } from './live-settings';
+import { LiveRefusals, isLiveId } from './live-settings';
 import { speakerRequestView, type HandView, type HandsPage } from './views';
 
 /** Which hands a page lists: the queue, or who holds the floor. */
@@ -66,6 +66,7 @@ export class ListHandsUseCase {
     const { principal } = command;
     const allowed = this.identity.authorize(principal, Permissions.live.moderate);
     if (!allowed.ok) return allowed;
+    if (!isLiveId(command.sessionId)) return err(LiveRefusals.sessionNotFound);
 
     const session = await this.sessions.findById(command.sessionId);
     if (session === null) return err(LiveRefusals.sessionNotFound);
@@ -128,7 +129,6 @@ export function handsPageLimit(requested: number | undefined): number {
  * pattern, with its own tag so no other list's cursor is taken for one.
  */
 const CURSOR_TAG = 'h1';
-const ID_SHAPE = /^[A-Za-z0-9:_-]{1,128}$/;
 
 export function encodeHandsCursor(key: QueueKey): string {
   return Buffer.from(JSON.stringify([CURSOR_TAG, key.requestedAt.toISOString(), key.id])).toString(
@@ -146,7 +146,7 @@ export function decodeHandsCursor(raw: string | undefined): Result<QueueKey | nu
       parsed[0] === CURSOR_TAG &&
       typeof parsed[1] === 'string' &&
       typeof parsed[2] === 'string' &&
-      ID_SHAPE.test(parsed[2])
+      isLiveId(parsed[2])
     ) {
       const requestedAt = new Date(parsed[1]);
       if (!Number.isNaN(requestedAt.getTime())) return ok({ requestedAt, id: parsed[2] });

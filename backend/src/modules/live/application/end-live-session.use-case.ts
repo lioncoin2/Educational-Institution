@@ -9,7 +9,7 @@ import {
 import { LIVE_SESSION_REPOSITORY, type LiveSessionRepository } from '../domain/ports';
 import { LiveAccess } from './live-access';
 import { LiveSessionLifecycle } from './live-session-lifecycle';
-import { LiveRefusals } from './live-settings';
+import { LiveRefusals, isLiveId } from './live-settings';
 import { LiveSessionViews } from './session-views';
 import type { LiveSessionView } from './views';
 
@@ -44,6 +44,7 @@ export class EndLiveSessionUseCase {
     // moderate at all learns nothing about which sessions exist.
     const allowed = this.identity.authorize(principal, Permissions.live.moderate);
     if (!allowed.ok) return allowed;
+    if (!isLiveId(command.sessionId)) return err(LiveRefusals.sessionNotFound);
 
     const session = await this.sessions.findById(command.sessionId);
     if (session === null) return err(LiveRefusals.sessionNotFound);

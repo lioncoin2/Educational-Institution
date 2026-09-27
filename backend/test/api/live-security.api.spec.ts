@@ -685,6 +685,33 @@ describe('live security', () => {
         for (const spy of spies) spy.mockRestore();
       }
     });
+
+    it('counts nothing for a session id it could never have issued — 15,000 characters of one — and answers it exactly as an unknown id', async () => {
+      const limiter = r.api.app.get<RateLimiter>(RATE_LIMITER, { strict: false });
+      const consume = jest.spyOn(limiter, 'consume');
+      try {
+        const student = await r.provision('student-c', 'STUDENT', 'حفصة');
+        const unknown = '00000000-0000-4000-8000-0000000000a2';
+        const malformed = 'x'.repeat(15_000);
+        for (const [route, limit] of [
+          ['join', 10],
+          ['hand', 6],
+        ] as const) {
+          const missing = await call('POST', `/sessions/${unknown}/${route}`, student);
+          expect(refusal(missing)).toEqual({ status: 404, code: 'live.session_not_found' });
+          consume.mockClear();
+          // Past the limit, and never refused with 429: no window was ever
+          // opened for it — and nothing tells it from the unknown id.
+          for (let attempt = 0; attempt <= limit; attempt += 1) {
+            const answered = await call('POST', `/sessions/${malformed}/${route}`, student);
+            expect(observable(answered)).toBe(observable(missing));
+          }
+          expect(consume).not.toHaveBeenCalled();
+        }
+      } finally {
+        consume.mockRestore();
+      }
+    });
   });
 
   describe('tokens and secrets', () => {

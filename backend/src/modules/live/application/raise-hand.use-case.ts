@@ -30,7 +30,7 @@ import {
 import { newSpeakerRequest } from '../domain/speaker-request';
 import { LiveAccess, isOutage } from './live-access';
 import { LiveJournal } from './live-journal';
-import { LiveRefusals, sessionUserKey, tooMany } from './live-settings';
+import { LiveRefusals, isLiveId, sessionUserKey, tooMany } from './live-settings';
 import { speakerRequestView, type RaiseHandResult } from './views';
 
 /**
@@ -39,8 +39,10 @@ import { speakerRequestView, type RaiseHandResult } from './views';
  * second row and no second event, so a double tap or a retry is harmless;
  * twenty simultaneous raises make one request.
  *
- *   1. identity's `live.raise_hand` (the route's gate, asked again), then
- *      the caller's limit in this session: 6 a minute, per (session, user);
+ *   1. identity's `live.raise_hand` (the route's gate, asked again); an id
+ *      this API could never have issued → 404 like an unknown one,
+ *      uncounted; then the caller's limit in this session: 6 a minute, per
+ *      (session, user);
  *   2. the session → 404;
  *   3. `community.live.raise_hand`, on the session's own community → 404
  *      like an unknown session, 412 for the lifecycle's refusal, 503 when
@@ -75,6 +77,8 @@ export class RaiseHandUseCase {
     const { principal, sessionId } = command;
     const allowed = this.identity.authorize(principal, Permissions.live.raiseHand);
     if (!allowed.ok) return allowed;
+    // Before the limiter: its key holds the id (`isLiveId`).
+    if (!isLiveId(sessionId)) return err(LiveRefusals.sessionNotFound);
 
     const throttle = await this.limiter.consume(
       sessionUserKey(sessionId, principal.userId),

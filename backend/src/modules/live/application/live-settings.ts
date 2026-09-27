@@ -111,6 +111,23 @@ export const LiveRefusals = {
   ),
 } as const satisfies Record<string, Failure>;
 
+/**
+ * The shape of every id this API issues — a session's and a speaker
+ * request's are UUIDs; this leaves room — and so of every id a path or a
+ * cursor may name. Anything else was never issued here: each use case that
+ * takes an id from the path answers it as an unknown id, right after
+ * identity's ceiling and BEFORE any limiter, store or Communities call. A
+ * malformed id is then cheap, and opens no rate-limit window — whose key
+ * would hold whatever text a client sent, of any length — while an
+ * attempt on a well-formed id still counts, found or not.
+ */
+const LIVE_ID_SHAPE = /^[A-Za-z0-9:_-]{1,128}$/;
+
+/** Whether `raw` could be an id this API issued (`LIVE_ID_SHAPE`). */
+export function isLiveId(raw: string): boolean {
+  return LIVE_ID_SHAPE.test(raw);
+}
+
 /** 429, with when to try again — as Communities' use cases answer it. */
 export function tooMany(code: string, retryAfterSeconds: number): Failure {
   return failure('rate_limited', code, 'Too many requests. Try again later.', {
@@ -120,7 +137,8 @@ export function tooMany(code: string, retryAfterSeconds: number): Failure {
 
 /**
  * A rate-limit key per (session, user) — never an address, which a school
- * behind one NAT shares. User ids hold no NUL, so the pair is unambiguous.
+ * behind one NAT shares. User ids hold no NUL, so the pair is unambiguous;
+ * the session id is one `isLiveId` accepted, so the key is bounded.
  */
 export function sessionUserKey(sessionId: string, userId: string): string {
   return `${sessionId}\u0000${userId}`;

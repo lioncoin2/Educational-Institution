@@ -20,7 +20,7 @@ import { lastOpenState } from '../domain/speaker-request';
 import { LiveAccess } from './live-access';
 import { LiveJournal } from './live-journal';
 import { LiveMedia } from './live-media';
-import { LiveRefusals } from './live-settings';
+import { LiveRefusals, isLiveId } from './live-settings';
 import { speakerRequestView, type LowerHandResult } from './views';
 
 /**
@@ -67,6 +67,7 @@ export class LowerHandUseCase {
     readonly meta: CallMetadata;
   }): Promise<Result<LowerHandResult>> {
     const { principal, sessionId } = command;
+    if (!isLiveId(sessionId)) return err(LiveRefusals.sessionNotFound);
     const open = await this.requests.findOpen(sessionId, principal.userId);
     const session = await this.sessions.findById(sessionId);
     if (session === null) return err(LiveRefusals.sessionNotFound);
