@@ -3,13 +3,16 @@ import { UuidIdGenerator } from '../../src/platform/primitives/uuid-id-generator
 import { InMemoryRateLimiter } from '../../src/platform/rate-limit/in-memory-rate-limiter';
 import type { DomainEvent, Principal } from '../../src/shared';
 import type { KnownRoleCode } from '../../src/modules/identity/domain/role';
+import { LiveAudienceService } from '../../src/modules/live/application/live-audience.service';
 import { CommunitiesRealtimeRelay } from '../../src/modules/realtime/application/communities-relay';
 import { ConnectionManager } from '../../src/modules/realtime/application/connection-manager';
+import { LiveRealtimeRelay } from '../../src/modules/realtime/application/live-relay';
 import { MessagingRealtimeRelay } from '../../src/modules/realtime/application/messaging-relay';
 import { RealtimeSessions } from '../../src/modules/realtime/application/realtime-sessions';
 import type { ClientLink } from '../../src/modules/realtime/domain/connection';
 import { communitiesHarness, type CommunitiesHarness } from './communities-harness';
 import { identityHarness } from './identity-harness';
+import { liveHarness, type LiveHarness } from './live-harness';
 import { messagingHarness } from './messaging-harness';
 import { principalWith } from './principals';
 
@@ -239,3 +242,57 @@ export function communitiesRealtimeHarness(
 }
 
 export type CommunitiesRealtimeHarness = ReturnType<typeof communitiesRealtimeHarness>;
+
+/**
+ * LiveRealtimeRelay over the REAL Live and Communities application layers
+ * (the live harness): Live's use cases change the store and record to
+ * Live's journal, and the journal's events go on through an in-process bus
+ * to the relay, exactly as in the running server. The relay asks
+ * Communities' membership contract and Live's own LIVE_AUDIENCE — the
+ * service the module binds, over the same store and Communities. Only the
+ * sockets are fake: devices are registered on a real ConnectionManager.
+ */
+export function liveRealtimeHarness(options: { readonly live?: LiveHarness } = {}) {
+  const live = options.live ?? liveHarness();
+  const bus = new InProcessEventBus();
+
+  // Live's use cases publish to the journal; forward to the bus.
+  const record = live.journal.publish.bind(live.journal);
+  live.journal.publish = async (events: readonly DomainEvent[]) => {
+    await record(events);
+    await bus.publish(events);
+  };
+
+  const connections = new ConnectionManager();
+  const audience = new LiveAudienceService(
+    live.sessions,
+    live.authorization,
+    live.communities.holders,
+  );
+  const relay = new LiveRealtimeRelay(bus, live.communities.membership, audience, connections);
+  relay.onModuleInit();
+
+  return {
+    live,
+    bus,
+    connections,
+    audience,
+    relay,
+
+    /** A connected device of this account. */
+    connect(userId: string): FakeLink {
+      return connectDevice(connections, userId);
+    },
+
+    /** Resolves once every event published so far has been delivered (timers aside). */
+    async settle(): Promise<void> {
+      await relay.idle();
+    },
+
+    cleanup(): void {
+      relay.onModuleDestroy();
+    },
+  };
+}
+
+export type LiveRealtimeHarness = ReturnType<typeof liveRealtimeHarness>;

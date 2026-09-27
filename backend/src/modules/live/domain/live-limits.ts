@@ -126,8 +126,8 @@ export const LiveRateLimits = {
 } as const satisfies Record<string, RateLimitPolicy>;
 
 /**
- * The realtime relay sends a session's moderators at most one
- * `live.session.changed` frame per this interval, carrying the latest state
- * version (Q26): a hand storm costs each moderator four frames a second.
+ * How often, at most, the realtime relay tells a session's moderators that it
+ * changed — defined in Live's contracts, where realtime reads it, and
+ * re-exported here so every bound Live runs on is found in this file.
  */
-export const MODERATOR_FRAME_COALESCE_MS = 250;
+export { MODERATOR_FRAME_COALESCE_MS } from '../contracts/frame-coalescing';

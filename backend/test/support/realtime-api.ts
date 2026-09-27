@@ -1,5 +1,6 @@
 import { BootstrapOwnerUseCase } from '../../src/modules/identity/application/bootstrap-owner.use-case';
 import { CommunitiesRealtimeRelay } from '../../src/modules/realtime/application/communities-relay';
+import { LiveRealtimeRelay } from '../../src/modules/realtime/application/live-relay';
 import { MessagingRealtimeRelay } from '../../src/modules/realtime/application/messaging-relay';
 import { RealtimeSessions } from '../../src/modules/realtime/application/realtime-sessions';
 import { WebSocketTransport } from '../../src/modules/realtime/infrastructure/websocket-transport';
@@ -61,6 +62,7 @@ export async function startRealtimeApi(
     sessions: api.app.get(RealtimeSessions),
     relay: api.app.get(MessagingRealtimeRelay),
     communitiesRelay: api.app.get(CommunitiesRealtimeRelay),
+    liveRelay: api.app.get(LiveRealtimeRelay),
 
     async provision(name: string, role: string, displayName = name): Promise<Account> {
       const email = `${name}@institution.test`;

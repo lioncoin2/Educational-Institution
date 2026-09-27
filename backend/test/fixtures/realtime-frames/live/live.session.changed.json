@@ -1,0 +1,9 @@
+{
+  "type": "live.session.changed",
+  "eventId": "live.session.changed:session-1:7",
+  "occurredAt": "2026-09-24T10:00:00.000Z",
+  "communityId": "community-1",
+  "sessionId": "session-1",
+  "stateVersion": 7,
+  "version": 1
+}

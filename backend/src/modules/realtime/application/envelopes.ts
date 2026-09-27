@@ -8,11 +8,11 @@ import { PROTOCOL_VERSION, type RealtimeErrorCode } from '../domain/protocol';
 
 /**
  * Server → client frames, version 1. Every one is built here, field by field,
- * from messaging's and notifications' contract views, Communities' events and
- * the event's identifiers — never by spreading a domain event or a stored row
- * onto the wire, so nothing the contract does not name (an audit field, a
- * storage key, a signed URL, a token, a deduplication key) can reach a client
- * by accident.
+ * from messaging's and notifications' contract views, Communities' and
+ * Live's events and the event's identifiers — never by spreading a domain
+ * event or a stored row onto the wire, so nothing the contract does not name
+ * (an audit field, a storage key, a signed URL, a token, a deduplication key)
+ * can reach a client by accident.
  *
  * Each builder returns the serialized frame: an event is serialized once and
  * the same string is sent to every connection that receives it.
@@ -408,4 +408,70 @@ export function communityAccessChangedFrame(input: {
  */
 function digest(fact: string): string {
   return createHash('sha256').update(fact).digest('hex').slice(0, 20);
+}
+
+// ── Live ───────────────────────────────────────────────────────────────────
+//
+// Hints, never grants (live.md §16; communities-live-attendance.md §16.2):
+// a community, a session, a reason code and a version — no name, no title, no
+// count, no roster, no queue, no room and never a join credential, which only
+// `POST …/join` hands out. The client re-reads the session over HTTP, which
+// decides everything. Golden copies: test/fixtures/realtime-frames/live/,
+// read by the backend only until the app's live phase parses them (audit D16).
+
+/** Why a live session ended, as Live's event names it. */
+export type LiveSessionEndReason = 'moderator' | 'idle' | 'community_closed';
+
+/** "A live session started in this community": there is a session to look at. */
+export function liveSessionStartedFrame(input: {
+  readonly occurredAt: Date;
+  readonly communityId: string;
+  readonly sessionId: string;
+}): string {
+  return frame({
+    type: 'live.session.started',
+    eventId: `live.session.started:${input.sessionId}`,
+    occurredAt: input.occurredAt.toISOString(),
+    communityId: input.communityId,
+    sessionId: input.sessionId,
+  });
+}
+
+/** "That live session is over" — terminal for its id; a session ends once. */
+export function liveSessionEndedFrame(input: {
+  readonly occurredAt: Date;
+  readonly communityId: string;
+  readonly sessionId: string;
+  readonly reason: LiveSessionEndReason;
+}): string {
+  return frame({
+    type: 'live.session.ended',
+    eventId: `live.session.ended:${input.sessionId}`,
+    occurredAt: input.occurredAt.toISOString(),
+    communityId: input.communityId,
+    sessionId: input.sessionId,
+    reason: input.reason,
+  });
+}
+
+/**
+ * "The session changed, as of `stateVersion`" — a hand, the floor or the
+ * screen. The client compares the version with the one its last read of the
+ * session returned: an older or equal one is dropped, a newer one triggers
+ * one re-read. The version is in the id, so a redelivered fact is a duplicate.
+ */
+export function liveSessionChangedFrame(input: {
+  readonly occurredAt: Date;
+  readonly communityId: string;
+  readonly sessionId: string;
+  readonly stateVersion: number;
+}): string {
+  return frame({
+    type: 'live.session.changed',
+    eventId: `live.session.changed:${input.sessionId}:${input.stateVersion}`,
+    occurredAt: input.occurredAt.toISOString(),
+    communityId: input.communityId,
+    sessionId: input.sessionId,
+    stateVersion: input.stateVersion,
+  });
 }

@@ -7,13 +7,25 @@ import {
   communityMemberAddedFrame,
   communityMemberRemovedFrame,
   communityUnlockedFrame,
+  liveSessionChangedFrame,
+  liveSessionEndedFrame,
+  liveSessionStartedFrame,
 } from './envelopes';
 
 /** The golden frames the app's parser reads too (test/fixtures/realtime-frames/README.md). */
 const FIXTURES = join(__dirname, '..', '..', '..', '..', 'test', 'fixtures', 'realtime-frames');
 
-const golden = (name: string): unknown =>
-  JSON.parse(readFileSync(join(FIXTURES, `${name}.json`), 'utf8')) as unknown;
+/** Live's, read by the backend only until the app's live phase parses them (audit D16). */
+const LIVE_FIXTURES = join(FIXTURES, 'live');
+
+const golden = (name: string, directory = FIXTURES): unknown =>
+  JSON.parse(readFileSync(join(directory, `${name}.json`), 'utf8')) as unknown;
+
+const fixtureNames = (directory: string): string[] =>
+  readdirSync(directory)
+    .filter((file) => file.endsWith('.json'))
+    .map((file) => file.replace(/\.json$/, ''))
+    .sort();
 
 // The inputs every fixture was written from.
 const occurredAt = new Date('2026-09-24T10:00:00.000Z');
@@ -58,11 +70,7 @@ const BUILT: Record<string, string> = {
  */
 describe('community frames, as the golden fixtures state them', () => {
   it('has a builder case for every fixture, and a fixture for every case', () => {
-    const fixtures = readdirSync(FIXTURES)
-      .filter((file) => file.endsWith('.json'))
-      .map((file) => file.replace(/\.json$/, ''))
-      .sort();
-    expect(fixtures).toEqual(Object.keys(BUILT).sort());
+    expect(fixtureNames(FIXTURES)).toEqual(Object.keys(BUILT).sort());
   });
 
   it.each(Object.entries(BUILT))('builds %s exactly — field for field, in order', (name, built) => {
@@ -139,5 +147,103 @@ describe('community frames, as the golden fixtures state them', () => {
       expect(id).toMatch(/^community\.access\.changed:community-1:user-2:[0-9a-f]{20}$/);
       expect(id).not.toMatch(/grant|granted|revoked|transferred/);
     }
+  });
+});
+
+const sessionId = 'session-1';
+
+const LIVE_BUILT: Record<string, string> = {
+  'live.session.started': liveSessionStartedFrame({ occurredAt, communityId, sessionId }),
+  'live.session.ended.moderator': liveSessionEndedFrame({
+    occurredAt,
+    communityId,
+    sessionId,
+    reason: 'moderator',
+  }),
+  'live.session.ended.idle': liveSessionEndedFrame({
+    occurredAt,
+    communityId,
+    sessionId,
+    reason: 'idle',
+  }),
+  'live.session.ended.community_closed': liveSessionEndedFrame({
+    occurredAt,
+    communityId,
+    sessionId,
+    reason: 'community_closed',
+  }),
+  'live.session.changed': liveSessionChangedFrame({
+    occurredAt,
+    communityId,
+    sessionId,
+    stateVersion: 7,
+  }),
+};
+
+/**
+ * Protocol v1's live frames (P6), pinned to their golden copies in `live/`.
+ * Hints only: a community, a session, a reason code and a version.
+ */
+describe('live frames, as the golden fixtures state them', () => {
+  it('has a builder case for every fixture in live/, and a fixture for every case', () => {
+    expect(fixtureNames(LIVE_FIXTURES)).toEqual(Object.keys(LIVE_BUILT).sort());
+  });
+
+  it.each(Object.entries(LIVE_BUILT))(
+    'builds %s exactly — field for field, in order',
+    (name, built) => {
+      const fixture = golden(name, LIVE_FIXTURES);
+      expect(JSON.parse(built)).toEqual(fixture);
+      expect(built).toBe(JSON.stringify(fixture));
+    },
+  );
+
+  it('carries ids, a reason code and a version only — no name, count, roster or token', () => {
+    for (const built of Object.values(LIVE_BUILT)) {
+      const keys = Object.keys(JSON.parse(built) as Record<string, unknown>);
+      expect(
+        keys.filter(
+          (key) =>
+            ![
+              'type',
+              'eventId',
+              'occurredAt',
+              'communityId',
+              'sessionId',
+              'reason',
+              'stateVersion',
+              'version',
+            ].includes(key),
+        ),
+      ).toEqual([]);
+    }
+  });
+
+  it('names a fact by what it is: a session starts and ends once, and changes once per version', () => {
+    const ids = Object.fromEntries(
+      Object.entries(LIVE_BUILT).map(([name, built]) => [
+        name,
+        (JSON.parse(built) as { eventId: string }).eventId,
+      ]),
+    );
+    expect(ids).toEqual({
+      'live.session.started': 'live.session.started:session-1',
+      'live.session.ended.moderator': 'live.session.ended:session-1',
+      'live.session.ended.idle': 'live.session.ended:session-1',
+      'live.session.ended.community_closed': 'live.session.ended:session-1',
+      'live.session.changed': 'live.session.changed:session-1:7',
+    });
+    // A redelivery is a duplicate; the next version is not.
+    expect(
+      liveSessionChangedFrame({
+        occurredAt: new Date(occurredAt),
+        communityId,
+        sessionId,
+        stateVersion: 7,
+      }),
+    ).toBe(LIVE_BUILT['live.session.changed']);
+    expect(
+      liveSessionChangedFrame({ occurredAt, communityId, sessionId, stateVersion: 8 }),
+    ).not.toBe(LIVE_BUILT['live.session.changed']);
   });
 });

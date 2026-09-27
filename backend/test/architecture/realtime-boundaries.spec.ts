@@ -18,6 +18,10 @@ import { cruise, edgesFrom, reachableFrom, type CruiseOutput } from '../support/
  *   - realtime knows Communities through its contracts only — the membership
  *     facts, the view ceiling and the events its relay turns into frames —
  *     and wires it through its module file; never its tables or use cases;
+ *   - realtime knows Live through its contracts only — the events, the
+ *     audience of a session's facts and the coalescing interval — and wires
+ *     it through its module file; never its domain, store, use cases or
+ *     media adapter. Live reaches nothing of realtime (above, per module);
  *   - nothing but the composition root imports realtime.
  */
 const SOCKET_LIBRARIES =
@@ -172,6 +176,53 @@ describe('realtime boundaries', () => {
         (edge) => edge.resolved,
       ),
     ).toContain('src/modules/communities/communities.module.ts');
+  });
+
+  it('lets realtime know Live only through its contracts, and wire it through its module', () => {
+    const intrusions = edgesFrom(output, (source) => source.startsWith('src/modules/realtime/'))
+      .filter(
+        (edge) =>
+          edge.resolved.startsWith('src/modules/live/') &&
+          !edge.resolved.startsWith('src/modules/live/contracts/') &&
+          !(
+            edge.source === 'src/modules/realtime/realtime.module.ts' &&
+            edge.resolved === 'src/modules/live/live.module.ts'
+          ),
+      )
+      .map((edge) => `${edge.source} -> ${edge.resolved}`);
+    expect(intrusions).toEqual([]);
+    // …and through them, nothing of Live's domain, store, use cases or provider.
+    expect(
+      reaching(inModule('realtime'), (path) =>
+        /^src\/modules\/live\/(domain|application|infrastructure|api)\//.test(path),
+      ),
+    ).toEqual([]);
+  });
+
+  it('finds the live relay using Live’s contracts, and the module wiring Live — the check above is not vacuous', () => {
+    expect(
+      edgesFrom(
+        output,
+        (source) => source === 'src/modules/realtime/application/live-relay.ts',
+      ).map((edge) => edge.resolved),
+    ).toContain('src/modules/live/contracts/index.ts');
+    expect(
+      edgesFrom(output, (source) => source === 'src/modules/realtime/realtime.module.ts').map(
+        (edge) => edge.resolved,
+      ),
+    ).toContain('src/modules/live/live.module.ts');
+  });
+
+  it('keeps Live free of realtime — its contracts, its module file and everything else', () => {
+    const fromLive = (source: string) => source.startsWith('src/modules/live/');
+    expect(
+      edgesFrom(output, fromLive)
+        .filter((edge) => edge.resolved.startsWith('src/modules/realtime/'))
+        .map((edge) => `${edge.source} -> ${edge.resolved}`),
+    ).toEqual([]);
+    expect(reaching(fromLive, (path) => path.startsWith('src/modules/realtime/'))).toEqual([]);
+    // Not vacuous: Live is in the graph.
+    expect(output.modules.some((module) => fromLive(module.source))).toBe(true);
   });
 
   it('is imported by the composition root only', () => {

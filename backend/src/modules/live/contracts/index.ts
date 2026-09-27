@@ -5,8 +5,10 @@
  * exports the event names and payload types and the vocabulary needed to
  * interpret them, and two contracts bound by LiveModule: LIVE_SESSIONS (a
  * session's scope, from Live's own record) and LIVE_AUDIENCE (who a
- * session's facts may reach, as Communities answers it).
+ * session's facts may reach, as Communities answers it) — and the interval the
+ * realtime relay coalesces moderators' frames to.
  */
+export { MODERATOR_FRAME_COALESCE_MS } from './frame-coalescing';
 export { LIVE_AUDIENCE, MAX_AUDIENCE_PROBE, type LiveAudience } from './live-audience';
 export { LIVE_SESSIONS, type LiveSessionScope, type LiveSessions } from './live-sessions';
 export type { LiveParticipantRole } from './participant-role';

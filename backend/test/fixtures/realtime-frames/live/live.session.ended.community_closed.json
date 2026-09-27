@@ -1,0 +1,9 @@
+{
+  "type": "live.session.ended",
+  "eventId": "live.session.ended:session-1",
+  "occurredAt": "2026-09-24T10:00:00.000Z",
+  "communityId": "community-1",
+  "sessionId": "session-1",
+  "reason": "community_closed",
+  "version": 1
+}
