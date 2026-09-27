@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 
+import { KeyedMutex } from '../../../platform/concurrency/keyed-mutex';
 import { DATABASE, postgresErrorCode, type Database } from '../../../platform/database';
 import { COMMUNITY_CAPABILITIES, type CommunityCapability } from '../contracts/capabilities';
 import { COMMUNITY_STATUSES, type CommunityStatus } from '../contracts/vocabulary';
@@ -28,7 +29,6 @@ import type {
   StatusChange,
   TransferOutcome,
 } from '../domain/ports';
-import { KeyedMutex } from './keyed-mutex';
 import {
   communityRow,
   grantRow,
@@ -201,6 +201,84 @@ export class DrizzleCommunityRepository implements CommunityStore {
                 grants,
               },
       });
+    }
+    return reads;
+  }
+
+  async authorityOfMany(
+    communityId: string,
+    userIds: readonly string[],
+  ): Promise<ReadonlyMap<string, CommunityAuthorityRead>> {
+    const reads = new Map<string, CommunityAuthorityRead>();
+    const asked = [...new Set(userIds)];
+    if (asked.length === 0) return reads;
+    // One statement on the primary: the community by id, LEFT JOIN the
+    // people's ACTIVE stints (community_members_current_unique, keyed by the
+    // community and the person), LEFT JOIN those stints' ACTIVE grants (at
+    // most one per capability) — index probes per person, whatever the size
+    // of the community. The ids go as ONE array parameter, as statesOf's do:
+    // a batch is up to 1,000 of them.
+    const rows = await this.db
+      .select({
+        community: communities,
+        userId: communityMembers.userId,
+        stintId: communityMembers.id,
+        standing: communityMembers.standing,
+        joinedAt: communityMembers.joinedAt,
+        version: communityMembers.version,
+        grantId: communityCapabilityGrants.id,
+        capability: communityCapabilityGrants.capability,
+      })
+      .from(communities)
+      .leftJoin(
+        communityMembers,
+        and(
+          eq(communityMembers.communityId, communities.id),
+          sql`${communityMembers.userId} = any(${sql.param(asked)}::text[])`,
+          eq(communityMembers.status, 'ACTIVE'),
+        ),
+      )
+      .leftJoin(
+        communityCapabilityGrants,
+        and(
+          eq(communityCapabilityGrants.membershipId, communityMembers.id),
+          isNull(communityCapabilityGrants.endedAt),
+        ),
+      )
+      .where(eq(communities.id, communityId));
+    const [first] = rows;
+    // No row at all: the community is unknown, and nobody has an entry.
+    if (first === undefined) return reads;
+    const community = toCommunity(first.community);
+    const stintOf = new Map<string, NonNullable<CommunityAuthorityRead['stint']>>();
+    const grantsOf = new Map<string, HeldGrant[]>();
+    for (const row of rows) {
+      if (
+        row.userId === null ||
+        row.stintId === null ||
+        row.standing === null ||
+        row.joinedAt === null ||
+        row.version === null
+      ) {
+        continue;
+      }
+      const grants = grantsOf.get(row.userId) ?? [];
+      grantsOf.set(row.userId, grants);
+      if (row.grantId !== null && row.capability !== null) {
+        grants.push({ id: row.grantId, capability: row.capability });
+      }
+      if (stintOf.has(row.userId)) continue;
+      stintOf.set(row.userId, {
+        id: row.stintId,
+        standing: row.standing,
+        joinedAt: row.joinedAt,
+        version: Number(row.version),
+        grants,
+      });
+    }
+    // Everyone asked has an entry — with no stint for whoever holds no ACTIVE one here.
+    for (const userId of asked) {
+      reads.set(userId, { community, stint: stintOf.get(userId) ?? null });
     }
     return reads;
   }

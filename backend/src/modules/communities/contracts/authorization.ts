@@ -5,7 +5,10 @@ import type { COMMUNITY_RESOURCE, CommunityAct } from './capabilities';
 /** DI token. */
 export const COMMUNITY_AUTHORIZATION = Symbol('COMMUNITY_AUTHORIZATION');
 
-/** The most community ids one `authorizeEach` call may ask about. */
+/**
+ * The most ids one batch call may ask about: community ids for
+ * `authorizeEach`, user ids for `permittedAmong`.
+ */
 export const MAX_AUTHORIZE_BATCH = 1000;
 
 /**
@@ -76,4 +79,18 @@ export interface CommunityAuthorization {
     communityIds: readonly string[],
     act: CommunityAct,
   ): Promise<ReadonlyMap<string, Result<CommunityPermit>>>;
+
+  /**
+   * P6. Trusted and principal-less (Live's reconciler, LIVE_AUDIENCE, a grant's target check).
+   * Of `userIds` (at most MAX_AUTHORIZE_BATCH; RangeError above), those this act would permit:
+   * the act's standing ceiling (identity, through ACCOUNT_DIRECTORY.withPermission), then the
+   * owner, grant or membership basis (NEVER oversight), then the lifecycle gate — the same
+   * evaluator `authorize` runs. Deduplicated, in the order given. An unknown community → [].
+   * A store or directory failure REJECTS: never [] for "could not tell".
+   */
+  permittedAmong(
+    communityId: string,
+    userIds: readonly string[],
+    act: CommunityAct,
+  ): Promise<readonly string[]>;
 }

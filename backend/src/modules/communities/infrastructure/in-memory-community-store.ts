@@ -100,6 +100,16 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     return reads;
   }
 
+  async authorityOfMany(
+    communityId: string,
+    userIds: readonly string[],
+  ): Promise<ReadonlyMap<string, CommunityAuthorityRead>> {
+    const reads = new Map<string, CommunityAuthorityRead>();
+    if (!this.communityById.has(communityId)) return reads;
+    for (const userId of userIds) reads.set(userId, this.readAuthority(communityId, userId));
+    return reads;
+  }
+
   async findCommunity(communityId: string): Promise<Community | null> {
     return this.communityById.get(communityId) ?? null;
   }

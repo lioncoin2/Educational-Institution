@@ -125,6 +125,7 @@ export class StubAccounts implements AccountDirectory {
     }
   >();
   describeCalls = 0;
+  withPermissionCalls = 0;
 
   add(userId: string, roles: readonly KnownRoleCode[], displayName = userId): void {
     this.accounts.set(userId, { displayName, roles: [...roles], active: true });
@@ -160,6 +161,7 @@ export class StubAccounts implements AccountDirectory {
     userIds: readonly string[],
     permission: Permission,
   ): Promise<ReadonlySet<string>> {
+    this.withPermissionCalls += 1;
     return new Set(
       userIds.filter((userId) => {
         const account = this.accounts.get(userId);
@@ -197,8 +199,8 @@ export function communitiesHarness(
   const secrets = new CryptoInvitationSecrets();
   const limiter = new InMemoryRateLimiter(clock);
   const communitiesJournal = new CommunitiesJournal(journal, journal);
-  const authorization = new CommunityAuthorizationService(identity, store);
   const people = new CommunityPeople(accounts);
+  const authorization = new CommunityAuthorizationService(identity, store, people);
 
   const h = {
     clock,

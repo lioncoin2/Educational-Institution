@@ -67,11 +67,13 @@ export function holdsAnyCeiling(rule: ActRule, held: HeldCeilings): boolean {
  *
  *   1  ceiling     the standing ceiling, or the oversight ceiling if the act has one
  *   2  read        (done by the caller — only once step 1 passed)
- *   3  basis       first match wins: membership (a participation act, ACTIVE
- *                  stint, standing ceiling); owner (a capability or derived act,
- *                  standing OWNER, standing ceiling); grant (a capability or
- *                  derived act, an ACTIVE grant of its backing capability on the
- *                  ACTIVE stint, standing ceiling); oversight (its ceiling held)
+ *   3  basis       first match wins: membership (a rule of the participation
+ *                  kind — a participation act, or community.live.remain —
+ *                  ACTIVE stint, standing ceiling); owner (a capability or
+ *                  community.live.host, standing OWNER, standing ceiling); grant
+ *                  (a capability or community.live.host, an ACTIVE grant of its
+ *                  backing capability on the ACTIVE stint, standing ceiling);
+ *                  oversight (its ceiling held)
  *   4  not found   the community is missing — or there is no basis and the
  *                  principal is not a member: the two answers are identical
  *   4′ forbidden   no basis, but a member: `capability_required {act}`

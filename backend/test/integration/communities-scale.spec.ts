@@ -285,6 +285,68 @@ describeWithPostgres('Communities at scale', () => {
     },
   );
 
+  // Members 501–1,500 in join order: in c-30k each holds an ACTIVE removal
+  // grant, 501 of them a live one too, and an ended grant the read must skip.
+  it.each([
+    ['c-30k', 1_501],
+    ['c-100k', 0],
+  ])(
+    'reads permittedAmong’s 1,000 people in %s by index: the current stints, then their ACTIVE grants',
+    async (community, activeGrants) => {
+      const people = await memberIds(community, 500, 1000);
+      const reads = await store.authorityOfMany(community, people);
+      expect(reads.size).toBe(1000);
+      expect([...reads.values()].every((read) => read.stint !== null)).toBe(true);
+      expect(
+        [...reads.values()].reduce((sum, read) => sum + (read.stint?.grants.length ?? 0), 0),
+      ).toBe(activeGrants);
+
+      const nodes = await plansOf(() => store.authorityOfMany(community, people));
+      expect(seqScans(nodes)).toEqual([]);
+      expect(indexes(nodes)).toContain('communities_pkey');
+      // Keyed by the community and the people: bounded by the 1,000, whatever the size.
+      const probe = nodes.find((node) => node['Relation Name'] === 'community_members');
+      expect(['community_members_current_unique', 'community_members_user_idx']).toContain(
+        probe?.['Index Name'],
+      );
+      expect(probe?.['Index Cond']).toMatch(/user_id = ANY/u);
+      expect(probe?.['Index Cond']).toMatch(/community_id/u);
+      const grants = nodes.find(
+        (node) => node['Relation Name'] === 'communities_capability_grants',
+      );
+      expect(grants?.['Index Name']).toBe('communities_capability_grants_active_unique');
+      expect(grants?.['Index Cond']).toMatch(/membership_id/u);
+    },
+  );
+
+  it('answers permittedAmong in one statement — for 3 people as for 1,000', async () => {
+    const people = await memberIds('c-30k', 5_000, 1000);
+    for (const userId of people) h.accounts.add(userId, ['STUDENT']);
+    const cost = async (userIds: readonly string[]) => {
+      statements.length = 0;
+      const asked = h.accounts.withPermissionCalls;
+      const permitted = await h.authorization.permittedAmong(
+        'c-30k',
+        userIds,
+        'community.live.remain',
+      );
+      return {
+        permitted: permitted.length,
+        statements: statements.length,
+        directoryCalls: h.accounts.withPermissionCalls - asked,
+      };
+    };
+    // The one store read, and one directory call per permission of the
+    // ceiling (communities.read, live.join) — whatever the number of people.
+    expect(await cost(people.slice(0, 3))).toEqual({
+      permitted: 3,
+      statements: 1,
+      directoryCalls: 2,
+    });
+    expect(await cost(people)).toEqual({ permitted: 1000, statements: 1, directoryCalls: 2 });
+    expect(statements.some(({ query }) => /count\s*\(/iu.test(query))).toBe(false);
+  });
+
   it('pages the roster from the middle of 30,000 on the roster index', async () => {
     const [middle] = await readModel.latestStints('c-30k', await memberIds('c-30k', 15_000, 1));
     const nodes = await plansOf(() =>

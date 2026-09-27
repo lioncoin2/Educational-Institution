@@ -52,7 +52,17 @@ describe('the lifecycle (PROVISIONAL, Q46)', () => {
       'community.live.raise_hand': 'TTF',
       'community.live.moderate': 'TTT',
       'community.live.host': 'TTT',
+      'community.live.remain': 'TTT',
     });
+  });
+
+  it('lets whoever is in a running live session remain under every status — join closes, remain never', () => {
+    for (const status of ['OPEN', 'LOCKED', 'ARCHIVED', '']) {
+      expect(statePermits(status, 'community.live.remain')).toBe(true);
+    }
+    // A status this build does not know closes the door to new joins, and ejects nobody.
+    expect(statePermits('ARCHIVED', 'community.live.join')).toBe(false);
+    expect(effectsOf('ARCHIVED').runningLiveContinues).toBe(true);
   });
 
   it('never blocks community.lock', () => {

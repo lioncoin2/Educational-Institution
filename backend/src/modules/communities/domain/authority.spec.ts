@@ -288,4 +288,76 @@ describe('decideCommunityAct — the evaluator (§6.5)', () => {
     expect(outcome(decide('community.live.host', standingOnly, read))).toBe('permit:owner');
     expect(outcome(decide('community.live.moderate', standingOnly, read))).toBe('permit:owner');
   });
+
+  describe('community.live.remain (P6)', () => {
+    it('keeps a member holding the ceiling in, on membership, under every status', () => {
+      for (const community of [OPEN, LOCKED, FUTURE]) {
+        expect(
+          decide('community.live.remain', standingOnly, { community, stint: memberStint }),
+        ).toEqual({
+          kind: 'permit',
+          basis: 'membership',
+          membership: { membershipId: 'stint-m', joinedAt: new Date(2), version: 2 },
+          grantId: null,
+          ceiling: ['communities.read', 'live.join'],
+        });
+      }
+      // Where join, on the same ceiling and basis, closes: a status this build does not know.
+      expect(
+        outcome(
+          decide('community.live.join', standingOnly, { community: FUTURE, stint: memberStint }),
+        ),
+      ).toBe('communities.community_locked');
+    });
+
+    it('refuses a non-member exactly as it refuses a missing community', () => {
+      for (const community of [OPEN, LOCKED, FUTURE]) {
+        const notMember = decide('community.live.remain', standingOnly, { community, stint: null });
+        expect(notMember).toEqual(
+          decide('community.live.remain', standingOnly, { community: null, stint: null }),
+        );
+        expect(outcome(notMember)).toBe('communities.community_not_found');
+      }
+    });
+
+    it('keeps the owner in as a member — there is no owner path to it', () => {
+      for (const community of [OPEN, LOCKED, FUTURE]) {
+        expect(
+          outcome(decide('community.live.remain', standingOnly, { community, stint: ownerStint })),
+        ).toBe('permit:membership');
+      }
+      // A demoted owner without the ceiling: ownership adds nothing.
+      expect(
+        outcome(decide('community.live.remain', none, { community: OPEN, stint: ownerStint })),
+      ).toBe('no_ceiling');
+    });
+
+    it('is never given by a grant — not to a member without the ceiling, whatever they hold', () => {
+      const granted = {
+        ...memberStint,
+        grants: [
+          { id: 'grant-start', capability: 'community.live.start' as const },
+          { id: 'grant-moderate', capability: 'community.live.moderate' as const },
+        ],
+      };
+      expect(
+        outcome(decide('community.live.remain', none, { community: OPEN, stint: granted })),
+      ).toBe('no_ceiling');
+      // With the ceiling, the basis is membership — never the grants beside it.
+      expect(
+        decide('community.live.remain', standingOnly, { community: OPEN, stint: granted }),
+      ).toMatchObject({ kind: 'permit', basis: 'membership', grantId: null });
+    });
+
+    it('is never given by oversight — communities.manage without membership stays outside', () => {
+      expect(
+        outcome(decide('community.live.remain', oversightOnly, { community: OPEN, stint: null })),
+      ).toBe('no_ceiling');
+      for (const community of [OPEN, LOCKED, FUTURE]) {
+        expect(outcome(decide('community.live.remain', both, { community, stint: null }))).toBe(
+          'communities.community_not_found',
+        );
+      }
+    });
+  });
 });

@@ -76,6 +76,10 @@ export const GATE_OF_ACT: Readonly<Record<CommunityAct, LifecycleGate>> = Object
   'community.live.raise_hand': 'liveJoinOpen',
   'community.live.moderate': 'always',
   'community.live.host': 'runningLiveContinues',
+  // Not liveJoinOpen: a status this build does not know closes the door to
+  // new joins, but ejects nobody already in a running session — never eject
+  // on ignorance.
+  'community.live.remain': 'runningLiveContinues',
 });
 
 export function permitsGate(status: string, gate: LifecycleGate): boolean {

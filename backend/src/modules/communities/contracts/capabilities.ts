@@ -74,14 +74,20 @@ export const COMMUNITY_PARTICIPATION = [
 export type CommunityParticipationAct = (typeof COMMUNITY_PARTICIPATION)[number];
 
 /**
- * Derived acts, backed by a capability rather than granted themselves.
+ * Derived acts: each takes its standing from another act's rule.
  *
  * `community.live.host`: the host of a live session moderating their own
  * session — backed by `community.live.start`, and allowed while a running
- * session continues. (`community.live.remain`, staying in a running session,
- * joins this list with community-scoped live sessions in P6.)
+ * session continues.
+ *
+ * `community.live.remain` (P6): staying in a running live session —
+ * `community.live.join`'s ceiling and membership basis, allowed while
+ * `runningLiveContinues` instead of `liveJoinOpen`, so neither a lock nor a
+ * status this build does not know ejects anyone already in.
+ *
+ * Neither derived act is a capability, and no grant names one.
  */
-export const COMMUNITY_DERIVED_ACTS = ['community.live.host'] as const;
+export const COMMUNITY_DERIVED_ACTS = ['community.live.host', 'community.live.remain'] as const;
 
 export type CommunityDerivedAct = (typeof COMMUNITY_DERIVED_ACTS)[number];
 

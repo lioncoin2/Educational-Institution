@@ -63,6 +63,24 @@ function rule(
   });
 }
 
+/**
+ * A rule on the membership basis for an act whose name does not make it a
+ * participation act, so `rule` would derive another kind. The kind is what
+ * the evaluator takes a basis from, so here it is stated rather than
+ * inferred: membership alone gives the act, within the standing ceiling; the
+ * owner holds it as a member; no grant and no oversight reach it.
+ */
+function membershipRule(act: CommunityAct, standingCeiling: readonly Permission[]): ActRule {
+  return Object.freeze({
+    act,
+    kind: 'participation',
+    standingCeiling: Object.freeze([...standingCeiling]),
+    ownerImplicit: false,
+    oversightCeiling: null,
+    gate: GATE_OF_ACT[act],
+  });
+}
+
 export const ACT_RULES: Readonly<Record<CommunityAct, ActRule>> = Object.freeze({
   // The published constant, so realtime's principal-less community frame
   // audiences narrow by exactly the ceiling this rule asks of a person.
@@ -93,6 +111,13 @@ export const ACT_RULES: Readonly<Record<CommunityAct, ActRule>> = Object.freeze(
     null,
   ),
   'community.live.join': rule('community.live.join', [communities.read, live.join], null),
+  // Derived from community.live.join: the same ceiling and the same basis,
+  // membership — which is why its kind is participation although it is
+  // listed as a derived act. Left to the kind `rule` derives from its name,
+  // it would be a capability that no grant backs, so the owner alone would
+  // hold it, and every listener would be judged ineligible to stay in a
+  // running session. Only the gate differs (lifecycle.ts).
+  'community.live.remain': membershipRule('community.live.remain', [communities.read, live.join]),
   'community.live.raise_hand': rule(
     'community.live.raise_hand',
     [communities.read, live.raiseHand],
@@ -119,9 +144,9 @@ export function ruleFor(act: CommunityAct): ActRule {
 
 /**
  * The capability a grant must name for an act (§6.3): a capability is its
- * own; `community.live.host` is backed by `community.live.start`; a
- * participation act rests on no capability — membership alone gives it,
- * and no grant ever does.
+ * own; `community.live.host` is backed by `community.live.start`; an act on
+ * the membership basis — a participation act, or `community.live.remain` —
+ * rests on no capability: membership alone gives it, and no grant ever does.
  */
 export function backingCapability(act: CommunityAct): CommunityCapability | null {
   if (act === 'community.live.host') return 'community.live.start';

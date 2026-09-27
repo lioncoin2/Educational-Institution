@@ -3,12 +3,14 @@ import {
   COMMUNITY_ACTS,
   COMMUNITY_CAPABILITIES,
   COMMUNITY_CHAT_READ_CEILING,
+  COMMUNITY_DERIVED_ACTS,
   COMMUNITY_OPERATIONS,
   COMMUNITY_PARTICIPATION,
   COMMUNITY_VIEW_CEILING,
   isCommunityAct,
   isCommunityCapability,
   isCommunityOperation,
+  isCommunityParticipationAct,
 } from '../contracts/capabilities';
 import {
   ACT_RULES,
@@ -119,6 +121,12 @@ describe('the act rules (PROVISIONAL)', () => {
         owner: false,
         gate: 'liveJoinOpen',
       },
+      'community.live.remain': {
+        standing: 'communities.read + live.join',
+        oversight: null,
+        owner: false,
+        gate: 'runningLiveContinues',
+      },
       'community.live.raise_hand': {
         standing: 'communities.read + live.raise_hand',
         oversight: null,
@@ -140,18 +148,46 @@ describe('the act rules (PROVISIONAL)', () => {
     }
   });
 
-  it('requires communities.moderate for every capability and derived act', () => {
-    for (const act of [...COMMUNITY_CAPABILITIES, 'community.live.host'] as const) {
+  it('requires communities.moderate for every capability and every derived act backed by one', () => {
+    const backed = COMMUNITY_ACTS.filter((act) => backingCapability(act) !== null);
+    expect(backed).toEqual([...COMMUNITY_CAPABILITIES, 'community.live.host']);
+    for (const act of backed) {
       expect(ACT_RULES[act].standingCeiling).toContain('communities.moderate');
       expect(ACT_RULES[act].ownerImplicit).toBe(true);
     }
   });
 
-  it('gives participation acts by membership only — never by owner or grant', () => {
-    for (const act of COMMUNITY_PARTICIPATION) {
+  it('gives the membership-basis acts by membership only — never by owner or grant', () => {
+    const membershipBasis = COMMUNITY_ACTS.filter((act) => ACT_RULES[act].kind === 'participation');
+    expect(membershipBasis).toEqual([...COMMUNITY_PARTICIPATION, 'community.live.remain']);
+    for (const act of membershipBasis) {
       expect(ACT_RULES[act]).toMatchObject({ kind: 'participation', ownerImplicit: false });
       expect(ACT_RULES[act].standingCeiling).toContain('communities.read');
     }
+  });
+
+  it('keeps community.live.remain on community.live.join’s ceiling and basis, gated to stay', () => {
+    const remain = ACT_RULES['community.live.remain'];
+    const join = ACT_RULES['community.live.join'];
+    // Listed as a derived act — neither a participation act nor a capability.
+    expect(COMMUNITY_DERIVED_ACTS).toEqual(['community.live.host', 'community.live.remain']);
+    expect(isCommunityParticipationAct('community.live.remain')).toBe(false);
+    expect(isCommunityCapability('community.live.remain')).toBe(false);
+    // Its whole row: the membership basis, whatever its name would suggest.
+    expect(remain).toEqual({
+      act: 'community.live.remain',
+      kind: 'participation',
+      standingCeiling: ['communities.read', 'live.join'],
+      ownerImplicit: false,
+      oversightCeiling: null,
+      gate: 'runningLiveContinues',
+    });
+    expect(remain.standingCeiling).toEqual(join.standingCeiling);
+    expect({ ...remain, act: join.act, gate: join.gate }).toEqual(join);
+    // No capability backs it, so no grant ever gives it.
+    expect(backingCapability('community.live.remain')).toBeNull();
+    expect(Object.isFrozen(remain)).toBe(true);
+    expect(Object.isFrozen(remain.standingCeiling)).toBe(true);
   });
 
   it('reaches exactly the oversight acts of §6.11 — never adding, never chat or live', () => {

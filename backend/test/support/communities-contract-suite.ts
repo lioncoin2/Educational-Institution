@@ -1,11 +1,20 @@
 import type { Principal } from '../../src/shared';
-import type { CommunityCapability } from '../../src/modules/communities/contracts/capabilities';
+import type { Permission } from '../../src/modules/identity/contracts/permissions';
+import type { KnownRoleCode } from '../../src/modules/identity/domain/role';
+import {
+  COMMUNITY_ACTS,
+  COMMUNITY_CAPABILITIES,
+  type CommunityAct,
+  type CommunityCapability,
+} from '../../src/modules/communities/contracts/capabilities';
 import type { GrantKey } from '../../src/modules/communities/domain/ports';
 import { META, type CommunitiesHarness } from './communities-harness';
+import { principalWith } from './principals';
 
 /**
- * What COMMUNITY_MEMBERSHIP and COMMUNITY_DIRECTORY promise their consumers,
- * as one suite — run against the in-memory store and against Postgres, so
+ * What COMMUNITY_MEMBERSHIP and COMMUNITY_DIRECTORY promise their consumers
+ * — and, from P6, COMMUNITY_AUTHORIZATION's principal-less `permittedAmong` —
+ * as one suite, run against the in-memory store and against Postgres, so
  * the two adapters are held to exactly the same answers (mock parity).
  *
  * `makeHarness` returns a fresh, empty harness per test.
@@ -704,6 +713,242 @@ export function communityContractSuite(
       await expect(
         h.directory.describe(Array.from({ length: 1001 }, (_, i) => `c${i}`)),
       ).rejects.toThrow(RangeError);
+    });
+  });
+
+  describe('COMMUNITY_AUTHORIZATION.permittedAmong (P6)', () => {
+    /**
+     * Everyone the answers are compared over, in the order they are asked
+     * about — deliberately not sorted, so an answer in any other order shows.
+     */
+    let population: string[];
+    /**
+     * The principal a request of each would carry right now. An account that
+     * cannot sign in has none: identity resolves no principal for it, so
+     * nothing is ever authorized for it.
+     */
+    let principals: Map<string, Principal>;
+
+    const principalOf = (userId: string): Principal => {
+      const principal = principals.get(userId);
+      if (principal === undefined) throw new Error(`${userId} has no principal`);
+      return principal;
+    };
+
+    beforeEach(async () => {
+      principals = new Map([['admin-1', admin]]);
+      const person = (userId: string, roles: readonly KnownRoleCode[]) =>
+        principals.set(userId, h.person(userId, roles));
+      person('p-student', ['STUDENT']);
+      person('p-teacher', ['TEACHER']);
+      person('p-delegate', ['TEACHER']);
+      person('p-dormant', ['TEACHER']);
+      person('p-suspended', ['TEACHER']);
+      person('p-supervisor', ['SUPERVISOR']);
+      person('p-no-join', ['STUDENT']);
+      person('p-overseer', ['ADMIN']);
+      person('p-overseer-member', ['ADMIN']);
+      person('p-outsider', ['STUDENT']);
+      person('p-elsewhere', ['TEACHER']);
+      person('p-left', ['STUDENT']);
+      person('p-removed', ['STUDENT']);
+      await h.addPeople(
+        admin,
+        id,
+        'p-student',
+        'p-teacher',
+        'p-delegate',
+        'p-dormant',
+        'p-suspended',
+        'p-supervisor',
+        'p-no-join',
+        'p-overseer-member',
+        'p-left',
+        'p-removed',
+      );
+      // A delegate of every capability, so each act's grant basis is in the matrix.
+      await h.delegate(admin, id, 'p-delegate', ...COMMUNITY_CAPABILITIES);
+      await h.delegate(admin, id, 'p-dormant', 'community.live.moderate', 'community.lock');
+      await h.delegate(admin, id, 'p-suspended', 'community.live.moderate');
+      // A member whose grant was revoked: only ACTIVE grants are read, so it gives nothing.
+      const [revoked] = await h.delegate(admin, id, 'p-teacher', 'community.members.remove');
+      const revocation = await h.revokeGrant.execute({
+        principal: admin,
+        communityId: id,
+        grantId: revoked ?? '',
+        meta: META,
+      });
+      expect(revocation.ok).toBe(true);
+      // A member, and a delegate of every capability, of another community
+      // only: standing there gives nothing here.
+      const elsewhere = await h.community(admin, 'حلقة أخرى');
+      await h.addPeople(admin, elsewhere, 'p-elsewhere');
+      await h.delegate(admin, elsewhere, 'p-elsewhere', ...COMMUNITY_CAPABILITIES);
+      await h.leave.execute({ principal: principalOf('p-left'), communityId: id, meta: META });
+      await h.remove.execute({
+        principal: admin,
+        communityId: id,
+        userId: 'p-removed',
+        meta: META,
+      });
+      // A delegate whose role no longer holds communities.moderate: dormant grants.
+      h.accounts.setRoles('p-dormant', ['STUDENT']);
+      principals.set('p-dormant', principalWith('p-dormant', ['STUDENT']));
+      // An account that can no longer sign in, grant and all.
+      h.accounts.suspend('p-suspended');
+      principals.delete('p-suspended');
+      // A member missing one permission of live.join's ceiling — live.join
+      // itself — who may still view, read the chat and raise a hand.
+      const noJoin: readonly Permission[] = [
+        'communities.read',
+        'messaging.read',
+        'live.raise_hand',
+      ];
+      h.accounts.setPermissions('p-no-join', noJoin);
+      principals.set('p-no-join', { userId: 'p-no-join', roles: [], permissions: new Set(noJoin) });
+      population = [
+        'p-delegate',
+        'p-overseer',
+        'admin-1',
+        'p-no-join',
+        'p-student',
+        'p-left',
+        'p-teacher',
+        'p-suspended',
+        'p-overseer-member',
+        'p-outsider',
+        'p-dormant',
+        'p-elsewhere',
+        'p-removed',
+        'p-supervisor',
+      ];
+    });
+
+    it('agrees with authorize for every act, OPEN and LOCKED — every basis but oversight', async () => {
+      // Every way the evaluator answers, so the agreement is not a vacuous one.
+      const seen = new Set<string>();
+      for (const status of ['OPEN', 'LOCKED'] as const) {
+        if (status === 'LOCKED') {
+          const locked = await h.status.execute({
+            principal: admin,
+            communityId: id,
+            to: 'LOCKED',
+            meta: META,
+          });
+          expect(locked.ok).toBe(true);
+        }
+        for (const act of COMMUNITY_ACTS) {
+          const authorized: string[] = [];
+          for (const userId of population) {
+            const principal = principals.get(userId);
+            if (principal === undefined) continue;
+            const answer = await h.authorization.authorize(principal, id, act);
+            seen.add(answer.ok ? `permit:${answer.value.basis}` : answer.error.code);
+            if (answer.ok && answer.value.basis !== 'oversight') authorized.push(userId);
+          }
+          expect({
+            status,
+            act,
+            permitted: await h.authorization.permittedAmong(id, population, act),
+          }).toEqual({ status, act, permitted: authorized });
+        }
+      }
+      expect([...seen].sort()).toEqual([
+        'communities.capability_required',
+        'communities.community_locked',
+        'communities.community_not_found',
+        'identity.permission_denied',
+        'permit:grant',
+        'permit:membership',
+        'permit:oversight',
+        'permit:owner',
+      ]);
+    });
+
+    it('keeps in a running session, even LOCKED, exactly the members still eligible to stay', async () => {
+      const locked = await h.status.execute({
+        principal: admin,
+        communityId: id,
+        to: 'LOCKED',
+        meta: META,
+      });
+      expect(locked.ok).toBe(true);
+      expect(await h.authorization.permittedAmong(id, population, 'community.live.remain')).toEqual(
+        [
+          'p-delegate',
+          'admin-1',
+          'p-student',
+          'p-teacher',
+          'p-overseer-member',
+          'p-dormant',
+          'p-supervisor',
+        ],
+      );
+    });
+
+    it('never permits on oversight — leaves out whoever authorize admits on it alone', async () => {
+      const overseers = ['p-overseer', 'p-overseer-member'];
+      const onOversight: string[] = [];
+      for (const act of COMMUNITY_ACTS) {
+        const permitted = await h.authorization.permittedAmong(id, overseers, act);
+        for (const userId of overseers) {
+          const answer = await h.authorization.authorize(principalOf(userId), id, act);
+          if (!answer.ok || answer.value.basis !== 'oversight') continue;
+          onOversight.push(`${userId} ${act}`);
+          expect({ userId, act, permitted: permitted.includes(userId) }).toEqual({
+            userId,
+            act,
+            permitted: false,
+          });
+        }
+      }
+      // The overseer outside reaches all four oversight acts on it; the one
+      // inside, those that membership does not give.
+      expect(onOversight.sort()).toEqual([
+        'p-overseer community.lock',
+        'p-overseer community.members.remove',
+        'p-overseer community.members.view',
+        'p-overseer community.view',
+        'p-overseer-member community.lock',
+        'p-overseer-member community.members.remove',
+        'p-overseer-member community.members.view',
+      ]);
+    });
+
+    it('answers [] for a community that does not exist, whatever the act', async () => {
+      for (const act of COMMUNITY_ACTS) {
+        expect({
+          act,
+          permitted: await h.authorization.permittedAmong('no-such-community', population, act),
+        }).toEqual({ act, permitted: [] });
+      }
+    });
+
+    it('takes up to 1,000 ids, and throws RangeError above', async () => {
+      const nobody = Array.from({ length: 999 }, (_, i) => `nobody-${i}`);
+      expect(
+        await h.authorization.permittedAmong(id, [...nobody, 'p-student'], 'community.view'),
+      ).toEqual(['p-student']);
+      await expect(
+        h.authorization.permittedAmong(id, [...nobody, 'p-student', 'admin-1'], 'community.view'),
+      ).rejects.toThrow(RangeError);
+    });
+
+    it('answers each person once, in the order asked', async () => {
+      expect(
+        await h.authorization.permittedAmong(
+          id,
+          ['p-teacher', 'p-outsider', 'admin-1', 'p-teacher', 'p-student', 'admin-1'],
+          'community.live.join',
+        ),
+      ).toEqual(['p-teacher', 'admin-1', 'p-student']);
+    });
+
+    it('answers [] for nobody', async () => {
+      const acts: readonly CommunityAct[] = ['community.view', 'community.live.remain'];
+      for (const act of acts) {
+        expect(await h.authorization.permittedAmong(id, [], act)).toEqual([]);
+      }
     });
   });
 }

@@ -194,6 +194,15 @@ export interface CommunityStore {
     communityIds: readonly string[],
     userId: string,
   ): Promise<ReadonlyMap<string, CommunityAuthorityRead>>;
+  /**
+   * The same for many people in one community, in one read: an entry for
+   * every user id asked, each with that person's ACTIVE stint (or none) —
+   * and no entry at all when the community is unknown.
+   */
+  authorityOfMany(
+    communityId: string,
+    userIds: readonly string[],
+  ): Promise<ReadonlyMap<string, CommunityAuthorityRead>>;
 
   findCommunity(communityId: string): Promise<Community | null>;
 

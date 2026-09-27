@@ -38,6 +38,7 @@ import {
 import { decideOwnerOperation } from '../domain/delegation';
 import { mayLeave } from '../domain/membership';
 import { COMMUNITY_STORE, type CommunityAuthorityRead, type CommunityStore } from '../domain/ports';
+import { CommunityPeople } from './community-people';
 import type { MeView } from './views';
 
 /** An answer, and the read it was made from (null when nothing was read). */
@@ -81,7 +82,9 @@ export interface OwnerEvaluation {
  * fire here. Then one read — the community, the principal's ACTIVE stint and
  * that stint's ACTIVE grants — and the pure `decideCommunityAct`. The owner's
  * own operations (granting, revoking, transferring) go through the same read
- * and the pure `decideOwnerOperation`.
+ * and the pure `decideOwnerOperation`. With no principal at all
+ * (`permittedAmong`), identity's account directory answers the ceilings
+ * instead, and the same `decideCommunityAct` decides.
  *
  * Stateless: nothing is cached between requests, and a store failure rejects
  * the promise — a caller fails closed and never answers from roles alone.
@@ -91,6 +94,7 @@ export class CommunityAuthorizationService implements CommunityAuthorization {
   constructor(
     @Inject(AUTHORIZATION_SERVICE) private readonly identity: AuthorizationService,
     @Inject(COMMUNITY_STORE) private readonly store: CommunityStore,
+    private readonly people: CommunityPeople,
   ) {}
 
   async authorize(
@@ -131,6 +135,45 @@ export class CommunityAuthorizationService implements CommunityAuthorization {
       }
     }
     return answers;
+  }
+
+  /**
+   * The same evaluator with no principal. Step 1, the standing ceiling, is
+   * asked of identity's account directory instead — one call per ceiling
+   * permission, each about the ids that held every permission before it; the
+   * directory keeps no account that cannot sign in. Step 2 is one read, of
+   * the ids holding the whole ceiling only. Then `decideCommunityAct` per id,
+   * the standing ceiling held and oversight not: oversight is reach a
+   * principal exercises, and nobody here is acting. Nothing is caught — a
+   * failed call rejects, and "could not tell" never reads as "nobody".
+   */
+  async permittedAmong(
+    communityId: string,
+    userIds: readonly string[],
+    act: CommunityAct,
+  ): Promise<readonly string[]> {
+    if (userIds.length > MAX_AUTHORIZE_BATCH) {
+      throw new RangeError(`permittedAmong takes at most ${MAX_AUTHORIZE_BATCH} user ids.`);
+    }
+    const rule = ruleFor(act);
+    let holding: readonly string[] = [...new Set(userIds)];
+    // A latent divergence, kept in view: `withPermission` asks identity with
+    // no context, where `authorize` passes the community and the act. The two
+    // agree while no identity rule matches that context — none does today; a
+    // rule that did would bind `authorize` alone.
+    for (const permission of rule.standingCeiling) {
+      if (holding.length === 0) return [];
+      const eligible = await this.people.eligible(holding, permission);
+      holding = holding.filter((userId) => eligible.has(userId));
+    }
+    if (holding.length === 0) return [];
+    const reads = await this.store.authorityOfMany(communityId, holding);
+    const held: HeldCeilings = { standing: true, oversight: false };
+    return holding.filter(
+      (userId) =>
+        decideCommunityAct(rule, held, reads.get(userId) ?? { community: null, stint: null })
+          .kind === 'permit',
+    );
   }
 
   /**
