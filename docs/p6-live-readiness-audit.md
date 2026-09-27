@@ -426,6 +426,7 @@ Design §3.7: S1–S6, R1–R5 and P1–P2. The most important:
   then `live` is required);
 - one open request per (session, user) (a partial unique index);
 - at most 4 granted, counted under the session lock;
+  *(2026-09-27, commit F: a bounded count, reading at most `cap` rows.)*
 - at most one open presenter grant (a partial unique index, as a backstop).
 
 ### 8.4 Standing and capabilities

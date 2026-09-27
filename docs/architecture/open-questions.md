@@ -55,6 +55,20 @@ the host-only answer when it lands (P6): the host while `community.live.host`
 holds, plus holders of `community.live.moderate`; no role, OWNER included,
 moderates without community standing.
 
+> **Revised by ADR 0017, landed in P6 (2026-09-27).** The line above "May
+> anyone other than a room's host moderate it … (Provisionally no one,
+> including the owner.)" and "one provisional rule (host-only moderation)"
+> describe the code before P6. Since P6, `PROVISIONAL_POLICY_RULES` is empty
+> (`identity/domain/provisional-policy.ts`), and who moderates a live session
+> is Communities' answer within identity's `live.moderate` ceiling: a holder
+> of `community.live.moderate` in the session's community, or the session's
+> host while `community.live.host` holds
+> ([authorization.md §5](authorization.md#5-resource-scoped-rules);
+> [live.md](live.md), the P6 note). No identity role, OWNER included,
+> moderates without standing in that community. This is the PROVISIONAL
+> default of [Q54](#q54--who-starts-ends-and-moderates-a-live-session), not
+> an answer to Q1: the role matrix and the rest of this question stay open.
+
 ---
 
 ## Q2 — Who is the first owner, and how are accounts created after that?
@@ -1367,6 +1381,10 @@ audiences.
 > then, reports the operations that are not acts — so the app holds no copy
 > of these defaults; and it adds members only through links, the direct add
 > waiting on a people-lookup policy (Q6, Q22, Q31, Q50).
+> P6 (2026-09-27) built the backend side of the live defaults of Q54, Q55,
+> Q56, Q57, Q61, Q62 and Q63 for community-scoped sessions; each of those
+> entries carries a dated note, and two cases the defaults do not settle are
+> recorded under Q47 and Q56 for the user ([live.md](live.md), the P6 note).
 >
 > The brief's "group" is the **Community** aggregate here: "group" already
 > means messaging's `GROUP` conversation type, and is used for Tahajji's
@@ -1644,6 +1662,16 @@ for the same reason: its meaning is policy.
 ARCHIVED state; LOCKED is the only closed state. A community is never
 deleted: there is no delete route, and foreign keys RESTRICT.
 
+> **An open case (P6, 2026-09-27):** a running live session whose community
+> Communities no longer reports (`COMMUNITY_MEMBERSHIP.heads` answers nothing
+> for it) is ended with reason `community_closed` by Live's participant sweep
+> (`live/application/live-reconciler.ts`, `sweepStep`), exactly as a status
+> that stops running sessions would end it. No path reaches it today: a
+> community is never deleted, and no status stops a running session. If
+> retiring a community is ever answered with deletion or a new status, what a
+> running session does then is part of that answer; P6 decides nothing
+> ([live.md](live.md), the P6 note above §1).
+
 **When answered.** ARCHIVED is a vocabulary value, a CHECK migration and one
 row in the effects table; consumers do not change. Deleting anything is a
 retention decision (Q3).
@@ -1884,6 +1912,8 @@ default:
 
 This would revise Q1's provisional answer through ADR 0017 (P6).
 
+> **P6 (2026-09-27):** built as this default, for community-scoped sessions ([live.md](live.md), the P6 note above §1): every session moderator holding `live.speak` now publishes by right and uses no speaker slot, and End has no target, so any session moderator may end the host's session (the P6 audit's reading, D2).
+
 **When answered.** Rows in Communities' act rules and in Live's `LiveAccess`
 (P6). An institution-wide override would be an oversight row for the live
 acts ([Q43](#q43--institutional-oversight-of-communities)).
@@ -1903,6 +1933,8 @@ does not bound.
 [ADR 0019](decisions/0019-community-scoped-live-sessions.md)). PROVISIONAL
 default: at most one live session per community, enforced by a partial
 unique index. A second start returns the running session.
+
+> **P6 (2026-09-27):** built as this default, for community-scoped sessions ([live.md](live.md), the P6 note above §1).
 
 **When answered.** Dropping one index and changing the start semantics (P6
 or later).
@@ -1938,6 +1970,24 @@ default:
 - opening a presenter grant is audited; closing it is audited when a
   moderator revoked it.
 
+> **P6 (2026-09-27): built as this default, and one gap recorded, not decided.**
+> P6 built the moderator presenter slot as above ([live.md](live.md), the P6
+> note above §1). **The pending confirmation stands:** the deferral of the
+> brief §11 path, a student presenting under an explicit capability, to P12
+> still needs the user's confirmation. P6 builds no student path; a "yes"
+> later is additive (a capability of its own, through the `grantedBy` seam),
+> and is that later phase's decision.
+>
+> **An open case (P6):** a presenter who still moderates the session but has
+> lost identity's `live.speak` keeps the presenter grant, and with it the
+> screen. The design closes a presenter grant when its holder stops being
+> eligible or stops moderating, and says nothing of `live.speak` after the
+> claim, which asks it only at the claim. P6 implements that literally
+> (`live/application/live-reconciler.ts`, `identityStep`;
+> `live/domain/standing.ts`). Whether losing `live.speak` should also close
+> the grant is the user's to decide; if yes, it is one more condition in the
+> reconciler's per-identity step.
+
 **When answered.** Who may present is a rule in `LiveAccess` (P6). Delegated
 or audio sharing is P12. Recording would need its own ADR, storage and a Q3
 answer.
@@ -1968,6 +2018,8 @@ reserve of 10, copied onto each session and enforced as LiveKit's
 `live.session_full`. No waitlist and no overflow. The values rise only after
 load profiles 1–3. The 300 is the size of the brief's load profile 1 (§27),
 neither measured nor an institutional figure.
+
+> **P6 (2026-09-27):** built as this default, for community-scoped sessions ([live.md](live.md), the P6 note above §1). The cap and the reserve are `LIVE_MAX_PARTICIPANTS_PER_SESSION` (300) and `LIVE_MODERATOR_RESERVE` (10), copied onto each session at start; their sum is the room's `maxParticipants` (the hard cap), passed whenever a room is ensured.
 
 **When answered.** The measured knee (P8) sets the engineering ceiling; the
 institution may set a lower cap and chooses the full-session behaviour;
@@ -2063,6 +2115,8 @@ default: the system ends a session (reason `idle`) after its room has been
 observed empty continuously for 900 s; never because the host is absent; no
 maximum duration. LiveKit's own timeouts (1,200 s) are a backstop only.
 
+> **P6 (2026-09-27):** built as this default, for community-scoped sessions ([live.md](live.md), the P6 note above §1).
+
 **When answered.** One constant (`IDLE_END_SECONDS`), or one more condition
 in the reconciler's room sweep (P6).
 
@@ -2087,6 +2141,8 @@ transitions and `MAX_CONCURRENT_SPEAKERS = 4`; `DELETE …/hand` yields the
 floor). PROVISIONAL
 default: a grant comes only from a raised hand; a speaker may hand the floor
 back (granted → withdrawn); no timeouts; the speaker cap stays at 4 (Q4).
+
+> **P6 (2026-09-27):** built as this default, for community-scoped sessions ([live.md](live.md), the P6 note above §1).
 
 **When answered.** An invitation to speak is a new transition in the speaker
 state machine; a timeout is a rule in the reconciler (P6, or P12). Queue
@@ -2128,6 +2184,8 @@ default:
   (P6): every token the violator holds names a deleted room, and every
   participant reconnects briefly. The audit `live.session.media_reset` has a
   null actor.
+
+> **P6 (2026-09-27):** built as this default, for community-scoped sessions ([live.md](live.md), the P6 note above §1). As built, a violation counts only after a correction that reported `applied` (the P6 audit, D22), and the participant sweep also checks the floor and presenter holders who are not connected (D21).
 
 **When answered.** A different latency bound is the sweep interval (P6).
 Letting a session finish before ejecting someone is one condition in the

@@ -156,9 +156,15 @@ transcribed, and a test asserts the database and the constants agree.
 | --- | --- | --- |
 | `0012_community_chat` | generated, **additive** (plus a header comment) | messaging's link to a community: `conversations.community_id` and `projected_membership_version`, and `conversation_participants.source_version`, `source_membership_id`, `source_joined_at` — all nullable, NULL on every existing row; CHECKs `conversations_community_chat_shape` and `conversation_participants_source_shape`; the partial unique `conversations_community_unique` (one chat per community) and the partial `conversation_participants_current_idx` (current members by conversation, gate G2). `conversations_title_shape` is replaced under its own name by a CHECK that also admits a community chat's NULL title and is identical for every row that existed; the drop and re-add run in the migration's one transaction ([community-chat.md §12.3](community-chat.md#123-persistence-proposal-one-additive-migration-in-p4)) |
 
-Each has its own upgrade test (`test/integration/communities-migrations.spec.ts`)
-asserting exactly its delta on a database already in use; the academic upgrade
-test stays pinned to 0007–0008.
+### Live sessions (P6)
+
+| Migration | Kind | Does |
+| --- | --- | --- |
+| `0013_live_sessions` | generated, **additive only** (plus a header comment) | Live's four tables: `live_sessions` (the aggregate root, whose row is the lock for everything below), `live_speaker_requests`, `live_presenter_grants` and `live_moderation_actions`. CHECKs for every enumerated column, each listing exactly the domain's constant, and for the shape of an end (`ended_at` and `end_reason` set exactly when a session is `ended`; a `moderator` end names who; a request's `decided_at`, `decided_by` and `granted_at` consistent with its state; a presenter grant's end consistent). The partial unique indexes `live_sessions_one_live_per_community`, `live_speaker_requests_one_open_per_person` and `live_presenter_grants_one_open_per_session`; the indexes `live_sessions_community_history_idx` (`community_id, started_at DESC, id DESC`), `live_sessions_live_page_idx`, `live_speaker_requests_queue_idx`, `…_granted_idx`, `…_floor_closed_idx`, `live_presenter_grants_closed_idx` and `live_moderation_actions_session_idx`. Foreign keys only `session_id → live_sessions`, `RESTRICT`; community and account ids are plain text, so no key leaves Live's tables and none enters them. It touches no existing table, and deliberately leaves identity's seeded descriptions of `live.speak` and `live.moderate` as they are (the P6 audit, §17.12). Dropping the four tables undoes it ([live.md §10](live.md#10-persistence), and the P6 note above its §1) |
+
+Each has its own upgrade test (`test/integration/communities-migrations.spec.ts`;
+0013's in `live-migrations.spec.ts`) asserting exactly its delta on a database
+already in use; the academic upgrade test stays pinned to 0007–0008.
 
 **The institution's structure is not in a migration.** Sections, programs and
 halaqat are institutional data that administrators change; they are seeded
@@ -427,6 +433,26 @@ and say so on stderr; CI always sets it.
   exactly once while grants churn; and a delegate's authorization, a
   capability's holders and the owner's grant list stay on the ACTIVE-only
   grant indexes beside 20,000 ended grants.
+- **Live** (P6: `live-postgres.spec.ts`, `live-races.spec.ts`,
+  `live-scale.spec.ts`, `live-restart.spec.ts`, `live-migrations.spec.ts`):
+  the repository contract suite the in-memory store also passes; every CHECK
+  and the three one-open indexes by name, each enumerated CHECK equal to the
+  domain's vocabulary; every index of live.md §10.1 by name, with its columns,
+  order and predicate; no foreign key leaving Live's tables and none
+  entering; a session with history cannot be deleted; `state_version` rises
+  by exactly one per observable change and never for a no-op; the session row
+  is locked `FOR UPDATE` first in every transaction that may change a session,
+  and a session's transitions queue in process behind one mutex; every race of
+  the P6 audit's §14 forced across five store instances with their own
+  mutexes (twenty starts make one session; ten grants, exactly four; two
+  presenter claims, one; twenty raises by one person, one row and one event;
+  nothing stays open after End), with no deadlock retry; the same statements
+  for join, raise, grant, End, the current and single reads and the hands page
+  at 3 and at 3,000 pending hands, `/join` writing and locking nothing, and no
+  `count(` without a `LIMIT` on a request path; `EXPLAIN` over a churned
+  fixture showing every hot statement index-served; a restart that rebuilds
+  the watch from Postgres alone; and 0013 on a database already in use adding
+  its four tables and touching nothing else.
 
 ---
 
@@ -467,7 +493,8 @@ details. The next query opens a fresh connection.
 ## 8. Deliberately deferred
 
 - Postgres adapters for `live` (rooms, sessions, moderation). These are
-  in-memory today.
+  in-memory today. *(Landed in P6, 2026-09-27: migration 0013 and
+  `DrizzleLiveStore`, with the in-memory store kept for mock mode — §2 above.)*
 - Retention for notifications (Q27): kept indefinitely today.
 - A unit of work spanning a state change and its audit entry. Today the audit
   write follows the change and can, in principle, fail after it
@@ -480,3 +507,4 @@ details. The next query opens a fresh connection.
 > `operations`, `assignments`, `automation` and `reporting`, as
 > [module-boundaries.md](module-boundaries.md) says. `live` is implemented,
 > in memory; its Postgres adapters are the first item above.
+> *(Since P6, `live` persists in Postgres when a database is configured.)*

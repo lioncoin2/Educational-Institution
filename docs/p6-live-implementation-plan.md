@@ -231,6 +231,8 @@ interface PresenterGrantRepository {
   `markEmpty`/`noteViolation`, whose single-row UPDATE is itself `WHERE state = 'live'`.
 - Every change a moderator can observe raises `state_version` by exactly 1 in the same transaction.
 - Provider calls never happen inside a repository.
+- *(2026-09-27, commit F.)* `grantWithinCap`'s count of granted rows is bounded: it reads at most
+  `cap` rows, as `countPending` does.
 - Drizzle adapters take the per-session `KeyedMutex` (`platform/concurrency`) before checking out a
   connection for any locked transition (design §10.2).
 

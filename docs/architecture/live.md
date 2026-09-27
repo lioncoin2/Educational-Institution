@@ -3,8 +3,11 @@
 **State: APPROVED (2026-09-23) — implemented in phases: P1 (hardening the existing module), P6 (community-scoped sessions), P7 (realtime and Flutter), P7b (media).** What a phase has not delivered does not exist yet; [the hub's §25](communities-live-attendance.md#25-implementation-phases) records which phases have landed.
 
 §1 describes the code as it was at `9670c47`, before P1, and says so; the
-note above §1 says what P1 changed. Everything after §1 is a proposal, except
-what the P0 and P1 rows of §2 name, which has landed.
+notes above §1 say what P1 and P6 changed. Everything after §1 is a proposal, except
+what the P0, P1 and P6 rows of §2 name, which has landed — P6 as its note
+says: the backend realtime relay came forward from P7, and the pinned LiveKit
+configuration and the adapter contract suite moved to the LiveKit-integration
+phase.
 
 This is the design of the `live` module, evolved in place: hardening the
 existing module (phase **P1**), community-scoped live sessions (**P6**), live
@@ -111,6 +114,232 @@ Q40 and [Q69](open-questions.md#q69--who-records-and-who-views-snapshots).
 >   by class and retried, never a 500 after the decision is stored, so every
 >   stored decision is audited and announced. Moderation reports
 >   `media: 'applied' | 'not_connected' | 'pending'` honestly.
+
+> **P6 landed (2026-09-27).** Community-scoped live sessions, backend only,
+> in six commits on top of `1f000de`: A `7bee589`, B `3f831cf`, C `b5439d0`,
+> D `88ac079`, E `7375c15`, F `71a42f8`. P6 was gated by the
+> [readiness audit](../p6-live-readiness-audit.md) (PASS) and built to its
+> [implementation plan](../p6-live-implementation-plan.md). The audit's §2
+> reconciled this design with the user's P6 brief, and its §16 made the
+> engineering decisions D1–D24. No Flutter file changed. Paths in this note
+> are relative to `backend/src/modules/live/` unless another directory is
+> named, and are at `71a42f8`; the `file:line` citations in the sections
+> below stay at `9670c47`, as "How to read it" says.
+>
+> **What landed, by commit.**
+>
+> - **A — Communities.** `COMMUNITY_AUTHORIZATION.permittedAmong` and the
+>   derived act `community.live.remain`
+>   ([communities.md](communities.md), the P6 note); `KeyedMutex` moved to
+>   `platform/concurrency/keyed-mutex.ts` (D12).
+> - **B — the core, in memory.** `LiveSession` replaces `LiveRoom`
+>   (`domain/live-session.ts`; `live-room.ts` is gone); `SpeakerRequest` with
+>   six states, `PresenterGrant`, `ModerationAction` with ten types;
+>   standing and capability sets (`domain/standing.ts`); every bound in
+>   `domain/live-limits.ts`; the ten events of [§14](#14-events). `LiveAccess`
+>   (§7.2) asks `COMMUNITY_AUTHORIZATION` on every request, and
+>   `host-only-moderation` is retired in the same commit
+>   (`PROVISIONAL_POLICY_RULES` is `[]`, `identity/domain/provisional-policy.ts`;
+>   §7.4). The use cases of §13 and the 13 routes of [§15.1](#151-routes),
+>   none taking a body. `AppConfig.live` and the fail-closed provider binding
+>   (D19). The fake rewritten (deterministic, with scriptable failures and
+>   held calls) and a `DisabledRtcProvider`. `LiveMedia` replaces P1's
+>   `CapabilityConvergence` (D11).
+> - **C — Postgres.** `infrastructure/schema.ts`, migration
+>   `0013_live_sessions.sql` (Live's four tables, additive;
+>   [persistence.md](persistence.md#live-sessions-p6)) and `DrizzleLiveStore`:
+>   the per-session `KeyedMutex` before a pool connection, the session row
+>   `FOR UPDATE` first, `ON CONFLICT` on the partial unique indexes for start
+>   and raise, a set-based End. Postgres when a database is configured,
+>   otherwise the in-memory twin (`liveStoreFor`, `live.module.ts`); one
+>   repository contract suite runs on both (`test/support/live-contract-suite.ts`).
+> - **D — convergence and the contracts.** `LiveReconciler` (§11, with D21–D23),
+>   `ProtectLiveSessions` (§11.6, D17), `LIVE_AUDIENCE` (`LiveAudienceService`)
+>   and `LIVE_SESSIONS` (`LiveSessionsReader`). The module exports exactly
+>   these two tokens ([§13](#13-contracts)). Join re-checks the media room
+>   epoch after it ensures a missing room, so it never brings back a room a
+>   media reset deleted.
+> - **E — realtime hints**, brought forward from P7 (audit §2):
+>   `LiveRealtimeRelay` in the realtime module and three frames, recorded in
+>   [realtime.md Part L](realtime.md#part-l--live-sessions-in-real-time).
+> - **F — the adversarial suites**: every race of audit §14 on Postgres,
+>   restart, Communities and provider outages, statement budgets and
+>   `EXPLAIN`, token scope, the disabled binding, and the mutation checks
+>   below.
+>
+> **Routes and refusals** are [§15](#15-api-under-live) as designed, with
+> these differences as built (`application/live-settings.ts`):
+>
+> - `live.cursor_invalid` (validation → 422): a hands-page cursor this API
+>   did not issue. §15.2 does not list it.
+> - 503 `live.media_unavailable` is also a join's answer, when the provider
+>   cannot mint the token (the disabled provider, D19) or a media reset moves
+>   the session twice during one join. §15.2 lists it for start only.
+> - A start refused by the lifecycle answers 200 with the running session if
+>   there is one (D1), and 412 `live.community_not_open` otherwise.
+>
+> **The decisions of audit §16, as built.**
+>
+> | # | As built |
+> | --- | --- |
+> | D1 | Start under LOCKED with a session running answers 200 with it (`application/start-live-session.use-case.ts`, step 2) |
+> | D2 | Any session moderator may end; End has no target, and `live.target_is_host` guards only the host's own hand and presenter grant (`application/end-live-session.use-case.ts`) |
+> | D3 | `community.live.remain` is a membership-basis act with `live.join`'s ceiling, gated by `runningLiveContinues`, not a capability, never in `me` (`communities/domain/act-rules.ts`, `lifecycle.ts`; `communities/contracts/capabilities.ts`) |
+> | D4 | `permittedAmong` rejects on a store or directory failure, answers `[]` for an unknown community, takes at most 1,000 ids and never permits on oversight (`communities/application/community-authorization.service.ts`) |
+> | D5 | The grant's target check: `community.live.remain`, or a moderator of the session (`LiveStanding.ofAccounts`, `application/live-standing.ts`) |
+> | D6 | A repeat answers 200, even after End; a transition after End is 412 (`application/moderate-speaker.use-case.ts`) |
+> | D7 | The hands page's `media` is the last in-memory observation: `connected`, `not_connected` or `unknown` (`application/live-media.ts`) |
+> | D8 | `moderation.pendingHands` reads at most 100 rows (`PENDING_HANDS_COUNT_CAP`) |
+> | D9 | `DELETE …/hand` finds the caller's own open request first; otherwise 404 unless the caller may see the session (`application/lower-hand.use-case.ts`) |
+> | D10 | The enforcement watch lasts 660 s, extended on every correction and violation (`ENFORCEMENT_WATCH_SECONDS`, `breach` in `application/live-reconciler.ts`) |
+> | D11 | `CapabilityConvergence` is retired; `LiveMedia` keeps the pushes that did not apply, and the targeted watch drains them |
+> | D12 | `platform/concurrency/keyed-mutex.ts`, shared by Communities and Live |
+> | D13 | Limits in the use cases through `RATE_LIMITER`, per user (start) or per (session, user) (join, raise), never per address (`LiveRateLimits`) |
+> | D14 | Live's own wrapper for Communities calls (`application/community-calls.ts`); nothing imported from Messaging |
+> | D15 | Structured log lines with stable names (`live.reconciler.*`, `live.provider.error`, `live.session.media_reset`, …); no metrics backend |
+> | D16 | The frame fixtures sit in `backend/test/fixtures/realtime-frames/live/`, read by the backend only |
+> | D17 | `ProtectLiveSessions` subscribes to `member.removed`, `capability.revoked`, `ownership.transferred`, `community.locked` and `community.unlocked` (`PROTECTED_BY`, `application/protect-live-sessions.ts`) |
+> | D18 | `hostUserId` stays the starter; the host moderates only while `community.live.host` holds (`application/live-access.ts`) |
+> | D19 | The binding of the table below (`rtcProviderFor`, `live.module.ts`; the boot refusals in `platform/config/app-config.ts`) |
+> | D20 | Start asks `community.live.start` again after `ensureRoom`; a refusal ends the room it ensured |
+> | D21 | Every participant sweep also checks the granted and presenter holders, connected or not (`application/live-reconciler.ts`, `sweepStep`) |
+> | D22 | A violation counts only after a correction that reported `applied`; a push below the desired set is never one (`breach`, `live-reconciler.ts`) |
+> | D23 | A failure paging the live sessions aborts the room sweep; any input a session's step needs that cannot be read skips that session: nobody is ejected, demoted or expired, and no room is deleted, on unknown state |
+> | D24 | The join TTL is checked where the token is minted: a whole number of seconds, 1 to 600 (`isJoinTokenTtl`, `domain/live-limits.ts`) |
+>
+> **D19, the provider binding** (`live.module.ts`, `rtcProviderFor`):
+>
+> | Configuration | Binds |
+> | --- | --- |
+> | `LIVEKIT_API_SECRET` is the development secret | the fake |
+> | `LIVE_MEDIA_PROVIDER=livekit` | the LiveKit adapter; boot is refused without `LIVE_ROOM_NAME_PREFIX`, with a placeholder `LIVEKIT_API_KEY`, or with a `LIVEKIT_API_SECRET` that is a placeholder or under 32 bytes |
+> | anything else (`LIVE_MEDIA_PROVIDER` unset; any other value refuses boot) | `DisabledRtcProvider`: every call refuses, so Start answers 503 `live.media_unavailable` with nothing stored, and the reconciler skips its ticks |
+>
+> **The grant's cap count is bounded.** §10.2 reads "count `granted` < cap".
+> As built, the count reads at most `cap` rows (a `LIMIT cap` subquery under
+> the session lock, `infrastructure/drizzle-live-repositories.ts`), so no
+> request path counts without a bound. Commit F added the `LIMIT`; before it
+> the count was already under the lock but read every granted row.
+>
+> **Defects found by review during P6, each fixed with a test:**
+>
+> - C: the session's bound columns, `participant_cap` and
+>   `moderator_reserve`, widened to `bigint` for parity with the in-memory
+>   store, which accepts every whole number the configuration does (an
+>   `integer` column refused any start above 2,147,483,647); the community
+>   history index made `DESC` (`NULLS FIRST`), as §10.1 specifies.
+> - D: the orphan grace is measured from the read of the live sessions, not
+>   from the end of the sweep; otherwise the room of a session started just
+>   after the read could be ended.
+> - E: the moderators' frames stay at least 250 ms apart even when listing the
+>   moderators is slow, and no timer is armed after the module is destroyed.
+> - F: the grant's cap count gained its `LIMIT` (above).
+>
+> **Behaviours kept as designed, worth a line:**
+>
+> - A `live.session.ended` for a community Communities no longer reports
+>   reaches nobody: its audience is asked of Communities at delivery time.
+> - A presenter who is also a moderator may receive the same
+>   `live.session.changed` twice, once as the person concerned and once as a
+>   moderator. Both carry the same `eventId`, and the client drops the
+>   duplicate.
+> - The API specs stop the reconciler's timers and unsubscribe
+>   `ProtectLiveSessions` after boot, so their assertions are deterministic
+>   (`test/api/live.api.spec.ts`). The reconciler is tested tick by tick, and
+>   one HTTP test, "removes a member from a running session at once when
+>   Communities announces the removal", exercises the protector.
+>
+> **Mutation checks (plan §4)**, each a single-site, type-correct change run
+> against the Live test set on Postgres, then restored. All 22 were killed,
+> with five variants at a second site where the property is enforced twice
+> (27 of 27). The first run found one survivor, M15: every D23 test rejected
+> all `permittedAmong` calls, which hid a swallowed rejection of the first. A
+> test that rejects only one of them was added; the code was already
+> correct.
+>
+> | # | Mutant | Killed by (file — test) | Result |
+> | --- | --- | --- | --- |
+> | M1 | `LiveAccess` drops the host fallback | `moderate-speaker.spec.ts` — lets the host moderate their own session through community.live.host | KILLED |
+> | M2 | `LiveAccess` accepts a join permit as moderator | `moderate-speaker.spec.ts` — refuses a member who does not moderate with 403 — a join permit is not moderation | KILLED |
+> | M3 | Start inserts before `ensureRoom` | `start-live-session.spec.ts` — answers a provider outage with 503 live.media_unavailable and stores nothing | KILLED |
+> | M4 | End's update loses `WHERE state = 'live'` (in memory; on Postgres, M4pg) | `end-live-session.spec.ts` — answers a repeat with the ended view: no audit, no event, no provider call; `live-postgres.spec.ts` — answers a repeated end with the ended session, writing nothing | KILLED |
+> | M5 | End does not expire open requests (both stores) | `in-memory-live-repositories.spec.ts` and `live-postgres.spec.ts` — ends in one step: every open hand expires, the presenter grant closes, one version, one row | KILLED |
+> | M6 | Grant skips the target eligibility check | `moderate-speaker.spec.ts` — refuses a requester who was removed from the community, and changes nothing (D5) | KILLED |
+> | M7 | Grant skips the cap (in the use case; on Postgres, M7pg) | `moderate-speaker.spec.ts` — never lets more than 4 hold the floor, even when granted all at once; `live-postgres.spec.ts` — grants exactly four, then answers slots_full without a version step | KILLED |
+> | M8 | Grant skips `target_is_host` | `moderate-speaker.spec.ts` — never lets a delegate — the owner included — act on the host’s own hand (Q54) | KILLED |
+> | M9 | Join asks only identity's `live.join` | `join-live-session.spec.ts` — refuses a non-member exactly as an unknown session | KILLED |
+> | M10 | `capabilitiesFor` gives listeners `canPublishData` | `join-live-session.spec.ts` — gives a listener a token that can publish nothing — not audio, not a screen, not data | KILLED |
+> | M11 | Presenter claim skips `live.speak` | `presenter.spec.ts` — refuses a moderator without live.speak with 403 live.presenter_not_permitted | KILLED |
+> | M12 | `permittedAmong` allows the oversight basis | `communities-postgres.spec.ts` — never permits on oversight — leaves out whoever authorize admits on it alone | KILLED |
+> | M13 | `community.live.remain`'s gate is `liveJoinOpen` | `live-reconciler-participants.spec.ts` — ejects nobody, and ends nothing, for a community status this build does not know | KILLED |
+> | M14 | Raise skips the raise permit | `hands.spec.ts` — refuses a non-member exactly as an unknown session, and an ended session with 412 | KILLED |
+> | M15 | The reconciler reads a `permittedAmong` rejection as `[]` (for `remain`; for `moderate`, M15m) | `live-reconciler-participants.spec.ts` — skips the session when only `permittedAmong(%s)` rejects: a partial answer is no answer — nobody ejected, demoted or expired | KILLED |
+> | M16 | Lower transitions only from the state it read | `hands.spec.ts` — yields a grant that committed meanwhile — the lower takes either open state (D4) | KILLED |
+> | M17 | `ProtectLiveSessions` ignores `member.removed` | `protect-live-sessions.spec.ts` — removes the member at once: the floor expired, out of the room | KILLED |
+> | M18 | Identity's rule list keeps `host-only-moderation` | `live-authorization.spec.ts` — leaves identity with no resource rule at all | KILLED |
+> | M19 | The factory binds the LiveKit adapter without the opt-in | `live-media-disabled.api.spec.ts` — binds the disabled provider, and never constructs the LiveKit adapter | KILLED |
+> | M20 | The participant sweep checks only connected identities | `live-reconciler-participants.spec.ts` — expires the floor of a DISCONNECTED speaker who lost standing (D21) — no provider call for them | KILLED |
+> | M21 | A failed push counts as a violation (and one that found nobody, M21b) | `live-reconciler-participants.spec.ts` — never takes a failed correction for the earlier one: the repeat is corrected, not counted (D22); never takes a correction that found nobody for the earlier one (D22) | KILLED |
+> | M22 | Start skips the permit re-ask after `ensureRoom` | `live-races.spec.ts` — the lock commits during ensureRoom: the re-asked permit refuses — 412 live.community_not_open, the room ended, nothing stored (D20) | KILLED |
+>
+> The security suites were also run alone against 17 mutants of their own
+> (token claims, the room after a reset, the name and identity in the
+> token, what a caller without standing can tell, rate-limit keys, a token
+> or a Communities error in a log, the binding, and Start's order): all 17
+> killed by `test/api/live-security.api.spec.ts` or
+> `test/api/live-media-disabled.api.spec.ts`.
+>
+> **Moved to the LiveKit-integration phase** (audit §2, §19; the dated note
+> on [ADR 0019](decisions/0019-community-scoped-live-sessions.md)): the
+> pinned server configuration of [§9](#9-livekit-hardening)
+> (`room.auto_create=false`, `enable_remote_unmute=false`, the timeouts, no
+> webhooks, a TURN placeholder); the adapter contract suite against a real,
+> pinned server in CI; the `/rtc/validate` self-check; and turning
+> `LIVE_MEDIA_PROVIDER=livekit` on. Until then no deployment reaches a real
+> media server unless it opts in (D19). The LiveKit adapter was not edited.
+> Attendance's prerequisite on that contract suite moves with it
+> ([attendance.md §23](attendance.md#23-before-p9-can-start)).
+> The rest of audit §19 stands as written: no media claim, no capacity
+> claim until P8 measures, the accepted windows it lists, and no outbox.
+>
+> **Not built in P6:** the Flutter live phase (the design's P7:
+> `LiveRepository`, frame parsing, the controller, `LiveMediaClient`) and
+> P7b; `LIVE_PRESENCE` and anything of attendance (P9, HELD); notifications
+> for live facts (Q67); a reconciler lease (P11); and everything
+> [§2](#2-phases)'s P12 row names.
+>
+> **Open policy gaps, implemented literally and not decided.** Two cases the
+> design does not settle were built exactly as written, and are recorded for
+> the user in [open-questions.md](open-questions.md):
+>
+> 1. A presenter who still moderates the session but has lost identity's
+>    `live.speak` keeps the presenter grant, and with it the screen: the
+>    design closes the grant only when its holder stops moderating
+>    (`live-reconciler.ts`, `identityStep`; `domain/standing.ts`). Recorded
+>    under [Q56](open-questions.md#q56--screen-sharing).
+> 2. A live session whose community Communities no longer reports (`heads`
+>    answers nothing for it) is ended `community_closed` by the participant
+>    sweep (`live-reconciler.ts`, `sweepStep`). No path reaches it today:
+>    a community is never deleted. Recorded under
+>    [Q47](open-questions.md#q47--retiring-a-community).
+>
+> **Evidence.** Unit and application suites under `src/modules/live/`;
+> `test/support/live-contract-suite.ts` on both stores;
+> `test/integration/live-postgres.spec.ts` (constraints and indexes by name,
+> no foreign key leaving Live's tables, the state version, 3,000 hands, the
+> lock discipline, races across processes), `live-races.spec.ts` (every row
+> of audit §14), `live-scale.spec.ts` (the same statements at 3 and at 3,000
+> pending hands; `/join` writes and locks nothing; no `count(` without a
+> `LIMIT` on a request path; `EXPLAIN` over a churned fixture),
+> `live-restart.spec.ts`, `live-migrations.spec.ts`; `test/api/live.api.spec.ts`,
+> `live-security.api.spec.ts`, `live-media-disabled.api.spec.ts` and
+> `live-realtime.api.spec.ts`; `realtime/application/live-relay.spec.ts`;
+> and `test/architecture/live-boundaries.spec.ts`, which P6 extended: Live
+> reaches Communities only through its contracts and its module file; never
+> messaging, realtime, notifications, academic or operations (attendance does
+> not exist yet), derived from the tree; wires only identity and Communities;
+> exports exactly `LIVE_AUDIENCE` and `LIVE_SESSIONS`; and keeps its tables to
+> its own adapters.
 
 ## 1. What exists today
 

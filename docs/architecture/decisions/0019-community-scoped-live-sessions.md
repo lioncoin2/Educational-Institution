@@ -82,6 +82,38 @@ Everything below is proposed. None of it exists today.
 > slot, the reconciler, the contracts, the pinned configuration and the caps —
 > waits for P6 and P7
 > ([the hub's §25](../communities-live-attendance.md#25-implementation-phases)).
+>
+> **Amendment note (2026-09-27, P6):** the decisions below are left as
+> accepted; this note records how P6 re-phased part of them. The user's P6
+> brief made P6 a backend phase that does not integrate real LiveKit, and the
+> [P6 readiness audit](../../p6-live-readiness-audit.md) (§2, §16 D19, §19)
+> reconciled this ADR with it:
+>
+> - **Decision 7's pinned LiveKit configuration** (`room.auto_create=false`,
+>   `enable_remote_unmute=false`, the empty and departure timeouts, no
+>   webhooks, a TURN placeholder) **moves to the LiveKit-integration phase**,
+>   and so does the `/rtc/validate` self-check of [live.md §9](../live.md#9-livekit-hardening).
+>   Decision 7's 120-second join token, its ban on admin grants, the account
+>   id as identity and the directory's display name landed in P1 and stand.
+> - **The contract suite against a pinned LiveKit server in CI**, which the
+>   Consequences mark "required (P6)", **moves to the LiveKit-integration
+>   phase** with the configuration it pins. P6 proves its behaviour against
+>   the deterministic fake and Postgres only, and claims nothing about
+>   LiveKit's behaviour.
+> - **Real media binds only on explicit opt-in** (audit D19). A deployment
+>   binds the LiveKit adapter only with `LIVE_MEDIA_PROVIDER=livekit`, and
+>   then refuses to boot without `LIVE_ROOM_NAME_PREFIX`, with a placeholder
+>   API key, or with a secret that is a placeholder or under 32 bytes. The
+>   development secret binds the fake; any other configuration binds a
+>   provider that refuses every call, so Start answers 503
+>   `live.media_unavailable` with nothing stored and the reconciler skips its
+>   ticks. The LiveKit-integration phase turns real media on together with
+>   the hardening above, on which decision 6's media-plane finality (an ended
+>   or reset room stays deleted) rests. The adapter itself was not edited.
+>
+> Everything else this ADR decides for P6 landed: decisions 1–6, 9, 11 and 12
+> (`LIVE_PRESENCE` stays with P9), and the backend realtime relay was brought
+> forward from P7 ([live.md](../live.md), the P6 note above §1).
 
 1. **`LiveSession` replaces `LiveRoom`.** `{communityId, hostUserId, state
    live | ended, state_version, endedBy, endReason, participantCap,

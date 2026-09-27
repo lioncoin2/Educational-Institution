@@ -1,6 +1,6 @@
 # Communities
 
-**State: APPROVED (2026-09-23) — implemented in phases: P2 (core), P3 (delegation), one contract constant each for P4 and P5, and `me.operations` for P5.1.** What a phase has not delivered does not exist yet; [the hub's §25](communities-live-attendance.md#25-implementation-phases) records which phases have landed.
+**State: APPROVED (2026-09-23) — implemented in phases: P2 (core), P3 (delegation), one contract constant each for P4 and P5, `me.operations` for P5.1, and `permittedAmong` and `community.live.remain` for P6.** What a phase has not delivered does not exist yet; [the hub's §25](communities-live-attendance.md#25-implementation-phases) records which phases have landed.
 
 The design of the `communities` module: the Community aggregate, membership,
 invitation links, the OPEN/LOCKED lifecycle (phase **P2**), and delegated
@@ -296,6 +296,62 @@ decides it. Nothing here decides an institutional policy.
 > Beyond the suites, a one-off contract check drove the app's HTTP
 > repository against a running backend on PostgreSQL through every P5.1 call
 > and refusal; it is not committed.
+
+> **P6 landed (2026-09-27): what Live asks of Communities.** Commit A
+> (`7bee589`) of P6 added the two things
+> [ADR 0017](decisions/0017-community-scoped-authorization.md) accepted for
+> P6 (decisions 3 and 6), and changed no existing act row, lifecycle row,
+> grant, migration or response:
+>
+> - **`COMMUNITY_AUTHORIZATION.permittedAmong(communityId, userIds, act)`**
+>   (`contracts/authorization.ts`;
+>   `application/community-authorization.service.ts`): the evaluator of
+>   [§6.5](#65-the-evaluator) with no principal, for Live's reconciler,
+>   `LIVE_AUDIENCE` and a grant's target check. The standing ceiling is asked
+>   of identity's account directory, one call per ceiling permission; then
+>   one store read of only the ids holding the whole ceiling
+>   (`authorityOfMany`: one statement on Postgres, with an in-memory twin);
+>   then `decideCommunityAct` per id, **never on the oversight basis**.
+>   Deduplicated in the order given; at most `MAX_AUTHORIZE_BATCH` = 1,000
+>   ids (a `RangeError` above); `[]` for an unknown community; a store or
+>   directory failure rejects, never `[]` for "could not tell" (the P6 audit,
+>   D4).
+> - **`community.live.remain`**, a derived act
+>   (`contracts/capabilities.ts`, `COMMUNITY_DERIVED_ACTS`;
+>   `domain/act-rules.ts`; `domain/lifecycle.ts`): staying in a running live
+>   session, with `community.live.join`'s ceiling and membership basis, gated
+>   by `runningLiveContinues` instead of `liveJoinOpen`, so neither a lock nor
+>   a status this build does not know ejects anyone already in. It is not a
+>   capability, no grant names it, and `me` does not list it (D3). Its rows in
+>   [§6.3](#63-the-act-vocabulary), [§6.4](#64-act-rules--provisional) and
+>   [§8.3](#83-statepermits-and-communityheadeffects) are as designed.
+>
+> `KeyedMutex` moved unchanged to `platform/concurrency/keyed-mutex.ts`, for
+> Live's per-session admission as well as Communities' (D12).
+>
+> Live is the contracts' third consumer: `COMMUNITY_AUTHORIZATION`
+> (`authorize` per request for `community.live.start`, `.host`, `.moderate`,
+> `.join` and `.raise_hand`; `permittedAmong` for `.remain`, `.moderate`,
+> `.host` and `.join`), `COMMUNITY_MEMBERSHIP.heads`,
+> `COMMUNITY_CAPABILITY_HOLDERS` (a session's moderators, for
+> `LIVE_AUDIENCE`), and five events as accelerators for `ProtectLiveSessions`:
+> `member.removed`, `capability.revoked`, `ownership.transferred`,
+> `community.locked` and `community.unlocked` (D17; the design's consumer
+> list named four). `LiveModule` imports `CommunitiesModule`; Communities
+> still imports nothing but identity, and never reaches Live
+> (`communities-boundaries.spec.ts`, `live-boundaries.spec.ts`). What Live
+> does with the answers is [live.md](live.md) (the P6 note above §1).
+>
+> Evidence: `application/permitted-among.spec.ts`, and the contract suite on
+> both stores (`test/support/communities-contract-suite.ts`): `permittedAmong`
+> agrees with `authorize` for every act, OPEN and LOCKED, over owners,
+> members, delegates, overseers, former members, suspended, dormant and
+> ceiling-less accounts, and never permits on oversight; the failure, batch,
+> order and unknown-community cases; `remain`'s pinned row and gates
+> (`act-rules.spec.ts`, `lifecycle.spec.ts`); `EXPLAIN` of the new read at
+> 30,000 and 100,000 members, and its statement count at 3 and 1,000 ids
+> (`communities-scale.spec.ts`). Mutants M12 (oversight allowed) and M13
+> (`remain` gated by `liveJoinOpen`) are killed.
 
 ---
 
@@ -1630,7 +1686,7 @@ overseers. Trusted in-process, no principal.
 | Consumer | Uses |
 | --- | --- |
 | Messaging (P4, application layer only) | `COMMUNITY_AUTHORIZATION` (`chat.read`, `chat.post`); `COMMUNITY_MEMBERSHIP` (`heads`, `listHeads`, `statesOf`, `changesSince`, `members`); `COMMUNITY_DIRECTORY`; `COMMUNITY_CHAT_READ_CEILING`; `member.*` events as wake-ups |
-| Live (P6) | `COMMUNITY_AUTHORIZATION` (`live.start`, `live.host`, `live.moderate`, `live.join`, `live.raise_hand` per request; `permittedAmong` for `live.join`, `live.remain`, `live.moderate` and `live.host` in batches of 1,000 for the reconciler and `LIVE_AUDIENCE`); `COMMUNITY_MEMBERSHIP` (`heads` for session-wide effects); `COMMUNITY_CAPABILITY_HOLDERS` (moderators); `member.removed`, `capability.revoked`, `community.locked/unlocked` as accelerators |
+| Live (P6) | `COMMUNITY_AUTHORIZATION` (`live.start`, `live.host`, `live.moderate`, `live.join`, `live.raise_hand` per request; `permittedAmong` for `live.join`, `live.remain`, `live.moderate` and `live.host` in batches of 1,000 for the reconciler and `LIVE_AUDIENCE`); `COMMUNITY_MEMBERSHIP` (`heads` for session-wide effects); `COMMUNITY_CAPABILITY_HOLDERS` (moderators); `member.removed`, `capability.revoked`, `community.locked/unlocked` as accelerators; as landed in P6, `ownership.transferred` too (the P6 audit, D17) |
 | Realtime (P5, landed) | `COMMUNITY_MEMBERSHIP` (`statesOf` for the person an event concerns, `heads` for a lock's staleness, `members` through `onlineAudience`); `COMMUNITY_VIEW_CEILING`; `CommunityEvents` but `community.created` and the invitation events |
 | Attendance (P9, HELD) | `COMMUNITY_AUTHORIZATION` (the attendance acts, then the fallbacks `live.moderate`, `live.host` and `view` of [§6.12](#612-how-live-messaging-and-attendance-ask)) |
 | Notifications (P10, after Q67/Q28) | `COMMUNITY_MEMBERSHIP` or `COMMUNITY_CAPABILITY_HOLDERS` for recipients |
@@ -1663,7 +1719,7 @@ with a reconciler backstop).
 | `communities.member.removed` | `{communityId, userId, membershipId, reason: 'LEFT' \| 'REMOVED', removedBy, membershipVersion}` — implies every grant of that stint ended in the same transaction | **S** | Live (ejection; backstop: the 60 s participant sweep); Messaging (wake-up; access is already refused at commit); realtime relay | frame to that user only |
 | `communities.invitation.created` / `.revoked` | `{communityId, invitationId, createdBy \| revokedBy: string \| null}` | R | none; revocation takes effect inside redemption, not through delivery | never on any wire |
 | `communities.capability.granted` / `.revoked` (P3) | `{communityId, grantId, membershipId, userId, capability, grantedBy \| revokedBy}`; `revoked` only for owner revocations | R | realtime relay; Live re-evaluates an affected holder in a running session | `community.access.changed {communityId}` to that user only |
-| `communities.ownership.transferred` (P3) | `{communityId, fromUserId, toUserId, transferredBy, basis: 'owner' \| 'oversight', endedGrantIds: string[] (at most one per delegable capability: 7 in P3, 9 after P9)}` | R | realtime relay | `community.access.changed` to `fromUserId` and `toUserId` only |
+| `communities.ownership.transferred` (P3) | `{communityId, fromUserId, toUserId, transferredBy, basis: 'owner' \| 'oversight', endedGrantIds: string[] (at most one per delegable capability: 7 in P3, 9 after P9)}` | R | realtime relay; Live `ProtectLiveSessions` (accelerator; added by the P6 audit, D17) | `community.access.changed` to `fromUserId` and `toUserId` only |
 
 `endedGrantIds` holds at most one id per delegable capability, because a stint
 has at most one ACTIVE grant per capability: seven in P3, nine after P9.

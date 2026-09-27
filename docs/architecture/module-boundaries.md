@@ -182,7 +182,9 @@ revoke invitation links; join by link; grant capabilities to a member, revoke
 a grant, list grants; transfer ownership. One use case per act, one evaluator,
 one journal — no `CommunitiesService`.
 
-**Public contract.** `COMMUNITY_AUTHORIZATION` (`authorize`, `authorizeEach`:
+**Public contract.** `COMMUNITY_AUTHORIZATION` (`authorize`, `authorizeEach`, and since P6
+`permittedAmong`, the same evaluator for a list of people with no principal
+and never on oversight:
 ceiling AND membership, ownership, a grant or oversight AND the lifecycle
 gate, as a `CommunityPermit` naming its basis and grant),
 `COMMUNITY_MEMBERSHIP` (`heads`, `listHeads`, `statesOf`, `changesSince`,
@@ -337,44 +339,58 @@ conversation's members (`messaging-boundaries.spec.ts`).
 
 ## live
 
-**State:** implemented — domain, use cases, RTC adapters, HTTP, tests.
-In-memory persistence. See [realtime.md](realtime.md).
+**State:** implemented — P1 hardening and P6 community-scoped sessions:
+domain, use cases, Postgres and in-memory stores, RTC adapters, HTTP, the
+reconciler, contracts and tests. See [live.md](live.md) (the P1 and P6 notes
+above its §1) and [ADR 0019](decisions/0019-community-scoped-live-sessions.md).
 
-**Responsibility.** Realtime audio rooms, the raise-hand queue, and host
-moderation of who may speak.
+**Responsibility.** A community's live sessions: starting and ending them,
+joining with a short-lived media ticket, the raise-hand queue, the speaker
+floor and the presenter slot; keeping the media provider in line with that
+record.
 
-**Owned entities.** `LiveRoom`, `LiveSession`, `Participant`, `SpeakerRequest`,
-`SpeakerPermission`, `ModerationAction`.
+**Owned entities.** `LiveSession`, `SpeakerRequest` (a speaker's grant is a
+request in state `granted`), `PresenterGrant`, `ModerationAction` (tables
+`live_sessions`, `live_speaker_requests`, `live_presenter_grants`,
+`live_moderation_actions`, migration 0013). No participant, presence or token
+is stored.
 
-**Use cases** (as of P1).
-- `JoinLiveSessionUseCase` — authorize, then mint a 120-second,
-  capability-scoped join ticket, named from the account directory. Listeners
-  get a token that **can publish nothing** (no audio, no screen, no data);
-  the host and grant-holders get the microphone. Decides afresh on every call.
-- `RaiseHandUseCase` — raise a hand, idempotently. Deliberately does **not**
-  touch the RTC provider; a raised hand is application state, not media state.
-- `LowerHandUseCase` — withdraw one's own hand, or yield the floor.
-- `ModerateSpeakerUseCase` — grant, decline or revoke, idempotently. Own
-  state first, then the provider (outcome reported), then audit and event
-  through `LiveJournal`.
-- `CapabilityConvergence` — the one place live pushes a participant's rights
-  to the provider: at once after a grant, revoke or yield, then re-applied
-  from the person's current standing until the media plane agrees. Never
-  throws, never removes anyone.
+**Use cases.** Start, end, get, current, join, raise, lower, list hands,
+grant / decline / revoke, claim and stop the presenter slot — one use case
+per act, each asking `LiveAccess`, which asks `COMMUNITY_AUTHORIZATION`
+about the community the session's own record names. `LiveReconciler` (room
+sweep, participant sweep, targeted watch, media reset) and
+`ProtectLiveSessions` (Communities' events as accelerators) keep the provider
+in line; `LiveMedia` pushes a person's full set after a change. No
+`LiveService`.
 
-**Public contract.** `LiveParticipantRole` (P1), and the event names and
-payload types (`LiveEvents`, in `live/contracts/events.ts` since Phase 0).
+**Public contract.** `LIVE_AUDIENCE` (`participantsAmong`, `moderators`: who
+a session's facts may reach, as Communities answers it) and `LIVE_SESSIONS`
+(`describe`: a session's scope from Live's own record) — the module's only
+exports; the event names and payload types (`LiveEvents`);
+`LiveParticipantRole`; `MODERATOR_FRAME_COALESCE_MS`, the interval realtime
+coalesces moderators' frames to. `LIVE_PRESENCE` is P9's (held).
 
-**Events.** `live.speaker.requested`, `live.speaker.granted`,
-`live.speaker.declined`, `live.speaker.revoked`, `live.speaker.withdrawn`,
-`live.session.started`, `live.session.ended` (the last two declared, not yet
-raised).
+**Events.** `live.session.started`, `live.session.ended`,
+`live.speaker.requested`, `.granted`, `.declined`, `.revoked`, `.withdrawn`,
+`.expired`, `live.screen_share.started`, `.stopped` — ids, codes and versions
+only. Subscribes to `communities.member.removed`,
+`communities.capability.revoked`, `communities.ownership.transferred`,
+`communities.community.locked` and `.unlocked` (`ProtectLiveSessions`).
 
-**Depends on.** `identity/contracts` (authorization), `shared`, `platform`.
+**Depends on.** `identity/contracts` (authorization, the account directory,
+the permission catalogue), `communities/contracts` (`COMMUNITY_AUTHORIZATION`
+including `permittedAmong`, `COMMUNITY_MEMBERSHIP.heads`,
+`COMMUNITY_CAPABILITY_HOLDERS`, the events), `shared`, `platform`.
+`LiveModule` imports `IdentityModule` and `CommunitiesModule` only.
 
-**Must not know.** LiveKit. The domain declares `RtcProvider`; exactly one file
-in the repository imports `livekit-server-sdk`. It also must not know about
-attendance — operations derives that from the events.
+**Must not know.** LiveKit above its one adapter: the domain declares the
+narrow RTC ports, and exactly one file imports `livekit-server-sdk`.
+Membership storage and community rules (it asks); messaging, realtime,
+notifications, academic, operations and attendance. `live-boundaries.spec.ts`
+asserts each: Communities only through its contracts and module file; none of
+the others, derived from the source tree; exactly the two exports; Live's
+tables touched only by its own adapters.
 
 > **Correction (2026-09-23):** three statements in this section do not match
 > the code that exists today.
@@ -395,6 +411,8 @@ attendance — operations derives that from the events.
 >
 > *(Since then P0 added `live.speaker.requested` to the events list above, and
 > P1 deleted `live/domain/participant.ts`; the entity list is unchanged.)*
+> *(P6 rewrote this section, on 2026-09-27, to describe the module it built;
+> the correction above describes the section as it stood before.)*
 >
 > **Proposed change:** see [live.md](live.md) (the P6 design,
 > [ADR 0019](decisions/0019-community-scoped-live-sessions.md) Accepted; its
@@ -403,6 +421,9 @@ attendance — operations derives that from the events.
 > Live would depend on `communities/contracts` and export `LIVE_AUDIENCE`,
 > `LIVE_SESSIONS` and `LIVE_PRESENCE`; only attendance may import
 > `LIVE_PRESENCE`. Live would never import attendance.
+>
+> **Landed in P6 (2026-09-27)**, as the section above now describes, except
+> `LIVE_PRESENCE`, which stays with P9 (held).
 
 ---
 
@@ -495,9 +516,10 @@ delivery know requests and recipients, never why.
 
 ## realtime
 
-**State:** implemented — Realtime Messaging V1, plus community frames (P5).
-See [realtime.md Part M](realtime.md) and
-[Part C](realtime.md#part-c--communities-in-real-time), and
+**State:** implemented — Realtime Messaging V1, plus community frames (P5)
+and live-session frames (P6). See [realtime.md Part M](realtime.md),
+[Part C](realtime.md#part-c--communities-in-real-time) and
+[Part L](realtime.md#part-l--live-sessions-in-real-time), and
 [ADR 0012](decisions/0012-realtime-messaging-transport.md).
 
 **Responsibility.** Delivering messaging's facts, each person's own
@@ -518,7 +540,9 @@ online, send to one or many accounts, drop dead connections),
 out), `NotificationRealtimeRelay` (notifications' events → the recipient's
 own connections), `CommunitiesRealtimeRelay` (Communities' events → the
 person concerned, or a community's ACTIVE members online, asked of
-Communities at delivery time), and `onlineAudience` (an audience ∩ the
+Communities at delivery time), `LiveRealtimeRelay` (P6: Live's events → a
+community's members online whom Live accepts, the person concerned, and a
+session's moderators, coalesced), and `onlineAudience` (an audience ∩ the
 accounts online here, in at most 1 + ⌈A/1000⌉ calls; both group relays use
 it). `infrastructure/` — `WebSocketTransport`, the only code that knows a
 socket library (`ws`).
@@ -535,7 +559,8 @@ protocol at `/realtime`.
 `communities.member.added`, `communities.member.removed`,
 `communities.capability.granted`, `communities.capability.revoked`,
 `communities.ownership.transferred`, `communities.community.locked`,
-`communities.community.unlocked`. Publishes none.
+`communities.community.unlocked`, and (P6) the ten `live.*` events.
+Publishes none.
 
 **Depends on.** `identity/contracts` (`ACCESS_TOKEN_AUTHENTICATOR`,
 `AUTHORIZATION_SERVICE`, the `messaging.read` permission, and
@@ -543,21 +568,24 @@ protocol at `/realtime`.
 `messaging/contracts` (events, `MESSAGE_RECIPIENTS`, `MESSAGE_DELIVERY`,
 `MessageView`), `notifications/contracts` (events, `NOTIFICATION_READER`),
 `communities/contracts` (P5: `COMMUNITY_MEMBERSHIP` — `statesOf`, `heads`,
-`members` —, `COMMUNITY_VIEW_CEILING`, `CommunityEvents`), `shared` (event
+`members` —, `COMMUNITY_VIEW_CEILING`, `CommunityEvents`), `live/contracts`
+(P6: `LIVE_AUDIENCE`, `LiveEvents`, `MAX_AUDIENCE_PROBE`,
+`MODERATOR_FRAME_COALESCE_MS`), `shared` (event
 subscriber, rate limiter, clock, ids), `platform` (configuration, for the
 handshake's origins and proxy trust). `RealtimeModule` imports
-`IdentityModule`, `MessagingModule`, `NotificationsModule` and
-`CommunitiesModule`.
+`IdentityModule`, `MessagingModule`, `NotificationsModule`,
+`CommunitiesModule` and (P6) `LiveModule`.
 
-**Must not know.** Messaging's, notifications' or Communities' tables and
-rules, identity's internals. Architecture tests assert each — realtime
-reaches messaging, identity, notifications and Communities through their
-contracts only (and each module file, for wiring), and stores no
-notification; `realtime-boundaries.spec.ts` also proves it does use
-Communities' `membership.ts`, `events.ts` and `capabilities.ts`, so that
-check is not vacuous — and that no module but this one's infrastructure
-imports a WebSocket library. Communities never imports realtime
-(`communities-boundaries.spec.ts`).
+**Must not know.** Messaging's, notifications', Communities' or Live's
+tables and rules, identity's internals, LiveKit. Architecture tests assert
+each — realtime reaches messaging, identity, notifications, Communities and
+(P6) Live through their contracts only (and each module file, for wiring),
+and stores no notification; `realtime-boundaries.spec.ts` also proves it does
+use Communities' `membership.ts`, `events.ts` and `capabilities.ts`, and
+Live's contracts, so those checks are not vacuous — and that no module but
+this one's infrastructure imports a WebSocket library. Communities and Live
+never import realtime (`communities-boundaries.spec.ts`,
+`realtime-boundaries.spec.ts`).
 
 > **Proposed change:** see
 > [communities-live-attendance.md §3](communities-live-attendance.md#3-dependency-graph)
@@ -568,6 +596,8 @@ imports a WebSocket library. Communities never imports realtime
 > depend on `live/contracts` (`LIVE_AUDIENCE`, `LiveEvents`). It would still
 > export nothing and be imported only by the composition root.
 > `CommunitiesRealtimeRelay`, proposed here for P5, landed in P5 (above).
+> `LiveRealtimeRelay` landed in P6 (2026-09-27), brought forward from P7
+> (above).
 
 ---
 

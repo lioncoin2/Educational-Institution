@@ -12,7 +12,9 @@ but the word:
   [ADR 0013](decisions/0013-notifications-v1.md)). Since P5 a community's
   lock and unlock, and a person's own addition, removal and access change,
   ride it too, as ids-only hints
-  (**[Part C](#part-c--communities-in-real-time)**).
+  (**[Part C](#part-c--communities-in-real-time)**). Since P6 so do a
+  community's live sessions: started, ended and changed
+  (**[Part L](#part-l--live-sessions-in-real-time)**).
 - **[Part A — live audio rooms](#part-a--live-audio-the-2500-participant-design):**
   a teacher speaking to ~2500 listeners. LiveKit media, capability tokens.
   Designed; the coordination layer is implemented.
@@ -906,6 +908,77 @@ Flutter (`flutter test`):
   **several instances** (§M10, P11).
 
 ---
+
+# Part L — Live sessions in real time
+
+**Landed in P6 (2026-09-27), backend only.** A community's live session
+reaches the people it concerns while they are connected: on the same
+connection, through the same `ConnectionManager`, as hints the app answers by
+reading the session again over HTTP. The design placed this in P7; the P6
+readiness audit brought the backend half forward (its §2, the brief's P6.7),
+so every frame points to an HTTP read that ships with it. The frames follow
+the hub's [§16](communities-live-attendance.md#16-realtime-transport-matrix)
+and [live.md §16](live.md#16-what-travels-where). Nothing here adds a
+client frame, a subscription or a protocol version, and no Flutter file
+changed: the app ignores a frame type it does not know.
+
+**The pipeline.** Live publishes its ten events after the commit
+(`LiveJournal`: audit, then event; never on a repeat). `LiveRealtimeRelay`
+(`realtime/application/live-relay.ts`) subscribes to all ten and turns them
+into three frames. `RealtimeModule` imports `LiveModule`, and the relay
+reaches only `live/contracts` (`LiveEvents`, `LIVE_AUDIENCE`,
+`MAX_AUDIENCE_PROBE`, `MODERATOR_FRAME_COALESCE_MS`) and
+`COMMUNITY_MEMBERSHIP`; Live never reaches realtime
+(`realtime-boundaries.spec.ts`). It stores nothing.
+
+| Frame | From | Delivered to, asked at delivery time | `eventId` |
+| --- | --- | --- | --- |
+| `live.session.started {communityId, sessionId}` | `live.session.started` | the community's ACTIVE members connected here (`COMMUNITY_MEMBERSHIP.members`, through `onlineAudience`), kept only if `LIVE_AUDIENCE.participantsAmong` accepts them, asked in chunks of `MAX_AUDIENCE_PROBE` = 1,000 | `live.session.started:<sessionId>` |
+| `live.session.ended {communityId, sessionId, reason}` (`moderator`, `idle` or `community_closed`) | `live.session.ended` | as started | `live.session.ended:<sessionId>` |
+| `live.session.changed {communityId, sessionId, stateVersion}` | every `live.speaker.*` and `live.screen_share.*` event | the person the event names, at once, while connected here and while `participantsAmong` still accepts them; and the session's moderators connected here (`LIVE_AUDIENCE.moderators`, keyset pages of 1,000), **coalesced to at most one frame per 250 ms per session** (`MODERATOR_FRAME_COALESCE_MS`), carrying the latest `stateVersion`. **Listeners receive nothing**: LiveKit tells the room what the room needs | `live.session.changed:<sessionId>:<stateVersion>` |
+
+Every frame is built field by field in `envelopes.ts` (`liveSessionStartedFrame`,
+`liveSessionEndedFrame`, `liveSessionChangedFrame`) and carries ids, a reason
+code and a version only: never a name, a count, a roster or a join
+credential. A frame grants nothing; the client re-reads the session over
+HTTP, which decides everything.
+
+**Coalescing.** The first change of a session arms a transient, unref'd
+timer; later changes only raise the version it will carry. When it fires, the
+moderators are asked then and each gets one frame; the next window opens only
+once that frame has left, so two frames to a session's moderators are never
+closer than 250 ms, however slowly they are listed. No timer is armed once
+the module is destroyed. A hand storm therefore costs each moderator at most
+four frames a second.
+
+**The rest follows the other relays.** Delivery is detached from the
+publisher and chained per session (the event's `aggregateId`), so one
+session's frames leave in the order its facts were published. Nothing is
+asked, and no timer armed, when nobody is connected to this instance. A
+payload is checked, not assumed; a malformed one is logged and sends
+nothing. A failing dependency costs that frame and is logged by class name.
+
+**Two behaviours, as designed.** An `ended` frame for a community that
+Communities no longer reports reaches nobody, because its audience is asked
+of Communities when it is built. A presenter who is also a moderator may
+receive the same `live.session.changed` twice, once as the person concerned
+and once as a moderator; both carry the same `eventId`, and the client drops
+the duplicate.
+
+**Fixtures (the P6 audit, D16).** The golden frames are in
+`backend/test/fixtures/realtime-frames/live/` (one `ended` file per reason),
+and only the backend reads them: `envelopes.spec.ts` asserts each builder
+produces exactly its file. The app's fixture test lists the top directory
+only, and P6 changed no Flutter file. This is a deliberate, documented
+deviation from the hub's §16.2 "shared by the backend builders and the
+Flutter parser" until the Flutter live phase adds the parser and moves the
+files beside the others (`backend/test/fixtures/realtime-frames/README.md`).
+
+**Tested.** `live-relay.spec.ts` (every audience; the coalescing bound under
+a 3,000-event burst; the spacing under slow lookups; the call counts; order;
+failures; a key-independent scan of every frame for tokens and secrets);
+`envelopes.spec.ts` against the fixtures; `test/api/live-realtime.api.spec.ts`
+end to end over real sockets; `realtime-boundaries.spec.ts`.
 
 # Part A — Live audio: the 2500-participant design
 

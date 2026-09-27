@@ -224,6 +224,30 @@ loads the room.
 > (`provisional-policy.ts`). Who may moderate stays open:
 > [Q54](open-questions.md#q54--who-starts-ends-and-moderates-a-live-session)
 > and [Q1](open-questions.md#q1--what-may-each-role-actually-do).
+>
+> **Landed in P6 (2026-09-27): host-only moderation is retired.**
+> `PROVISIONAL_POLICY_RULES` is empty
+> (`identity/domain/provisional-policy.ts`), retired in the same commit that
+> gave Live its community-scoped `LiveAccess`
+> ([ADR 0017](decisions/0017-community-scoped-authorization.md) decision 10;
+> [live.md §7.4](live.md#74-retiring-host-only-moderation)). The rule was
+> removed rather than left registered: any caller passing `ownerUserId` with
+> `live.moderate` would have re-activated the veto on every delegate. The
+> mechanism stays: `restrictToResourceOwner` and `ownerOfResourceRule` remain
+> in `policy.ts` with their specs, and deny-overrides is unchanged.
+>
+> **Who moderates a live session** is now Communities' answer, within
+> identity's `live.moderate` ceiling, asked on every request
+> (`live/application/live-access.ts`): a holder of `community.live.moderate`
+> in the session's community (its owner, or a delegate holding the
+> capability), or the session's host while `community.live.host` holds. No
+> identity role, OWNER included, moderates without standing in that
+> community, and there is no institution-wide override: an all-permission
+> principal without standing is refused like anyone else. Live passes no
+> `ownerUserId` anywhere. Who *should* moderate stays open
+> ([Q54](open-questions.md#q54--who-starts-ends-and-moderates-a-live-session),
+> [Q1](open-questions.md#q1--what-may-each-role-actually-do)); the answers
+> built are the recorded PROVISIONAL defaults.
 
 ---
 
@@ -286,6 +310,14 @@ permission without the room, so any teacher could moderate any room. It now
 asks identity with the host in context, and the test uses the *real*
 authorization service, not a permissive stub.
 
+> **Changed in P6 (2026-09-27):** the example above is the pre-P6 code. Since
+> P6, `ModerateSpeakerUseCase` still asks identity's coarse `live.moderate`
+> before it loads anything, then asks `LiveAccess`, which asks Communities
+> about the community the session's own record names; identity is no longer
+> given the host (the "Landed in P6" note in §5). The pattern this section
+> describes, a coarse check first and the resource-scoped decision in the use
+> case, is unchanged.
+
 ### System principals
 
 Work nobody is logged in to do, such as a scheduled job or an automation rule,
@@ -338,7 +370,7 @@ which is asserted by test.
 | --- | --- |
 | Granted / denied / unknown permission / empty principal | `authorization.service.spec.ts` |
 | Deny-overrides, abstain does not veto, rules scope but never grant | `policy.spec.ts` |
-| Host-only moderation — including against an all-permission principal | `authorization.service.spec.ts`, `moderate-speaker.spec.ts` |
+| No resource-scoped rule is registered (host-only moderation retired in P6); an all-permission principal without community standing cannot moderate, end or present a live session, and no use case passes `ownerUserId` | `role.spec.ts`, `live/application/live-authorization.spec.ts` |
 | Catalogue: unique, well-formed, covers the brief's namespaces | `permissions.spec.ts` |
 | Matrix: only catalogued permissions; OWNER ⊋ ADMIN; ADMIN ⊇ roles below; student cannot speak | `role.spec.ts` |
 | DB catalogue, roles and matrix equal the code | `test/integration/identity-persistence.spec.ts` |

@@ -65,6 +65,12 @@ without any of them present.
 > (approved design, [ADR 0020](decisions/0020-attendance-snapshots.md) Accepted).
 > The attendance half of this example would be superseded: who is connected
 > at a moment is a question, answered through a Live contract, not an event.
+>
+> **Resolved in P6 (2026-09-27):** `live` raises `live.session.started` and
+> `live.session.ended` now: P6 built starting and ending community-scoped
+> sessions ([live.md](live.md), the P6 note above §1). Realtime subscribes to
+> both (§5). Operations is still contract only, and attendance, when it is
+> built, asks Live's contracts rather than reacting to the event (ADR 0020).
 
 **Not the job:** replacing function calls. When `live` needs to know *right
 now* whether a principal may moderate, it asks `identity` synchronously through
@@ -198,13 +204,15 @@ events are grandfathered). Since Phase 0 that includes live's events
 
 | Event | Raised by | Likely subscribers |
 | --- | --- | --- |
-| `live.speaker.requested` | live — a hand is raised. *Correction (2026-09-23): raised today by `RequestSpeakerUseCase` (`request-speaker.use-case.ts:90`) and missing from this table until now* | none subscribed |
-| `live.speaker.granted` | live | reporting, audit |
-| `live.speaker.revoked` | live | reporting, audit |
-| `live.speaker.declined` | live — a moderator passed over a pending hand (P1) | reporting, audit |
-| `live.speaker.withdrawn` | live — the requester lowered their own hand or yielded the floor, `from: 'pending' \| 'granted'` (P1; not audited — the person's own act) | reporting |
-| `live.session.started` | live | operations, notifications |
-| `live.session.ended` | live | reporting. *Not attendance: live-session presence is an attendance-module snapshot taken through live's contracts (ADR 0020, implementation held), not a reaction to this event* |
+| `live.speaker.requested` | live — a hand is raised. *Correction (2026-09-23): raised today by `RequestSpeakerUseCase` (`request-speaker.use-case.ts:90`) and missing from this table until now.* Since P6 by `RaiseHandUseCase`, only when a request is created; not audited | **realtime — subscribed** (P6): `live.session.changed` |
+| `live.speaker.granted` | live — audited | **realtime — subscribed** (P6): `live.session.changed`; reporting |
+| `live.speaker.revoked` | live — audited | **realtime — subscribed** (P6): `live.session.changed`; reporting |
+| `live.speaker.declined` | live — a moderator passed over a pending hand (P1); audited | **realtime — subscribed** (P6): `live.session.changed`; reporting |
+| `live.speaker.withdrawn` | live — the requester lowered their own hand or yielded the floor, `from: 'pending' \| 'granted'` (P1; not audited — the person's own act) | **realtime — subscribed** (P6): `live.session.changed`; reporting |
+| `live.speaker.expired` | live (P6) — the system expired an open hand because its owner may no longer take part, `from`, `cause: 'ineligible'`; never for the end of a session; not audited (the cause is audited by the module that owns it) | **realtime — subscribed** (P6): `live.session.changed` |
+| `live.screen_share.started` · `.stopped` | live (P6) — a moderator took the presenter slot; the slot closed while the session runs (`reason` `stopped`, `revoked` or `ineligible`; `stoppedBy` null for the system); never for the end of a session. Started is audited; stopped only when `revoked` | **realtime — subscribed** (P6): `live.session.changed` |
+| `live.session.started` | live — a start created the community's live session (P6); never a repeat or a lost race; audited | **realtime — subscribed** (P6): `live.session.started` to the community's members online whom Live accepts; notifications later (Q67) |
+| `live.session.ended` | live — an end changed the session (P6), `reason` `moderator`, `idle` or `community_closed`, `endedBy` null for the system; published once, and implies every hand expired and the presenter grant closed; audited | **realtime — subscribed** (P6): `live.session.ended`, as started; reporting. *Not attendance: live-session presence is an attendance-module snapshot taken through live's contracts (ADR 0020, implementation held), not a reaction to this event* |
 | `identity.user.created` | identity | people, notifications |
 | `identity.role.assigned` | identity | notifications, reporting |
 | `identity.role.revoked` | identity | reporting |
@@ -222,14 +230,14 @@ events are grandfathered). Since Phase 0 that includes live's events
 | `academic.student.enrolled` · `academic.student.enrollment_ended` | academic — a new ACTIVE enrollment; one ended (COMPLETED / WITHDRAWN — provisional, and known not to cover moves: Q30, Q37) | attendance, notifications (Q28), reporting; none subscribed |
 | `academic.teacher.assigned` · `academic.teacher.assignment_ended` | academic | a teacher's workspace, notifications (Q28); none subscribed |
 | `communities.community.created` | communities — always followed by `member.added` for the owner | none in v1 |
-| `communities.community.locked` · `.unlocked` | communities — a real status change only, with its `lifecycleVersion` | **realtime — subscribed** (P5): `community.locked` / `.unlocked` to the ACTIVE members connected, unless a newer change has committed; Live's `ProtectLiveSessions` accelerator (P6). No consumer enforces a lock from the event |
+| `communities.community.locked` · `.unlocked` | communities — a real status change only, with its `lifecycleVersion` | **realtime — subscribed** (P5): `community.locked` / `.unlocked` to the ACTIVE members connected, unless a newer change has committed; **Live's `ProtectLiveSessions` — subscribed** (P6, an accelerator: it has the reconciler look at the community's live session at once). No consumer enforces a lock from the event |
 | `communities.member.added` | communities — a manager's add (`source: ADDED`) or a link redemption (`INVITATION`), with its `membershipVersion` | **messaging — subscribed** (P4): a wake-up for the community chat's projection, reading only `communityId`; **realtime — subscribed** (P5): `community.member.added` to the person added, while that stint is their latest |
-| `communities.member.removed` | communities — a leave (`reason: LEFT`) or a removal (`REMOVED`); class **S** | **messaging — subscribed** (P4): the same wake-up — access already ends at the commit, because every request asks Communities; **realtime — subscribed** (P5): `community.member.removed` to that person, while they are still out; Live ejection (P6) |
+| `communities.member.removed` | communities — a leave (`reason: LEFT`) or a removal (`REMOVED`); class **S** | **messaging — subscribed** (P4): the same wake-up — access already ends at the commit, because every request asks Communities; **realtime — subscribed** (P5): `community.member.removed` to that person, while they are still out; **Live's `ProtectLiveSessions` — subscribed** (P6): the person's hand and presenter grant closed and their media removed at once, with the participant sweep as the backstop |
 | `communities.invitation.created` · `.revoked` | communities | none; never on any wire — revocation takes effect inside redemption |
-| `communities.capability.granted` · `.revoked` | communities — one per grant row the owner created, or revoked; a grant that ends with its stint is implied by `member.removed` | **realtime — subscribed** (P5): `community.access.changed` to the holder; Live re-evaluates a holder in a running session (P6) |
-| `communities.ownership.transferred` | communities — with `basis` (`owner` \| `oversight`) and the new owner's `endedGrantIds` | **realtime — subscribed** (P5): `community.access.changed` to the previous and the new owner |
+| `communities.capability.granted` · `.revoked` | communities — one per grant row the owner created, or revoked; a grant that ends with its stint is implied by `member.removed` | **realtime — subscribed** (P5): `community.access.changed` to the holder; **Live's `ProtectLiveSessions` — subscribed** (P6, `.revoked` only): re-evaluates the holder in a running session |
+| `communities.ownership.transferred` | communities — with `basis` (`owner` \| `oversight`) and the new owner's `endedGrantIds` | **realtime — subscribed** (P5): `community.access.changed` to the previous and the new owner; **Live's `ProtectLiveSessions` — subscribed** (P6): re-evaluates both in a running session |
 
-The `live.speaker.*`, `identity.*`, `messaging.*`, `notifications.*`,
+The `live.*`, `identity.*`, `messaging.*`, `notifications.*`,
 `academic.*` and `communities.*` events are raised by implemented code today; messaging's have two real subscribers,
 notifications and realtime, notifications' have realtime and its own push
 delivery, and Communities' `member.added` and `member.removed` have messaging
@@ -239,7 +247,10 @@ changes nothing it would not also find by itself. Since P5 realtime subscribes
 to every Communities event but `community.created` and the invitation events,
 and likewise decides nothing from the event alone: it asks
 `COMMUNITY_MEMBERSHIP` who is concerned when it delivers
-([realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs)). The rest are declared so the vocabulary is settled before the
+([realtime.md §C2](realtime.md#c2-who-receives-what-and-what-it-costs)). Since P6 realtime also subscribes to all ten live events
+([realtime.md Part L](realtime.md#part-l--live-sessions-in-real-time)), and
+Live's `ProtectLiveSessions` to five Communities events as accelerators of
+its reconciler, deciding nothing from them either. The rest are declared so the vocabulary is settled before the
 modules arrive. Notifications' events carry ids, codes and channel flags — a
 notification's parameters (a sender's name) never travel in an event;
 realtime reads the stored notification through `NOTIFICATION_READER`. Their
@@ -255,6 +266,10 @@ fields — never a person's or a halaqa's name — and its enrollment and
 teaching events use the **halaqa** as `aggregateId`, so one roster's changes
 stay ordered ([academic.md §8](academic.md)). A no-op (a repeated enrollment,
 an unchanged edit) publishes nothing.
+Live's payloads carry ids, codes and versions only — never a display name,
+a token, a URL or a participant list; every payload names its community, the
+`aggregateId` is the session id, and `stateVersion` is the session's version
+after the change (`live/contracts/events.ts`).
 Identity's payloads carry ids and codes only. The Foundation's
 `userCreated` carried the email address, which would have copied personal data
 into every subscriber's storage.
@@ -276,6 +291,13 @@ into every subscriber's storage.
 > with triggers T1–T4 for adopting the outbox. So far only Communities'
 > events are classed, in their contract's comment: `member.removed` is S,
 > the rest R (`communities/contracts/events.ts:14-16`).
+>
+> **Landed in P6 (2026-09-27):** the live events `live.speaker.expired`,
+> `live.screen_share.started` and `.stopped`, with `communityId` in every live
+> payload and `stateVersion` in every speaker and screen-share payload
+> (`live/contracts/events.ts`), are in the table above. Still proposed:
+> `attendance.snapshot.recorded` (held, P9) and a durability class on every
+> event other than Communities'.
 
 ---
 

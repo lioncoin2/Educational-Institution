@@ -40,6 +40,28 @@ sweep at boot and every minute). `MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS`
 covered — never a limit on who may join; see
 [community-chat.md §11.2](../docs/architecture/community-chat.md#112-gates-g1g4).
 
+Live sessions need no configuration to develop against: with the LiveKit
+secret at its development default, `live` binds a fake media provider that
+never carries media, and sessions start, join and end as usual. **Real media
+is off until the LiveKit-integration phase** (the P6 audit's D19): which
+provider a deployment binds is decided once, at boot, and logged.
+
+| Configuration | Binds |
+| --- | --- |
+| `LIVEKIT_API_SECRET` unset, or `development-only-secret` | the fake |
+| `LIVE_MEDIA_PROVIDER=livekit` | the LiveKit adapter. Boot is refused unless `LIVE_ROOM_NAME_PREFIX` is set, `LIVEKIT_API_KEY` is not a placeholder, and `LIVEKIT_API_SECRET` is not a placeholder and is at least 32 bytes |
+| anything else — real LiveKit credentials included | a disabled provider that refuses every call: starting a session answers 503 `live.media_unavailable` and stores nothing, and the reconciler skips its ticks |
+
+| Variable | Default | Means |
+| --- | --- | --- |
+| `LIVE_MEDIA_PROVIDER` | unset | `livekit` enables real media; any other value refuses boot |
+| `LIVE_ROOM_NAME_PREFIX` | unset (`live-` for the fake and the disabled provider) | this deployment's media room prefix: the orphan sweep ends every room of its form that no live session claims. 1–48 characters of `A–Z a–z 0–9 . _ -`; required with `LIVE_MEDIA_PROVIDER=livekit` |
+| `LIVE_MAX_PARTICIPANTS_PER_SESSION` | 300 | the listeners' soft cap, copied onto each session at start (PROVISIONAL, Q57) |
+| `LIVE_MODERATOR_RESERVE` | 10 | seats above the cap for moderators and current speakers (PROVISIONAL, Q57) |
+| `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | `ws://localhost:7880`, `devkey`, `development-only-secret` | the media server and its credentials; required in production |
+
+See [live.md](../docs/architecture/live.md) (the P6 note above §1).
+
 Push notifications need no configuration either, because no provider is wired
 yet: the push port's only adapter logs, at debug level, that a push would have
 gone out — never the device token. Choosing FCM or APNs is open question Q24;
@@ -105,7 +127,15 @@ through `/admin/users`. See
 | Status | `POST /admin/users/:id/status` | `users.manage` |
 | Reset password | `POST /admin/users/:id/password` | `users.manage` |
 | Sign out everywhere | `DELETE /admin/users/:id/sessions` | `sessions.manage` |
-| Live | `POST /live/sessions/:id/join` · `…/hand`, `POST /live/requests/:id/grant` · `…/revoke` | `live.*` |
+| Start a live session | `POST /live/communities/:communityId/sessions` | `live.moderate` + the community's `community.live.start` · 201 new, 200 the running one |
+| Live now | `GET /live/communities/:communityId/sessions/current` | `live.join` + a participant (or a member refused a join only by the community's lifecycle) · `{session: null}` when none runs |
+| A live session | `GET /live/sessions/:id` | `live.join` + as "Live now" · ended sessions too |
+| Join | `POST /live/sessions/:id/join` | `live.join` + a participant · the only response carrying a media credential (120 s) |
+| End | `POST /live/sessions/:id/end` | `live.moderate` + a moderator of the session |
+| Raise / lower a hand | `POST /live/sessions/:id/hand`, `DELETE …/hand` | `live.raise_hand` + `community.live.raise_hand`; lowering your own: authenticated |
+| The hands | `GET /live/sessions/:id/hands?state&cursor&limit` | `live.moderate` + a moderator of the session |
+| Grant / decline / revoke | `POST /live/requests/:id/grant` · `/decline` · `/revoke` | `live.moderate` + a moderator of the session; never on the host's own hand unless the host |
+| Screen share | `POST /live/sessions/:id/screen-share`, `DELETE …/screen-share` | claim: `live.moderate` + a moderator holding `live.speak`, for themself; stop: authenticated — the presenter, or a moderator of the session (never the host's grant unless the host) |
 | Upload a file | `POST /files/uploads` → `PUT <signed url>` → `POST /files/uploads/:id/complete` | `files.upload` |
 | Local storage transfer | `PUT` / `GET /files/local/:token` | public · the signature is the authorization |
 | Conversations | `GET /messaging/conversations`, `GET …/:id`, `GET …/:id/participants` | `messaging.read` + membership |
@@ -132,7 +162,11 @@ Messaging and files are described in
 [storage.md](../docs/architecture/storage.md); notifications in
 [notifications.md](../docs/architecture/notifications.md); the academic core
 in [academic.md](../docs/architecture/academic.md); the realtime protocol in
-[realtime.md, Part M](../docs/architecture/realtime.md).
+[realtime.md, Part M](../docs/architecture/realtime.md); live sessions in
+[live.md §15](../docs/architecture/live.md#15-api-under-live), where the
+refusal codes are listed. On every `/live` route, a session or community the
+caller may not take part in answers the same 404 as one that does not exist,
+and no route takes a body.
 
 Errors always have one shape:
 `{ "error": { "kind"?, "code", "message", "details"? }, "requestId" }`.

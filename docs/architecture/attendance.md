@@ -1174,6 +1174,19 @@ reviewers and the user (rows 3a and 3b); and P6 done (hub
 | 5 | `COMMUNITY_AUTHORIZATION` with the owner and grant bases, and `communities_capability_grants`, whose CHECK P9 widens | P2, P3 |
 | 6 | A persisted, community-scoped `LiveSession` with start and end; `ended` saved before `endRoom`; `LIVE_SESSIONS`, including `hostUserId`; `RtcParticipantObserver.listParticipants`, with the adapter contract suite green against a pinned LiveKit in CI | P6 |
 
+> **Note (2026-09-27, P6 landed):** row 6 is met except its last clause. P6
+> built the persisted, community-scoped `LiveSession` with start and end,
+> saves `ended` before `endRoom`, and exports `LIVE_SESSIONS` with
+> `hostUserId`; `RtcParticipantObserver.listParticipants` is on the port and
+> the reconciler uses it ([live.md](live.md), the P6 note above §1). **The
+> adapter contract suite against a pinned LiveKit in CI moved to the
+> LiveKit-integration phase**, with the pinned configuration it tests
+> (`room.auto_create=false` among it, which [§19](#19-failure-modes) relies
+> on), as the dated note on
+> [ADR 0019](decisions/0019-community-scoped-live-sessions.md) records. That
+> part of row 6 is therefore now a prerequisite from the LiveKit-integration
+> phase, not from P6. Nothing else here changes, and the hold stands.
+
 **Must be on record, not answered.** The provisional defaults of Q43, Q67, Q68,
 Q70, Q71 and Q72 ([§24](#24-open-questions)) are recorded in
 open-questions.md, so P9 builds against recorded defaults. Each is the
