@@ -13,11 +13,13 @@ import {
   loadConfig,
   type AppConfig,
 } from '../../platform/config/app-config';
+import { PINNED_LIVEKIT_SERVER_VERSION } from '../../platform/config/livekit-config';
 import { DATABASE, type Database } from '../../platform/database';
 import { asId, CLOCK, FixedClock, type Clock } from '../../shared';
 import { CommunitiesModule } from '../communities/communities.module';
 import { IdentityModule } from '../identity/identity.module';
 import { LiveAudienceService } from './application/live-audience.service';
+import { LiveMediaReadiness } from './application/live-media-readiness';
 import { LiveSessionsReader } from './application/live-sessions.reader';
 import { LIVE_SETTINGS, type LiveSettings } from './application/live-settings';
 import { ProtectLiveSessions } from './application/protect-live-sessions';
@@ -33,6 +35,7 @@ import {
   RTC_OBSERVER,
   RTC_PARTICIPANTS,
   RTC_PROVIDER,
+  RTC_READINESS,
   RTC_ROOMS,
   RTC_TOKENS,
   RtcUnavailableError,
@@ -91,11 +94,15 @@ const PRODUCTION = {
   LIVEKIT_API_SECRET: 's'.repeat(40),
 };
 
-/** What enabling real media takes: the opt-in, this deployment's room prefix, a real key and secret. */
+/**
+ * What enabling real media takes: the opt-in, this deployment's room prefix,
+ * the server's URL and pinned version, a real key and secret.
+ */
 const REAL_MEDIA = {
   LIVE_MEDIA_PROVIDER: 'livekit',
   LIVE_ROOM_NAME_PREFIX: 'live-school-a-',
   LIVEKIT_URL: 'wss://media.school.example',
+  LIVEKIT_VERSION: PINNED_LIVEKIT_SERVER_VERSION,
   LIVEKIT_API_KEY: 'APIa1b2c3d4e5f6',
   LIVEKIT_API_SECRET: 's'.repeat(40),
 };
@@ -121,9 +128,14 @@ describe('the Live module', () => {
 
   it('binds the provider once, from the configuration and the clock, and every narrow port to it', () => {
     expect(declared(RTC_PROVIDER).inject).toEqual([APP_CONFIG, CLOCK]);
-    for (const port of [RTC_ROOMS, RTC_TOKENS, RTC_PARTICIPANTS, RTC_OBSERVER]) {
+    for (const port of [RTC_ROOMS, RTC_TOKENS, RTC_PARTICIPANTS, RTC_OBSERVER, RTC_READINESS]) {
       expect(declared(port).useExisting).toBe(RTC_PROVIDER);
     }
+  });
+
+  it('keeps the provider’s readiness for Start, asked at boot (P7.1)', () => {
+    const providers = Reflect.getMetadata(MODULE_METADATA.PROVIDERS, LiveModule) as unknown[];
+    expect(providers).toContain(LiveMediaReadiness);
   });
 
   it('hands the use cases the deployment’s cap, reserve and room prefix — `live-` when none — and the pinned join lifetime', () => {
@@ -261,32 +273,58 @@ describe('the media provider Live binds', () => {
     ...(logged.mock.calls as unknown[][]),
   ];
 
+  it('binds the fake for the development secret, in development and in tests', () => {
+    expect(boot({ NODE_ENV: 'test' })).toBeInstanceOf(FakeRtcProvider);
+    expect(boot({ NODE_ENV: 'development' })).toBeInstanceOf(FakeRtcProvider);
+    // A deployed environment can never hold the development secret.
+    expect(() => boot({ ...PRODUCTION, NODE_ENV: 'staging', LIVEKIT_API_SECRET: '' })).toThrow(
+      /LIVEKIT_API_SECRET still holds a placeholder value/,
+    );
+  });
+
+  it('binds the LiveKit adapter in staging on explicit opt-in', () => {
+    expect(boot({ ...PRODUCTION, ...REAL_MEDIA, NODE_ENV: 'staging' })).toBeInstanceOf(
+      LiveKitRtcProvider,
+    );
+  });
+
   it('binds the fake for the development secret, and says so with the room prefix', () => {
     expect(boot({})).toBeInstanceOf(FakeRtcProvider);
     expect(bindingLine()).toEqual([
       [
-        { provider: 'fake', roomNamePrefix: 'live-' },
+        { event: 'live.provider.initialize', provider: 'fake', roomNamePrefix: 'live-' },
         'media provider: fake (development secret) — no live media will flow',
       ],
     ]);
 
     warned.mockClear();
     expect(boot({ LIVE_ROOM_NAME_PREFIX: 'live-dev-' })).toBeInstanceOf(FakeRtcProvider);
-    expect(warned.mock.calls[0]?.[0]).toEqual({ provider: 'fake', roomNamePrefix: 'live-dev-' });
+    expect(warned.mock.calls[0]?.[0]).toEqual({
+      event: 'live.provider.initialize',
+      provider: 'fake',
+      roomNamePrefix: 'live-dev-',
+    });
   });
 
-  it('binds the LiveKit adapter on explicit opt-in, naming the host and the prefix — never the key or secret', () => {
+  it('binds the LiveKit adapter on explicit opt-in, naming the hosts, the prefix and the version — never the key or secret', () => {
     expect(boot(REAL_MEDIA)).toBeInstanceOf(LiveKitRtcProvider);
-    expect(boot({ ...PRODUCTION, ...REAL_MEDIA })).toBeInstanceOf(LiveKitRtcProvider);
+    expect(
+      boot({ ...PRODUCTION, ...REAL_MEDIA, LIVEKIT_API_URL: 'http://livekit:7880' }),
+    ).toBeInstanceOf(LiveKitRtcProvider);
+    const initialized = (apiHost: string) => [
+      {
+        event: 'live.provider.initialize',
+        provider: 'livekit',
+        apiHost,
+        clientHost: 'media.school.example',
+        roomNamePrefix: 'live-school-a-',
+        version: '1.13.7',
+      },
+      'media provider: LiveKit',
+    ];
     expect(bindingLine()).toEqual([
-      [
-        { provider: 'livekit', host: 'media.school.example', roomNamePrefix: 'live-school-a-' },
-        'media provider: LiveKit',
-      ],
-      [
-        { provider: 'livekit', host: 'media.school.example', roomNamePrefix: 'live-school-a-' },
-        'media provider: LiveKit',
-      ],
+      initialized('media.school.example'),
+      initialized('livekit:7880'),
     ]);
     expect(JSON.stringify(bindingLine())).not.toContain(REAL_MEDIA.LIVEKIT_API_SECRET);
     expect(JSON.stringify(bindingLine())).not.toContain(REAL_MEDIA.LIVEKIT_API_KEY);
@@ -303,12 +341,29 @@ describe('the media provider Live binds', () => {
       { ...PRODUCTION, LIVE_ROOM_NAME_PREFIX: 'live-school-a-' },
     ],
     ['any secret but the development one', { LIVEKIT_API_SECRET: 'not-the-development-secret' }],
+    [
+      'a staging configuration',
+      { ...PRODUCTION, NODE_ENV: 'staging', LIVE_ROOM_NAME_PREFIX: 'live-staging-' },
+    ],
+    [
+      'every LiveKit setting but the opt-in, in production',
+      {
+        ...PRODUCTION,
+        ...REAL_MEDIA,
+        LIVE_MEDIA_PROVIDER: '',
+        LIVEKIT_API_URL: 'http://livekit:7880',
+      },
+    ],
   ])('binds the disabled provider for %s, and says so', (_case, env) => {
     const provider = boot(env);
     expect(provider).toBeInstanceOf(DisabledRtcProvider);
     expect(bindingLine()).toEqual([
       [
-        { provider: 'disabled', roomNamePrefix: env.LIVE_ROOM_NAME_PREFIX ?? 'live-' },
+        {
+          event: 'live.provider.initialize',
+          provider: 'disabled',
+          roomNamePrefix: env.LIVE_ROOM_NAME_PREFIX ?? 'live-',
+        },
         'media provider: disabled — real media is not enabled (LIVE_MEDIA_PROVIDER), so no live session can start',
       ],
     ]);

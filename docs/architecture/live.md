@@ -352,6 +352,70 @@ Q40 and [Q69](open-questions.md#q69--who-records-and-who-views-snapshots).
 > exports exactly `LIVE_AUDIENCE` and `LIVE_SESSIONS`; and keeps its tables to
 > its own adapters.
 
+> **P7.1 (2026-09-27): the LiveKit server configuration and the provider
+> readiness gate.** This is the server side of the LiveKit-integration phase
+> that P6 moved out (the P6 note above). It was built on the user's
+> infrastructure decisions A–H ([Q65](open-questions.md#q65--media-hosting-and-operations)),
+> after the [P7.1 audit](../p7-livekit-readiness-audit.md). The full account,
+> including what was and was not verified, is
+> [p7-livekit-readiness.md](../p7-livekit-readiness.md). Against this design:
+>
+> - **§9's pinned configuration exists.** `infra/livekit/livekit.yaml` (server
+>   v1.13.7) sets `room.auto_create: false`, `enable_remote_unmute: false`,
+>   `use_external_ip: false` and JSON logs at info; it holds no keys, webhooks
+>   or Redis. The Docker deployment is in `infra/`. As built, three things
+>   differ from §9: LiveKit's own room timeouts stay at their defaults as the
+>   backstop (the adapter sets both per room); no `prometheus_port` is
+>   configured; and the TURN placeholder is LiveKit's embedded TURN, enabled per
+>   environment by `infra/compose.turn.yaml` — configured, not verified.
+> - **The self-check exists**, without a new route. The port is
+>   `RtcReadinessProbe` (`RTC_READINESS`), implemented by
+>   `infrastructure/livekit-readiness.ts` and cached by
+>   `application/live-media-readiness.ts`. It runs at boot, at every room
+>   sweep, and from Start, which answers 503 `live.media_unavailable` with
+>   nothing stored while the provider is not ready. Besides `auto_create`, it
+>   also reports refused credentials, a wrong endpoint and an insecure URL.
+> - **§22's adapter contract suite exists** as `backend/test/livekit/`, run by
+>   `npm run test:livekit` in a CI job of its own, not as
+>   `test/integration/livekit-adapter.spec.ts`. It is never skipped: it
+>   verifies the pinned release, starts its own servers and drives a real
+>   client, `@livekit/rtc-node` 1.1.0. Of §22's list it does not yet cover
+>   `DUPLICATE_IDENTITY`, the refreshed token's lifetime, two prefixes on one
+>   server, a join refused above `maxParticipants`, or latency at scale (P8).
+> - **The adapter (§8.3) is three files**, `livekit-rtc-provider.ts`,
+>   `livekit-readiness.ts` and `livekit-transport.ts`, and these are the only
+>   SDK importers.
+>   - Only LiveKit's own not-found (a 404 with Twirp's `not_found`) means
+>     absence. Any other 404, a body that is not LiveKit's, or a DNS or TLS
+>     failure is an outage or a fault (audit S1).
+>   - Its SDK options are stated (10 s, no failover), and a join token's
+>     lifetime is checked again where the token is minted.
+> - **Two URLs replace one.** `LIVEKIT_URL` is for clients; `LIVEKIT_API_URL`
+>   is for the API (audit C3).
+>   - `NODE_ENV` accepts only development, test, staging and production.
+>     Staging is a deployed environment with production's checks.
+>   - D19's LiveKit row now also refuses boot without `LIVEKIT_URL` or
+>     `LIVEKIT_VERSION=1.13.7`, with a secret equal to `JWT_SECRET` or
+>     `STORAGE_SIGNING_SECRET`, and, in staging and production, with `ws://`.
+> - **The identity contract (audit S2).** A publishing token presented with a
+>   `publish` connect parameter joins as an extra, standard participant,
+>   `<account id>#<publish>`.
+>   - The reconciler removes at once every standard identity the application
+>     never issued (`isIssuedParticipantIdentity`, `domain/live-ids.ts`),
+>     without asking Communities, and the targeted watch looks for it again.
+>   - It is never a person, a violation or a reason for a media reset.
+> - **`live-reconciler.ts` (1,119 lines) is split** by responsibility into
+>   eight files, none over 401 lines, with no change in behaviour: its specs
+>   pass unmodified.
+> - **Corrected below.** §8.3 and §9 said `createRoom` finds and updates an
+>   existing room. In fact a room the server holds in memory is returned
+>   unchanged (SRV `pkg/service/roommanager.go:644-653`).
+> - **Source revision.** P7.1 read LiveKit's source at the release tag
+>   v1.13.7, `8d11efd`. The `6b2e3ec` cited above is a master commit 24
+>   commits after it.
+> - **Not in P7.1:** the Flutter live phase, P7b, load tests (P8) and
+>   attendance. The 300 + 10 limit is unchanged, and no capacity is claimed.
+
 ## 1. What exists today
 
 *This section describes the module as it was before P1, and is kept as the record the P1 changes answer; the note above says what P1 changed.*
@@ -1044,7 +1108,7 @@ raise cannot touch the provider at all.
 | NotFound on `updateParticipant` or `removeParticipant` (SRV `pkg/service/roomservice.go:224-245, 270-287`) | `'not_connected'` |
 | NotFound on `getParticipant` | `null` |
 | NotFound on `deleteRoom` | success |
-| `createRoom` on an existing room | success: the server finds and updates it (SRV `pkg/service/roomallocator.go:60-127`) |
+| `createRoom` on an existing room | success. A room the server holds is returned as it is, and nothing in the new spec is applied (SRV `pkg/service/roommanager.go:276-277, 644-653`). The allocator's create-or-update (`pkg/service/roomallocator.go:60-127`) runs only for a room the server does not hold. Corrected in P7.1 (the note above §1) |
 | Network error, timeout (10 s), 5xx | `RtcUnavailableError` |
 | Authentication failure (wrong key or secret) | a thrown misconfiguration fault: 500 and an alert log |
 
@@ -1059,7 +1123,7 @@ scriptable observations for the reconciler's tests.
 | Concern | LiveKit behaviour (source) | Today | Design |
 | --- | --- | --- | --- |
 | **Room auto-creation** | `room.auto_create` defaults to true (SRV `pkg/config/config.go:563`); with it false, joining a room that does not exist needs a token carrying `roomCreate` (`pkg/service/roomallocator.go:175-184`) | No LiveKit configuration is in the repository; rooms are auto-created on first join | `room.auto_create=false` in a pinned LiveKit config kept in the repository (P6), with `enable_remote_unmute=false`, the timeouts as a backstop, `prometheus_port`, no webhooks and a TURN placeholder ([Q65](open-questions.md#q65--media-hosting-and-operations)). No token ever carries `roomCreate`, so a still-valid token cannot re-create an ended room. The adapter contract suite proves it against a real server. The adapter also self-checks it at boot and on every room sweep: it signs a `roomJoin`-only token for a random name of this deployment's form that no room has, and calls LiveKit's `/rtc/validate`, which runs the same allocator check without creating anything (SRV `pkg/service/rtcservice.go:102`; `pkg/service/utils.go:389-396`). 404 means `auto_create` is off; a success logs an alert and refuses Start (503 `live.media_unavailable`) until a probe answers 404 again |
-| **Rooms created by us** | `createRoom` is create-or-update | `ensureRoom` is never called | Start creates the room with `maxParticipants = cap + reserve`; ensure-then-recheck (§4.4); the orphan sweep by prefix (§11.2) |
+| **Rooms created by us** | `createRoom` creates the room, or returns unchanged one the server already holds (SRV `pkg/service/roommanager.go:644-653`; corrected in P7.1) | `ensureRoom` is never called | Start creates the room with `maxParticipants = cap + reserve`; ensure-then-recheck (§4.4); the orphan sweep by prefix (§11.2) |
 | **Token lifetime** | The server refreshes a connected participant's token once at join and then every 5 minutes; each refreshed token is valid for max(10 minutes, time left) and carries the participant's current grants (SRV `pkg/service/roommanager.go:61-64, 767-778, 1149-1181`) | 600 s | 120 s. **This bounds only the first connection.** A client holding a refreshed token can reconnect without `/join` for up to about 10 minutes |
 | **Revocation** | The protocol defines `revoke_token_ts`, but the open-source server never reads it (no reference in the SRV source); the SDK says "Even after being removed, the participant can still re-join the room" (SDK `dist/RoomServiceClient.d.ts:128-136`) | — | Removal and demotion alone are **not final on the media plane**: a removed member can rejoin with a refreshed token, and each rejoin earns a fresh token of at least 10 minutes. **Ending is final**: the room is deleted and cannot come back (`auto_create=false`). The level-triggered reconciler (§11) removes or demotes within 10–60 s and counts violations; at the second violation inside the enforcement window it resets the media room by epoch (§11.4, P6), which ends the loop, because every old token names a deleted room. `revokeTokensIssuedBefore` is passed anyway, for providers that honour it |
 | **One identity per account** | A join with an identity already in the room evicts the earlier connection with `DUPLICATE_IDENTITY` (SRV `pkg/service/roommanager.go:326-327, 398-400`) | identity = user id | Kept: the newest device wins; the client does not auto-rejoin on that reason ([Q60](open-questions.md#q60--one-account-on-several-devices-in-a-session)). One account never counts twice in capacity or observation |

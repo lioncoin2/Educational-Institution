@@ -6,9 +6,10 @@ import { PublicRoute } from '../http/public-route.decorator';
  * Liveness and readiness.
  *
  * Deliberately dependency-free at this stage: it reports that the process is up
- * and serving. Readiness will grow real checks (database, redis, LiveKit
- * reachability) as those adapters gain live connections — see
- * docs/architecture/open-questions.md.
+ * and serving. Readiness should check the database pool and Redis before
+ * production — listed as debt in docs/architecture/observability.md §3. The
+ * media provider's readiness is not for this route: it stays inside live, where
+ * it gates Start (P7.1, decision 7; docs/p7-livekit-readiness.md §15).
  */
 @Controller('health')
 export class HealthController {

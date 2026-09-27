@@ -1,5 +1,6 @@
-import { readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { join, relative } from 'node:path';
 
 import { cruise, edgesFrom, reachableFrom, type CruiseOutput } from '../support/dependency-graph';
 
@@ -7,10 +8,14 @@ import { cruise, edgesFrom, reachableFrom, type CruiseOutput } from '../support/
  * Live is the only module that talks to the media provider, and only through
  * one adapter. The properties, each asserted on its own:
  *
- *   - exactly one file imports a LiveKit package: the adapter in
- *     `live/infrastructure/` — and it really does (this suite is not vacuous);
+ *   - only the LiveKit adapter's files import a LiveKit package — the
+ *     adapter, its readiness probe and its transport rules,
+ *     `live/infrastructure/livekit-*.ts` — and the adapter really does (this
+ *     suite is not vacuous); with their specs, which the cruise leaves out,
+ *     they are the only source files that name one at all;
  *   - no other module, and no domain, application, api or contracts file of
- *     live itself, reaches LiveKit, even transitively;
+ *     live itself, reaches LiveKit, even transitively — nor Communities, the
+ *     shared kernel or platform;
  *   - live's domain and application reach no vendor SDK or transport at all;
  *   - live's contracts carry only the shared kernel: another module importing
  *     them (to type an event) pulls in nothing of live's internals;
@@ -30,6 +35,38 @@ const LIVEKIT = /^node_modules\/(@types\/)?(livekit-server-sdk|@livekit\/[^/]+)\
 const VENDOR_OR_TRANSPORT =
   /^node_modules\/(@types\/)?(livekit-server-sdk|@livekit\/[^/]+|drizzle-orm|pg|ioredis|ws|socket\.io|express)\//;
 const ADAPTER = 'src/modules/live/infrastructure/livekit-rtc-provider.ts';
+/** The adapter's files: the adapter, its readiness probe and its transport rules. */
+const ADAPTER_FILES = [
+  ADAPTER,
+  'src/modules/live/infrastructure/livekit-readiness.ts',
+  'src/modules/live/infrastructure/livekit-transport.ts',
+];
+
+/** The adapter's files, by name: the only ones the build lets import LiveKit. */
+const ADAPTER_FILE = /^src\/modules\/live\/infrastructure\/livekit-[^/]+\.ts$/;
+/** An import of a LiveKit package, as source text writes it. */
+const NAMES_LIVEKIT =
+  /(?:\bfrom\s+|\brequire\(\s*|\bimport\(\s*)['"](?:livekit-server-sdk|@livekit\/[^'"]+)['"]/;
+
+/** Where LiveKit must never be reached from, even transitively. */
+const NEVER_LIVEKIT: ReadonlyArray<readonly [string, string]> = [
+  ['live’s domain', 'src/modules/live/domain/'],
+  ['live’s application layer', 'src/modules/live/application/'],
+  ['live’s contracts', 'src/modules/live/contracts/'],
+  ['live’s api layer', 'src/modules/live/api/'],
+  ['Communities', 'src/modules/communities/'],
+  ['the shared kernel', 'src/shared/'],
+  ['platform', 'src/platform/'],
+];
+
+const ROOT = join(__dirname, '..', '..');
+
+/** Every TypeScript file under `dir` (relative to the backend), specs included. */
+function typescriptFiles(dir: string): string[] {
+  return readdirSync(join(ROOT, dir), { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
+    .map((entry) => relative(ROOT, join(entry.parentPath, entry.name)));
+}
 
 const LIVE = 'src/modules/live/';
 const MODULE_FILE = 'src/modules/live/live.module.ts';
@@ -69,12 +106,30 @@ describe('live boundaries', () => {
     expect(edges.some((path) => LIVEKIT.test(path))).toBe(true);
   });
 
-  it('lets exactly one file import a LiveKit package', () => {
+  it('lets only the LiveKit adapter’s files import a LiveKit package', () => {
     const importers = edgesFrom(output, () => true)
       .filter((edge) => LIVEKIT.test(edge.resolved))
       .map((edge) => edge.source);
-    expect([...new Set(importers)]).toEqual([ADAPTER]);
+    expect([...new Set(importers)].sort()).toEqual([...ADAPTER_FILES].sort());
   });
+
+  it('finds no source file naming a LiveKit package outside live/infrastructure/livekit-*.ts — specs included', () => {
+    const naming = typescriptFiles('src').filter((file) =>
+      NAMES_LIVEKIT.test(readFileSync(join(ROOT, file), 'utf8')),
+    );
+    // Not vacuous: the adapter's files, and the specs beside them, do.
+    expect(naming).toEqual(expect.arrayContaining(ADAPTER_FILES));
+    expect(naming.filter((file) => !ADAPTER_FILE.test(file))).toEqual([]);
+  });
+
+  it.each(NEVER_LIVEKIT)(
+    'never lets %s reach a LiveKit package, even transitively',
+    (_area, dir) => {
+      const inside = (source: string) => source.startsWith(dir);
+      expect(output.modules.some((module) => inside(module.source))).toBe(true);
+      expect(reaching(inside, (path) => LIVEKIT.test(path))).toEqual([]);
+    },
+  );
 
   it('keeps every live layer but infrastructure free of LiveKit and every other vendor', () => {
     const core = (source: string) =>
@@ -216,8 +271,23 @@ describe('live boundaries', () => {
     expect(reaching(fromLive, (path) => otherSchemas.includes(path))).toEqual([]);
   });
 
-  it('keeps the rule that enforces this in the build', () => {
-    const rules = readFileSync(join(__dirname, '..', '..', '.dependency-cruiser.cjs'), 'utf8');
-    expect(rules).toContain("name: 'livekit-sdk-only-in-the-live-adapter'");
+  it('keeps the rule that enforces this in the build — exempting the adapter’s files alone', () => {
+    const { forbidden } = createRequire(__filename)(join(ROOT, '.dependency-cruiser.cjs')) as {
+      forbidden: ReadonlyArray<{ name: string; from: { pathNot?: string } }>;
+    };
+    const rule = forbidden.find(
+      (candidate) => candidate.name === 'livekit-sdk-only-in-the-live-adapter',
+    );
+    const exempt = (source: string) => new RegExp(rule?.from.pathNot ?? '(?!)').test(source);
+    expect(ADAPTER_FILES.filter((file) => !exempt(file))).toEqual([]);
+    // Nothing else in the adapters' directory is, nor the module's wiring.
+    expect(
+      [
+        'src/modules/live/infrastructure/fake-rtc-provider.ts',
+        'src/modules/live/infrastructure/disabled-rtc-provider.ts',
+        'src/modules/live/infrastructure/drizzle-live-repositories.ts',
+        'src/modules/live/live.module.ts',
+      ].filter(exempt),
+    ).toEqual([]);
   });
 });

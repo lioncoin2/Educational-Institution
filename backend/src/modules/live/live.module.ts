@@ -15,6 +15,7 @@ import { ListHandsUseCase } from './application/list-hands.use-case';
 import { LiveAccess } from './application/live-access';
 import { LiveJournal } from './application/live-journal';
 import { LiveMedia } from './application/live-media';
+import { LiveMediaReadiness } from './application/live-media-readiness';
 import { LiveReconciler } from './application/live-reconciler';
 import { LiveSessionLifecycle } from './application/live-session-lifecycle';
 import { LiveSessionsReader } from './application/live-sessions.reader';
@@ -47,6 +48,7 @@ import {
   RTC_OBSERVER,
   RTC_PARTICIPANTS,
   RTC_PROVIDER,
+  RTC_READINESS,
   RTC_ROOMS,
   RTC_TOKENS,
   type RtcProvider,
@@ -68,17 +70,21 @@ const DEVELOPMENT_SECRET = 'development-only-secret';
  *   LIVE_MEDIA_PROVIDER=livekit      the LiveKit adapter — real media,
  *                                    enabled on purpose; configuration has
  *                                    already refused to boot without a room
- *                                    prefix, a real key and a strong secret
+ *                                    prefix, the pinned server version, a
+ *                                    valid client URL (wss: when deployed),
+ *                                    a real key and a strong secret of its own
  *   anything else                    the disabled provider: every call
  *                                    refuses, so Start answers 503
  *                                    live.media_unavailable with nothing
  *                                    stored — real credentials in the
  *                                    environment are never reached by accident
  *
- * Real media waits for the LiveKit-integration phase's hardening (a pinned
- * server configuration, the adapter's contract suite against a real server,
- * the `/rtc/validate` self-check), on which the design's media-plane finality
- * rests. The choice, and the room prefix, are logged once at boot.
+ * Configuration merely existing never binds LiveKit, and binding it is not
+ * yet trusting it: Start also waits for the adapter's `/rtc/validate`
+ * self-check (`LiveMediaReadiness`). The choice is logged once at boot as
+ * `live.provider.initialize` — the provider, the room prefix and, for
+ * LiveKit, the API and client hosts and the server version; never a key or a
+ * secret.
  */
 export function rtcProviderFor(
   config: AppConfig,
@@ -86,22 +92,30 @@ export function rtcProviderFor(
   logger: Pick<Logger, 'log' | 'warn'> = new Logger('LiveModule'),
 ): RtcProvider {
   const roomNamePrefix = liveSettingsFor(config).roomNamePrefix;
+  const event = 'live.provider.initialize';
   if (config.livekit.apiSecret === DEVELOPMENT_SECRET) {
     logger.warn(
-      { provider: 'fake', roomNamePrefix },
+      { event, provider: 'fake', roomNamePrefix },
       'media provider: fake (development secret) — no live media will flow',
     );
     return new FakeRtcProvider(clock);
   }
   if (config.live.mediaProvider === 'livekit') {
     logger.log(
-      { provider: 'livekit', host: new URL(config.livekit.url).host, roomNamePrefix },
+      {
+        event,
+        provider: 'livekit',
+        apiHost: new URL(config.livekit.apiUrl).host,
+        clientHost: new URL(config.livekit.url).host,
+        roomNamePrefix,
+        version: config.livekit.version,
+      },
       'media provider: LiveKit',
     );
     return new LiveKitRtcProvider(config);
   }
   logger.warn(
-    { provider: 'disabled', roomNamePrefix },
+    { event, provider: 'disabled', roomNamePrefix },
     'media provider: disabled — real media is not enabled (LIVE_MEDIA_PROVIDER), so no live session can start',
   );
   return new DisabledRtcProvider();
@@ -177,6 +191,7 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
     { provide: RTC_TOKENS, useExisting: RTC_PROVIDER },
     { provide: RTC_PARTICIPANTS, useExisting: RTC_PROVIDER },
     { provide: RTC_OBSERVER, useExisting: RTC_PROVIDER },
+    { provide: RTC_READINESS, useExisting: RTC_PROVIDER },
     { provide: LIVE_SETTINGS, inject: [APP_CONFIG], useFactory: liveSettingsFor },
     // One store serves the three ports in either mode, so a session and its
     // hands and presenter grant are read as written.
@@ -205,6 +220,9 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
     LiveAccess,
     LiveStanding,
     LiveMedia,
+    // The provider's self-check, cached: asked at boot, at every room sweep
+    // and by Start (P7.1).
+    LiveMediaReadiness,
     RoomOccupancy,
     LiveSessionViews,
     LiveSessionLifecycle,

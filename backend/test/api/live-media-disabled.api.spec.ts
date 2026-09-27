@@ -16,6 +16,7 @@ import { LiveKitRtcProvider } from '../../src/modules/live/infrastructure/liveki
 import type * as LiveKitAdapter from '../../src/modules/live/infrastructure/livekit-rtc-provider';
 import { LIVE_STORE, rtcProviderFor, type LiveStore } from '../../src/modules/live/live.module';
 import { loadConfig } from '../../src/platform/config/app-config';
+import { PINNED_LIVEKIT_SERVER_VERSION } from '../../src/platform/config/livekit-config';
 import type { ApiResponse } from '../support/api-client';
 import { LogCapture, credentialsIn } from '../support/log-capture';
 import { startRealtimeApi, type Account, type RealtimeApi } from '../support/realtime-api';
@@ -118,6 +119,7 @@ describe('live without real media enabled', () => {
         LIVE_MEDIA_PROVIDER: 'livekit',
         LIVE_ROOM_NAME_PREFIX: 'live-school-a-',
         LIVEKIT_URL: 'wss://media.school.example',
+        LIVEKIT_VERSION: PINNED_LIVEKIT_SERVER_VERSION,
         LIVEKIT_API_KEY: 'APIa1b2c3d4e5f6',
         LIVEKIT_API_SECRET: LIVEKIT_SECRET,
       }),

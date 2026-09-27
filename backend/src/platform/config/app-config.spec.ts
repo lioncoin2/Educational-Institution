@@ -1,4 +1,5 @@
 import { ConfigurationError, loadConfig } from './app-config';
+import { PINNED_LIVEKIT_SERVER_VERSION } from './livekit-config';
 
 const PRODUCTION = {
   NODE_ENV: 'production',
@@ -94,10 +95,15 @@ describe('loadConfig', () => {
 });
 
 describe('loadConfig — live sessions', () => {
-  /** What real media needs besides the opt-in: its own room names, a real key, a strong secret. */
+  /**
+   * What real media needs besides the opt-in: its own room names, the server's
+   * URL and pinned version, a real key, a strong secret.
+   */
   const REAL_MEDIA = {
     LIVE_MEDIA_PROVIDER: 'livekit',
     LIVE_ROOM_NAME_PREFIX: 'live-prod-',
+    LIVEKIT_URL: 'wss://rtc.example.org',
+    LIVEKIT_VERSION: PINNED_LIVEKIT_SERVER_VERSION,
     LIVEKIT_API_KEY: 'APIa1b2c3d4e5f6',
     LIVEKIT_API_SECRET: 's'.repeat(32),
   };
@@ -204,14 +210,16 @@ describe('loadConfig — live sessions', () => {
     ).toBe('livekit');
   });
 
+  // P7.1: real media has no development defaults at all — each is set on purpose.
   it('refuses the development defaults outright once real media is enabled', () => {
     expect(() => loadConfig({ LIVE_MEDIA_PROVIDER: 'livekit' })).toThrow(
       new RegExp(
         [
+          'LIVEKIT_URL is required when LIVE_MEDIA_PROVIDER=livekit',
+          'LIVEKIT_VERSION must be 1\\.13\\.7',
           'LIVE_ROOM_NAME_PREFIX is required',
-          'LIVEKIT_API_KEY must not be a placeholder',
-          'LIVEKIT_API_SECRET must not be a placeholder',
-          'LIVEKIT_API_SECRET must be at least 32 bytes',
+          'LIVEKIT_API_KEY is required when LIVE_MEDIA_PROVIDER=livekit',
+          'LIVEKIT_API_SECRET is required when LIVE_MEDIA_PROVIDER=livekit',
         ].join('[\\s\\S]*'),
       ),
     );

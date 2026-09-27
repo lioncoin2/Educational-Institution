@@ -20,13 +20,18 @@ import {
   type AuthorizationService,
 } from '../../identity/contracts';
 import { liveSessionStarted } from '../domain/events';
-import { LiveRateLimits, ROOM_PROVIDER_TIMEOUT_SECONDS } from '../domain/live-limits';
+import {
+  LiveRateLimits,
+  ROOM_PROVIDER_TIMEOUT_SECONDS,
+  ROOM_SWEEP_SECONDS,
+} from '../domain/live-limits';
 import { currentMediaRoom, newLiveSession, type LiveSession } from '../domain/live-session';
 import type { ModerationAction } from '../domain/moderation';
 import { LIVE_SESSION_REPOSITORY, type LiveSessionRepository } from '../domain/ports';
 import { RTC_ROOMS, RtcUnavailableError, type RtcRoomProvider } from '../domain/rtc-provider';
 import { LiveAccess, isOutage, permitOf } from './live-access';
 import { LiveJournal, moderationAudit } from './live-journal';
+import { LiveMediaReadiness } from './live-media-readiness';
 import { LIVE_SETTINGS, LiveRefusals, tooMany, type LiveSettings } from './live-settings';
 import { LiveSessionViews } from './session-views';
 import type { StartResult } from './views';
@@ -44,10 +49,13 @@ import type { StartResult } from './views';
  *      the running session if there is one — a start retried after a lock —
  *      else 412 live.community_not_open;
  *   3. a session already running → 200 with it, and nothing else happens;
- *   4. the media room first: `ensureRoom`, sized to the cap plus the
- *      reserve. An outage — the disabled provider of a deployment without
- *      real media included (D19) — is 503 live.media_unavailable with NOTHING
- *      stored: no row, no audit, no event;
+ *   4. the media room first. The provider's readiness, no older than a room
+ *      sweep (`LiveMediaReadiness`, P7.1), then `ensureRoom`, sized to the
+ *      cap plus the reserve. A provider that is not ready — the disabled
+ *      provider of a deployment without real media (D19), a server with
+ *      auto-create on, refusing our credentials, unreachable — or an outage
+ *      is 503 live.media_unavailable with NOTHING stored: no room, no row, no
+ *      audit, no event;
  *   5. `community.live.start` asked AGAIN (D20), so a lock or a removal that
  *      committed during the provider call is honoured: a refusal now ends the
  *      room this call ensured (best effort) and answers as in step 2;
@@ -75,6 +83,7 @@ export class StartLiveSessionUseCase {
     @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
     private readonly views: LiveSessionViews,
     private readonly journal: LiveJournal,
+    private readonly readiness: LiveMediaReadiness,
   ) {}
 
   async execute(command: {
@@ -108,6 +117,8 @@ export class StartLiveSessionUseCase {
       moderatorReserve: this.settings.moderatorReserve,
     });
     const room = currentMediaRoom(this.settings.roomNamePrefix, session);
+    const readiness = await this.readiness.ensureFresh(ROOM_SWEEP_SECONDS * 1000);
+    if (!readiness.ready) return err(LiveRefusals.mediaUnavailable);
     try {
       await this.rooms.ensureRoom({
         roomName: room,

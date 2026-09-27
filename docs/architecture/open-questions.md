@@ -2266,6 +2266,60 @@ development and load tests. A TURN decision is needed before the first real
 class. Load tests never use production keys or rooms; they run on a replica
 with the same hardware.
 
+> **Decided by the user (the P7.1 brief, 2026-09-27): infrastructure decisions
+> A–H.** They unblocked P7.1, whose [audit](../p7-livekit-readiness-audit.md)
+> had stopped on this question.
+>
+> - **A. Media hosting:** self-hosted LiveKit; no LiveKit Cloud; no per-user or
+>   per-minute billing.
+> - **B. Topology:** LiveKit runs on our own infrastructure, initially the
+>   existing server. It is isolated from the NestJS API at the process and
+>   container boundary, and must be able to move to a dedicated media server
+>   later without changing the domain or application layers.
+> - **C. Deployment:** Docker, reproducible from committed configuration; no
+>   systemd LiveKit.
+> - **D. API vs media:** NestJS is the control plane and LiveKit the media
+>   plane. LiveKit is not treated as an ordinary HTTP API hidden behind the
+>   API's reverse proxy. Every externally reachable LiveKit port and its
+>   purpose, and every internal API → LiveKit connection, is documented.
+> - **E. TLS:** production client connections use secure transport, through
+>   the existing TLS termination strategy where appropriate. No second
+>   certificate authority is invented. The documentation says exactly which
+>   hostname terminates TLS and which component owns each certificate.
+>   Production must not accept `ws://` as `LIVEKIT_URL`.
+> - **F. TURN:** part of the production-ready architecture. Use LiveKit's
+>   supported TURN mechanism unless a separate TURN service is shown to be
+>   necessary. Do not invent ports, domains or certificate arrangements.
+>   Document TURN separately from ordinary SFU traffic, and make it
+>   configurable per environment.
+> - **G. Environments:** development, staging and production, each with its
+>   own LiveKit API key, API secret, LiveKit URL and server configuration.
+>   `JWT_SECRET` and `STORAGE_SIGNING_SECRET` are never reused as the LiveKit
+>   secret.
+> - **H. Readiness:** `/rtc/validate` stays an internal adapter/provider
+>   readiness check. No new public HTTP readiness endpoint is exposed unless an
+>   existing architecture contract requires one, and no credential or secret is
+>   ever exposed.
+>
+> **P7.1 (2026-09-27):** built on these decisions
+> ([p7-livekit-readiness.md](../p7-livekit-readiness.md)).
+>
+> - LiveKit v1.13.7 is pinned, and runs as its own container beside the API
+>   (`infra/`).
+> - Every environment has its own contract; staging is checked as strictly as
+>   production.
+> - TLS is ended by the host's existing terminator.
+> - LiveKit's embedded TURN is enabled for staging and production. It is
+>   configured, **not verified**: the relay path under Docker's bridge network
+>   and TURN over TLS through the real terminator remain to be checked on the
+>   host.
+> - The `/rtc/validate` self-check gates Start, with no new route.
+>
+> Two parts of this question stay open, because A–H do not decide them:
+> data residency, and whether a load test may ever touch the production host
+> and who approves a run. For load tests, the default above stands: they never
+> use production keys or rooms.
+
 **When answered.** Deployment configuration, before P8 and before the first
 real class. LiveKit Cloud would sit behind the same RTC ports; its ejection
 guarantees have not been verified.

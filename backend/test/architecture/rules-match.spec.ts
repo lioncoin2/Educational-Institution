@@ -89,7 +89,8 @@ describe('every forbidden rule can fire', () => {
   /**
    * One violating edge per rule with a target path. Functions, because some
    * read the graph. Packages that are deliberately not installed (push SDKs,
-   * socket.io) use the shape dependency-cruiser would resolve them to.
+   * socket.io), or that no source file may import (the WebRTC client), use
+   * the shape dependency-cruiser would resolve them to.
    */
   const SAMPLES: Readonly<Record<string, () => { from: string; to: string }>> = {
     'domain-reaches-no-npm': () => ({
@@ -115,6 +116,10 @@ describe('every forbidden rule can fire', () => {
     'livekit-sdk-only-in-the-live-adapter': () => ({
       from: 'src/modules/messaging/infrastructure/drizzle-messaging-repository.ts',
       to: real('node_modules/livekit-server-sdk/'),
+    }),
+    'webrtc-client-never-in-src': () => ({
+      from: 'src/modules/live/infrastructure/livekit-rtc-provider.ts',
+      to: 'node_modules/@livekit/rtc-node/dist/index.cjs',
     }),
     'websocket-library-only-in-the-realtime-adapter': () => ({
       from: 'src/modules/messaging/application/send-message.use-cases.ts',

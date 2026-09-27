@@ -114,6 +114,44 @@ Everything below is proposed. None of it exists today.
 > Everything else this ADR decides for P6 landed: decisions 1–6, 9, 11 and 12
 > (`LIVE_PRESENCE` stays with P9), and the backend realtime relay was brought
 > forward from P7 ([live.md](../live.md), the P6 note above §1).
+>
+> **Note (2026-09-27, P7.1):** the decisions below are left as accepted and
+> their text is not edited. P7.1 built what the P6 amendment moved to the
+> LiveKit-integration phase, on the user's infrastructure decisions A–H ([Q65])
+> ([p7-livekit-readiness.md](../../p7-livekit-readiness.md)):
+>
+> - **Decision 7's pinned LiveKit configuration now exists.**
+>   `infra/livekit/livekit.yaml` pins server v1.13.7 with
+>   `room.auto_create: false`, `enable_remote_unmute: false`, no webhooks and no
+>   keys in the file. `infra/compose.yaml` runs it from the image pinned by
+>   digest. As built:
+>   - LiveKit's empty and departure timeouts are not stated in the file. Its
+>     defaults, 300 s and 20 s, remain the backstop, and the adapter sets both
+>     on every room it creates;
+>   - the TURN placeholder became LiveKit's embedded TURN, enabled for staging
+>     and production by `infra/compose.turn.yaml`. It is configured, not
+>     verified.
+> - **The contract suite against a pinned LiveKit server now exists** as
+>   `backend/test/livekit/`, run by `npm run test:livekit` in a CI job of its
+>   own. It runs the application and the real adapter against the pinned v1.13.7
+>   release with a real WebRTC client, and is never skipped. With the
+>   `/rtc/validate` self-check (which gates Start) and the pinned configuration,
+>   it is what decision 6's media-plane finality rests on. Real media still binds
+>   only on explicit opt-in (D19). P7.1 added further boot refusals: without
+>   `LIVEKIT_URL` or `LIVEKIT_VERSION=1.13.7`, with a secret equal to
+>   `JWT_SECRET` or `STORAGE_SIGNING_SECRET`, and, in staging and production,
+>   with `ws://`.
+> - **Identity.** The account id stays the only identity the application
+>   issues. The reconciler now removes any standard participant whose identity
+>   it never issued, such as the `<account id>#<publish>` that LiveKit derives
+>   from a publishing token.
+> - **L10 is corrected in live.md §8.3 and §9.** `CreateRoom` is create-or-update
+>   only for a room the server does not hold in memory. One it holds is returned
+>   unchanged (server `pkg/service/roommanager.go:644-653`), so `ensureRoom`
+>   stays idempotent but does not resize a live room.
+> - **The source revision.** The server source cited above as `6b2e3ec`,
+>   v1.13.7, is a master commit 24 commits after the v1.13.7 tag, `8d11efd`.
+>   P7.1 read its facts at the tag.
 
 1. **`LiveSession` replaces `LiveRoom`.** `{communityId, hostUserId, state
    live | ended, state_version, endedBy, endReason, participantCap,

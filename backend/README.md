@@ -23,7 +23,9 @@ and `live` uses a fake RTC provider; uploaded files go to `STORAGE_LOCAL_ROOT`
 (`./.storage`, git-ignored). Nothing fails at boot for want of a service — the
 fallbacks are deliberate and are logged.
 
-Production refuses to start without its own `JWT_SECRET` and
+`NODE_ENV` is `development`, `test`, `staging` or `production`; anything else
+refuses to start. Staging and production are the deployed environments, and
+both refuse to start without their own `JWT_SECRET` and
 `STORAGE_SIGNING_SECRET` (each ≥ 32 bytes, not a placeholder, not equal to each
 other). For the Flutter **web** app, list its origin in `CORS_ORIGINS`
 (explicit origins only; native apps need nothing) — the same list decides
@@ -43,13 +45,13 @@ covered — never a limit on who may join; see
 Live sessions need no configuration to develop against: with the LiveKit
 secret at its development default, `live` binds a fake media provider that
 never carries media, and sessions start, join and end as usual. **Real media
-is off until the LiveKit-integration phase** (the P6 audit's D19): which
-provider a deployment binds is decided once, at boot, and logged.
+is off unless enabled by name** (the P6 audit's D19): which provider a
+deployment binds is decided once, at boot, and logged.
 
 | Configuration | Binds |
 | --- | --- |
 | `LIVEKIT_API_SECRET` unset, or `development-only-secret` | the fake |
-| `LIVE_MEDIA_PROVIDER=livekit` | the LiveKit adapter. Boot is refused unless `LIVE_ROOM_NAME_PREFIX` is set, `LIVEKIT_API_KEY` is not a placeholder, and `LIVEKIT_API_SECRET` is not a placeholder and is at least 32 bytes |
+| `LIVE_MEDIA_PROVIDER=livekit` | the LiveKit adapter. Boot is refused unless `LIVE_ROOM_NAME_PREFIX`, `LIVEKIT_URL`, `LIVEKIT_VERSION`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` are set as the table below says. Even then, starting a session answers 503 `live.media_unavailable` until LiveKit's `/rtc/validate` self-check passes: reachable, our key and secret accepted, `room.auto_create` off |
 | anything else — real LiveKit credentials included | a disabled provider that refuses every call: starting a session answers 503 `live.media_unavailable` and stores nothing, and the reconciler skips its ticks |
 
 | Variable | Default | Means |
@@ -58,9 +60,18 @@ provider a deployment binds is decided once, at boot, and logged.
 | `LIVE_ROOM_NAME_PREFIX` | unset (`live-` for the fake and the disabled provider) | this deployment's media room prefix: the orphan sweep ends every room of its form that no live session claims. 1–48 characters of `A–Z a–z 0–9 . _ -`; required with `LIVE_MEDIA_PROVIDER=livekit` |
 | `LIVE_MAX_PARTICIPANTS_PER_SESSION` | 300 | the listeners' soft cap, copied onto each session at start (PROVISIONAL, Q57) |
 | `LIVE_MODERATOR_RESERVE` | 10 | seats above the cap for moderators and current speakers (PROVISIONAL, Q57) |
-| `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | `ws://localhost:7880`, `devkey`, `development-only-secret` | the media server and its credentials; required in production |
+| `LIVEKIT_URL` | `ws://localhost:7880` (development and test only) | client → LiveKit: the signalling URL join tickets carry. `ws://` or `wss://`. Required with real media, and in staging and production; in staging and production `wss://` only, real media or not |
+| `LIVEKIT_API_URL` | `LIVEKIT_URL` with `ws→http`, `wss→https` | API → LiveKit: the server API the adapter calls, e.g. `http://livekit:7880` on a private network. `http://` or `https://`; in staging and production `https://` unless its host is internal (loopback, a single-label service name, a private IPv4 address) |
+| `LIVEKIT_VERSION` | unset | the LiveKit server release deployed. With real media it must be exactly the pinned `1.13.7` |
+| `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | `devkey`, `development-only-secret` (development and test only) | the media server's credentials. Required in staging and production, where the secret must not be a placeholder and must differ from `JWT_SECRET` and `STORAGE_SIGNING_SECRET`. With real media: set on purpose, neither a placeholder, and the secret at least 32 bytes and different from both |
 
-See [live.md](../docs/architecture/live.md) (the P6 note above §1).
+See [live.md](../docs/architecture/live.md) (the P6 and P7.1 notes above §1).
+
+**Deploying with real media.** The Docker deployment — the API and the LiveKit
+server v1.13.7 as two containers, with one environment file per environment —
+is in [`infra/`](../infra/README.md). Its ports, TLS, TURN, the readiness
+check, and what was and was not verified are in
+[p7-livekit-readiness.md](../docs/p7-livekit-readiness.md).
 
 Push notifications need no configuration either, because no provider is wired
 yet: the push port's only adapter logs, at debug level, that a push would have
@@ -178,7 +189,8 @@ Errors always have one shape:
 | Command | Does |
 | --- | --- |
 | `npm run verify` | **The gate.** format:check → lint → typecheck → arch:graph → test |
-| `npm test` | Jest: unit, integration and architecture tests |
+| `npm test` | Jest: unit, integration, architecture and deployment tests (`test/deployment/`, which read the committed `infra/` files). Not the real LiveKit suite, which it excludes rather than skips |
+| `npm run test:livekit` | The real LiveKit suite (`test/livekit/`): the application against the pinned LiveKit server v1.13.7, with a real WebRTC client. It starts and stops its own servers; the release is downloaded once, checked by sha256 and cached in `.cache/` (git-ignored), or taken from `LIVEKIT_SERVER_BINARY`, which is needed on anything but linux x64 |
 | `npm run test:arch` | Just the architecture rules |
 | `npm run test:integration` | Just the Postgres suites (needs `TEST_DATABASE_URL`) |
 | `npm run identity:bootstrap-owner` | Create the first owner (after `npm run build`; password on stdin) |
@@ -188,7 +200,9 @@ Errors always have one shape:
 | `npm run db:migrate` | Apply pending migrations |
 | `npm run build` | Compile to `dist/` |
 
-Run `npm run verify` before pushing. CI runs exactly this, plus a real Postgres.
+Run `npm run verify` before pushing. CI runs exactly this, plus a real Postgres
+and a check that the deployment files are valid Compose for every environment;
+`npm run test:livekit` runs in a CI job of its own.
 
 The Postgres suites **skip with a printed warning** when `TEST_DATABASE_URL` is
 unset. Each suite creates and drops its own database, so point it at a server

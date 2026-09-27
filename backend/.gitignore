@@ -7,3 +7,6 @@ coverage/
 
 # Local object storage root used by LocalStorageProvider in development.
 .storage/
+
+# The pinned LiveKit server release the real suite downloads and verifies (npm run test:livekit).
+.cache/

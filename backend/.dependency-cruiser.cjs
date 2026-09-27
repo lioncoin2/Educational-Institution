@@ -122,14 +122,29 @@ module.exports = {
       name: 'livekit-sdk-only-in-the-live-adapter',
       severity: 'error',
       comment:
-        'Media transport is an adapter behind the live module\'s RTC ports: exactly ' +
-        'one directory may know the LiveKit server SDK (or any @livekit package), so ' +
-        'no other module — and no domain, application or api layer of live itself — ' +
-        'can depend on the vendor. test/architecture/live-boundaries.spec.ts asserts ' +
-        'the adapter really does import it, so this rule is not vacuous.',
-      from: { path: '^src/', pathNot: '^src/modules/live/infrastructure/' },
+        'Media transport is an adapter behind the live module\'s RTC ports: only the ' +
+        'LiveKit adapter\'s files — live/infrastructure/livekit-*.ts, the adapter, its ' +
+        'readiness probe and its transport rules — may know the LiveKit server SDK (or ' +
+        'any @livekit package), so no other module, no other adapter, and no domain, ' +
+        'application or api layer of live itself can depend on the vendor. ' +
+        'test/architecture/live-boundaries.spec.ts asserts the adapter really does ' +
+        'import it, so this rule is not vacuous.',
+      from: { path: '^src/', pathNot: '^src/modules/live/infrastructure/livekit-[^/]+\\.ts$' },
       to: {
         path: '^node_modules/(@types/)?(livekit-server-sdk|@livekit/[^/]+)/',
+      },
+    },
+    {
+      name: 'webrtc-client-never-in-src',
+      severity: 'error',
+      comment:
+        'LiveKit\'s WebRTC client (@livekit/rtc-node, and its native bindings) is the real ' +
+        'LiveKit suite\'s participant — a devDependency, never shipped: no source file may ' +
+        'import it, the LiveKit adapter included. test/architecture/livekit-suite.spec.ts ' +
+        'keeps it under test/livekit/ and nowhere else.',
+      from: { path: '^src/' },
+      to: {
+        path: '^node_modules/@livekit/(rtc-node|rtc-ffi-bindings[^/]*)/',
       },
     },
 

@@ -1,0 +1,35 @@
+# LiveKit's embedded TURN, for the deployed environments (staging, production):
+#
+#   docker compose -f infra/compose.yaml -f infra/compose.turn.yaml \
+#     --env-file infra/env/<env>.env up -d
+#
+# TURN relays the media of clients whose network lets neither UDP 7882 nor TCP
+# 7881 through. CONFIGURED here — not VERIFIED through a real NAT or the real
+# TLS terminator (docs/p7-livekit-readiness.md). Two listeners
+# (SRV = the LiveKit source at tag v1.13.7; pkg/service/turn.go:64-80, 165-201):
+#
+#   3478/udp  TURN over UDP, published on the host and advertised to clients as
+#             turn:<NODE_IP>:3478 (SRV pkg/service/roommanager.go:1061-1066).
+#   5349/tcp  TURN over TLS, the TLS terminated by the existing TLS terminator.
+#             LiveKit always advertises turns:<LIVEKIT_TURN_DOMAIN>:443, whatever
+#             its own port (roommanager.go:1068-1070): the terminator accepts
+#             TLS on public 443 for that hostname, holds its certificate, and
+#             forwards the plain stream to 127.0.0.1:5349. With external_tls
+#             LiveKit holds no certificate (turn.go:211-222).
+#
+# Each name is LIVEKIT_ + the dotted config path, upper-cased
+# (SRV pkg/config/config.go:911): turn.enabled, turn.domain, turn.udp_port,
+# turn.tls_port, turn.external_tls (config.go:272-280). The domain is required
+# with a TLS port (turn.go:72-79).
+services:
+  livekit:
+    environment:
+      LIVEKIT_TURN_ENABLED: "true"
+      LIVEKIT_TURN_DOMAIN: ${LIVEKIT_TURN_DOMAIN:?set it in the environment file}
+      LIVEKIT_TURN_UDP_PORT: "3478"
+      LIVEKIT_TURN_TLS_PORT: "5349"
+      LIVEKIT_TURN_EXTERNAL_TLS: "true"
+    ports:
+      - "3478:3478/udp"
+      # Loopback only: reached through the TLS terminator's public 443.
+      - "127.0.0.1:5349:5349/tcp"

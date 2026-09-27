@@ -10,8 +10,11 @@ const CAPABILITIES = {
   hidden: false,
 };
 
-/** One call of every method of the port, with plausible arguments. */
-const EVERY_CALL: Readonly<Record<keyof RtcProvider, (rtc: RtcProvider) => Promise<unknown>>> = {
+/** Every method of the port that reaches the media server — all but the self-check. */
+type MediaCall = Exclude<keyof RtcProvider, 'check'>;
+
+/** One call of every media method of the port, with plausible arguments. */
+const EVERY_CALL: Readonly<Record<MediaCall, (rtc: RtcProvider) => Promise<unknown>>> = {
   ensureRoom: (rtc) =>
     rtc.ensureRoom({
       roomName: 'live-room',
@@ -38,7 +41,7 @@ const EVERY_CALL: Readonly<Record<keyof RtcProvider, (rtc: RtcProvider) => Promi
 };
 
 describe('the disabled RTC provider (audit D19)', () => {
-  it.each(Object.keys(EVERY_CALL) as (keyof RtcProvider)[])(
+  it.each(Object.keys(EVERY_CALL) as MediaCall[])(
     'refuses %s as an outage: media is disabled',
     async (method) => {
       const refused = EVERY_CALL[method](new DisabledRtcProvider());
@@ -46,6 +49,14 @@ describe('the disabled RTC provider (audit D19)', () => {
       await expect(refused).rejects.toMatchObject({ operation: `${method} (media disabled)` });
     },
   );
+
+  // Start asks first, and answers 503 without touching the provider at all.
+  it('reports itself not ready, as disabled — never ready, never a throw', async () => {
+    await expect(new DisabledRtcProvider().check()).resolves.toEqual({
+      ready: false,
+      reason: 'provider_disabled',
+    });
+  });
 
   // Start's 503 `live.media_unavailable`, with nothing stored, rests on this:
   // the refusal is the port's own outage, never a fault or a quiet success.

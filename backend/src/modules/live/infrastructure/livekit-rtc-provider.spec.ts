@@ -9,13 +9,8 @@ import {
 
 import type { AppConfig } from '../../../platform/config/app-config';
 import { RtcUnavailableError, type RtcCapabilities } from '../domain/rtc-provider';
-import {
-  LiveKitRtcProvider,
-  classify,
-  describe as describeError,
-  permissionOf,
-  type LiveKitRoomService,
-} from './livekit-rtc-provider';
+import { LiveKitRtcProvider, permissionOf, type LiveKitRoomService } from './livekit-rtc-provider';
+import { classify, describe as describeError } from './livekit-transport';
 
 // Capability sets as the adapter receives them — literals, so this spec tests
 // the mapping to LiveKit, not the standing that produces a set.
@@ -288,12 +283,19 @@ describe('the LiveKit adapter — what it logs', () => {
     expect(logged).toEqual([
       [
         'warn',
-        { operation: 'updateCapabilities', name: 'ServerError', status: 503, code: 'unavailable' },
+        {
+          event: 'live.provider.error',
+          operation: 'updateCapabilities',
+          name: 'ServerError',
+          status: 503,
+          code: 'unavailable',
+        },
         'media provider unavailable',
       ],
       [
         'error',
         {
+          event: 'live.provider.error',
           operation: 'updateCapabilities',
           name: 'ServerError',
           status: 401,

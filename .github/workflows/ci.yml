@@ -1,12 +1,13 @@
 # Continuous integration.
 #
-# Two independent jobs, because the backend and the Flutter app fail for
-# unrelated reasons and neither should hide the other's result.
+# Three independent jobs, because the backend, its real-LiveKit suite and the
+# Flutter app fail for unrelated reasons and none should hide another's result.
 #
 # The backend job runs the same `npm run verify` a developer runs locally —
 # formatting, lint, typecheck, the architecture rules and the full test suite —
 # plus a real Postgres so the persistence tests actually execute here rather
-# than skipping.
+# than skipping. It then checks that the deployment files (infra/) are valid
+# Compose for every environment.
 name: CI
 
 on:
@@ -70,6 +71,74 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # The deployment files (infra/) must stay valid Compose for every
+      # environment, each with its example environment file — staging and
+      # production with the TURN override. Client-side only: nothing is built
+      # or started.
+      - name: Validate deployment files
+        working-directory: infra
+        run: |
+          # As shipped, every example leaves its secrets empty, and compose
+          # requires them: none may render, so nothing can start on a
+          # placeholder.
+          for env in development staging production; do
+            if docker compose -f compose.yaml --env-file "env/$env.env.example" \
+              config --quiet 2>/dev/null; then
+              echo "::error::env/$env.env.example rendered without its secrets"
+              exit 1
+            fi
+          done
+          # With secrets supplied (throwaway values here; a deployment sets
+          # real ones), every environment renders.
+          export JWT_SECRET=ci-jwt STORAGE_SIGNING_SECRET=ci-storage
+          export LIVEKIT_API_KEY=ci-key LIVEKIT_API_SECRET=ci-secret
+          for env in development staging production; do
+            docker compose -f compose.yaml --env-file "env/$env.env.example" config --quiet
+          done
+          for env in staging production; do
+            docker compose -f compose.yaml -f compose.turn.yaml \
+              --env-file "env/$env.env.example" config --quiet
+          done
+
+  # The real LiveKit suite (P7.1): the application against the pinned LiveKit
+  # server, with a real WebRTC client. The suite starts and stops its own
+  # servers from the release it downloads and checks by sha256; the archive is
+  # cached per pinned version, read from the one constant that pins it.
+  livekit:
+    name: Backend — real LiveKit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pinned LiveKit server version
+        id: livekit
+        run: |
+          version=$(sed -n "s/^export const PINNED_LIVEKIT_SERVER_VERSION = '\([0-9.]*\)';$/\1/p" src/platform/config/livekit-config.ts)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the LiveKit server release
+        uses: actions/cache@v4
+        with:
+          path: backend/.cache/livekit
+          key: livekit-server-${{ steps.livekit.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Real LiveKit suite
+        run: npm run test:livekit
 
   app:
     name: Flutter app

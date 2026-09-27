@@ -13,6 +13,7 @@ import { ListHandsUseCase } from '../../src/modules/live/application/list-hands.
 import { LiveAccess } from '../../src/modules/live/application/live-access';
 import { LiveJournal } from '../../src/modules/live/application/live-journal';
 import { LiveMedia } from '../../src/modules/live/application/live-media';
+import { LiveMediaReadiness } from '../../src/modules/live/application/live-media-readiness';
 import { LiveReconciler } from '../../src/modules/live/application/live-reconciler';
 import { LiveSessionLifecycle } from '../../src/modules/live/application/live-session-lifecycle';
 import type { LiveSettings } from '../../src/modules/live/application/live-settings';
@@ -51,11 +52,11 @@ export const LIVE_TEST_SETTINGS: LiveSettings = Object.freeze({
  * own use cases, and identity's real policy (with its now-empty rule list).
  * So Live is tested against Communities' actual rules, never a copy of them.
  *
- * Live's side: the in-memory repositories, the extended fake provider, the
- * Communities harness's adjustable clock, sequential uuid-shaped ids and
- * in-process rate limiter, and a journal of its own that records audit
- * entries and events in the order written (Communities' own go to
- * `communities.journal`).
+ * Live's side: the in-memory repositories, the extended fake provider (and
+ * its self-check, behind the provider's readiness), the Communities harness's
+ * adjustable clock, sequential uuid-shaped ids and in-process rate limiter,
+ * and a journal of its own that records audit entries and events in the
+ * order written (Communities' own go to `communities.journal`).
  *
  * Sessions are ALWAYS started through StartLiveSession — never written into
  * a repository — so every test sees a session exactly as production makes
@@ -111,6 +112,7 @@ function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
     store.presenters,
   );
   const media = new LiveMedia(provider, standing, settings, clock);
+  const readiness = new LiveMediaReadiness(provider, clock);
   const occupancy = new RoomOccupancy(provider, clock);
   const views = new LiveSessionViews(access, standing, store.requests);
   const lifecycle = new LiveSessionLifecycle(
@@ -125,10 +127,16 @@ function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
   /**
    * The reconciler over the harness's stores, clock, standing and journal —
    * and `media` (the provider it reconciles; the harness's by default, the
-   * disabled one, say). Never started: a test calls its ticks itself, so no
-   * timer runs unless it calls `onApplicationBootstrap`.
+   * disabled one, say). Its room sweep refreshes `readiness_` — the
+   * harness's, Start's, by default, whichever provider it reconciles; a
+   * readiness over `media` itself when a test needs that provider's own
+   * self-check. Never started: a test calls its ticks itself, so no timer
+   * runs unless it calls `onApplicationBootstrap`.
    */
-  const reconcilerWith = (media_: RtcProvider = provider) =>
+  const reconcilerWith = (
+    media_: RtcProvider = provider,
+    readiness_: LiveMediaReadiness = readiness,
+  ) =>
     new LiveReconciler(
       store.sessions,
       store.requests,
@@ -145,6 +153,7 @@ function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
       settings,
       clock,
       ids,
+      readiness_,
     );
 
   const h = {
@@ -166,6 +175,7 @@ function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
     access,
     standing,
     media,
+    readiness,
     occupancy,
     views,
     lifecycle,
@@ -183,6 +193,7 @@ function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
       ids,
       views,
       liveJournal,
+      readiness,
     ),
     end: new EndLiveSessionUseCase(identity, access, store.sessions, lifecycle, views),
     get: new GetLiveSessionUseCase(identity, access, store.sessions, views),

@@ -8,6 +8,7 @@ import {
   type RtcCapabilities,
   type RtcParticipantObservation,
   type RtcProvider,
+  type RtcReadinessReport,
   type RtcRoomObservation,
   type RtcRoomSpec,
   type RtcSource,
@@ -100,6 +101,8 @@ export const FAKE_TOKEN_PATTERN = /fake\.[A-Za-z0-9._-]+\.(?:pub|sub)/;
  *   - failures on demand: `failNext` fails the next call of one operation,
  *     `setUnavailable` fails every call, token signing included, until
  *     cleared;
+ *   - a self-check that reports ready, or what `setReadiness` scripts —
+ *     never logged as a call, and independent of `setUnavailable`;
  *   - `hold` stops an operation's calls at a gate until released, for
  *     deterministic interleavings;
  *   - logs of every call (reads included) and of every effect, removal
@@ -136,6 +139,7 @@ export class FakeRtcProvider implements RtcProvider {
   private readonly scripted = new Map<RtcOperation, RtcFailure[]>();
   private readonly gates = new Map<RtcOperation, { readonly arrive: () => Promise<void> }>();
   private unavailable = false;
+  private readiness: RtcReadinessReport = { ready: true };
 
   constructor(private readonly clock: Clock) {}
 
@@ -216,6 +220,11 @@ export class FakeRtcProvider implements RtcProvider {
     this.unavailable = unavailable;
   }
 
+  /** What the self-check reports from now on; ready until told otherwise. */
+  setReadiness(report: RtcReadinessReport): void {
+    this.readiness = report;
+  }
+
   /** Stops `operation`'s calls at a gate until it is released. One gate per operation at a time. */
   hold(operation: RtcOperation): RtcGate {
     if (this.gates.has(operation)) throw new Error(`${operation} is already held`);
@@ -271,6 +280,12 @@ export class FakeRtcProvider implements RtcProvider {
   /** Someone leaves a room. */
   disconnect(roomName: string, identity: string): void {
     this.present.get(roomName)?.delete(identity);
+  }
+
+  // ── Readiness ──────────────────────────────────────────────────────────
+
+  async check(): Promise<RtcReadinessReport> {
+    return this.readiness;
   }
 
   // ── Rooms ──────────────────────────────────────────────────────────────

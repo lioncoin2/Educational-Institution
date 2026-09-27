@@ -1,0 +1,53 @@
+# LiveKit server policy — the same in every environment (P7.1).
+#
+# Pinned server: LiveKit v1.13.7. Every key below is checked against its source
+# (SRV = github.com/livekit/livekit at tag v1.13.7, 8d11efd; MTU and PROTO =
+# livekit/mediatransportutil f234b534b095 and livekit/protocol a4f4b5c0c23f,
+# the revisions SRV go.mod:23-24 pins), and the v1.13.7 binary starts with this
+# file. Parsing is strict: an unknown or misspelt key refuses startup
+# (SRV pkg/config/config.go:644-650).
+#
+# Deliberately absent:
+#   - keys: only through LIVEKIT_KEYS (SRV cmd/server/main.go:60-64), never
+#     `keys` or `key_file` — no secret is ever committed;
+#   - the node IP: NODE_IP, per host (main.go:70-74);
+#   - TURN: per environment, LIVEKIT_TURN_* (infra/compose.turn.yaml);
+#   - development mode (devkey/secret, pprof on the public port), webhooks, Redis.
+#
+# Any variable LIVEKIT_<PATH> overrides the key at <path> — LIVEKIT_ROOM_AUTO_CREATE
+# overrides room.auto_create — and wins over this file (names: SRV
+# pkg/config/config.go:911; applied after the file: :652-656). The LiveKit
+# container therefore receives an allow-list of variables and nothing else.
+
+# Plain HTTP: WebSocket signalling, the room API, /rtc/validate and GET / (the
+# health check). LiveKit terminates no TLS (SRV pkg/service/server.go:237-251):
+# clients reach this port only through the TLS terminator. (SRV config.go:79)
+port: 7880
+
+rtc:
+  # ICE over TCP, media's fallback when UDP is blocked: exposed on the node,
+  # never behind TLS or a load balancer (SRV config-sample.yaml:59-63). (MTU config.go:46)
+  tcp_port: 7881
+  # ICE over UDP through one muxed port instead of the 50000-60000 range
+  # (MTU config.go:45; pkg/rtcconfig/webrtc_config.go:129-170).
+  udp_port: 7882
+  # No STUN lookup at boot — where STUN is unreachable it blocks for about 47 s
+  # and then fails (MTU ip.go:35-60): the advertised IP is NODE_IP. (MTU config.go:53)
+  use_external_ip: false
+
+room:
+  # Only the application creates rooms. LiveKit's default is true (SRV
+  # config.go:563); false refuses a join to a missing room unless the token
+  # carries roomCreate, which ours never do (SRV pkg/service/roomallocator.go:175-184).
+  # (SRV config.go:238)
+  auto_create: false
+  # The server never unmutes a participant (SRV pkg/service/roommanager.go:865).
+  # (SRV config.go:243)
+  enable_remote_unmute: false
+  # empty_timeout and departure_timeout stay LiveKit's defaults, 300 s and 20 s
+  # (SRV config.go:576-577): a backstop only, as the adapter sets both per room.
+
+# Production logging: JSON lines at info (PROTO logger/config.go:20-21).
+logging:
+  level: info
+  json: true

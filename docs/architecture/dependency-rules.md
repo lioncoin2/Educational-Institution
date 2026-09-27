@@ -126,14 +126,26 @@ the application layer.
 ### `livekit-sdk-only-in-the-live-adapter`
 
 No file under `src/` may import `livekit-server-sdk` or any `@livekit/*`
-package — including their type packages — except
-`modules/live/infrastructure/`. Media transport is an adapter behind live's RTC
-ports, exactly as realtime delivery is behind realtime's adapter and push
-behind notifications'. This also covers live's own `domain/`, `application/`
-and `api/`, and every other module, including the ones that do not exist yet.
+package — including their type packages — except the LiveKit adapter's own
+files, `modules/live/infrastructure/livekit-*.ts`: the adapter, its readiness
+probe and its transport rules (P7.1, 2026-09-27; until then the rule exempted
+the whole of `modules/live/infrastructure/`). Media transport is an adapter
+behind live's RTC ports, exactly as realtime delivery is behind realtime's
+adapter and push behind notifications'. This also covers live's own `domain/`,
+`application/` and `api/`, live's other adapters, and every other module,
+including the ones that do not exist yet.
 `test/architecture/live-boundaries.spec.ts` states the same properties one by
 one and checks the rule is not vacuous: the adapter really does import the
-SDK, and it is the only file that does.
+SDK, and only the adapter's files do — with their specs, which the cruise
+leaves out, the only source files that name the SDK at all.
+
+### `webrtc-client-never-in-src`
+
+LiveKit's WebRTC client, `@livekit/rtc-node` (with its native bindings), is
+the participant of the real LiveKit suite (`npm run test:livekit`, P7.1): a
+devDependency, never shipped. No file under `src/` may import it — the LiveKit
+adapter included. `test/architecture/livekit-suite.spec.ts` keeps it under
+`backend/test/livekit/` and nowhere else in the tests either.
 
 ### Every rule can fire — `rules-match.spec.ts`
 

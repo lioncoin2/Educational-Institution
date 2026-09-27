@@ -3,13 +3,14 @@
  *
  * Everything the platform needs from a realtime media provider, expressed in
  * the institution's own vocabulary. No LiveKit type appears here: the SDK is
- * confined to `infrastructure/livekit-rtc-provider.ts`, and a dependency rule
- * (`livekit-sdk-only-in-the-live-adapter`) keeps it there. Replacing the
- * provider, or running a fake in tests, touches exactly one file.
+ * confined to the LiveKit adapter's files in `infrastructure/`, and a
+ * dependency rule (`livekit-sdk-only-in-the-live-adapter`) keeps it there.
+ * Replacing the provider, or running a fake in tests, touches exactly one
+ * binding.
  *
  * The port is split by what a caller may do (ADR 0019): a use case injects
  * only the narrow port it needs, so joining cannot remove anyone and raising a
- * hand cannot touch the provider at all. One adapter implements all four.
+ * hand cannot touch the provider at all. One adapter implements all five.
  */
 
 /** A kind of track a participant may publish. The camera is never one. */
@@ -118,7 +119,11 @@ export class RtcUnavailableError extends Error {
 
 /** Rooms: created by us, ended by us. */
 export interface RtcRoomProvider {
-  /** Create-or-update; idempotent. Errors are reported, never swallowed. */
+  /**
+   * Creates the room if it is missing; idempotent. Whether a repeat changes a
+   * room that exists is the provider's (LiveKit returns one it holds
+   * unchanged), so no caller relies on it. Errors are reported, never swallowed.
+   */
   ensureRoom(spec: RtcRoomSpec): Promise<void>;
   /** Idempotent: a room that does not exist is already ended. */
   endRoom(roomName: string): Promise<void>;
@@ -161,8 +166,51 @@ export interface RtcParticipantObserver {
   getParticipant(roomName: string, identity: string): Promise<RtcParticipantObservation | null>;
 }
 
+/**
+ * Why the provider is not ready for a live session to start (P7.1). Closed:
+ * nothing else is ever reported, and a report never carries a URL, a key, a
+ * token or a provider message.
+ *
+ *   provider_disabled      real media is not enabled in this deployment
+ *   insecure_url           a deployed environment's URL would carry a client
+ *                          or a server credential in clear
+ *   unreachable            nothing answered, or not in time
+ *   tls_failure            the TLS handshake or the certificate failed
+ *   unauthorized           the provider refused this deployment's credentials
+ *   auto_create_enabled    the provider would create a room for any valid
+ *                          join token — an ended session's room could come
+ *                          back — so no room is trusted to it
+ *   incompatible_response  something answered, but not as the provider does:
+ *                          a wrong endpoint, a proxy's page, another server
+ */
+export type RtcNotReadyReason =
+  | 'provider_disabled'
+  | 'insecure_url'
+  | 'unreachable'
+  | 'tls_failure'
+  | 'unauthorized'
+  | 'auto_create_enabled'
+  | 'incompatible_response';
+
+export type RtcReadinessReport =
+  { readonly ready: true } | { readonly ready: false; readonly reason: RtcNotReadyReason };
+
+/**
+ * The provider's self-check: is it reachable, does it accept our
+ * credentials, and does it run the configuration the design rests on (no
+ * room created by a join)? Never throws: every failure is a report.
+ */
+export interface RtcReadinessProbe {
+  check(): Promise<RtcReadinessReport>;
+}
+
 export interface RtcProvider
-  extends RtcRoomProvider, RtcTokenIssuer, RtcParticipantControl, RtcParticipantObserver {}
+  extends
+    RtcRoomProvider,
+    RtcTokenIssuer,
+    RtcParticipantControl,
+    RtcParticipantObserver,
+    RtcReadinessProbe {}
 
 /** The provider itself — bound to the LiveKit adapter or the fake, once. */
 export const RTC_PROVIDER = Symbol('RTC_PROVIDER');
@@ -171,3 +219,4 @@ export const RTC_ROOMS = Symbol('RTC_ROOMS');
 export const RTC_TOKENS = Symbol('RTC_TOKENS');
 export const RTC_PARTICIPANTS = Symbol('RTC_PARTICIPANTS');
 export const RTC_OBSERVER = Symbol('RTC_OBSERVER');
+export const RTC_READINESS = Symbol('RTC_READINESS');

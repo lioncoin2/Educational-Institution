@@ -4,6 +4,9 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/src', '<rootDir>/test'],
   testRegex: '.*\\.spec\\.ts$',
+  // The real LiveKit suite is its own run (`npm run test:livekit`, with its
+  // own config): excluded here, never skipped.
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/test/livekit/'],
   moduleNameMapper: {
     '^@shared/(.*)$': '<rootDir>/src/shared/$1',
     '^@platform/(.*)$': '<rootDir>/src/platform/$1',

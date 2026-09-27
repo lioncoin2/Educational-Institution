@@ -1,0 +1,10 @@
+# The image build sees only what it compiles: everything is excluded, then the
+# few inputs are let back in. A .env file, local storage, node_modules, dist,
+# tests and caches never reach the build context.
+*
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.build.json
+!src
+src/**/*.spec.ts

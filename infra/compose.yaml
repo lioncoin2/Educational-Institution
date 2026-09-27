@@ -1,0 +1,124 @@
+# The deployment topology (P7.1): the API and the LiveKit media server, each in
+# its own container on this project's private network. Postgres, Redis and the
+# TLS terminator are the host's and are not defined here (README.md).
+#
+#   docker compose -f infra/compose.yaml --env-file infra/env/<env>.env up -d
+#
+# (staging and production add -f infra/compose.turn.yaml). The --env-file only
+# feeds the ${...} interpolation and the pass-through entries below; it is
+# never handed to a container whole. Each container receives exactly the
+# variables listed for it: the API its settings (backend/src/platform/config),
+# LiveKit its keys and node IP — never JWT_SECRET, the storage secret or the
+# database. ${VAR:?...} is required: compose refuses to start without it.
+#
+# Nothing here needs a privilege: no privileged container, no Docker socket, no
+# host network, every capability dropped, no privilege escalation.
+#
+# SRV = the LiveKit server source at tag v1.13.7 (github.com/livekit/livekit).
+name: institution
+
+services:
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    # Ordering only: the API boots without LiveKit, and answers Start with 503
+    # live.media_unavailable until its /rtc/validate readiness check passes.
+    depends_on:
+      livekit:
+        condition: service_started
+    environment:
+      # Fixed by this topology.
+      PORT: "3000"
+      STORAGE_LOCAL_ROOT: /app/.storage
+      # API → LiveKit over the private network: plain HTTP to an internal host,
+      # which a deployed environment accepts (the admin tokens never leave it).
+      LIVEKIT_API_URL: http://livekit:7880
+      # Required in every environment.
+      NODE_ENV: ${NODE_ENV:?set it in the environment file}
+      JWT_SECRET: ${JWT_SECRET:?set it in the environment file}
+      STORAGE_SIGNING_SECRET: ${STORAGE_SIGNING_SECRET:?set it in the environment file}
+      LIVEKIT_URL: ${LIVEKIT_URL:?set it in the environment file}
+      LIVEKIT_VERSION: ${LIVEKIT_VERSION:?set it in the environment file}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?set it in the environment file}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?set it in the environment file}
+      # Optional: passed only when the environment file sets them; the API's
+      # own default applies otherwise (backend/.env.example).
+      LOG_LEVEL:
+      DATABASE_URL:
+      REDIS_URL:
+      TRUST_PROXY:
+      CORS_ORIGINS:
+      JWT_ISSUER:
+      JWT_AUDIENCE:
+      JWT_ACCESS_TTL:
+      REFRESH_SESSION_TTL_SECONDS:
+      ROLE_POLICY_CACHE_SECONDS:
+      LIVE_MEDIA_PROVIDER:
+      LIVE_ROOM_NAME_PREFIX:
+      LIVE_MAX_PARTICIPANTS_PER_SESSION:
+      LIVE_MODERATOR_RESERVE:
+      MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS:
+    volumes:
+      - api-storage:/app/.storage
+    # Loopback only: the TLS terminator on this host is the public way in.
+    ports:
+      - "127.0.0.1:3000:3000/tcp"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  livekit:
+    # The pinned release, by tag and digest: no silent upgrade. Built from the
+    # v1.13.7 source's Dockerfile (alpine, ENTRYPOINT /livekit-server).
+    image: livekit/livekit-server:v1.13.7@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
+    command: ["--config", "/etc/livekit/livekit.yaml"]
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit/livekit.yaml:ro
+    # An allow-list, and nothing else: any LIVEKIT_<PATH> variable would
+    # override the policy file (LIVEKIT_ROOM_AUTO_CREATE turns auto_create
+    # back on), and LIVEKIT_CONFIG would replace the file outright.
+    environment:
+      # "key: secret", the space included (SRV cmd/server/main.go:60-64,
+      # pkg/config/config.go:1058-1062): the API's own pair.
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?set it in the environment file}: ${LIVEKIT_API_SECRET:?set it in the environment file}"
+      # The host's address clients reach for media (main.go:70-74).
+      NODE_IP: ${LIVEKIT_NODE_IP:?set it in the environment file}
+    ports:
+      # Signalling, the room API and /rtc/validate: loopback only, public
+      # solely through the TLS terminator.
+      - "127.0.0.1:7880:7880/tcp"
+      # ICE over TCP and ICE over UDP (one muxed port): media, public.
+      - "7881:7881/tcp"
+      - "7882:7882/udp"
+    # LiveKit's own health endpoint: 200 "OK", or 406 "Not Ready" when its node
+    # stats are stale (SRV pkg/service/server.go:406-427). busybox wget ships in
+    # the image.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:7880/ | grep -qx OK"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    # Not on-failure: a fatal startup error exits 0 (SRV cmd/server/main.go:190-191).
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  # The API's stored files (STORAGE_LOCAL_ROOT), kept across container re-creation.
+  api-storage:

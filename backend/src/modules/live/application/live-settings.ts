@@ -112,21 +112,16 @@ export const LiveRefusals = {
 } as const satisfies Record<string, Failure>;
 
 /**
- * The shape of every id this API issues — a session's and a speaker
- * request's are UUIDs; this leaves room — and so of every id a path or a
- * cursor may name. Anything else was never issued here: each use case that
+ * Whether `raw` could be an id this API issued — and so every id a path or
+ * a cursor may name. Anything else was never issued here: each use case that
  * takes an id from the path answers it as an unknown id, right after
  * identity's ceiling and BEFORE any limiter, store or Communities call. A
  * malformed id is then cheap, and opens no rate-limit window — whose key
  * would hold whatever text a client sent, of any length — while an
- * attempt on a well-formed id still counts, found or not.
+ * attempt on a well-formed id still counts, found or not. The shape is the
+ * domain's, shared with the media identity rule (`domain/live-ids.ts`).
  */
-const LIVE_ID_SHAPE = /^[A-Za-z0-9:_-]{1,128}$/;
-
-/** Whether `raw` could be an id this API issued (`LIVE_ID_SHAPE`). */
-export function isLiveId(raw: string): boolean {
-  return LIVE_ID_SHAPE.test(raw);
-}
+export { isLiveId } from '../domain/live-ids';
 
 /** 429, with when to try again — as Communities' use cases answer it. */
 export function tooMany(code: string, retryAfterSeconds: number): Failure {

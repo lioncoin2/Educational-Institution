@@ -3,13 +3,13 @@ import {
   AccessToken,
   ParticipantInfo_State,
   RoomServiceClient,
-  ServerError,
   TrackSource,
   type ParticipantInfo,
   type ParticipantPermission,
 } from 'livekit-server-sdk';
 
 import type { AppConfig } from '../../../platform/config/app-config';
+import { MAX_JOIN_TOKEN_TTL_SECONDS, isJoinTokenTtl } from '../domain/live-limits';
 import {
   RtcUnavailableError,
   sourcesOf,
@@ -19,10 +19,18 @@ import {
   type RtcCapabilities,
   type RtcParticipantObservation,
   type RtcProvider,
+  type RtcReadinessReport,
   type RtcRoomObservation,
   type RtcRoomSpec,
   type RtcSource,
 } from '../domain/rtc-provider';
+import { LiveKitReadiness } from './livekit-readiness';
+import {
+  LIVEKIT_CLIENT_OPTIONS,
+  classify,
+  describe,
+  type LiveKitFailure,
+} from './livekit-transport';
 
 /** The room-service calls this adapter makes — a structural subset, so tests can stand in. */
 export type LiveKitRoomService = Pick<
@@ -53,12 +61,11 @@ const LIVEKIT_TO_SOURCE = new Map<TrackSource, RtcSource>(
   ]),
 );
 
-/** How a failed LiveKit call is classified; see `classify`. */
-type Failure = 'not_found' | 'unavailable' | 'misconfigured' | 'rejected';
-
 /**
- * The LiveKit adapter — the only file in the system that imports LiveKit
- * (enforced by `livekit-sdk-only-in-the-live-adapter`).
+ * The LiveKit adapter — with its readiness probe (`livekit-readiness.ts`)
+ * and its transport rules (`livekit-transport.ts`), the only code in the
+ * system that imports LiveKit (enforced by
+ * `livekit-sdk-only-in-the-live-adapter`).
  *
  * Everything above it speaks the RTC ports, so swapping providers, or running
  * the live feature against the fake, is a one-line change in `live.module.ts`.
@@ -71,32 +78,59 @@ type Failure = 'not_found' | 'unavailable' | 'misconfigured' | 'rejected';
  *     explicit, `canPublish` is true exactly when it is non-empty, and data,
  *     `hidden` and metadata are always stated. The camera is never listed.
  *   - Client tokens carry `roomJoin` for one named room only — never
- *     `roomCreate`, `roomAdmin`, `roomList` or `roomRecord` — and a name from
- *     the account directory. The API secret never leaves the server.
- *   - Errors are reported, never swallowed: "not found" becomes the port's
- *     outcome, an outage becomes `RtcUnavailableError`, a rejected key is a
- *     misconfiguration fault. Logs carry an error's class and status, never
- *     its message, a token or the secret.
+ *     `roomCreate`, `roomAdmin`, `roomList` or `roomRecord` — a name from
+ *     the account directory, and a lifetime of 1 to 600 seconds, checked here
+ *     again: the SDK reads a falsy one as six hours. The API secret never
+ *     leaves the server.
+ *   - Two URLs: clients get LIVEKIT_URL in their tickets; the server API is
+ *     called on LIVEKIT_API_URL, with the SDK's options stated — a 10-second
+ *     timeout and no failover.
+ *   - Errors are reported, never swallowed: LiveKit's own "not found" becomes
+ *     the port's outcome — and nothing else does, so a wrong endpoint that
+ *     answers 404 is never an absent room — an outage becomes
+ *     `RtcUnavailableError`, anything else a fault. Logs carry an error's
+ *     class, status and code, never its message, a token or the secret.
+ *
+ * Structured events (ids only): `live.provider.room_create`, `.room_delete`,
+ * `.token_issue` and `.error`.
  */
 export class LiveKitRtcProvider implements RtcProvider {
   private readonly logger = new Logger(LiveKitRtcProvider.name);
   private readonly rooms: LiveKitRoomService;
+  private readonly readiness: LiveKitReadiness;
 
+  /**
+   * `rooms` and `http` stand in for the SDK's room service and the
+   * platform's fetch in tests; by default the room service is the SDK's,
+   * on the server-side API URL.
+   */
   constructor(
     private readonly config: AppConfig,
     rooms?: LiveKitRoomService,
+    http: typeof fetch = fetch,
   ) {
-    // The client API speaks ws(s); the server API speaks http(s) to the same host.
-    const httpUrl = config.livekit.url.replace(/^ws/, 'http');
     this.rooms =
-      rooms ?? new RoomServiceClient(httpUrl, config.livekit.apiKey, config.livekit.apiSecret);
+      rooms ??
+      new RoomServiceClient(
+        config.livekit.apiUrl,
+        config.livekit.apiKey,
+        config.livekit.apiSecret,
+        LIVEKIT_CLIENT_OPTIONS,
+      );
+    this.readiness = new LiveKitReadiness(config, this.rooms, http);
+  }
+
+  // ── Readiness ────────────────────────────────────────────────────────────
+
+  check(): Promise<RtcReadinessReport> {
+    return this.readiness.check();
   }
 
   // ── Rooms ────────────────────────────────────────────────────────────────
 
   async ensureRoom(spec: RtcRoomSpec): Promise<void> {
-    // Create-or-update on the server: an existing room is found and updated,
-    // so this is idempotent without swallowing anything.
+    // Idempotent without swallowing anything: a room the server holds is
+    // returned as it is, unchanged (SRV `pkg/service/roommanager.go:644-653`).
     await this.call('ensureRoom', () =>
       this.rooms.createRoom({
         name: spec.roomName,
@@ -105,11 +139,25 @@ export class LiveKitRtcProvider implements RtcProvider {
         departureTimeout: spec.departureTimeoutSeconds,
       }),
     );
+    this.logger.log(
+      { event: 'live.provider.room_create', room: spec.roomName },
+      'media room ensured',
+    );
   }
 
   async endRoom(roomName: string): Promise<void> {
-    // A room that does not exist is already ended.
-    await this.call('endRoom', () => this.rooms.deleteRoom(roomName), { onNotFound: 'absent' });
+    // A room LiveKit says does not exist is already ended.
+    const deleted = await this.call('endRoom', () => this.rooms.deleteRoom(roomName), {
+      onNotFound: 'absent',
+    });
+    this.logger.log(
+      {
+        event: 'live.provider.room_delete',
+        room: roomName,
+        outcome: deleted === null ? 'already_gone' : 'deleted',
+      },
+      'media room ended',
+    );
   }
 
   async listRooms(roomNames?: readonly string[]): Promise<readonly RtcRoomObservation[]> {
@@ -126,6 +174,12 @@ export class LiveKitRtcProvider implements RtcProvider {
   // ── Tokens ───────────────────────────────────────────────────────────────
 
   async issueAccessToken(grant: RtcAccessGrant): Promise<RtcAccessToken> {
+    // Defence in depth (audit D24): the call site checks the lifetime too.
+    if (!isJoinTokenTtl(grant.ttlSeconds)) {
+      throw new RangeError(
+        `A join token lasts 1 to ${MAX_JOIN_TOKEN_TTL_SECONDS} whole seconds, not ${grant.ttlSeconds}.`,
+      );
+    }
     const token = new AccessToken(this.config.livekit.apiKey, this.config.livekit.apiSecret, {
       identity: grant.identity,
       name: grant.displayName,
@@ -142,11 +196,17 @@ export class LiveKitRtcProvider implements RtcProvider {
       canUpdateOwnMetadata: false,
       hidden: grant.capabilities.hidden,
     });
-    return {
-      token: await token.toJwt(),
-      url: this.config.livekit.url,
-      expiresInSeconds: grant.ttlSeconds,
-    };
+    const signed = await token.toJwt();
+    this.logger.log(
+      {
+        event: 'live.provider.token_issue',
+        room: grant.roomName,
+        identity: grant.identity,
+        ttlSeconds: grant.ttlSeconds,
+      },
+      'media join token issued',
+    );
+    return { token: signed, url: this.config.livekit.url, expiresInSeconds: grant.ttlSeconds };
   }
 
   // ── Participants ─────────────────────────────────────────────────────────
@@ -230,16 +290,18 @@ export class LiveKitRtcProvider implements RtcProvider {
 
   // ── Error handling ───────────────────────────────────────────────────────
 
-  /** A participant change: "not found" means the identity is not in the room. */
+  /** A participant change: LiveKit's own "not found" means the identity is not in the room. */
   private async apply(operation: string, run: () => Promise<unknown>): Promise<RtcApplyOutcome> {
     const outcome = await this.call(operation, run, { onNotFound: 'absent' });
     return outcome === null ? 'not_connected' : 'applied';
   }
 
   /**
-   * Runs one provider call. `onNotFound: 'absent'` turns LiveKit's "not found"
-   * into null; otherwise it is a failure like any other. An outage throws the
-   * domain's `RtcUnavailableError`; a rejected key or anything else is a fault.
+   * Runs one provider call. `onNotFound: 'absent'` turns LiveKit's own "not
+   * found" into null; otherwise it is a failure like any other. An outage
+   * throws the domain's `RtcUnavailableError`; rejected credentials, a TLS
+   * failure, an answer that is not LiveKit's or any other refusal is a fault —
+   * never absence, never success.
    */
   private async call<T>(operation: string, run: () => Promise<T>): Promise<T>;
   private async call<T>(
@@ -257,21 +319,26 @@ export class LiveKitRtcProvider implements RtcProvider {
     } catch (error) {
       const kind = classify(error);
       if (kind === 'not_found' && options?.onNotFound === 'absent') return null;
-      const detail = describe(error);
+      const detail = { event: 'live.provider.error', operation, ...describe(error) };
       if (kind === 'unavailable') {
-        this.logger.warn({ operation, ...detail }, 'media provider unavailable');
+        this.logger.warn(detail, 'media provider unavailable');
         throw new RtcUnavailableError(operation);
       }
-      if (kind === 'misconfigured') {
-        // Wrong key or secret: nothing a retry fixes. Loud, and a 500.
-        this.logger.error({ operation, ...detail }, 'media provider rejected our credentials');
-      } else {
-        this.logger.error({ operation, ...detail }, 'media provider refused a request');
-      }
-      throw new Error(`The media provider refused ${operation} (${detail.status ?? 'no status'}).`);
+      // Nothing a retry fixes: loud, and a 500.
+      this.logger.error(detail, FAULT_MESSAGES[kind]);
+      throw new Error(`The media provider refused ${operation} (${detail.status ?? kind}).`);
     }
   }
 }
+
+/** How each fault is logged — a wrong key or secret, a wrong URL or certificate, a wrong endpoint. */
+const FAULT_MESSAGES: Readonly<Record<Exclude<LiveKitFailure, 'unavailable'>, string>> = {
+  misconfigured: 'media provider rejected our credentials',
+  tls: 'media provider TLS handshake or certificate failed',
+  incompatible: 'media provider answered, but not as LiveKit does',
+  not_found: 'media provider refused a request',
+  rejected: 'media provider refused a request',
+};
 
 /** The full LiveKit permission set for a capability set — every field stated. */
 export function permissionOf(capabilities: RtcCapabilities): Partial<ParticipantPermission> {
@@ -319,52 +386,4 @@ function observation(participant: ParticipantInfo): RtcParticipantObservation | 
       hidden: permission?.hidden ?? false,
     },
   };
-}
-
-/**
- * Sorts a failure by what the caller can do about it. The SDK throws its own
- * `ServerError` for any HTTP answer, and the platform's fetch errors
- * (TypeError, AbortError, TimeoutError) when nothing answered.
- */
-export function classify(error: unknown): Failure {
-  if (error instanceof ServerError) {
-    const code = typeof error.code === 'string' ? error.code : '';
-    if (error.status === 404 || code === 'not_found') return 'not_found';
-    if (error.status === 401 || error.status === 403) return 'misconfigured';
-    if (code === 'unauthenticated' || code === 'permission_denied') return 'misconfigured';
-    if (error.status >= 500 || code === 'unavailable' || code === 'deadline_exceeded') {
-      return 'unavailable';
-    }
-    return 'rejected';
-  }
-  if (error instanceof Error) {
-    const name = error.name;
-    if (name === 'TypeError' || name === 'AbortError' || name === 'TimeoutError') {
-      return 'unavailable';
-    }
-    const code = (error as { code?: unknown }).code;
-    if (
-      typeof code === 'string' &&
-      /^(ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|UND_ERR)/.test(code)
-    ) {
-      return 'unavailable';
-    }
-  }
-  return 'rejected';
-}
-
-/**
- * What of an error may be logged: its class, and the HTTP status and code if
- * there was an answer. Never the message — a provider message could echo a
- * request — and so never a token, a JWT or the secret.
- */
-export function describe(error: unknown): { name: string; status?: number; code?: string } {
-  if (error instanceof ServerError) {
-    return {
-      name: 'ServerError',
-      status: error.status,
-      ...(typeof error.code === 'string' ? { code: error.code } : {}),
-    };
-  }
-  return { name: error instanceof Error ? error.name : typeof error };
 }

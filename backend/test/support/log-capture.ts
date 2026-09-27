@@ -61,8 +61,9 @@ export class LogCapture implements LoggerService {
 
 /**
  * JSON of anything, with nothing left out that could carry a value: an
- * error's name, message and stack are copied (JSON would drop them), and a
- * cycle is cut rather than thrown on.
+ * error's name, message, stack and cause are copied (JSON would drop them) —
+ * an error of another realm's classes too, as the platform's fetch throws —
+ * and a cycle is cut rather than thrown on.
  */
 export function serialize(value: unknown): string {
   const seen = new WeakSet<object>();
@@ -71,11 +72,23 @@ export function serialize(value: unknown): string {
     if (typeof item !== 'object' || item === null) return item;
     if (seen.has(item)) return '[seen]';
     seen.add(item);
-    return item instanceof Error
-      ? { ...item, name: item.name, message: item.message, stack: item.stack }
+    return isErrorLike(item)
+      ? {
+          ...item,
+          name: item.name,
+          message: item.message,
+          stack: item.stack,
+          ...(item.cause === undefined ? {} : { cause: item.cause }),
+        }
       : item;
   });
   return json ?? String(value);
+}
+
+/** An error, whatever realm made it: `instanceof Error` holds only within one. */
+function isErrorLike(item: object): item is Error {
+  const { name, message } = item as { name?: unknown; message?: unknown };
+  return item instanceof Error || (typeof name === 'string' && typeof message === 'string');
 }
 
 /** A signed token as identity and the media provider's SDK mint them: `eyJ…` header, payload, signature. */

@@ -1,0 +1,3 @@
+# A real environment file holds that environment's secrets: never committed.
+# Only the placeholder contracts (*.env.example) are.
+/env/*.env

@@ -7,7 +7,21 @@
  * list in `platform/logging`).
  */
 
-export type NodeEnv = 'development' | 'test' | 'production';
+import { readLiveKitServer } from './livekit-config';
+
+export type NodeEnv = 'development' | 'test' | 'staging' | 'production';
+
+const NODE_ENVS: readonly NodeEnv[] = ['development', 'test', 'staging', 'production'];
+
+/**
+ * Staging and production are DEPLOYED environments: each runs its own LiveKit
+ * server, key, secret and URL, and each gets the production-grade checks —
+ * no placeholder secret, a minimum secret length, secrets kept apart, secure
+ * URLs. Development and test run with local defaults.
+ */
+export function isDeployed(nodeEnv: NodeEnv): boolean {
+  return nodeEnv === 'staging' || nodeEnv === 'production';
+}
 
 export interface AppConfig {
   readonly nodeEnv: NodeEnv;
@@ -49,10 +63,19 @@ export interface AppConfig {
     /** How long the role → permission matrix is cached per process. */
     readonly rolePolicyCacheSeconds: number;
   };
+  /** The media server (see `livekit-config.ts` for the two URLs and the version pin). */
   readonly livekit: {
+    /** Client → LiveKit: the signalling URL a join ticket carries (ws: or wss:). */
     readonly url: string;
+    /** API → LiveKit: the server API base the adapter calls (http: or https:). */
+    readonly apiUrl: string;
     readonly apiKey: string;
     readonly apiSecret: string;
+    /**
+     * The LiveKit server release deployed (LIVEKIT_VERSION) — exactly the
+     * pinned one whenever real media is enabled; null when unset.
+     */
+    readonly version: string | null;
   };
   readonly live: {
     /**
@@ -105,7 +128,7 @@ export class ConfigurationError extends Error {
   }
 }
 
-/** Values that must never survive into a production deployment. */
+/** Values that must never survive into a deployed environment. */
 const PLACEHOLDER_SECRETS = new Set([
   'change-me',
   'change-me-in-every-environment',
@@ -176,6 +199,17 @@ function readWholeNumber(raw: string | undefined, fallback: number): number {
  */
 const ROOM_NAME_PREFIX_SHAPE = /^[A-Za-z0-9._-]{1,48}$/;
 
+/** Unset means development; anything but the four known environments is a mistake. */
+function readNodeEnv(raw: string | undefined, problems: string[]): NodeEnv {
+  if (raw === undefined || raw.trim() === '') return 'development';
+  if ((NODE_ENVS as readonly string[]).includes(raw)) return raw as NodeEnv;
+  problems.push(
+    `NODE_ENV must be development, test, staging or production, not ${JSON.stringify(raw)}`,
+  );
+  // Checked as the strictest environment meanwhile; the boot is refused anyway.
+  return 'production';
+}
+
 /** Real media is bound only on explicit opt-in (D19); anything but `livekit` is a mistake. */
 function readMediaProvider(raw: string | undefined, problems: string[]): 'livekit' | null {
   if (raw === undefined || raw.trim() === '') return null;
@@ -185,38 +219,38 @@ function readMediaProvider(raw: string | undefined, problems: string[]): 'liveki
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  const nodeEnv = (env.NODE_ENV ?? 'development') as NodeEnv;
-  const isProduction = nodeEnv === 'production';
   const problems: string[] = [];
+  const nodeEnv = readNodeEnv(env.NODE_ENV, problems);
+  const deployed = isDeployed(nodeEnv);
 
-  /** In production a setting must be supplied; elsewhere a local default is fine. */
+  /** In a deployed environment a setting must be supplied; elsewhere a local default is fine. */
   const required = (key: string, devDefault: string): string => {
     const value = env[key];
     if (value !== undefined && value.trim() !== '') return value;
-    if (isProduction) problems.push(`${key} is required in production`);
+    if (deployed) problems.push(`${key} is required in ${nodeEnv}`);
     return devDefault;
   };
 
   const secret = (key: string, devDefault: string): string => {
     const value = required(key, devDefault);
-    if (isProduction && PLACEHOLDER_SECRETS.has(value)) {
+    if (deployed && PLACEHOLDER_SECRETS.has(value)) {
       problems.push(`${key} still holds a placeholder value`);
     }
     return value;
   };
 
   const jwtSecret = secret('JWT_SECRET', 'development-only-secret');
-  if (isProduction && Buffer.byteLength(jwtSecret, 'utf8') < MIN_JWT_SECRET_BYTES) {
-    problems.push(`JWT_SECRET must be at least ${MIN_JWT_SECRET_BYTES} bytes in production`);
+  if (deployed && Buffer.byteLength(jwtSecret, 'utf8') < MIN_JWT_SECRET_BYTES) {
+    problems.push(`JWT_SECRET must be at least ${MIN_JWT_SECRET_BYTES} bytes in ${nodeEnv}`);
   }
 
   const storageSigningSecret = secret('STORAGE_SIGNING_SECRET', 'development-only-storage-secret');
-  if (isProduction && Buffer.byteLength(storageSigningSecret, 'utf8') < MIN_STORAGE_SECRET_BYTES) {
+  if (deployed && Buffer.byteLength(storageSigningSecret, 'utf8') < MIN_STORAGE_SECRET_BYTES) {
     problems.push(
-      `STORAGE_SIGNING_SECRET must be at least ${MIN_STORAGE_SECRET_BYTES} bytes in production`,
+      `STORAGE_SIGNING_SECRET must be at least ${MIN_STORAGE_SECRET_BYTES} bytes in ${nodeEnv}`,
     );
   }
-  if (isProduction && storageSigningSecret === jwtSecret) {
+  if (deployed && storageSigningSecret === jwtSecret) {
     // One leaked key must not forge both sessions and file links.
     problems.push('STORAGE_SIGNING_SECRET must differ from JWT_SECRET');
   }
@@ -254,34 +288,67 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     );
   }
   const mediaProvider = readMediaProvider(env.LIVE_MEDIA_PROVIDER, problems);
+  const livekitServer = readLiveKitServer(
+    env,
+    { enabled: mediaProvider === 'livekit', deployed, environment: nodeEnv },
+    problems,
+  );
   if (mediaProvider === 'livekit') {
     // Real media is enabled on purpose, so it must be real, whatever NODE_ENV
     // says: this deployment's own room names (the orphan sweep ends every room
-    // of their form that no session claims), a key that is not a well-known
-    // placeholder, and a secret as strong as HS256 needs.
+    // of their form that no session claims), a key and a secret set on
+    // purpose — never a development default — the key not a well-known
+    // placeholder, and the secret as strong as HS256 needs and its own: one
+    // leaked key must not forge sessions, file links and media grants alike.
     if (roomNamePrefix === null) {
       problems.push('LIVE_ROOM_NAME_PREFIX is required when LIVE_MEDIA_PROVIDER=livekit');
     }
-    if (PLACEHOLDER_SECRETS.has(livekitApiKey)) {
+    // A deployed environment has reported a missing key or secret already.
+    if (env.LIVEKIT_API_KEY === undefined) {
+      if (!deployed) problems.push('LIVEKIT_API_KEY is required when LIVE_MEDIA_PROVIDER=livekit');
+    } else if (PLACEHOLDER_SECRETS.has(livekitApiKey)) {
       problems.push('LIVEKIT_API_KEY must not be a placeholder when LIVE_MEDIA_PROVIDER=livekit');
     }
-    // In production a placeholder secret is refused already, whatever the provider.
-    if (!isProduction && PLACEHOLDER_SECRETS.has(livekitApiSecret)) {
-      problems.push(
-        'LIVEKIT_API_SECRET must not be a placeholder when LIVE_MEDIA_PROVIDER=livekit',
-      );
+    if (env.LIVEKIT_API_SECRET === undefined) {
+      if (!deployed) {
+        problems.push('LIVEKIT_API_SECRET is required when LIVE_MEDIA_PROVIDER=livekit');
+      }
+    } else if (PLACEHOLDER_SECRETS.has(livekitApiSecret)) {
+      // A deployed environment refuses a placeholder secret already, whatever the provider.
+      if (!deployed) {
+        problems.push(
+          'LIVEKIT_API_SECRET must not be a placeholder when LIVE_MEDIA_PROVIDER=livekit',
+        );
+      }
+    } else {
+      if (Buffer.byteLength(livekitApiSecret, 'utf8') < MIN_JWT_SECRET_BYTES) {
+        problems.push(
+          `LIVEKIT_API_SECRET must be at least ${MIN_JWT_SECRET_BYTES} bytes when LIVE_MEDIA_PROVIDER=livekit`,
+        );
+      }
     }
-    if (Buffer.byteLength(livekitApiSecret, 'utf8') < MIN_JWT_SECRET_BYTES) {
-      problems.push(
-        `LIVEKIT_API_SECRET must be at least ${MIN_JWT_SECRET_BYTES} bytes when LIVE_MEDIA_PROVIDER=livekit`,
-      );
+  }
+  // Never one secret for two jobs — with real media enabled, and in every
+  // deployed environment, where compose hands the LiveKit server its secret
+  // whether or not the API binds real media: a leaked LiveKit secret must not
+  // forge sessions or file links (P7.1, decision 4; brief decision G).
+  if (
+    (mediaProvider === 'livekit' || deployed) &&
+    env.LIVEKIT_API_SECRET !== undefined &&
+    !PLACEHOLDER_SECRETS.has(livekitApiSecret)
+  ) {
+    if (livekitApiSecret === jwtSecret) {
+      problems.push('LIVEKIT_API_SECRET must differ from JWT_SECRET');
+    }
+    if (livekitApiSecret === storageSigningSecret) {
+      problems.push('LIVEKIT_API_SECRET must differ from STORAGE_SIGNING_SECRET');
     }
   }
 
   const config: AppConfig = Object.freeze({
     nodeEnv,
     port: readInt(env.PORT, 3000),
-    logLevel: env.LOG_LEVEL ?? (isProduction ? 'info' : 'debug'),
+    logLevel: env.LOG_LEVEL ?? (deployed ? 'info' : 'debug'),
     http: Object.freeze({
       trustProxy: readTrustProxy(env.TRUST_PROXY),
       corsOrigins: readOrigins(env.CORS_ORIGINS, problems),
@@ -300,9 +367,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       rolePolicyCacheSeconds: readInt(env.ROLE_POLICY_CACHE_SECONDS, 30),
     }),
     livekit: Object.freeze({
-      url: required('LIVEKIT_URL', 'ws://localhost:7880'),
+      url: livekitServer.url,
+      apiUrl: livekitServer.apiUrl,
       apiKey: livekitApiKey,
       apiSecret: livekitApiSecret,
+      version: livekitServer.version,
     }),
     live: Object.freeze({
       maxParticipantsPerSession,
