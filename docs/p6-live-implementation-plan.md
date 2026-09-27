@@ -5,7 +5,7 @@
 - **Gate:** [`p6-live-readiness-audit.md`](p6-live-readiness-audit.md), **P6 READINESS: PASS**.
 - **Design:** [`docs/architecture/live.md`](architecture/live.md), APPROVED. Where this plan says "design
   §n", that document is meant.
-- **Scope:** as reconciled in audit §2, with the engineering decisions of audit §16 (D1–D18).
+- **Scope:** as reconciled in audit §2, with the decisions of audit §16 (D1–D24).
 - **Repository at start:** `1f000de`.
 
 **What P6 delivers.** P6 is complete when every acceptance criterion in §5 holds:
@@ -38,12 +38,12 @@ B).
 | Commit | Brief slices | Content |
 | --- | --- | --- |
 | **A** | P6.1 (Communities part), platform | `permittedAmong`; `community.live.remain`; `KeyedMutex` moved to `platform/concurrency` |
-| **B** | P6.1 (identity part), P6.2, P6.4, P6.5, P6.6 (the fake) | Live's domain, contracts and limits; `AppConfig.live`; the extended fake; the in-memory repositories; `LiveAccess` and every use case; the API; `host-only-moderation` retired **in the same commit** as `LiveAccess` |
+| **B** | P6.1 (identity part), P6.2, P6.4, P6.5, P6.6 (the fake) | Live's domain, contracts and limits; `AppConfig.live` and the fail-closed provider binding (audit D19); the extended fake and the disabled provider; the in-memory repositories; `LiveAccess` and every use case; the API; `host-only-moderation` retired **in the same commit** as `LiveAccess` |
 | **C** | P6.2 (Postgres) | `live/infrastructure/schema.ts`, migration `0013_live_sessions.sql`, Drizzle repositories, the database switch, a mock-parity contract suite |
-| **D** | P6.4 (convergence) | `LiveReconciler`, `ProtectLiveSessions`, `LiveAudienceService`, `LiveSessionsReader`, module exports |
+| **D** | P6.4 (convergence) | `LiveReconciler` (with audit D21–D23), `ProtectLiveSessions`, `LiveAudienceService`, `LiveSessionsReader`, module exports |
 | **E** | P6.7 | `LiveRealtimeRelay`, live frames and coalescing, fixtures in `test/fixtures/realtime-frames/live/` |
 | **F** | P6.8 | the adversarial, concurrency, restart, outage, scale (`EXPLAIN`, statement budgets) and token-scope suites; the recorded mutation checks |
-| **G** | P6.9 | boundary specs, documentation, the phase table, README counts; the final gate |
+| **G** | P6.9 | boundary specs; documentation, including a dated amendment note on ADR 0019; the phase table; README counts; the final gate |
 
 After G comes an adversarial review of the whole P6 diff. Each confirmed finding gets a fix and a
 regression test that failed first. P6 then stops for the user's review.
@@ -152,7 +152,7 @@ These implement design §3 exactly:
 | `live/domain/presenter-grant.ts` | `PresenterGrant {id, sessionId, userId, grantedBy, grantedAt, endedAt?, endedBy?, endReason?}`; the four end reasons |
 | `live/domain/moderation.ts` | the ten types of design §3.5; `actorUserId: string \| null`; an audit action per type (below) |
 | `live/domain/standing.ts` | `ParticipantStanding {moderator, publishesByRight, speakerGrant, presenter}`; `capabilitiesFor(standing)`, total (audit §8.4); `roleOf(standing)` = moderator > speaker > listener |
-| `live/domain/live-limits.ts` | every PROVISIONAL bound of audit §8.5, with its question in a comment. `JOIN_TOKEN_TTL_SECONDS = 120`, pinned by a test to a positive integer ≤ 600 |
+| `live/domain/live-limits.ts` | every PROVISIONAL bound of audit §8.5, with its question in a comment. `ENFORCEMENT_WATCH_SECONDS = 660` (design §3.8). `JOIN_TOKEN_TTL_SECONDS = 120`, pinned by a test to a positive integer ≤ 600 and checked again at the call site (audit D24) |
 | `live/domain/ports.ts` | the repository ports of §2.4 |
 | `live/domain/rtc-provider.ts` | **unchanged**, apart from deleting the `LISTENER` and `SPEAKER` constants (design §3.1) in favour of `capabilitiesFor` |
 
@@ -243,12 +243,23 @@ interface PresenterGrantRepository {
 | `maxParticipantsPerSession` | env `LIVE_MAX_PARTICIPANTS_PER_SESSION` | 300 | integer ≥ 1 |
 | `moderatorReserve` | env `LIVE_MODERATOR_RESERVE` | 10 | integer ≥ 0 |
 | `roomNamePrefix` | env `LIVE_ROOM_NAME_PREFIX` | `null` when unset | `^[A-Za-z0-9._-]{1,48}$` |
+| `mediaProvider` | env `LIVE_MEDIA_PROVIDER` | `null` unless it is exactly `livekit` | — |
 
-- `LiveModule`'s provider factory **refuses to boot** with the real adapter while `roomNamePrefix` is null,
-  and names the prefix in its startup log (design §3.1).
-- With the fake, a null prefix means `live-`.
-- `.env.example` and the backend README gain the three variables.
-- Provider selection is otherwise unchanged (audit §2).
+**The provider binding (audit D19).** It lives in `live.module.ts`'s factory, with its checks in
+`app-config.ts`, where the other boot refusals are:
+
+| Configuration | Binds |
+| --- | --- |
+| `livekit.apiSecret` is the development secret | the fake (as today); a null prefix means `live-` |
+| `mediaProvider === 'livekit'` | `LiveKitRtcProvider`. **Boot is refused** unless all of these hold: `LIVE_ROOM_NAME_PREFIX` is set; `LIVEKIT_API_KEY` is not in `PLACEHOLDER_SECRETS`; `LIVEKIT_API_SECRET` has at least 32 bytes (the JWT bound) |
+| anything else, including every production boot today | the new `DisabledRtcProvider` (`live/infrastructure/disabled-rtc-provider.ts`): every method throws `RtcUnavailableError('media disabled')` |
+
+- The factory logs which it bound, and the prefix.
+- **Other files:** `.env.example` and the backend README gain the four variables. The adapter file is
+  not edited.
+- **Specs:**
+  - `live.module.spec.ts` covers the binding: each row above, and every boot refusal.
+  - `disabled-rtc-provider.spec.ts` checks that every method refuses.
 
 ### 2.6 Realtime frames (commit E)
 
@@ -359,10 +370,12 @@ error is logged by class only (audit D14).
 3. The live session already exists → 200 with its view, and no provider call.
 4. `ensureRoom({roomName, maxParticipants: cap + reserve, emptyTimeoutSeconds: 1200,
    departureTimeoutSeconds: 1200})`. `RtcUnavailableError` → 503 `live.media_unavailable`, with nothing
-   stored.
-5. `start(...)`. On a lost race, `endRoom` the room this call ensured, best effort and logged, then 200
+   stored. This includes the disabled provider of audit D19.
+5. **Re-ask `community.live.start`** (audit D20). If it is refused now, `endRoom` the room this call
+   ensured (best effort) and return the refusal, remapped as in step 2.
+6. `start(...)`. On a lost race, `endRoom` the room this call ensured, best effort and logged, then 200
    with the winner.
-6. Created: audit `live.session.started` with `{communityId, permit}`, then the event, then 201.
+7. Created: audit `live.session.started` with `{communityId, permit}`, then the event, then 201.
 
 **`end-live-session.use-case.ts` and `live-session-lifecycle.ts` (`endBySystem(id, reason)`).** Both use
 the repository's `end`:
@@ -391,7 +404,8 @@ the repository's `end`:
      sample) → 412 `live.session_full`;
    - `RtcUnavailableError` → skip both checks and fail open to the hard cap.
 7. The directory name (`''` if absent).
-8. `issueAccessToken`.
+8. `issueAccessToken`, with the TTL checked to be an integer in 1..600 first (audit D24).
+   `RtcUnavailableError` → 503 `live.media_unavailable`, which covers the disabled provider.
 9. `JoinTicket`.
 
 Nothing is written, audited or published.
@@ -407,15 +421,16 @@ Nothing is written, audited or published.
    - an open request raced in → 200;
    - `session_not_live` → 412.
 
-**`lower-hand.use-case.ts`** (audit D9, D4). The caller's open request comes first:
+**`lower-hand.use-case.ts`** (audit D9, D4). The caller's open request comes first, found by
+(session, user):
 
 | Outcome | Answer |
 | --- | --- |
-| No open request, whether or not the session exists | 200 `{request: null}` |
-| `pending` or `granted` → `withdrawn` applied | the event `withdrawn {from}`; a yield also pushes the full capability set and watches; 200 |
-| Already `withdrawn` | 200, unchanged |
-| `expired` | 200 `{request: null}` |
-| `revoked` or `declined` | 409 `live.invalid_transition` |
+| An open request; `pending` or `granted` → `withdrawn` applied (no permit is needed: it only reduces privilege) | the event `withdrawn {from}`; a yield also pushes the full capability set and watches; 200 |
+| The write finds it already `withdrawn` | 200, unchanged |
+| The write finds it `expired` (the session ended meanwhile) | 200 `{request: null}` |
+| The write finds it `revoked` or `declined` | 409 `live.invalid_transition` |
+| **No open request** | the session must exist and be visible to the caller (`LiveAccess.participant`, the lifecycle refusal included), else 404 `live.session_not_found`; then 200 `{request: null}` |
 
 **`moderate-speaker.use-case.ts`** (`grant`, `decline`, `revoke`):
 1. The coarse `live.moderate` check, before any read.
@@ -549,9 +564,9 @@ over the in-memory Communities store, so Live is tested against Communities' act
 **Files:**
 - `live/infrastructure/schema.ts`: four tables per design §10.1, with every CHECK built from the domain
   constants. The pattern is `communities/infrastructure/schema.ts`.
-- `backend/drizzle/0013_live_sessions.sql`: a header comment; the tables; and at the end, the two
-  identity catalogue descriptions corrected (audit §17.6). The journal and snapshot are generated by
-  drizzle-kit.
+- `backend/drizzle/0013_live_sessions.sql`: a header comment and the four tables. It touches **no
+  existing table**: identity's seeded descriptions stay, proposed separately (audit §17.12). The journal
+  and snapshot are generated by drizzle-kit.
 - `live/infrastructure/drizzle-live-repositories.ts`: READ COMMITTED; the session row `FOR UPDATE`
   first; the per-session `KeyedMutex`; `ON CONFLICT` on the partial unique indexes; set-based End.
   `isUniqueViolation` (`platform/database/postgres-errors.ts`) is a backstop for the presenter slot.
@@ -566,8 +581,8 @@ over the in-memory Communities store, so Live is tested against Communities' act
   - no foreign key leaves Live's tables (`pg_constraint`);
   - `state_version` rises by exactly 1 per change;
   - End of 3,000 pending hands in one statement, within a time budget.
-- `test/integration/live-migrations.spec.ts`: 0012 → 0013 upgrades an existing database; the two
-  descriptions change; nothing else in identity changes.
+- `test/integration/live-migrations.spec.ts`: 0012 → 0013 upgrades an existing database, and no
+  existing table changes (a `pg_catalog` snapshot comparison).
 - **Migration drift:** `drizzle-kit generate` reports no schema change after 0013.
 
 **Acceptance:**
@@ -584,7 +599,8 @@ over the in-memory Communities store, so Live is tested against Communities' act
 exposed for tests. A run happens at bootstrap.
 
 **Room sweep, every 30 s:**
-1. Page the live sessions, 100 at a time; one `listRooms()`.
+1. Page the live sessions, 100 at a time; one `listRooms()`. **If any page fails, abort the whole sweep
+   and delete nothing** (audit D23): an incomplete set would make a live room look orphaned.
 2. A live session whose current room is missing → `ensureRoom`, then re-check.
 3. Empty rooms → `markEmpty`. Empty for longer than `IDLE_END_SECONDS` → `endBySystem('idle')`.
 4. A name matching `isMediaRoomName` that is not the current room of any live session and is older than
@@ -593,16 +609,25 @@ exposed for tests. A run happens at bootstrap.
 **Participant sweep, every 60 s per session, staggered:**
 1. One `listParticipants`.
 2. `heads([communityId])`: absent, or `runningLiveContinues` false → `endBySystem('community_closed')`.
-3. Standing for the connected standard identities, in chunks of 1,000 (`LiveStanding.ofAccounts`).
+3. Standing, in chunks of 1,000 (`LiveStanding.ofAccounts`), for:
+   - the connected standard identities;
+   - **every holder of a granted request (≤ 4) and of the open presenter grant (≤ 1), connected or not**
+     (audit D21).
 4. For each identity:
-   - not eligible to stay → `expireIneligible` (the events `live.speaker.expired` and
-     `live.screen_share.stopped {reason: 'ineligible'}`), then `removeParticipant(…,
-     {revokeTokensIssuedBefore: now})`, and add it to the watch;
-   - a presenter who is no longer a moderator → the grant closes as `ineligible`;
-   - an observed set other than the desired set → `updateCapabilities(desired)`, and add it to the
-     watch. A repeat inside the window → `noteViolation`, and the media reset when it holds a source it
-     is not entitled to publish.
-5. Any dependency unreachable → skip this session's tick. **Never eject on unknown state.**
+   - **not eligible to stay** → `expireIneligible`, which publishes `live.speaker.expired` and
+     `live.screen_share.stopped {reason: 'ineligible'}`. Then, if connected,
+     `removeParticipant(…, {revokeTokensIssuedBefore: now})`, and add it to the watch;
+   - **a presenter who is no longer a moderator** → the grant closes as `ineligible`;
+   - **a connected identity whose observed set differs from the desired set** →
+     `updateCapabilities(desired)`, and add it to the watch. A *violation* is counted only when an
+     earlier correction of that identity **reported `applied`** and it is observed again, inside the
+     window, not eligible to stay or holding a source it is not entitled to publish (audit D22).
+     - A failed or `not_connected` push is not a violation.
+     - A set below the desired one never is.
+     - The second violation → the media reset.
+5. **Any dependency unreachable → skip this session's tick. Never eject on unknown state.** That
+   includes Communities, `permittedAmong`, identity's `live.speak` lookup (`withPermission`), Postgres
+   and the provider (audit D23).
 
 **Targeted watch, every 10 s.** It covers:
 - identities whose floor or presenter grant closed within `ENFORCEMENT_WATCH_SECONDS`, from
@@ -657,9 +682,15 @@ the fake's scripted observations and a controlled clock:
     audit with a null actor);
   - a capability below its desired set → no reset.
 - **Failures:**
-  - a lost Communities event is covered within one sweep;
+  - a lost Communities event is covered within one sweep, including for a **disconnected** holder of a
+    floor or of the presenter grant (D21);
   - `permittedAmong` rejecting → the tick is skipped and nobody is ejected;
-  - a provider outage → skipped.
+  - the `live.speak` lookup rejecting → skipped, and nobody is demoted;
+  - a Postgres failure midway through paging the live sessions → no orphan is deleted;
+  - a provider outage → skipped;
+  - a revoke during an outage, then recovery with the speaker still publishing → one corrective push, and
+    **no reset** (D22);
+  - with the disabled provider, every tick is skipped, and the log line appears once, not per tick.
 - **Restart:** module A starts a session and grants a speaker, and is discarded. Module B on the same
   database runs its boot pass, and its `/join` issues the microphone with no in-memory state.
 - **Contracts:** `LIVE_AUDIENCE` against `permittedAmong`'s answers, the host's inclusion and exclusion,
@@ -739,8 +770,11 @@ the permit and the write, 50-round ordering). Every row of audit §14:
   spec: one room, the user id, the directory name, explicit sources, no data, no admin grants, TTL 120;
 - no token or secret in any log line, event, frame or audit entry, checked by scanning captures for
   JWT-shaped strings and the fake token pattern;
-- one indistinguishable 404 for unknown and not-visible, on every session and request route;
-- `DELETE …/hand` reveals nothing.
+- one indistinguishable 404 for unknown and not-visible on **every** route, including the
+  community-scoped start and current routes: a non-member never learns whether a session runs;
+- `DELETE …/hand` reveals nothing to a caller who holds no open hand and may not see the session;
+- the provider binding (D19): a deployment without `LIVE_MEDIA_PROVIDER=livekit` never reaches the
+  adapter, and Start answers 503 with nothing stored.
 
 **Mutation checks** (§4). Each mutant is applied to a scratch copy, the named tests are run, and the kill
 is recorded.
@@ -760,6 +794,8 @@ is recorded.
 | Document | Change |
 | --- | --- |
 | `live.md` | the P6 note (what landed, and what moved to the LiveKit-integration phase); refreshed citations |
+| ADR 0019 | a dated amendment note, following its 2026-09-24 note: decision 7's pinned configuration and the contract suite "required (P6)" move to the LiveKit-integration phase (the brief); real media binds only on opt-in (audit D19). The ADR's text is not edited |
+| `attendance.md` | its P6 prerequisite, the real-server contract suite, moves with it |
 | hub §25 | the P6 status row (scope as built); P7's row split into the LiveKit-integration phase and the Flutter live phase, per audit §2 |
 | `communities.md` | `permittedAmong` and `remain` landed |
 | `realtime.md` | the live frames |
@@ -800,6 +836,10 @@ named test fail. Results are recorded in the P6 landed note in `live.md`.
 | M16 | Lower transitions only from the state it read | lower racing a grant yields |
 | M17 | `ProtectLiveSessions` ignores `member.removed` | eviction at once through the event path |
 | M18 | Identity's rule list keeps `host-only-moderation` | a delegate moderates |
+| M19 | The factory binds the LiveKit adapter without the opt-in | the binding spec; Start → 503 with nothing stored |
+| M20 | The participant sweep checks only connected identities | a disconnected holder's floor expires `ineligible` (D21) |
+| M21 | A failed push counts as a violation | no reset after an outage (D22) |
+| M22 | Start skips the permit re-ask after `ensureRoom` | a lock committing during `ensureRoom` → 412, and the ensured room ended (D20) |
 
 ---
 
@@ -828,7 +868,7 @@ named test fail. Results are recorded in the P6 landed note in `live.md`.
    - No `forwardRef`.
    - No foreign key leaves Live's tables.
 5. **Durability.** The restart test passes. An ended session is never resurrected.
-6. **Mutation.** M1–M18 are all killed, and the results are recorded.
+6. **Mutation.** M1–M22 are all killed, and the results are recorded.
 7. **No skipped tests; no TODOs replacing implementation;** no commented-out code.
 8. **Documents.** They are updated as listed in commit G. The audit's §17 items are restated in the P6
    report.
@@ -851,7 +891,10 @@ named test fail. Results are recorded in the P6 landed note in `live.md`.
 - no `/rtc/validate` self-check;
 - no adapter change;
 - no new SDK;
-- no secret-hygiene rules.
+- real media not enabled: P6 binds the adapter only on explicit opt-in (D19).
+
+**No change to identity's seeded catalogue text.** A separate identity-data migration is proposed for
+approval (audit §17.12).
 
 **Deferred by policy:**
 
