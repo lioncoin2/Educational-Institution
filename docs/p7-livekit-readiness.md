@@ -554,7 +554,7 @@ is C, "adapter unit" is A and B, "real LiveKit integration" is D, "deployment re
 | **A. Unit** | Nothing: rules, a stub probe, errors shaped as Node's fetch throws them | `platform/config/livekit-config.spec.ts`, `app-config.spec.ts`; `live/domain/live-ids.spec.ts`; `live/application/live-media-readiness.spec.ts`; `live/infrastructure/disabled-rtc-provider.spec.ts`; `live/live.module.spec.ts` | yes, in `npm test` |
 | **B. Adapter contract** | The real adapter and the real SDK, against a mocked room service or a local stub HTTP server; never LiveKit | `live/infrastructure/livekit-rtc-provider.spec.ts`, `-rtc-provider-failures.spec.ts`, `-transport.spec.ts`, `-readiness.spec.ts`, `-redaction.spec.ts`; `test/api/live-security.api.spec.ts` (the real adapter's signed tokens, decoded) | yes, in `npm test` |
 | **C. Fake provider** | The deterministic `FakeRtcProvider`, or the disabled provider | `live/application/start-live-session-readiness.spec.ts`, `live-reconciler-identities.spec.ts`, `-watch.spec.ts`, `-readiness.spec.ts`; `test/api/live-readiness.api.spec.ts`, `live-media-disabled.api.spec.ts`; every Live suite from P6, unmodified | yes, in `npm test` |
-| **D. Real LiveKit integration** | Nothing: two servers of the pinned v1.13.7 release started from the committed policy file, and a real WebRTC client (`@livekit/rtc-node` 1.1.0) | `backend/test/livekit/`: `readiness`, `publishing`, `rooms`, `identities`, `answers`, `application` (6 files, 35 tests) | yes, with `npm run test:livekit` |
+| **D. Real LiveKit integration** | Nothing: two servers of the pinned v1.13.7 release started from the committed policy file, and a real WebRTC client (`@livekit/rtc-node` 1.1.0) | `backend/test/livekit/`: `readiness`, `publishing`, `rooms`, `identities`, `answers`, `application` (6 files, 36 tests) | yes, with `npm run test:livekit` |
 | **E. Deployment and readiness** | The committed files, read as their consumers read them | `backend/test/deployment/`: `compose-topology`, `environment-contract`, `livekit-policy`, `api-image` (4 files, 44 tests); CI's compose validation | yes, in `npm test` and `docker compose config` |
 | **Architecture** | The dependency graph and the sources | `test/architecture/live-boundaries.spec.ts`, `livekit-suite.spec.ts`, `rules-match.spec.ts`; `npm run arch:graph` | yes |
 
@@ -569,10 +569,10 @@ at the end. Anything short of the pinned release fails the run. `npm test` exclu
 
 **What ran for this document (2026-09-27), on the P7.1 tree:**
 
-- **The main suite**, with Postgres: **186 suites, 2,663 tests, all passed, 0 skipped**.
-  P7.1 added 17 suites and 328 tests to the 169 and 2,335 at `4cdc9a9`.
-- **The real suite**, three times: each run **6 suites, 35 tests, all passed, 0 skipped**, in
-  about 15 s. No server was left running.
+- **The main suite**, with Postgres: **186 suites, 2,668 tests, all passed, 0 skipped**.
+  P7.1 added 17 suites and 333 tests to the 169 and 2,335 at `4cdc9a9`.
+- **The real suite**, three times: each run **6 suites, 36 tests, all passed, 0 skipped**, in
+  15 to 17 s of wall-clock time. No server was left running.
 - **`docker compose … config --quiet`:** valid for development, staging and production, and
   for staging and production with the TURN override. Development with the override is
   refused, because the TURN domain is missing.
