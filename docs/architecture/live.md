@@ -403,7 +403,8 @@ Q40 and [Q69](open-questions.md#q69--who-records-and-who-views-snapshots).
 >   - The reconciler removes at once every standard identity the application
 >     never issued (`isIssuedParticipantIdentity`, `domain/live-ids.ts`),
 >     without asking Communities, and the targeted watch looks for it again.
->   - It is never a person, a violation or a reason for a media reset.
+>   - It is never a person, a violation or a reason for a media reset. (P7.2
+>     amends this last part: decision R1, in the P7.2 note below.)
 > - **`live-reconciler.ts` (1,119 lines) is split** by responsibility into
 >   eight files, none over 401 lines, with no change in behaviour: its specs
 >   pass unmodified.
@@ -415,6 +416,43 @@ Q40 and [Q69](open-questions.md#q69--who-records-and-who-views-snapshots).
 >   commits after it.
 > - **Not in P7.1:** the Flutter live phase, P7b, load tests (P8) and
 >   attendance. The 300 + 10 limit is unchanged, and no capacity is claimed.
+
+> **P7.2 (2026-09-28): real LiveKit media integration.** Built on the user's
+> answers to the [P7.2 audit](../p7-livekit-media-integration-audit.md); the
+> full record, with what was and was not verified, is
+> [p7-livekit-media-integration.md](../p7-livekit-media-integration.md).
+> Against this design:
+>
+> - **Decision R1 amends P7.1 decision 6.** An identity `<account>#<anything>`
+>   is still removed at once, on its identity alone; its account, the id
+>   before `#`, is read with the people. An account that may no longer hold
+>   what the identity held has breached: the first sighting arms it, and a
+>   reappearance under any suffix inside the window is a violation that
+>   resets the media (§11.4). An account still entitled to it is never
+>   counted. A violation is held off only by what raced the observation for
+>   that person, and an account's own identity and its `#` identities are
+>   armed apart (`application/live-reconciler-enforcement.ts`,
+>   `-participants.ts`, `-watch.ts`).
+> - **The enforcement window is 720 s** (Q-D; was 660 s): the server's
+>   refreshed token, its 60 s leeway and one participant sweep.
+> - **The watch lists the room** while anyone in the session is under
+>   enforcement or a foreign identity is watched (§11.4).
+> - **Errors (Q-A, Q-B).** A non-member, another community's member and a
+>   removed member still get one 404; the reason is only in the
+>   `live.join.denied` log line. A provider outage answers 503
+>   `live.media_unavailable`, a refused configuration (credentials, TLS, a
+>   wrong endpoint) 503 `live.media_misconfigured` (§15.2).
+> - **The join ticket's lifetime is configuration** (Q-C):
+>   `LIVE_JOIN_TOKEN_TTL_SECONDS`, 120 by default, 1–600 (§3.8). The ticket
+>   gains `sessionId` and `expiresAt`.
+> - **`/join` asks Communities again** just before it signs; pushes run one
+>   at a time per person; a deployed `LIVEKIT_URL` may not name an internal
+>   host.
+> - **Structured log lines** for joins, tokens, pushes, the floor, the
+>   presenter slot and every reconciler tick.
+> - **The real suite** now covers the audit's 26-item matrix but for the
+>   `#` chain itself (items 11 and 19 in part), and also runs against the
+>   pinned image through Docker (`LIVEKIT_TEST_RUNTIME=docker`).
 
 ## 1. What exists today
 
@@ -620,7 +658,7 @@ rows; never stored, never cached across requests.
 | Field | Value | Why |
 | --- | --- | --- |
 | `canPublishAudio` | `speakerGrant` or `publishesByRight` | the microphone |
-| `canPublishScreen` | `presenter` | the one slot (§6) |
+| `canPublishScreen` | `presenter` and `publishesByRight` | the one slot (§6), a moderator's who holds `live.speak` (P6 review decision 1) |
 | `canPublishScreenAudio` | `false` | Q56 |
 | `canSubscribe` | `true` | everyone listens |
 | `canPublishData` | `false` | nothing uses the data channel; a listener must not broadcast |
@@ -657,9 +695,9 @@ plus `AppConfig.live`. They are measured in P8 before anything is raised.
 | --- | --- | --- |
 | `MAX_CONCURRENT_SPEAKERS` | 4 (unchanged; PROVISIONAL [Q54](open-questions.md#q54--who-starts-ends-and-moderates-a-live-session): moderators publishing by right and the presenter do not use a slot) | Q4 |
 | `MAX_CONCURRENT_PRESENTERS` | 1 | Q56 |
-| `JOIN_TOKEN_TTL_SECONDS` | 120 (was 600) | [Q63](open-questions.md#q63--losing-standing-during-a-running-session) |
+| `config.live.joinTokenTtlSeconds` | 120 (was 600), env `LIVE_JOIN_TOKEN_TTL_SECONDS`, 1–600 (P7.2 Q-C; was the constant `JOIN_TOKEN_TTL_SECONDS`) | [Q63](open-questions.md#q63--losing-standing-during-a-running-session) |
 | `ROOM_SWEEP_SECONDS` / `PARTICIPANT_SWEEP_SECONDS` / `WATCH_TICK_SECONDS` | 30 / 60 / 10 | Q63 |
-| `ENFORCEMENT_WATCH_SECONDS` | 660, extended on every violation | Q63 |
+| `ENFORCEMENT_WATCH_SECONDS` | 720 (P7.2 Q-D; was 660), extended on every violation | Q63 |
 | `ORPHAN_GRACE_SECONDS` | 60 | engineering |
 | `IDLE_END_SECONDS` | 900 | [Q61](open-questions.md#q61--ending-abandoned-live-sessions) |
 | `ROOM_PROVIDER_TIMEOUT_SECONDS` | 1,200 (LiveKit `emptyTimeout` and `departureTimeout`; a backstop only) | Q61 |
@@ -1124,8 +1162,8 @@ scriptable observations for the reconciler's tests.
 | --- | --- | --- | --- |
 | **Room auto-creation** | `room.auto_create` defaults to true (SRV `pkg/config/config.go:563`); with it false, joining a room that does not exist needs a token carrying `roomCreate` (`pkg/service/roomallocator.go:175-184`) | No LiveKit configuration is in the repository; rooms are auto-created on first join | `room.auto_create=false` in a pinned LiveKit config kept in the repository (P6), with `enable_remote_unmute=false`, the timeouts as a backstop, `prometheus_port`, no webhooks and a TURN placeholder ([Q65](open-questions.md#q65--media-hosting-and-operations)). No token ever carries `roomCreate`, so a still-valid token cannot re-create an ended room. The adapter contract suite proves it against a real server. The adapter also self-checks it at boot and on every room sweep: it signs a `roomJoin`-only token for a random name of this deployment's form that no room has, and calls LiveKit's `/rtc/validate`, which runs the same allocator check without creating anything (SRV `pkg/service/rtcservice.go:102`; `pkg/service/utils.go:389-396`). 404 means `auto_create` is off; a success logs an alert and refuses Start (503 `live.media_unavailable`) until a probe answers 404 again |
 | **Rooms created by us** | `createRoom` creates the room, or returns unchanged one the server already holds (SRV `pkg/service/roommanager.go:644-653`; corrected in P7.1) | `ensureRoom` is never called | Start creates the room with `maxParticipants = cap + reserve`; ensure-then-recheck (§4.4); the orphan sweep by prefix (§11.2) |
-| **Token lifetime** | The server refreshes a connected participant's token once at join and then every 5 minutes; each refreshed token is valid for max(10 minutes, time left) and carries the participant's current grants (SRV `pkg/service/roommanager.go:61-64, 767-778, 1149-1181`) | 600 s | 120 s. **This bounds only the first connection.** A client holding a refreshed token can reconnect without `/join` for up to about 10 minutes |
-| **Revocation** | The protocol defines `revoke_token_ts`, but the open-source server never reads it (no reference in the SRV source); the SDK says "Even after being removed, the participant can still re-join the room" (SDK `dist/RoomServiceClient.d.ts:128-136`) | — | Removal and demotion alone are **not final on the media plane**: a removed member can rejoin with a refreshed token, and each rejoin earns a fresh token of at least 10 minutes. **Ending is final**: the room is deleted and cannot come back (`auto_create=false`). The level-triggered reconciler (§11) removes or demotes within 10–60 s and counts violations; at the second violation inside the enforcement window it resets the media room by epoch (§11.4, P6), which ends the loop, because every old token names a deleted room. `revokeTokensIssuedBefore` is passed anyway, for providers that honour it |
+| **Token lifetime** | The server refreshes a connected participant's token once at join, then every 5 minutes, and again on every permission change; each refreshed token is valid for max(10 minutes, time left) and carries the participant's current grants (SRV `pkg/service/roommanager.go:61-64, 767-778, 1149-1181`) | 600 s | 120 s. **This bounds only the first connection.** A client holding a refreshed token can reconnect without `/join` for up to about 10 minutes |
+| **Revocation** | The protocol defines `revoke_token_ts`, but the open-source server never reads it (no reference in the SRV source); the SDK says "Even after being removed, the participant can still re-join the room" (SDK `dist/RoomServiceClient.d.ts:128-136`) | — | Removal and demotion alone are **not final on the media plane**: a removed member can rejoin with a refreshed token, and each rejoin earns a fresh token of at least 10 minutes. **Ending is final**: the room is deleted and cannot come back (`auto_create=false`). The level-triggered reconciler (§11) removes or demotes within 10–60 s and counts violations; at the second violation inside the enforcement window it resets the media room by epoch (§11.4, P6), which ends the loop, because every old token names a deleted room. `revokeTokensIssuedBefore` is passed anyway, for providers that honour it. P7.2 (R1): a publishing token can also make `<account>#<suffix>` identities, each handed a fresh token; they count against their account, so a withdrawn publisher's reappearance resets the room too |
 | **One identity per account** | A join with an identity already in the room evicts the earlier connection with `DUPLICATE_IDENTITY` (SRV `pkg/service/roommanager.go:326-327, 398-400`) | identity = user id | Kept: the newest device wins; the client does not auto-rejoin on that reason ([Q60](open-questions.md#q60--one-account-on-several-devices-in-a-session)). One account never counts twice in capacity or observation |
 | **Display names** | A participant may not change its own name or metadata unless `canUpdateOwnMetadata` (SRV `pkg/rtc/participant.go:722-727`) | from the client body | From `ACCOUNT_DIRECTORY.describe` (never an email); the DTO field is removed (P1); `canUpdateOwnMetadata` stays false |
 | **Data channel** | Unset `canPublishData` equals `canPublish` on the server (PGO `auth/grants.go:355-360`), while the SDK comment says "defaults to true" (SDK `dist/grants.d.ts:35-38`); no server-side data rate limiter was found | listeners `true` | `false` for everyone, always explicit (P1). Raise hand is HTTP |
@@ -1340,8 +1378,11 @@ The sweep's bound matches the WebSocket revalidation, 60 s
 ### 11.4 Targeted watch — every 10 s
 
 `getParticipant` for identities whose floor or presenter grant closed within
-the last 660 s (from `granted_at`/`decided_at` and `ended_at` in Postgres),
-plus identities the sweep corrected (in memory). Each gets the same step as
+the last 720 s (P7.2, Q-D; 660 s before) (from `granted_at`/`decided_at` and
+`ended_at` in Postgres), plus identities the sweep corrected (in memory). While
+anyone in the session is under enforcement, or a foreign identity is watched,
+the room is listed instead, so an identity under any `#` suffix is found too
+(P7.2). Each gets the same step as
 §11.3.4. The window is extended on every violation, and
 `enforcement_violations` is shown to moderators in the session view. A
 speaker demoted 12 minutes ago who rejoins with a refreshed speaker token is
@@ -1610,7 +1651,8 @@ controller list is updated in P1 and P6.
 | `live.invalid_transition` | conflict → 409 | existing code: a transition outside the table |
 | `live.presenter_slot_taken` | conflict → 409 | another moderator holds the slot |
 | `live.too_many_starts`, `live.too_many_joins`, `live.too_many_hands` | rate_limited → 429 | PROVISIONAL limits (Q26) |
-| `live.media_unavailable` | unavailable → 503 | start only: LiveKit unreachable; nothing stored |
+| `live.media_unavailable` | unavailable → 503 | start and join: LiveKit unreachable, timed out or disabled; nothing stored (P7.2 Q-B; join still signs during an outage) |
+| `live.media_misconfigured` | unavailable → 503 | start and join: LiveKit refuses this deployment's configuration — credentials, TLS, a wrong endpoint; nothing stored (P7.2 Q-B) |
 | `unavailable` | unavailable → 503 | the Communities store or the directory could not be read |
 
 `live.room_not_found` and `live.speaker_request_exists` disappear with
@@ -1856,7 +1898,7 @@ Nothing is stored on join, audited or published: a join is transport noise.
   │ 17 microphone track removed; a listener again; membership untouched                                      │                         │
   │◀═════════════════════════════════════════════════════════════════════════════════════════════════════════│                         │
   │                     │ 18 audit + publish live.speaker.revoked; 200 {request revoked, media}                                      │
-  │                     │ 19 reconciler: the targeted watch (10 s, for 660 s after the floor closed) and the 60 s sweep demote a      │
+  │                     │ 19 reconciler: the targeted watch (10 s, for 720 s after the floor closed) and the 60 s sweep demote a      │
   │                     │    client that rejoins with an earlier refreshed speaker token, and count a violation                       │
 ```
 

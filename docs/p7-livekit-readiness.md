@@ -450,11 +450,11 @@ refused (401). The real suite shows both.
   as **foreign** and removes it at once (`removeParticipant`, revoking tokens issued before
   now), wherever it is observed: in the participant sweep's list, in the targeted watch, and
   in the whole-session check that a community's lock or unlock triggers (`checkSession`). The
-  watch looks for it again every 10 s for 660 s, extended on each removal.
-- **Never a person, never a violation.** A foreign identity is never passed to Communities or
-  identity, never given capabilities, and never triggers a media reset, which would punish
-  the whole room and could not stop a publisher who may join again. Persistent abuse shows in
-  the logs and is a moderation matter (Q64).
+  watch looks for it again every 10 s for 720 s (660 s until P7.2), extended on each removal.
+- **Never a person.** A foreign identity is never passed to Communities or identity, and
+  never given capabilities. P7.1 also kept it from ever triggering a media reset; P7.2's
+  decision R1 amends that: its account counts it as its own breach, and a withdrawn
+  publisher's reappearance resets the media ([P7.2 record](p7-livekit-media-integration.md) §3).
 - **Logged and counted.** Each removal is logged `live.reconciler.foreign_identity_removed`
   with the session id and, only when the part before `#` is a valid id, that account id; the
   client-chosen string is never logged. Removals are counted as `foreignRemoved` in the
@@ -676,8 +676,8 @@ the TURN hostname, and the firewall; then the runtime checks, external clients a
 - **Capacity.** Nothing was measured: 300 + 10 is unchanged, with no claim for 3,000 per room or
   10,000 concurrent users. One UDP mux port is configured, where LiveKit's sample recommends a
   range at least as large as the host's vCPUs (SRV `config-sample.yaml:83-84`). That is P8's.
-- **Not in the real suite** (live.md §22): `DUPLICATE_IDENTITY` eviction; the refreshed token's
-  lifetime; two deployments' prefixes on one server; a join refused above `maxParticipants`;
+- **Not in the real suite** (live.md §22; P7.2 added `DUPLICATE_IDENTITY` and two prefixes on
+  one server): the refreshed token's lifetime; a join refused above `maxParticipants`;
   `createRoom` on a live room returning it unchanged (seen only in the audit's run); latency at
   300, 1,000 and 3,000; which ICE transport carried the media.
 - **Audit S6 is unchanged.** Muting an identity that leaves between the adapter's read and its

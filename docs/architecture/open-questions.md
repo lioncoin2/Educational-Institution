@@ -1666,7 +1666,8 @@ deleted: there is no delete route, and foreign keys RESTRICT.
 > closed.** A running live session whose community Communities can no longer
 > resolve (`COMMUNITY_MEMBERSHIP.heads` answers nothing for it) is ended with
 > reason `community_closed` by Live's participant sweep
-> (`live/application/live-reconciler.ts`, `sweepStep`), exactly as a status
+> (`live/application/live-reconciler-participants.ts`, `ParticipantSteps.sweepStep`;
+> `live-reconciler.ts` until P7.1 split it), exactly as a status
 > that stops running sessions would end it: every open hand expires, the
 > presenter grant closes, the room is ended, and nothing is re-authorized
 > from a membership nobody can vouch for. Until that sweep runs, every route
@@ -2209,6 +2210,8 @@ default:
 
 > **P6 (2026-09-27):** built as this default, for community-scoped sessions ([live.md](live.md), the P6 note above §1). As built, a violation counts only after a correction that reported `applied` (the P6 audit, D22), and the participant sweep also checks the floor and presenter holders who are not connected (D21).
 
+> **P7.2 (2026-09-28), decided by the user:** the enforcement window is 720 s (decision Q-D: LiveKit's 600 s refreshed token, its 60 s leeway and one participant sweep); the join ticket's lifetime is configuration, `LIVE_JOIN_TOKEN_TTL_SECONDS`, 120 by default and 1–600 (Q-C); and the `<account>#<suffix>` identities a publishing token can make count against their account (R1): once the account may no longer hold what such an identity held, the first sighting arms it and a reappearance under any suffix inside the window resets the media. A violation is held off only by what raced the check for that person: their floor or presenter slot lost meanwhile, or the session ended or moved. Record: [p7-livekit-media-integration.md](../p7-livekit-media-integration.md) §3.
+
 **When answered.** A different latency bound is the sweep interval (P6).
 Letting a session finish before ejecting someone is one condition in the
 event handler and the sweep. Dropping the automatic media reset is one
@@ -2238,6 +2241,8 @@ a repeated violation ([live.md §11.4](live.md#114-targeted-watch--every-10-s),
 P6) only enforces decisions already taken
 ([Q63](#q63--losing-standing-during-a-running-session)) and is not this
 question.
+
+> **P7.2 (2026-09-28):** the automatic reset now also answers a withdrawn publisher's reappearance under a `#` identity (R1, under Q63). That is still enforcement of decisions already taken, not this question: no moderator removal or reset was built.
 
 **When answered.** A use case on those seams, plus a re-entry rule (P12).
 

@@ -191,7 +191,7 @@ Errors always have one shape:
 | --- | --- |
 | `npm run verify` | **The gate.** format:check → lint → typecheck → arch:graph → test |
 | `npm test` | Jest: unit, integration, architecture and deployment tests (`test/deployment/`, which read the committed `infra/` files). Not the real LiveKit suite, which it excludes rather than skips |
-| `npm run test:livekit` | The real LiveKit suite (`test/livekit/`): the application against the pinned LiveKit server v1.13.7, with a real WebRTC client. It starts and stops its own servers; the release is downloaded once, checked by sha256 and cached in `.cache/` (git-ignored), or taken from `LIVEKIT_SERVER_BINARY`, which is needed on anything but linux x64 |
+| `npm run test:livekit` | The real LiveKit suite (`test/livekit/`): the application against the pinned LiveKit server v1.13.7, with a real WebRTC client. It starts and stops its own servers; the release is downloaded once, checked by sha256 and cached in `.cache/` (git-ignored), or taken from `LIVEKIT_SERVER_BINARY`, which is needed on anything but linux x64. With `LIVEKIT_TEST_RUNTIME=docker` the same suite runs against the pinned image as `infra/compose.yaml` runs it; the image must already be on the machine by its digest (nothing is pulled) |
 | `npm run test:arch` | Just the architecture rules |
 | `npm run test:integration` | Just the Postgres suites (needs `TEST_DATABASE_URL`) |
 | `npm run identity:bootstrap-owner` | Create the first owner (after `npm run build`; password on stdin) |
