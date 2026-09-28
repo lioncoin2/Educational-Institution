@@ -1,6 +1,6 @@
 # P7.1 — LiveKit server configuration and provider readiness
 
-**Date:** 2026-09-27. **Repository state:** P7.1's working tree on top of `4cdc9a9`.
+**Date:** 2026-09-27; revised by P7.1.1 on 2026-09-28. **Repository state:** `cd6a7bb`.
 **Scope:** P7.1 only: the LiveKit server configuration, its deployment files and the provider
 readiness gate. No Flutter file (`app/`) changed, nothing of attendance, no change to the
 300 + 10 limit, and no capacity claim of any kind.
@@ -24,7 +24,8 @@ verdict is at the end.**
   observed by running the v1.13.7 binary.
 - **VERIFIED** means read in source, or observed in the run named beside it. **CONFIGURED**
   means written in a committed file and checked statically, but never observed working.
-  **NOT VERIFIED** means neither.
+  **NOT VERIFIED** means neither. **BLOCKED** (P7.1.1) means it could not be attempted: it
+  waits on the host or on an owner decision.
 - `live/…` means `backend/src/modules/live/…`. Other paths are from the repository root.
 
 ## 1. Decisions
@@ -233,7 +234,7 @@ relay range or the host's 443.
 | 7882 | UDP | ICE over UDP through one muxed port (`rtc.udp_port`), instead of the default 50000–60000 range | public | required |
 | 3478 | UDP | Embedded TURN over UDP, advertised as `turn:<NODE_IP>:3478` | public | optional: only with the TURN override (staging, production) |
 | 5349 | TCP | Embedded TURN over TLS. The terminator ends the TLS (`external_tls`); LiveKit advertises it as `turns:<TURN hostname>:443` | private: host loopback, public only through 443 | optional: only with the TURN override |
-| 30000–40000 | UDP | TURN relay allocations: bound in the LiveKit container, announced on `NODE_IP` (SRV `pkg/config/config.go:671-681`, `pkg/service/turn.go:112-128`) | not published by these files | only with TURN. **Exposure not decided, NOT VERIFIED (§9)** |
+| 30000–40000 | UDP | TURN relay allocations, one port each: bound in LiveKit's network namespace and announced on `NODE_IP`. Their only peer is the SFU (SRV `pkg/config/config.go:671-681`, `pkg/service/turn.go:112-128`) | never public: no client sends to it | only with TURN. **The relay path is not sound on the bridge network (§18)** |
 
 Nothing else listens. LiveKit opens a Prometheus port only when `prometheus.port` is set
 (SRV `pkg/service/server.go:159-179`); the design's `prometheus_port` is not in the committed
@@ -295,12 +296,12 @@ whose network lets neither through**, such as some school and home networks.
 | A joining client is offered `turn:<NODE_IP>:<udp port>` and `turns:<domain>:443`, with a credential | VERIFIED, on loopback | The same run. With the TLS port at 36521, the client was still told `turns:turn.example.com:443?transport=tcp`. `/rtc/validate` still answered 404, and the server's log held no secret or token |
 | `ports` lists 5349/TCP and 3478/UDP | VERIFIED | §7 |
 | TURN ports are published only through the override, which requires the domain | CONFIGURED | `compose-topology.spec.ts`; `docker compose config` (development with the override is refused: the domain is missing) |
-| A client relayed through TURN reaches the SFU | **NOT VERIFIED** | Relays are announced as `NODE_IP:30000–40000` (SRV `turn.go:112-128`), so the SFU, in the same container, reaches a relayed client at the host's own public address, through Docker's NAT, where these files publish no relay port. The audit assumed the range was host-local, which holds for a process on the host but is unproven behind Docker's bridge network. No decision covers exposing the range |
-| TURN over TLS through the real terminator on 443 | **NOT VERIFIED** | there is no terminator and no certificate here |
-| The client address TURN reports behind the terminator | **NOT VERIFIED** | Without `proxy_protocol` (not configured, not decided), TURN reports the connecting proxy's address as the client's. LiveKit's sample warns that "Firefox rejects [it] when it is loopback or wildcard" (SRV `config-sample.yaml:320-323`) |
-| NAT traversal for real school and home networks | **NOT VERIFIED** | everything ran on loopback |
+| A client relayed through TURN reaches the SFU | **BLOCKED** | The relay must see the SFU from `NODE_IP`. On the committed bridge network that path makes a hairpin through Docker's NAT, which presents the bridge gateway instead, whatever is published. Host networking gives the right addresses (source and lab, §18) |
+| TURN over TLS through the real terminator on 443 | **BLOCKED** | needs a layer-4 TLS route for the TURN hostname on 443, and the terminator is not known (§18) |
+| The client address TURN reports behind the terminator | **BLOCKED** | Without `proxy_protocol`, the proxy's address as LiveKit sees it: the bridge gateway on the bridge network, which Firefox accepts; 127.0.0.1 with host networking, which Firefox rejects (§18) |
+| NAT traversal for real school and home networks | **NOT VERIFIED** | not run (§18) |
 
-**Status: CONFIGURED, NOT VERIFIED.** TURN must not be relied on until §19's host checks pass.
+**Status: BLOCKED (§18).** On the bridge network the relay path is not sound: do not rely on TURN.
 
 ## 10. Environments and their contract
 
@@ -567,17 +568,13 @@ random key and secret, and the second also gets `LIVEKIT_ROOM_AUTO_CREATE=true`.
 at the end. Anything short of the pinned release fails the run. `npm test` excludes
 `test/livekit/` rather than skipping it, and in CI the suite is a job of its own.
 
-**What ran for this document (2026-09-27), on the P7.1 tree:**
-
-- **The main suite**, with Postgres: **186 suites, 2,668 tests, all passed, 0 skipped**.
-  P7.1 added 17 suites and 333 tests to the 169 and 2,335 at `4cdc9a9`.
-- **The real suite**, three times: each run **6 suites, 36 tests, all passed, 0 skipped**, in
-  15 to 17 s of wall-clock time. No server was left running.
-- **`docker compose … config --quiet`:** valid for development, staging and production, and
-  for staging and production with the TURN override. Development with the override is
-  refused, because the TURN domain is missing.
-- **The rest of the gate:** `format:check`, `lint`, `typecheck` and `build` pass, and
-  `arch:graph` finds no violation (390 modules, 2,006 dependencies).
+**What ran for this document (2026-09-27), on the P7.1 tree:** the main suite with Postgres,
+**186 suites and 2,668 tests, all passed, 0 skipped** (17 suites and 333 tests more than
+`4cdc9a9`'s 169 and 2,335); the real suite three times, **6 suites and 36 tests** each, in 15 to
+17 s, leaving no server running; `docker compose … config --quiet` for every environment, and for
+staging and production with the TURN override (development with it is refused: no TURN domain);
+and `format:check`, `lint`, `typecheck`, `build` and `arch:graph` (390 modules, 2,006
+dependencies, no violation). GitHub's own runs are in §18.
 
 ## 17. What was verified
 
@@ -630,71 +627,74 @@ ready` against the real LiveKit, stays healthy and reports `unreachable` with Li
 refuses to boot with only `NODE_ENV=production`; `livekit-server ports` (§7) and the TURN boot
 (§9) were re-run for this document.
 
-**Mutation checks.** Each check was broken on purpose, a failing test confirmed, and the check
-restored: 13 of 13 for the reconciler and the identity rule; 52 of 52 for the deployment files;
-13 of 13 source and 6 of 6 architecture mutations against the real suite (among them
-`roomCreate` in a token, `auto_create: true`, a listener's microphone, a speaker's screen, a
-screen without the claim, the data channel, the foreign-identity rule, the Start gate, any 404
-read as not found, a `200 success` read as ready); then an independent review's 18 critical
-checks, all caught; and, last, the room sweep's `incompatible_response` gate (caught by the unit
-and the real suite) and the empty example secrets (caught by four deployment tests). The tables
-are not committed.
+**Mutation checks** (each check broken on purpose, a failing test confirmed, the check
+restored; the tables are not committed): 13 of 13 for the reconciler and the identity rule; 52 of
+52 for the deployment files; 13 of 13 source and 6 of 6 architecture mutations against the real
+suite, from `roomCreate` in a token and `auto_create: true` to any 404 read as not found; an
+independent review's 18 critical checks; the room sweep's `incompatible_response` gate; and the
+empty example secrets.
 
-## 18. What was not verified
+## 18. Deployment verification (P7.1.1)
 
-- **Public NAT traversal and ICE over the internet.** Everything ran on loopback, and the
-  suite does not assert which ICE transport, UDP or TCP, carried the media.
-- **TURN** (§9): the relay path through Docker's bridge network with the 30000–40000 range
-  unpublished; TURN over TLS through the real terminator; the client address TURN reports
-  without `proxy_protocol`.
-- **The Docker runtime.** No Docker daemon runs here. No image was built and no container
-  ran, so none of these was exercised: port publishing, the bridge network, `NODE_IP`'s
-  one-to-one mapping, the health checks inside real containers, restarts, the volume, or
-  `.dockerignore` against a real build.
-- **Production TLS.** There is no certificate and no terminator here; the hostname routing of
-  §8 is a documented contract only.
-- **Capacity.** Nothing was measured. The 300 + 10 limit is unchanged, and no claim is made for
-  3,000 per room or 10,000 concurrent users. One UDP mux port is configured; LiveKit's sample
-  recommends a range at least as large as the host's vCPUs, for performance (SRV
-  `config-sample.yaml:83-84`). That is for P8 to measure.
-- **CI on GitHub.** The new compose step and the `livekit` job have not run there. The YAML
-  parses, and the version-extraction command works locally.
-- **Parts of live.md §22's contract suite are not in the real suite:** `DUPLICATE_IDENTITY`
-  eviction; the refreshed token's lifetime; two deployments' prefixes on one server; the
-  server refusing a join above `maxParticipants`; `createRoom` on a live room returning it
-  unchanged (observed only by the audit's run); latency at 300, 1,000 and 3,000.
-- **Audit S6 is unchanged.** Muting an identity that leaves between the adapter's read and
-  its mute answers 503 and becomes an outage. No caller uses mute yet (Q64).
+P7.1.1 (2026-09-28) set out to verify on the intended server what §17 could not. **The server
+could not be reached, so nothing was deployed, inspected or changed on it:** the record names it
+only as "the existing server", one VPS (decision B), and P7.1.1's environment had no SSH key or
+client and no Docker daemon. Full record: [p7-livekit-deployment-verification.md](p7-livekit-deployment-verification.md).
+
+| Item | Result |
+| --- | --- |
+| Deployment host topology | **BLOCKED.** Recorded: one VPS, Docker, the existing TLS terminator. Not known: the host, its Docker version and `userland-proxy` setting, whether `NODE_IP` is on a host interface, the terminator |
+| Docker | **BLOCKED.** CONFIGURED (§5), and compose validated on GitHub. Docker Hub serves `v1.13.7` as the committed digest (a registry query only). Nothing ran on the host |
+| TLS | **BLOCKED.** Terminator, hostnames, certificates and chain not known; `wss://` is enforced in configuration only (§8) |
+| Firewall | **BLOCKED.** No rule read and none opened; no before/after record exists |
+| TURN | **BLOCKED.** The pinned source and a lab reproduction show that the committed bridge network cannot give the relay path the addresses it needs (below). Waits on an owner decision, then a host test |
+| TURN over TLS | **BLOCKED.** Needs a layer-4 TLS route for the TURN hostname on 443, chosen by SNI. Whether the terminator has one is not known |
+| `proxy_protocol` | **BLOCKED; off.** Not needed on the bridge network, where Firefox accepts the gateway address; required with host networking, where it would see 127.0.0.1 |
+| External client | **NOT VERIFIED.** Nothing is deployed; §17's checks ran on loopback only |
+| NAT/TURN | **NOT VERIFIED.** Networks A, B and C were not tested |
+| GitHub CI | **VERIFIED.** Push runs #50 (`cd6a7bb`) and #51 (`8daab01`), and #52 (`workflow_dispatch`, 2026-09-28, `8daab01`): Backend (verify with Postgres, build, deployment files), real LiveKit (6 suites, 36 tests) and Flutter all succeeded |
+
+**The TURN decision it needs.** The relay range needs no public exposure: its only peer is the
+SFU. But the relay and the SFU share the container while `NODE_IP` is the host's, so every packet
+between them makes a hairpin through Docker's NAT, and Docker (27.5 to 29.8, either firewall
+backend, either `userland-proxy` setting) shows the SFU the bridge gateway, not `NODE_IP`. With
+Docker 27's default proxy the relay then drops the SFU's replies; otherwise the SFU pairs through a
+peer-reflexive address, which LiveKit treats as unsupported by Firefox. Publishing the range
+changes neither, and would start about 20,000 `docker-proxy` processes. With host networking the
+path is local and correct (lab, a pion client), but that is a topology change and the owner's
+call: it also needs `rtc.ips` limited to `NODE_IP`, `bind_addresses` for 7880, a new private
+API → LiveKit address, and `proxy_protocol` on. The range is sized after that choice; the default
+30000–40000 overlaps Linux's ephemeral range by 7,233 ports.
+
+**What unblocks it:** the host and a way to run the read-only checks on it; the owner's choice
+of LiveKit's network mode, then `proxy_protocol`, the relay range and a limit on TURN peers
+(LiveKit's TURN admits any public peer, not only `NODE_IP`); the terminator's layer-4 route for
+the TURN hostname, and the firewall; then the runtime checks, external clients and networks.
+
+## 19. Still open, and next
+
+- **Capacity.** Nothing was measured: 300 + 10 is unchanged, with no claim for 3,000 per room or
+  10,000 concurrent users. One UDP mux port is configured, where LiveKit's sample recommends a
+  range at least as large as the host's vCPUs (SRV `config-sample.yaml:83-84`). That is P8's.
+- **Not in the real suite** (live.md §22): `DUPLICATE_IDENTITY` eviction; the refreshed token's
+  lifetime; two deployments' prefixes on one server; a join refused above `maxParticipants`;
+  `createRoom` on a live room returning it unchanged (seen only in the audit's run); latency at
+  300, 1,000 and 3,000; which ICE transport carried the media.
+- **Audit S6 is unchanged.** Muting an identity that leaves between the adapter's read and its
+  mute answers 503 and becomes an outage. No caller uses mute yet (Q64).
 - **Not decided, and not added:** Docker log rotation; the host's UDP buffer sizes (LiveKit
-  warns when they are small); a key and secret alphabet check in configuration;
-  `proxy_protocol` for TURN over TLS; the TURN relay range's exposure.
-
-## 19. Next phase
-
-P7.1 stops here. Not started: P7.2, the Flutter live phase (the design's P7), the media
-client and device binding (P7b), load tests (P8), and attendance.
-
-Before real media is enabled in staging or production, and before the first real class, the
-host must provide, and someone must check on it, what this environment could not:
-
-1. **The TLS terminator's routes and certificates** for the three hostnames of §8, with
-   WebSocket upgrades. TURN over TLS needs TLS ended on a raw TCP stream.
-2. **The firewall** open for 443, 7881/TCP, 7882/UDP and 3478/UDP, and nothing else of the
-   stack's.
-3. **`LIVEKIT_NODE_IP` set to the host's public IPv4.** Then `docker compose … up` with a real
-   environment file, and a `live.provider.health_check` `ready` line in the API's log.
-4. **A decision on the TURN relay range** under Docker's bridge network, and one on
-   `proxy_protocol`.
-5. **Clients tested from outside**, on a direct network, a UDP-blocked network and a network
-   that allows only TLS on 443. These are what move TURN from CONFIGURED to VERIFIED.
-6. **The CI jobs green on GitHub.**
-7. **P8's load profiles** before anything above 300 + 10 is enabled.
+  warns when they are small); a key and secret alphabet check in configuration.
+- **Not started:** P7.2, the Flutter live phase (the design's P7), the media client and device
+  binding (P7b), load tests (P8) and attendance.
 
 ---
 
-**P7.1 READINESS: PASS**, for P7.1's scope, on the evidence of §16–§17: the server version
-pinned and its configuration committed; `auto_create` off and self-checked; secrets separated,
-never logged, and shipped empty; real media only when enabled by name, Start waiting for the
-readiness check; the SDK inside the adapter; the token, permission, identity and screen-share
-contracts proven against the real v1.13.7 server; every test passing, none skipped. Real media
-stays off unless enabled; TURN is CONFIGURED, NOT VERIFIED; a deployed host waits on §19.
+**P7.1 READINESS: PASS** for code and architecture, accepted on 2026-09-28, on the evidence of
+§16–§17: the server version pinned and its configuration committed; `auto_create` off and
+self-checked; secrets separated, never logged, and shipped empty; real media only when enabled
+by name, Start waiting for the readiness check; the SDK inside the adapter; the token,
+permission, identity and screen-share contracts proven against the real v1.13.7 server; every
+test passing, none skipped. Real media stays off unless enabled; TURN must not be relied on.
+
+**P7.1.1 DEPLOYMENT VERIFICATION: BLOCKED** (§18): Docker, TLS, firewall, TURN, TURN over TLS
+and `proxy_protocol` BLOCKED; external clients and NAT/TURN NOT VERIFIED; GitHub CI VERIFIED.
