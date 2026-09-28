@@ -1,7 +1,7 @@
 import { RoomServiceClient, TrackSource, type ParticipantInfo } from 'livekit-server-sdk';
 
 import { credentialsIn } from '../../support/log-capture';
-import { serverLog, type TestServer } from './test-servers';
+import { serverLog, type ServerLogLine, type TestServer } from './test-servers';
 
 /**
  * What the server itself holds, read through LiveKit's own room service
@@ -56,20 +56,43 @@ export class ServerView {
   }
 
   /**
-   * Waits until the server has refused a track `identity` asked to publish
-   * — its own log line, written as it answers the request NOT_ALLOWED
-   * (SRV pkg/rtc/participant.go:1364-1373) — then answers what `identity`
-   * publishes: the refused track never appears.
+   * Where the server's log stands now: a line `logged` and `refused` find
+   * must come after it, so a check repeated for the same participant never
+   * passes on an earlier line.
    */
-  async refused(room: string, identity: string, kind: 'AUDIO' | 'VIDEO'): Promise<TrackSource[]> {
-    await eventually(`the server refusing ${identity} a ${kind} track in ${room}`, () =>
-      serverLog(this.server).some(
-        (line) =>
-          line.msg === 'no permission to publish track' &&
-          line.room === room &&
-          line.participant === identity &&
-          line.kind === kind,
-      ),
+  mark(): number {
+    return serverLog(this.server).length;
+  }
+
+  /** Waits until the server logs, after `mark`, a line that `matches` — and answers it. */
+  async logged(
+    what: string,
+    mark: number,
+    matches: (line: ServerLogLine) => boolean,
+  ): Promise<ServerLogLine> {
+    return eventually(what, () => serverLog(this.server).slice(mark).find(matches));
+  }
+
+  /**
+   * Waits until the server has refused, after `mark`, a track `identity`
+   * asked to publish — its own log line, written as it answers the request
+   * NOT_ALLOWED (SRV pkg/rtc/participant.go:1364-1373) — then answers what
+   * `identity` publishes: the refused track never appears.
+   */
+  async refused(
+    room: string,
+    identity: string,
+    kind: 'AUDIO' | 'VIDEO',
+    mark: number,
+  ): Promise<TrackSource[]> {
+    await this.logged(
+      `the server refusing ${identity} a ${kind} track in ${room}`,
+      mark,
+      (line) =>
+        line.msg === 'no permission to publish track' &&
+        line.room === room &&
+        line.participant === identity &&
+        line.kind === kind,
     );
     return this.publishing(room, identity);
   }

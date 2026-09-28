@@ -20,11 +20,32 @@ export const POLICY_FILE = join(REPO_ROOT, 'infra', 'livekit', 'livekit.yaml');
  *   auto_create   the same plus LIVEKIT_ROOM_AUTO_CREATE=true — the stray
  *                 variable that turns the file's `auto_create: false` back
  *                 on (SRV pkg/config/config.go:911), for readiness to catch
+ *
+ * and, apart, one a test file starts, stops and starts again itself
+ * (`restartable-server.ts`): a policy server of its own.
  */
-export type TestServerName = 'policy' | 'auto_create';
+export type TestServerName = 'policy' | 'auto_create' | 'restartable';
+
+/**
+ * How the suite runs its servers (LIVEKIT_TEST_RUNTIME): the pinned release
+ * binary, verified — the default, and CI's — or the pinned image through
+ * Docker, as the committed compose file runs it (`docker-servers.ts`).
+ */
+export type TestRuntime = 'binary' | 'docker';
+
+/** The runtime this run asked for; anything but the two is a mistake, never a default. */
+export function testRuntime(env: NodeJS.ProcessEnv = process.env): TestRuntime {
+  const asked = env.LIVEKIT_TEST_RUNTIME?.trim() ?? '';
+  if (asked === '' || asked === 'binary') return 'binary';
+  if (asked === 'docker') return 'docker';
+  throw new Error(
+    `LIVEKIT_TEST_RUNTIME must be "binary" or "docker", not ${JSON.stringify(asked)}.`,
+  );
+}
 
 export interface TestServer {
   readonly name: TestServerName;
+  readonly runtime: TestRuntime;
   /** LIVEKIT_URL: where clients connect — ws: on loopback. */
   readonly url: string;
   /** The same port over http: the room API, /rtc/validate and GET /. */
@@ -135,6 +156,7 @@ async function startOne(
   const [udpPort = 0] = await freePorts('udp', 1);
   const server: TestServer = {
     name,
+    runtime: 'binary',
     url: `ws://127.0.0.1:${port}`,
     httpUrl: `http://127.0.0.1:${port}`,
     apiKey: `API${randomBytes(6).toString('hex')}`,
@@ -155,18 +177,19 @@ async function startOne(
   });
   children.push(child);
   closeSync(log);
-  await serving(server, child);
+  await untilServing(server, () => child.exitCode !== null || child.signalCode !== null);
   return server;
 }
 
 /**
  * Until the server answers `GET /` with 200 "OK" (SRV pkg/service/server.go:
- * 406-427). A failed start exits 0 (main.go:190-192), so any exit fails.
+ * 406-427). A failed start exits 0 (main.go:190-192), so any exit — as
+ * `exited` reports it — fails.
  */
-async function serving(server: TestServer, child: ChildProcess): Promise<void> {
+export async function untilServing(server: TestServer, exited: () => boolean): Promise<void> {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null || child.signalCode !== null) {
+    if (exited()) {
       throw new Error(`The LiveKit test server "${server.name}" exited at start:\n${tail(server)}`);
     }
     try {
@@ -201,7 +224,7 @@ async function stopped(child: ChildProcess): Promise<void> {
 }
 
 /** Ports free on every interface (ICE listens on all of them), held together, then released. */
-async function freePorts(protocol: 'tcp' | 'udp', count: number): Promise<number[]> {
+export async function freePorts(protocol: 'tcp' | 'udp', count: number): Promise<number[]> {
   const held: Array<{ port: number; release: () => Promise<void> }> = [];
   for (let i = 0; i < count; i += 1) held.push(await (protocol === 'tcp' ? tcpPort() : udpPort()));
   await Promise.all(held.map(({ release }) => release()));

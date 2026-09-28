@@ -43,8 +43,11 @@ export function realAdapter(config: AppConfig, clock = new AdjustableClock(new D
 }
 
 export interface RealLiveOptions {
-  /** The server the application talks to; the policy server by default. */
-  readonly server?: TestServerName;
+  /**
+   * The server the application talks to: one of the suite's — the policy
+   * server by default — or one the test file started itself.
+   */
+  readonly server?: TestServerName | TestServer;
   /** Settings changed on top of `realMediaEnv`. */
   readonly env?: Readonly<Record<string, string>>;
 }
@@ -65,7 +68,8 @@ export type RealLive = LiveHarness & {
  * starts at the real time, as the server's does.
  */
 export function realLive(options: RealLiveOptions = {}): RealLive {
-  const server = testServer(options.server ?? 'policy');
+  const server =
+    typeof options.server === 'object' ? options.server : testServer(options.server ?? 'policy');
   const config = loadConfig(realMediaEnv(server, options.env));
   const communities = communitiesHarness({ clock: new AdjustableClock(new Date()) });
   const adapter = realAdapter(config, communities.clock);

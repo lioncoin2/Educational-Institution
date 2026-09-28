@@ -113,8 +113,9 @@ describe('publishing on the pinned LiveKit server, as the application grants it'
   it('refuses a listener’s microphone: the server answers NOT_ALLOWED and holds no track', async () => {
     const another = await live.member(communityId, owner, 'student-4');
     const client = await clients.connect(await ticket(another));
+    const mark = live.view.mark();
     client.publish('microphone');
-    expect(await live.view.refused(room, 'student-4', 'AUDIO')).toEqual([]);
+    expect(await live.view.refused(room, 'student-4', 'AUDIO', mark)).toEqual([]);
   });
 
   it('lets a speaker — a student whose hand was granted — publish the microphone, and never a screen', async () => {
@@ -131,8 +132,11 @@ describe('publishing on the pinned LiveKit server, as the application grants it'
       canPublishData: false,
     });
 
+    const mark = live.view.mark();
     client.publish('screen_share');
-    expect(await live.view.refused(room, 'student-2', 'VIDEO')).toEqual([TrackSource.MICROPHONE]);
+    expect(await live.view.refused(room, 'student-2', 'VIDEO', mark)).toEqual([
+      TrackSource.MICROPHONE,
+    ]);
   });
 
   it('lets a moderator holding live.speak — the host — publish the microphone by right', async () => {
@@ -169,8 +173,9 @@ describe('publishing on the pinned LiveKit server, as the application grants it'
     });
     const client = await clients.connect(joined);
     expect((await live.view.participant(room, 'teacher-2'))?.permission).toMatchObject(LISTENING);
+    const mark = live.view.mark();
     client.publish('microphone');
-    expect(await live.view.refused(room, 'teacher-2', 'AUDIO')).toEqual([]);
+    expect(await live.view.refused(room, 'teacher-2', 'AUDIO', mark)).toEqual([]);
   });
 
   it('lets a moderator holding live.speak share a screen only once they claimed the presenter slot', async () => {
@@ -185,8 +190,9 @@ describe('publishing on the pinned LiveKit server, as the application grants it'
 
     // Without the claim: the server refuses the screen.
     const unclaimed = await clients.connect(joined);
+    const mark = live.view.mark();
     unclaimed.publish('screen_share');
-    expect(await live.view.refused(room, 'teacher-3', 'VIDEO')).toEqual([]);
+    expect(await live.view.refused(room, 'teacher-3', 'VIDEO', mark)).toEqual([]);
     // (The client waits on its refused track until it leaves: it reconnects
     // before publishing again, still without the claim.)
     await unclaimed.disconnect();

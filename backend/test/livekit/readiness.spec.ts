@@ -9,7 +9,7 @@ import { PINNED_LIVEKIT_SERVER_VERSION } from '../../src/platform/config/livekit
 import { META, captureLogs, codeOf } from '../support/live-harness';
 import { closedPort, startStubHttpServer, type StubHttpServer } from '../support/stub-http-server';
 import { realAdapter, realLive, realMediaEnv, type RealLive } from './support/real-live';
-import { ServerView, leakedCredentials } from './support/server-view';
+import { ServerView, eventually, leakedCredentials } from './support/server-view';
 import { serverLog, testServer } from './support/test-servers';
 
 /**
@@ -82,15 +82,32 @@ describe('readiness against the pinned LiveKit server', () => {
     jest.restoreAllMocks();
   });
 
-  it('runs the pinned release from the committed policy file, on loopback, its per-host values given through LiveKit’s variables', () => {
+  it('runs the pinned release from the committed policy file, on loopback, its per-host values given through LiveKit’s variables', async () => {
     for (const server of [policy, autoCreate]) {
+      const started = await eventually(`${server.name} logging its start`, () =>
+        serverLog(server).find((line) => line.msg === 'starting LiveKit server'),
+      );
+      expect(started).toMatchObject(
+        server.runtime === 'binary'
+          ? {
+              // `--bind 127.0.0.1`, on the port the suite chose.
+              version: PINNED_LIVEKIT_SERVER_VERSION,
+              portHttp: Number(new URL(server.httpUrl).port),
+              bindAddresses: ['127.0.0.1'],
+              nodeIP: '127.0.0.1',
+            }
+          : {
+              // The image as compose runs it: the file's port, and no
+              // `--bind` — compose passes `--config` alone, and publishes
+              // the port on the host's loopback only (infra/compose.yaml;
+              // docker-servers.ts).
+              version: PINNED_LIVEKIT_SERVER_VERSION,
+              portHttp: 7880,
+              nodeIP: '127.0.0.1',
+            },
+      );
+      if (server.runtime === 'docker') expect(started.bindAddresses).toBeUndefined();
       const lines = serverLog(server);
-      expect(lines.find((line) => line.msg === 'starting LiveKit server')).toMatchObject({
-        version: PINNED_LIVEKIT_SERVER_VERSION,
-        portHttp: Number(new URL(server.httpUrl).port),
-        bindAddresses: ['127.0.0.1'],
-        nodeIP: '127.0.0.1',
-      });
       // The file's `logging` in effect: JSON lines (LiveKit's default is
       // console text), at info and above.
       expect(lines.length).toBeGreaterThan(0);
@@ -132,7 +149,9 @@ describe('readiness against the pinned LiveKit server', () => {
     const live = realLive({ env: { LIVEKIT_API_KEY: key } });
     expect(await live.adapter.check()).toEqual({ ready: false, reason: 'unauthorized' });
     // The server saw the request, and says so: the check below relies on it.
-    expect(serverLog(policy).some((line) => line.apiKey === key)).toBe(true);
+    await eventually('the server logging the unknown key', () =>
+      serverLog(policy).some((line) => line.apiKey === key),
+    );
     await expectStartRefused(live, 'live.media_misconfigured');
   });
 
