@@ -459,12 +459,12 @@ describe('LiveReconciler — participants', () => {
       });
     });
 
-    it('demotes again a speaker revoked 12 minutes ago who comes back publishing on a refreshed token', async () => {
+    it('demotes again a speaker revoked past the window who comes back publishing on a refreshed token', async () => {
       const hand = await speaker();
       await revokeFloor(hand);
       expect(capabilitiesOf('student-1')).toEqual(LISTENER);
 
-      h.clock.advance(12 * 60);
+      h.clock.advance(ENFORCEMENT_WATCH_SECONDS + 60);
       // The watch's window from Postgres has passed…
       expect(await h.reconciler.watchTick()).toMatchObject({ checked: 0 });
       // …and the client rejoins holding the microphone again.
@@ -1290,6 +1290,7 @@ describe('LiveReconciler — participants', () => {
       const listing = h.rtc.hold('listParticipants');
       const swept = h.reconciler.checkSession(session.id);
       await listing.reached;
+      const from = h.rtc.calls.length;
       let checked = false;
       const identities = h.reconciler.checkIdentities(session.id, ['student-1']).then((report) => {
         checked = true;
@@ -1298,15 +1299,13 @@ describe('LiveReconciler — participants', () => {
       await new Promise((resolve) => setImmediate(resolve));
       // Not a single provider call of the second step while the first holds the session.
       expect(checked).toBe(false);
-      expect(h.rtc.calls.filter((call) => call.operation === 'getParticipant')).toEqual([]);
+      expect(h.rtc.calls.slice(from)).toEqual([]);
       listing.release();
 
       expect(await swept).toMatchObject({ violations: 1, resets: 1 });
-      // The second step ran on the session as the reset left it: the new room, where nobody is.
+      // The second step ran on the new room the reset left: listed, and nobody in it.
       expect(await identities).toMatchObject({ outcome: 'checked', violations: 0, resets: 0 });
-      expect(h.rtc.calls.filter((call) => call.operation === 'getParticipant')).toEqual([
-        expect.objectContaining({ roomName: h.room(session.id, 1), identity: 'student-1' }),
-      ]);
+      expect(h.rtc.calls.at(-1)).toMatchObject({ roomName: h.room(session.id, 1) });
       expect((await h.session(session.id)).mediaRoomEpoch).toBe(1);
     });
 

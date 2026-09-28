@@ -28,22 +28,29 @@ export interface StepOutcome {
 
 /**
  * What a step's comparison rests on (audit D22): the provider was observed
- * after `mark` (`LiveMedia.pushMark`), and `unchanged` says whether the
- * session stayed as it was read before that observation — live, on the same
- * epoch, at the same state version — until the standing it is compared with
- * had been read.
+ * after `mark` (`LiveMedia.pushMark`), and `raced` says, for one person,
+ * whether a change that could make that observation stale committed between
+ * the step's start and the standing it is compared with: the session ended
+ * or moved to another room, or THIS person lost the floor or the presenter
+ * slot. Nobody else's act counts — a hand raised or granted elsewhere in the
+ * session changes nothing anyone holds, so it cannot hold off a violation
+ * (P7.2 review: an act anyone may repeat must never be a way to keep a
+ * repeat from counting).
  */
 export interface Observation {
   readonly mark: number;
-  readonly unchanged: boolean;
+  raced(userId: string): boolean;
 }
 
 /**
  * Enforcement (live.md §11.4; audit D10, D22): what the reconciler does
  * about a breach — someone not eligible to stay who is connected, or someone
- * holding more than their set. The correction is made and watched; a breach
- * seen again inside the window of a correction that applied is a violation,
- * counted, and the media reset moves the session to a new room.
+ * holding more than their set, under their own identity or one their token
+ * made (P7.2 decision R1). The correction is made and watched; a breach seen
+ * again inside the window — of an applied correction of the same identity,
+ * or of an earlier breaching sighting of the account's foreign identities —
+ * is a violation, counted, and the media reset moves the session to a new
+ * room.
  */
 export class Enforcement {
   constructor(
@@ -72,11 +79,13 @@ export class Enforcement {
    * a revoke, a yield or a presenter's close that commits in between — and
    * its own push, which may land before or after the observation — makes
    * the comparison show a breach the person never committed. So a breach
-   * counts as a violation only if the session was unchanged from before the
-   * observation until the standing was read (`Observation`), and no push of
-   * the person's set ran meanwhile (`LiveMedia.pushedSince`): otherwise it is
-   * a correction — the full set pushed and the window refreshed, nothing
-   * counted and nothing reset. A genuine repeat is counted on the next tick.
+   * counts as a violation only if nothing raced the observation for this
+   * person (`Observation.raced`: the session ended or moved, or they lost
+   * the floor or the slot meanwhile), and no push of their set ran meanwhile
+   * (`LiveMedia.pushedSince`): otherwise it is a correction — the full set
+   * pushed and the window refreshed, nothing counted and nothing reset. A
+   * genuine repeat is counted on the next tick. Only the person's own
+   * changes count: none of those is theirs to make at will.
    *
    * Communities needs no such guard, and steps no version. A standing lost
    * there is never pushed out of band: the provider moves only through this
@@ -99,7 +108,7 @@ export class Enforcement {
   ): Promise<StepOutcome> {
     const violation =
       this.watch.armed(session.id, userId, now) &&
-      observation.unchanged &&
+      !observation.raced(userId) &&
       !this.media.pushedSince(session.id, userId, observation.mark);
     const until = new Date(now.getTime() + ENFORCEMENT_WATCH_SECONDS * 1000);
     if (violation) {
@@ -136,6 +145,79 @@ export class Enforcement {
       violation,
       reset,
     };
+  }
+
+  /**
+   * A breach through identities the application never issued (P7.2 decision
+   * R1): `userId`'s token made them — `<userId>#<anything>` — and they held
+   * more than `userId` may hold now, or `userId` may no longer stay at all.
+   * They are removed already, on their identity alone (`ForeignIdentities`,
+   * `removalApplied` saying whether any removal applied); this decides what
+   * the breach counts for.
+   *
+   * The first breaching sighting watches the account; the next, under ANY
+   * suffix, inside the window, is its reappearance: a violation — counted,
+   * and the media reset. The reset is what ends it: every token the server
+   * ever refreshed for such an identity names the old room, which is deleted
+   * and never comes back (`auto_create` off), and `/join` gives the account
+   * only what it may hold now — a listener's token, which can make no second
+   * identity at all. No application client ever makes such an identity, so
+   * a sighting arms the account whether or not its removal applied — an
+   * identity that left before it could be removed was still seen.
+   *
+   * `armedBefore`: whether a sighting had armed the account when the step
+   * began — so that two identities seen in one step are one sighting, never
+   * a breach and its own repeat. It is the foreign arm alone
+   * (`ReconcilerWatch.foreignArmed`): a correction of the account's own
+   * identity never makes a first foreign sighting a violation, nor does a
+   * foreign sighting make the own identity's first correction one. Nothing
+   * this application pushes ever reaches such an identity, so no push can
+   * have overtaken the observation; only `raced` — the session ended or
+   * moved, or the account lost the floor or the slot during the step — keeps
+   * a reappearance from counting.
+   *
+   * Never called for an account that may hold what the identity held: an
+   * entitled publisher's foreign identity is removed, and nothing more.
+   */
+  async foreignBreach(
+    session: LiveSession,
+    userId: string,
+    observation: Observation,
+    now: Date,
+    armedBefore: boolean,
+    removalApplied: boolean,
+  ): Promise<StepOutcome> {
+    const violation = armedBefore && !observation.raced(userId);
+    if (violation) {
+      const count = await this.sessions.noteViolation(session.id, now);
+      this.runtime.logger.warn(
+        {
+          event: 'live.reconciler.violation',
+          sessionId: session.id,
+          userId,
+          violations: count,
+          via: 'foreign_identity',
+        },
+        'a participant breached their media rights again after a correction applied',
+      );
+    }
+    this.watch.armForeign(
+      session.id,
+      userId,
+      new Date(now.getTime() + ENFORCEMENT_WATCH_SECONDS * 1000),
+    );
+    this.runtime.logger.warn(
+      {
+        event: 'live.reconciler.foreign_breach',
+        sessionId: session.id,
+        userId,
+        removal: removalApplied ? 'applied' : 'not_connected',
+        violation,
+      },
+      'an identity made from an account’s token held more than the account may hold',
+    );
+    const reset = violation ? await this.resetMedia(session, userId, now) : false;
+    return { violation, reset };
   }
 
   /**

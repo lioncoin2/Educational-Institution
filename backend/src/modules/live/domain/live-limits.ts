@@ -63,12 +63,15 @@ export const PARTICIPANT_SWEEP_SECONDS = 60;
 export const WATCH_TICK_SECONDS = 10;
 
 /**
- * How long someone whose floor or presenter grant closed is watched (Q63;
- * audit D10), extended on every violation. A refreshed provider token lives
- * ten minutes; the watch outlives it by one participant sweep, so a client
- * that comes back holding the permissions it had before is corrected.
+ * How long someone whose floor or presenter grant closed — or whose
+ * correction or removal applied — is watched (Q63; audit D10; P7.2 decision
+ * Q-D), extended on every violation. A token the media server refreshed
+ * lives ten minutes and the server honours it a minute past its expiry; the
+ * watch outlives both by one participant sweep, so a client that comes back
+ * holding the permissions it had before — under its own identity or any
+ * other its token can make — is found inside it: 600 + 60 + 60.
  */
-export const ENFORCEMENT_WATCH_SECONDS = 660;
+export const ENFORCEMENT_WATCH_SECONDS = 720;
 
 /**
  * How old a room no live session claims must be before the sweep deletes it

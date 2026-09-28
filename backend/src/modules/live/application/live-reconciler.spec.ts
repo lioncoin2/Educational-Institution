@@ -547,8 +547,9 @@ describe('LiveReconciler — rooms and control', () => {
         'ensureRoom',
         'listParticipants',
         'updateCapabilities',
-        // …and the watch looked again at whom the sweep corrected.
-        'getParticipant',
+        // …and the watch looked again at whom the sweep corrected: the room
+        // listed, as anyone under enforcement has it looked at.
+        'listParticipants',
       ]);
       expect(h.rtc.observed(room)).toMatchObject([
         { identity: 'student-1', capabilities: LISTENER },

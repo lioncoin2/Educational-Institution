@@ -62,10 +62,15 @@ export interface SessionSweepReport extends IdentityTally {
   readonly ended: number;
   /**
    * Removals of a foreign identity that applied (P7.1): participants this
-   * application never issued. Nobody's — so never in the tally of people
-   * above: never checked, never a violation, never a reset.
+   * application never issued — never checked as people above.
    */
   readonly foreignRemoved: number;
+  /**
+   * Accounts found holding, through an identity their token made, more than
+   * they may hold now (P7.2 decision R1) — one per account per step. Their
+   * violations and resets are counted with the people's above.
+   */
+  readonly foreignBreaches: number;
 }
 
 /** One session's check — the sweep's, the watch's, or `ProtectLiveSessions`'. */
@@ -89,13 +94,15 @@ export interface SessionCheckReport extends IdentityTally {
 }
 
 /**
- * What one session's step did: its check's report, and the foreign
- * identities it removed — counted by the tick that ran it (`foreignRemoved`),
- * and by no check's report, whose tally is of people.
+ * What one session's step did: its check's report, the foreign identities
+ * it removed and the accounts it found breaching through them — counted by
+ * the tick that ran it (`foreignRemoved`, `foreignBreaches`), and by no
+ * check's report, whose tally is of people.
  */
 export interface SessionStep {
   readonly report: SessionCheckReport;
   readonly foreignRemoved: number;
+  readonly foreignBreaches: number;
 }
 
 export const NO_TALLY: IdentityTally = Object.freeze({
@@ -112,12 +119,20 @@ export function emptyRooms(skipped: TickSkip): RoomSweepReport {
 }
 
 export function emptySweep(skipped: TickSkip): SessionSweepReport {
-  return { ...NO_TALLY, skipped, sessions: 0, sessionsSkipped: 0, ended: 0, foreignRemoved: 0 };
+  return {
+    ...NO_TALLY,
+    skipped,
+    sessions: 0,
+    sessionsSkipped: 0,
+    ended: 0,
+    foreignRemoved: 0,
+    foreignBreaches: 0,
+  };
 }
 
 /** A step that touched nobody, with this outcome. */
 export function noStep(outcome: SessionCheckReport['outcome']): SessionStep {
-  return { report: { ...NO_TALLY, outcome }, foreignRemoved: 0 };
+  return { report: { ...NO_TALLY, outcome }, foreignRemoved: 0, foreignBreaches: 0 };
 }
 
 export function addTally(a: IdentityTally, b: IdentityTally): IdentityTally {

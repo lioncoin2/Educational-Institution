@@ -22,6 +22,9 @@ import {
 /** How long the media server's refreshed tokens stay valid (live.md §9). */
 const REFRESHED_TOKEN_SECONDS = 600;
 
+/** How far past its expiry the media server still honours a token (live.md §9). */
+const TOKEN_EXPIRY_LEEWAY_SECONDS = 60;
+
 describe('live limits (PROVISIONAL, live.md §3.8)', () => {
   it('pins every bound to the design’s recorded default', () => {
     expect({
@@ -48,7 +51,7 @@ describe('live limits (PROVISIONAL, live.md §3.8)', () => {
       ROOM_SWEEP_SECONDS: 30,
       PARTICIPANT_SWEEP_SECONDS: 60,
       WATCH_TICK_SECONDS: 10,
-      ENFORCEMENT_WATCH_SECONDS: 660,
+      ENFORCEMENT_WATCH_SECONDS: 720,
       ORPHAN_GRACE_SECONDS: 60,
       IDLE_END_SECONDS: 900,
       ROOM_PROVIDER_TIMEOUT_SECONDS: 1_200,
@@ -70,8 +73,11 @@ describe('live limits (PROVISIONAL, live.md §3.8)', () => {
     }
   });
 
-  it('watches a closed floor for longer than a refreshed token lives, by one participant sweep', () => {
-    expect(ENFORCEMENT_WATCH_SECONDS).toBe(REFRESHED_TOKEN_SECONDS + PARTICIPANT_SWEEP_SECONDS);
+  // P7.2 decision Q-D: the window covers the server's expiry leeway too.
+  it('watches for longer than a refreshed token is honoured — its life and the leeway — by one participant sweep', () => {
+    expect(ENFORCEMENT_WATCH_SECONDS).toBe(
+      REFRESHED_TOKEN_SECONDS + TOKEN_EXPIRY_LEEWAY_SECONDS + PARTICIPANT_SWEEP_SECONDS,
+    );
   });
 
   it('ends an idle session itself: the provider’s own timeouts are only a backstop', () => {

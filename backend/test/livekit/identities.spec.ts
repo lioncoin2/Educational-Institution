@@ -24,8 +24,12 @@ const FOREIGN = `student-1#${SUFFIX}`;
  * and no server option turns that off. So the reconciler removes every
  * standard participant it never issued: the participant sweep at once, and
  * the watch whenever it comes back — while the participant the application
- * issued stays, publishing. Never a violation, never a media reset, and
- * nothing the client chose in any of the application's log lines.
+ * issued stays, publishing. Here the account still holds its floor — it may
+ * publish what its second identity held — so never a violation and never a
+ * media reset. A WITHDRAWN publisher's second identities count against its
+ * account (P7.2 decision R1; src/modules/live/application/
+ * live-reconciler-foreign-breach.spec.ts). And nothing the client chose in
+ * any of the application's log lines.
  */
 describe('identities the application never issued, on the pinned LiveKit server', () => {
   const clients = mediaClients();
@@ -136,7 +140,8 @@ describe('identities the application never issued, on the pinned LiveKit server'
     expect(await back.closedByServer()).toBeGreaterThan(0);
     await expectOnlyTheSpeaker();
 
-    // Not a violation, and no media reset: the session keeps its room.
+    // Its account may publish the microphone: not a breach, so no violation
+    // and no media reset — the session keeps its room.
     const stored = await live.session(sessionId);
     expect({ epoch: stored.mediaRoomEpoch, violations: stored.enforcementViolations }).toEqual({
       epoch: 0,

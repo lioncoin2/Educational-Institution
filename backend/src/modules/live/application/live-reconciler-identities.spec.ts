@@ -29,9 +29,12 @@ const FOREIGN = `student-1#${SUFFIX}`;
  * The identity contract (P7.1; audit S2): the application issues one media
  * identity per account, the account id. Any other standard participant is
  * foreign — removed at once by the participant sweep, and by the watch when
- * it comes back; never put to Communities or identity, never given
- * capabilities, never a violation and never a media reset. The fake
- * provider's scripted participants stand for what LiveKit would hold.
+ * it comes back; never put to Communities or identity itself, never given
+ * capabilities. Here, its account is entitled to what it holds, and so it is
+ * never a violation and never a media reset. An account that is NOT — the
+ * withdrawn publisher of P7.2 decision R1 — is `live-reconciler-foreign-
+ * breach.spec.ts`'s. The fake provider's scripted participants stand for what
+ * LiveKit would hold.
  */
 describe('LiveReconciler — identities it never issued', () => {
   let h: LiveHarness;
@@ -79,9 +82,11 @@ describe('LiveReconciler — identities it never issued', () => {
     logs.lines.filter((line) => line.fields.event === 'live.reconciler.foreign_identity_removed');
 
   describe('the participant sweep', () => {
-    it('removes a foreign identity at once — every token issued before now revoked — and asks Communities and identity nothing about it', async () => {
+    it('removes a foreign identity at once — every token issued before now revoked — and asks Communities and identity about the account behind it, never about the identity', async () => {
       await speaker();
-      secondary();
+      // student-2's token made it; student-2 itself is not in the room.
+      const identity = `student-2#${SUFFIX}`;
+      secondary(identity);
       const standing = jest.spyOn(h.standing, 'ofAccounts');
       const permittedAmong = jest.spyOn(h.authorization, 'permittedAmong');
       const withPermission = jest.spyOn(h.accounts, 'withPermission');
@@ -91,6 +96,8 @@ describe('LiveReconciler — identities it never issued', () => {
         skipped: null,
         sessions: 1,
         foreignRemoved: 1,
+        // student-2 holds no floor: the microphone its identity held is a breach (R1).
+        foreignBreaches: 1,
         // The people, and only them.
         checked: 2,
         removed: 0,
@@ -99,20 +106,23 @@ describe('LiveReconciler — identities it never issued', () => {
         violations: 0,
         resets: 0,
       });
-      expect(h.rtc.removed).toEqual([
-        { roomName: room, identity: FOREIGN, revokeTokensIssuedBefore: now },
-      ]);
+      expect(h.rtc.removed).toEqual([{ roomName: room, identity, revokeTokensIssuedBefore: now }]);
       expect(identitiesIn()).toEqual(['teacher-1', 'student-1']);
-      // The standing read was the people's alone; nothing was asked about it.
+      // The people's standing, and the account's behind the identity — by its
+      // id alone, read with theirs; the identity itself reaches neither
+      // Communities nor identity.
       expect(standing.mock.calls.map(([, userIds]) => userIds)).toEqual([
-        ['teacher-1', 'student-1'],
+        ['teacher-1', 'student-1', 'student-2'],
       ]);
-      expect(permittedAmong).toHaveBeenCalled();
+      expect(permittedAmong.mock.calls.length).toBeGreaterThan(0);
+      for (const [, userIds] of permittedAmong.mock.calls) {
+        expect(userIds).toEqual(['teacher-1', 'student-1', 'student-2']);
+      }
       const asked = [standing.mock.calls, permittedAmong.mock.calls, withPermission.mock.calls];
       expect(JSON.stringify(asked)).not.toContain('#');
       // And it was given nothing: no capability pushed, no token issued.
-      expect(h.rtc.capabilityChanges.map((change) => change.identity)).not.toContain(FOREIGN);
-      expect(h.rtc.issued.map((grant) => grant.identity)).not.toContain(FOREIGN);
+      expect(h.rtc.capabilityChanges.map((change) => change.identity)).not.toContain(identity);
+      expect(h.rtc.issued.map((grant) => grant.identity)).not.toContain(identity);
     });
 
     it('leaves the account behind the suffix as it was: its floor, its microphone, its place', async () => {
@@ -248,43 +258,54 @@ describe('LiveReconciler — identities it never issued', () => {
   });
 
   describe('the watch', () => {
-    it('looks for it again by name, and removes it each time it comes back inside the window', async () => {
+    it('looks for it again by listing the room — a client may come back under any suffix — and removes it each time inside the window', async () => {
       await speaker();
       secondary();
       expect(await h.reconciler.sweepParticipants()).toMatchObject({ foreignRemoved: 1 });
 
-      for (let round = 0; round < 3; round += 1) {
+      for (const suffix of [SUFFIX, 'another', 'yet-another']) {
         h.clock.advance(WATCH_TICK_SECONDS);
-        secondary();
+        const identity = `student-1#${suffix}`;
+        secondary(identity);
         const from = h.rtc.calls.length;
         expect(await h.reconciler.watchTick()).toMatchObject({
           skipped: null,
           foreignRemoved: 1,
-          checked: 0,
+          foreignBreaches: 0,
+          // The account behind it, checked in the same step: its own
+          // identity is part of the same sighting.
+          checked: 1,
           violations: 0,
           resets: 0,
         });
-        // One look and one removal — the watch lists no room.
+        // One list and one removal: a new suffix is found as surely as the old one.
         expect(h.rtc.calls.slice(from).map((call) => [call.operation, call.identity])).toEqual([
-          ['getParticipant', FOREIGN],
-          ['removeParticipant', FOREIGN],
+          ['listParticipants', undefined],
+          ['removeParticipant', identity],
         ]);
       }
-      expect(removals()).toEqual([FOREIGN, FOREIGN, FOREIGN, FOREIGN]);
+      expect(removals()).toEqual([FOREIGN, FOREIGN, 'student-1#another', 'student-1#yet-another']);
       expect(identitiesIn()).toEqual(['teacher-1', 'student-1']);
     });
 
-    it('never counts it as a violation, and never resets the media — even while its account is under enforcement', async () => {
-      // student-1, holding the microphone with no floor, is corrected: an
-      // applied correction, so any breach of THEIRS in the window would count.
-      h.rtc.connect(room, 'student-1', MICROPHONE, ['microphone']);
+    it('never counts it as a violation, and never resets the media, while its account may hold what it holds — even under enforcement', async () => {
+      // student-1 holds the floor — the microphone is theirs — and was
+      // corrected for holding the screen too: an applied correction, so a
+      // breach of THEIRS in the window would count.
+      await speaker();
+      h.rtc.connect(room, 'student-1', { ...MICROPHONE, canPublishScreen: true }, [
+        'microphone',
+        'screen_share',
+      ]);
       expect(await h.reconciler.sweepParticipants()).toMatchObject({ corrected: 1 });
       h.journal.clear();
 
       for (let round = 0; round < 3; round += 1) {
+        // The microphone only: what the floor gives them.
         secondary();
         expect(await h.reconciler.sweepParticipants()).toMatchObject({
           foreignRemoved: 1,
+          foreignBreaches: 0,
           violations: 0,
           resets: 0,
         });
@@ -292,6 +313,7 @@ describe('LiveReconciler — identities it never issued', () => {
         secondary();
         expect(await h.reconciler.watchTick()).toMatchObject({
           foreignRemoved: 1,
+          foreignBreaches: 0,
           violations: 0,
           resets: 0,
         });
@@ -306,14 +328,16 @@ describe('LiveReconciler — identities it never issued', () => {
       expect(h.rtc.ended).toEqual([]);
       expect(h.audits()).not.toContain('live.session.media_reset');
       expect(logs.events()).not.toContain('live.reconciler.violation');
+      expect(logs.events()).not.toContain('live.reconciler.foreign_breach');
       expect(logs.events()).not.toContain('live.session.media_reset');
-      // The account itself was left as the correction left it.
+      // The account itself was left as the correction left it: its floor's microphone.
       expect(h.rtc.observed(room).find((p) => p.identity === 'student-1')?.capabilities).toEqual(
-        LISTENER,
+        MICROPHONE,
       );
     });
 
     it('extends the window on every removal, and stops looking once it has passed — the sweep still finds it', async () => {
+      await speaker();
       secondary();
       await h.reconciler.sweepParticipants();
 
@@ -333,12 +357,14 @@ describe('LiveReconciler — identities it never issued', () => {
       expect(h.rtc.calls.slice(from)).toEqual([]);
       // …and the participant sweep, which lists everyone, removes it.
       expect(await h.reconciler.sweepParticipants()).toMatchObject({ foreignRemoved: 1 });
-      expect(identitiesIn()).toEqual(['teacher-1']);
+      expect(identitiesIn()).toEqual(['teacher-1', 'student-1']);
     });
   });
 
   describe('failures', () => {
-    it('an outage while removing it skips the tick — and the watch still looks for it', async () => {
+    // student-1 holds no floor in these: the microphone its identity holds
+    // is a breach, and a sighting counts whatever its removal came to (R1).
+    it('an outage while removing it skips the tick — but the sighting counts: the watch finds it again, and that is its reappearance', async () => {
       secondary();
       h.rtc.failNext('removeParticipant', 'unavailable');
 
@@ -347,12 +373,18 @@ describe('LiveReconciler — identities it never issued', () => {
         foreignRemoved: 0,
       });
       expect(identitiesIn()).toContain(FOREIGN);
+      expect(foreignLines().map((line) => line.fields.outcome)).toEqual(['failed']);
 
-      expect(await h.reconciler.watchTick()).toMatchObject({ skipped: null, foreignRemoved: 1 });
-      expect(identitiesIn()).toEqual(['teacher-1']);
+      expect(await h.reconciler.watchTick()).toMatchObject({
+        skipped: null,
+        foreignRemoved: 1,
+        violations: 1,
+        resets: 1,
+      });
+      expect((await h.session(session.id)).mediaRoomEpoch).toBe(1);
     });
 
-    it('a refusal skips the session, by class only — and the watch removes it next', async () => {
+    it('a refusal skips the session, by class only — but the sighting counts, so an identity whose removal always fails shields nobody', async () => {
       secondary();
       h.rtc.failNext('removeParticipant', 'fault');
       logs.lines.length = 0;
@@ -374,11 +406,38 @@ describe('LiveReconciler — identities it never issued', () => {
       });
       expect(JSON.stringify(logs.lines)).not.toContain(SUFFIX);
 
-      expect(await h.reconciler.watchTick()).toMatchObject({ foreignRemoved: 1 });
-      expect(identitiesIn()).toEqual(['teacher-1']);
+      expect(await h.reconciler.watchTick()).toMatchObject({
+        foreignRemoved: 1,
+        violations: 1,
+        resets: 1,
+      });
     });
 
-    it('counts no removal for one that left first — logged as such — and still looks for it', async () => {
+    it('tries every removal when one fails — and counts each identity seen, removed or not', async () => {
+      secondary(`student-1#a`);
+      secondary(`student-1#b`);
+      secondary(`student-2#c`);
+      // The first removal fails; the others are still tried.
+      h.rtc.failNext('removeParticipant', 'fault');
+
+      expect(await h.reconciler.sweepParticipants()).toMatchObject({ sessionsSkipped: 1 });
+      expect(foreignLines().map((line) => line.fields.outcome)).toEqual([
+        'failed',
+        'applied',
+        'applied',
+      ]);
+      expect(identitiesIn()).toEqual(['teacher-1', 'student-1#a']);
+
+      // Both accounts were armed by what was seen: each one's next sighting resets.
+      expect(await h.reconciler.watchTick()).toMatchObject({
+        foreignRemoved: 1,
+        violations: 1,
+        resets: 1,
+      });
+    });
+
+    it('counts no removal for one that left first — logged as such — and still looks for it: it was seen, so its return is a reappearance (R1)', async () => {
+      // student-1 holds no floor: the microphone its identity holds is a breach.
       secondary();
       const removing = h.rtc.hold('removeParticipant');
       const sweeping = h.reconciler.sweepParticipants();
@@ -386,13 +445,24 @@ describe('LiveReconciler — identities it never issued', () => {
       h.rtc.disconnect(room, FOREIGN);
       removing.release();
 
-      expect(await sweeping).toMatchObject({ foreignRemoved: 0 });
+      expect(await sweeping).toMatchObject({
+        foreignRemoved: 0,
+        foreignBreaches: 1,
+        violations: 0,
+      });
       expect(foreignLines().map((line) => line.fields.outcome)).toEqual(['not_connected']);
 
+      // Leaving before the removal hides nothing: back inside the window, it
+      // is found, removed, and counted — and the media reset.
       h.clock.advance(WATCH_TICK_SECONDS);
       secondary();
-      expect(await h.reconciler.watchTick()).toMatchObject({ foreignRemoved: 1 });
-      expect(identitiesIn()).toEqual(['teacher-1']);
+      expect(await h.reconciler.watchTick()).toMatchObject({
+        foreignRemoved: 1,
+        foreignBreaches: 1,
+        violations: 1,
+        resets: 1,
+      });
+      expect((await h.session(session.id)).mediaRoomEpoch).toBe(1);
     });
   });
 
@@ -411,12 +481,13 @@ describe('LiveReconciler — identities it never issued', () => {
       expect(removals()).toEqual([FOREIGN]);
     });
 
-    it('checkIdentities looks for an identity it never issued in the room, removes it there, and asks nothing about it', async () => {
+    it('checkIdentities looks for an identity it never issued in the room, removes it there, and asks about the account behind it — never about the identity', async () => {
       h.rtc.connect(room, 'student-1', LISTENER);
-      secondary();
+      const identity = `student-2#${SUFFIX}`;
+      secondary(identity);
       const permittedAmong = jest.spyOn(h.authorization, 'permittedAmong');
 
-      expect(await h.reconciler.checkIdentities(session.id, [FOREIGN, 'student-1'])).toEqual({
+      expect(await h.reconciler.checkIdentities(session.id, [identity, 'student-1'])).toEqual({
         outcome: 'checked',
         checked: 1,
         removed: 0,
@@ -425,11 +496,12 @@ describe('LiveReconciler — identities it never issued', () => {
         violations: 0,
         resets: 0,
       });
-      expect(removals()).toEqual([FOREIGN]);
-      expect(permittedAmong.mock.calls.map(([, userIds]) => userIds)).toEqual([
-        ['student-1'],
-        ['student-1'],
-      ]);
+      expect(removals()).toEqual([identity]);
+      expect(permittedAmong.mock.calls.length).toBeGreaterThan(0);
+      for (const [, userIds] of permittedAmong.mock.calls) {
+        expect(userIds).toEqual(['student-1', 'student-2']);
+      }
+      expect(JSON.stringify(permittedAmong.mock.calls)).not.toContain('#');
       expect(identitiesIn()).toEqual(['teacher-1', 'student-1']);
     });
   });

@@ -112,14 +112,28 @@ export { WATCH_ENTRY_LIMIT } from './live-reconciler-watch';
  * Identities (P7.1): the application issues one media identity per
  * account, the account id. A standard participant with any other identity
  * — a client's `<account id>#<anything>` — is foreign: removed at once
- * wherever it is observed and looked for again by the watch; never put to
- * Communities or identity, never a violation and never a reset. The
- * participant sweep's and the watch's reports count the removals.
+ * wherever it is observed, on its identity alone, and looked for again by
+ * the watch, which lists the room while one is watched. What it counts for
+ * is its account's (P7.2 decision R1): an account that may not hold what
+ * such an identity held — a floor revoked, a presenter slot closed,
+ * `live.speak` lost, a member removed — has breached, and its reappearance
+ * under any suffix inside the window is a violation, which resets the
+ * media: its self-renewed tokens then name a room that is gone. An account
+ * still entitled to what the identity held is not touched. The participant
+ * sweep's and the watch's reports count the removals and the breaches.
+ *
+ * Never against something that is not LiveKit (P7.2, audit §4.5): while the
+ * provider's last self-check says `incompatible_response`, the participant
+ * sweep, the watch and `ProtectLiveSessions`' checks observe and correct
+ * nothing — a wrong endpoint that says 200 to everything would show rooms
+ * nobody is in and removals that never happened. The room sweep asks again
+ * every period. Any other failure is the calls' own to report.
  *
  * Metrics are structured log lines with stable names (audit D15):
- * `live.reconciler.provider_unavailable` / `.provider_available`,
- * `.session_skipped`, `.tick_failed`, `.room_ensured`, `.orphan_ended`,
- * `.removed`, `.corrected`, `.violation`, `.foreign_identity_removed`, and
+ * `live.reconciler.provider_unavailable` / `.provider_available` /
+ * `.provider_misconfigured`, `.session_skipped`, `.tick_failed`,
+ * `.room_ensured`, `.orphan_ended`, `.removed`, `.corrected`,
+ * `.violation`, `.foreign_identity_removed`, `.foreign_breach`, and
  * `live.session.media_reset`. They carry ids, epochs, counts and codes —
  * never a token, a name, or an identity a client chose.
  *
@@ -145,6 +159,7 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly timers: Array<ReturnType<typeof setInterval>> = [];
   private readonly running = new Map<'rooms' | 'participants' | 'watch', Promise<unknown>>();
   private readonly inFlight = new Set<Promise<unknown>>();
+  private readonly readiness: LiveMediaReadiness;
 
   constructor(
     @Inject(LIVE_SESSION_REPOSITORY) private readonly sessions: LiveSessionRepository,
@@ -164,6 +179,7 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
     @Inject(ID_GENERATOR) ids: IdGenerator,
     readiness: LiveMediaReadiness,
   ) {
+    this.readiness = readiness;
     this.runtime = new ReconcilerRuntime(new Logger(LiveReconciler.name), sessions);
     const enforcement = new Enforcement(
       this.runtime,
@@ -252,7 +268,10 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
   sweepParticipants(): Promise<SessionSweepReport> {
     return this.singleFlight(
       'participants',
-      () => this.sessionSweep((session) => this.steps.sweepStep(session)),
+      async () =>
+        this.refusedConfiguration()
+          ? emptySweep('provider_misconfigured')
+          : this.sessionSweep((session) => this.steps.sweepStep(session)),
       emptySweep,
     );
   }
@@ -261,7 +280,10 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
   watchTick(): Promise<SessionSweepReport> {
     return this.singleFlight(
       'watch',
-      () => this.sessionSweep((session) => this.steps.watchStep(session)),
+      async () =>
+        this.refusedConfiguration()
+          ? emptySweep('provider_misconfigured')
+          : this.sessionSweep((session) => this.steps.watchStep(session)),
       emptySweep,
     );
   }
@@ -276,6 +298,9 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
    * application never issues is only looked for — and removed if found.
    */
   checkIdentities(sessionId: string, userIds: readonly string[]): Promise<SessionCheckReport> {
+    if (this.refusedConfiguration()) {
+      return Promise.resolve(noStep('provider_misconfigured').report);
+    }
     return this.forSession(sessionId, (session) =>
       this.steps.checkPeople(session, [...new Set(userIds)]),
     ).then((step) => step.report);
@@ -288,12 +313,37 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
    * throws.
    */
   checkSession(sessionId: string): Promise<SessionCheckReport> {
+    if (this.refusedConfiguration()) {
+      return Promise.resolve(noStep('provider_misconfigured').report);
+    }
     return this.forSession(sessionId, (session) => this.steps.sweepStep(session)).then(
       (step) => step.report,
     );
   }
 
   // ── Plumbing ───────────────────────────────────────────────────────────
+
+  /**
+   * Whether the provider's last self-check found something that is
+   * positively not LiveKit on its URL — `incompatible_response`, a wrong
+   * endpoint (P7.2, audit §4.5) — whose answers would pass for LiveKit's to
+   * every call the steps make (a `200 {}` room list reads as an empty room):
+   * then nothing is observed or corrected against it, as the room sweep
+   * reads nothing, and the runtime says so once. No other answer stops a
+   * step: the reconciler's own calls decide — an outage, a refused
+   * credential or a failed TLS handshake fails them (typed, P7.2 Q-B), and
+   * where they succeed, what they observe is the provider's. So a self-check
+   * that fails where the calls do not (its short-lived token against a
+   * skewed clock, say) never switches enforcement off.
+   */
+  private refusedConfiguration(): boolean {
+    const report = this.readiness.current?.report;
+    if (report === undefined || report.ready || report.reason !== 'incompatible_response') {
+      return false;
+    }
+    this.runtime.noteMisconfigured(report.reason);
+    return true;
+  }
 
   /** Pages every live session, then runs `step` for each, one at a time, under its lock. */
   private async sessionSweep(
@@ -316,10 +366,13 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
     let sessionsSkipped = 0;
     let ended = 0;
     let foreignRemoved = 0;
+    let foreignBreaches = 0;
     for (const listed of live) {
-      const { report, foreignRemoved: foreign } = await this.forSession(listed.id, step);
+      const done = await this.forSession(listed.id, step);
+      const { report } = done;
       tally = addTally(tally, report);
-      foreignRemoved += foreign;
+      foreignRemoved += done.foreignRemoved;
+      foreignBreaches += done.foreignBreaches;
       // Every other session would meet the same provider: the tick stops.
       if (
         report.outcome === 'provider_unavailable' ||
@@ -332,6 +385,7 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
           sessionsSkipped,
           ended,
           foreignRemoved,
+          foreignBreaches,
         };
       }
       if (report.outcome === 'skipped') sessionsSkipped += 1;
@@ -344,6 +398,7 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
       sessionsSkipped,
       ended,
       foreignRemoved,
+      foreignBreaches,
     };
   }
 

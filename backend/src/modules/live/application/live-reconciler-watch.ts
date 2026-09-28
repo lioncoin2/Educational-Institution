@@ -24,6 +24,17 @@ interface ForeignEntry {
 }
 
 /**
+ * An account one of whose foreign identities was seen holding more than the
+ * account may hold (P7.2 decision R1): a sighting of another before `until`
+ * is a reappearance.
+ */
+interface ForeignBreachEntry {
+  readonly sessionId: string;
+  readonly userId: string;
+  readonly until: Date;
+}
+
+/**
  * The targeted watch's memory in this process (design §11.4; audit D10,
  * D22): who a correction or a removal put under enforcement, in which
  * session, until when, and whether that correction reported `applied`.
@@ -32,14 +43,20 @@ interface ForeignEntry {
  * participant sweep backstops it.
  *
  * Beside them, apart, the foreign identities removed (P7.1): never people,
- * so never armed — nothing about them is ever a violation — only looked for
- * again, for the same window.
+ * so never armed themselves — only looked for again, for the same window —
+ * and the accounts whose foreign identities breached (P7.2 decision R1),
+ * armed by that sighting alone: the next breaching sighting of the same
+ * account, under any suffix, is a violation. The two arms never mix. A
+ * correction of the account's own identity arms only that identity, and a
+ * foreign sighting only the account's foreign identities — so which step
+ * happens to observe which identity first never decides a reset.
  *
  * Each is bounded to WATCH_ENTRY_LIMIT entries, the oldest dropped first.
  */
 export class ReconcilerWatch {
   private readonly entries = new Map<string, WatchEntry>();
   private readonly foreign = new Map<string, ForeignEntry>();
+  private readonly foreignBreaches = new Map<string, ForeignBreachEntry>();
 
   /** Under the watch of a correction that reported `applied`: a breach now may be a violation. */
   armed(sessionId: string, userId: string, now: Date): boolean {
@@ -54,11 +71,45 @@ export class ReconcilerWatch {
   }
 
   /**
-   * Who is under enforcement in a session now, oldest entry first. An entry
-   * whose window has passed is dropped on the way.
+   * Who is under enforcement in a session now — by a correction of their own
+   * identity, or a breach through a foreign one — each once, oldest entry
+   * first. An entry whose window has passed is dropped on the way.
    */
   watchedIn(sessionId: string, now: Date): string[] {
-    return current(this.entries, sessionId, now).map((entry) => entry.userId);
+    return [
+      ...new Set([
+        ...current(this.entries, sessionId, now).map((entry) => entry.userId),
+        ...current(this.foreignBreaches, sessionId, now).map((entry) => entry.userId),
+      ]),
+    ];
+  }
+
+  /**
+   * Whether anything at all is watched in a session now: someone under
+   * enforcement, or a foreign identity to look for again. Only then can a
+   * step find a violation, or an identity it cannot look up by name.
+   */
+  anyIn(sessionId: string, now: Date): boolean {
+    return (
+      current(this.entries, sessionId, now).length > 0 ||
+      current(this.foreign, sessionId, now).length > 0 ||
+      current(this.foreignBreaches, sessionId, now).length > 0
+    );
+  }
+
+  /**
+   * Whether one of the account's foreign identities was seen breaching
+   * inside the window (P7.2 decision R1): a breaching sighting now is its
+   * reappearance.
+   */
+  foreignArmed(sessionId: string, userId: string, now: Date): boolean {
+    const entry = this.foreignBreaches.get(watchKey(sessionId, userId));
+    return entry !== undefined && entry.until.getTime() > now.getTime();
+  }
+
+  /** A breaching sighting of the account's foreign identities: watched until `until`. */
+  armForeign(sessionId: string, userId: string, until: Date): void {
+    keepNewest(this.foreignBreaches, watchKey(sessionId, userId), { sessionId, userId, until });
   }
 
   /**
@@ -77,7 +128,7 @@ export class ReconcilerWatch {
 
   /** Drops everything watched in a session that ended. */
   forget(sessionId: string): void {
-    for (const watched of [this.entries, this.foreign]) {
+    for (const watched of [this.entries, this.foreign, this.foreignBreaches]) {
       for (const [key, entry] of watched) {
         if (entry.sessionId === sessionId) watched.delete(key);
       }
@@ -86,7 +137,7 @@ export class ReconcilerWatch {
 
   /** Drops everything watched in every session that is not among `liveIds`. */
   keepOnly(liveIds: ReadonlySet<string>): void {
-    for (const watched of [this.entries, this.foreign]) {
+    for (const watched of [this.entries, this.foreign, this.foreignBreaches]) {
       for (const [key, entry] of watched) {
         if (!liveIds.has(entry.sessionId)) watched.delete(key);
       }
