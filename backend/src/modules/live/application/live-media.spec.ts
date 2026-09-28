@@ -5,6 +5,7 @@ import { AdjustableClock } from '../../../../test/support/identity-harness';
 import { LIVE_TEST_SETTINGS } from '../../../../test/support/live-harness';
 import { mediaRoomName, newLiveSession, type LiveSession } from '../domain/live-session';
 import { capabilitiesFor, type ParticipantStanding } from '../domain/standing';
+import { RtcUnavailableError } from '../domain/rtc-provider';
 import { FakeRtcProvider } from '../infrastructure/fake-rtc-provider';
 import { LiveMedia, MEDIA_RECORD_LIMIT } from './live-media';
 import type { LiveStanding } from './live-standing';
@@ -112,6 +113,106 @@ describe('LiveMedia', () => {
     expect(await media.push(session, 'student-1')).toBe('pending');
     expect(logged).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(logged.mock.calls)).not.toContain('refused');
+  });
+
+  // P7.2 (audit §4.3): a push to someone Communities no longer lets stay
+  // never hands them what their hand says — the reconciler removes them.
+  it('pushes the set of no standing at all to someone no longer eligible, whatever their hand says', async () => {
+    rtc.connect(room, 'student-1', MICROPHONE);
+    ofAccounts.mockResolvedValueOnce(
+      new Map([['student-1', { standing: SPEAKING, eligible: false }]]),
+    );
+    expect(await media.push(session, 'student-1')).toBe('applied');
+    expect(rtc.capabilityChanges.at(-1)).toEqual({
+      roomName: room,
+      identity: 'student-1',
+      capabilities: LISTENER,
+    });
+  });
+
+  describe('one push at a time per person (P7.2, audit §4.2)', () => {
+    const revoked = new Map([
+      ['student-1', { standing: { ...SPEAKING, speakerGrant: false }, eligible: true }],
+    ]);
+
+    it('reads the standing for the next push only once the one before it has landed, so the last stored change wins', async () => {
+      rtc.connect(room, 'student-1', LISTENER);
+      // The grant's push reads "speaking", then waits at the provider…
+      const gate = rtc.hold('updateCapabilities');
+      const granting = media.push(session, 'student-1');
+      await gate.reached;
+      // …while the revoke commits and asks for its own push.
+      ofAccounts.mockImplementation(async () => revoked);
+      const revoking = media.push(session, 'student-1');
+      for (let turn = 0; turn < 20; turn += 1) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      // The revoke's push has not read anything yet: it waits its turn.
+      expect(ofAccounts).toHaveBeenCalledTimes(1);
+      gate.release();
+
+      expect(await granting).toBe('applied');
+      expect(await revoking).toBe('applied');
+      expect(ofAccounts).toHaveBeenCalledTimes(2);
+      expect(rtc.capabilityChanges.map((change) => change.capabilities)).toEqual([
+        MICROPHONE,
+        LISTENER,
+      ]);
+      expect(rtc.observed(room)[0]?.capabilities).toEqual(LISTENER);
+    });
+
+    it('never holds one person’s push behind another’s', async () => {
+      rtc.connect(room, 'student-1', LISTENER);
+      rtc.connect(room, 'student-2', LISTENER);
+      const reads: string[] = [];
+      ofAccounts.mockImplementation(async (_session: LiveSession, userIds: readonly string[]) => {
+        reads.push(...userIds);
+        return new Map(userIds.map((userId) => [userId, { standing: SPEAKING, eligible: true }]));
+      });
+      const gate = rtc.hold('updateCapabilities');
+      const first = media.push(session, 'student-1');
+      await gate.reached;
+      const second = media.push(session, 'student-2');
+      while (reads.length < 2) await new Promise((resolve) => setImmediate(resolve));
+      // student-2's push read its standing while student-1's was held.
+      expect(reads).toEqual(['student-1', 'student-2']);
+      gate.release();
+      expect(await Promise.all([first, second])).toEqual(['applied', 'applied']);
+    });
+
+    it('runs the reconciler’s correction in turn too — read afresh, its failure thrown, and never counted as a push', async () => {
+      rtc.connect(room, 'student-1', LISTENER);
+      const mark = media.pushMark();
+      const gate = rtc.hold('updateCapabilities');
+      const granting = media.push(session, 'student-1');
+      await gate.reached;
+      ofAccounts.mockImplementation(async () => revoked);
+      const correcting = media.pushNow(session, 'student-1');
+      for (let turn = 0; turn < 20; turn += 1) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      expect(ofAccounts).toHaveBeenCalledTimes(1);
+      gate.release();
+      expect(await granting).toBe('applied');
+      expect(await correcting).toBe('applied');
+      expect(ofAccounts).toHaveBeenCalledTimes(2);
+      // The correction carried the standing read after the grant's push landed.
+      expect(rtc.capabilityChanges.map((change) => change.capabilities)).toEqual([
+        MICROPHONE,
+        LISTENER,
+      ]);
+      // Only the moderator's push counts for a later observation.
+      const after = media.pushMark();
+      expect(media.pushedSince(session.id, 'student-1', mark)).toBe(true);
+      await media.pushNow(session, 'student-1');
+      expect(media.pushedSince(session.id, 'student-1', after)).toBe(false);
+
+      // An outage, a refused configuration, a standing it cannot read: thrown.
+      rtc.failNext('updateCapabilities', 'unavailable');
+      await expect(media.pushNow(session, 'student-1')).rejects.toBeInstanceOf(RtcUnavailableError);
+      ofAccounts.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+      await expect(media.pushNow(session, 'student-1')).rejects.toThrow('ECONNREFUSED');
+    });
   });
 
   it('forgets an ended session, and only that one', async () => {

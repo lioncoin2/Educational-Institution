@@ -1,13 +1,16 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { KeyedMutex } from '../../../platform/concurrency/keyed-mutex';
 import { CLOCK, type Clock } from '../../../shared';
 import { currentMediaRoom, type LiveSession } from '../domain/live-session';
 import {
   RTC_PARTICIPANTS,
   RtcUnavailableError,
+  type RtcApplyOutcome,
+  type RtcCapabilities,
   type RtcParticipantControl,
 } from '../domain/rtc-provider';
-import { capabilitiesFor } from '../domain/standing';
+import { capabilitiesFor, type ParticipantStanding } from '../domain/standing';
 import { LIVE_SETTINGS, type LiveSettings } from './live-settings';
 import { LiveStanding } from './live-standing';
 
@@ -37,19 +40,34 @@ export interface UnsettledPush {
  */
 export const MEDIA_RECORD_LIMIT = 10_000;
 
+/** No standing at all: what someone no longer eligible to stay may hold until they are removed. */
+const NOBODY: ParticipantStanding = {
+  moderator: false,
+  publishesByRight: false,
+  speakerGrant: false,
+  presenter: false,
+};
+
 /**
- * The one way Live pushes a person's media rights after a change it has
- * stored — a floor granted, revoked or yielded, a presenter slot opened or
- * closed — and what it remembers of the answers (audit D11, which retires
- * P1's CapabilityConvergence in favour of the reconciler's targeted watch).
+ * The one way Live pushes a person's media rights — after a change it has
+ * stored (a floor granted, revoked or yielded, a presenter slot opened or
+ * closed), and for the reconciler's corrections (`pushNow`) — and what it
+ * remembers of the answers (audit D11, which retires P1's
+ * CapabilityConvergence in favour of the reconciler's targeted watch).
  *
  * A push sends the person's FULL current set, `capabilitiesFor` their
  * standing as it is now — recomputed through `LiveStanding`, never taken from
  * the act — so a host whose own hand is revoked keeps the microphone hosting
- * gives them, and two changes that raced are settled by whichever was stored
- * last.
+ * gives them. Someone Communities no longer lets stay gets the set of no
+ * standing at all, whatever their hand says: the reconciler removes them
+ * (P7.2).
  *
- * It never throws: the change is already stored, and is audited and
+ * One push at a time per person, in the order they were asked for (P7.2):
+ * each reads the standing only once the one before it has landed, so the
+ * last to run carries the last stored change, and a grant and a revoke that
+ * raced leave the provider holding whichever was stored last.
+ *
+ * `push` never throws: the change is already stored, and is audited and
  * announced whatever the media plane says. A failure is `pending`, logged by
  * class only (an outage was logged by the adapter already).
  *
@@ -91,6 +109,8 @@ export class LiveMedia {
     string,
     { readonly sessionId: string; readonly sequence: number }
   >();
+  /** One push at a time per person — this class's and the reconciler's corrections alike. */
+  private readonly perPerson = new KeyedMutex();
 
   constructor(
     @Inject(RTC_PARTICIPANTS) private readonly participants: RtcParticipantControl,
@@ -99,14 +119,15 @@ export class LiveMedia {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  /** Pushes `userId`'s full current set in `session`'s media room; never throws. */
+  /** Pushes `userId`'s full current set in `session`'s media room, in turn; never throws. */
   async push(session: LiveSession, userId: string): Promise<PushOutcome> {
     const key = personKey(session.id, userId);
+    // Under way from the moment it is asked for — waiting its turn included.
     this.pushesUnderWay.set(key, (this.pushesUnderWay.get(key) ?? 0) + 1);
     this.notePushed(session.id, key);
     let outcome: PushOutcome;
     try {
-      outcome = await this.attempt(session, userId);
+      outcome = await this.perPerson.run(key, () => this.attempt(session, userId));
     } finally {
       const left = (this.pushesUnderWay.get(key) ?? 1) - 1;
       if (left > 0) this.pushesUnderWay.set(key, left);
@@ -115,6 +136,25 @@ export class LiveMedia {
     }
     this.noteOutcome(session.id, userId, outcome);
     return outcome;
+  }
+
+  /**
+   * The reconciler's correction: `userId`'s full current set, read afresh
+   * and pushed in turn with every other push of theirs — so a correction
+   * decided on an observation a moderator's push has since overtaken never
+   * lands over it with an older set. The provider's answer, or its failure
+   * — and a standing that cannot be read — thrown. Not one of this class's
+   * pushes for `pushedSince`: the reconciler's corrections are serialized
+   * with its own observations.
+   */
+  pushNow(session: LiveSession, userId: string): Promise<RtcApplyOutcome> {
+    return this.perPerson.run(personKey(session.id, userId), async () =>
+      this.participants.updateCapabilities(
+        currentMediaRoom(this.settings.roomNamePrefix, session),
+        userId,
+        await this.setOf(session, userId),
+      ),
+    );
   }
 
   /** A point in the pushes' order, taken before the provider is observed (`pushedSince`). */
@@ -200,15 +240,23 @@ export class LiveMedia {
     bounded(this.lastPushed, key, { sessionId, sequence: this.pushSequence });
   }
 
+  /**
+   * The set `userId` may hold now: their standing's — or no standing's, once
+   * Communities no longer lets them stay. Throws when it cannot be read.
+   */
+  private async setOf(session: LiveSession, userId: string): Promise<RtcCapabilities> {
+    const account = (await this.standing.ofAccounts(session, [userId])).get(userId);
+    // `ofAccounts` answers for every id it is asked about; never decided on a guess.
+    if (account === undefined) throw new Error('No standing was read for the person pushed.');
+    return capabilitiesFor(account.eligible ? account.standing : NOBODY);
+  }
+
   private async attempt(session: LiveSession, userId: string): Promise<PushOutcome> {
     try {
-      // `ofAccounts` answers for every id it is asked about.
-      const account = (await this.standing.ofAccounts(session, [userId])).get(userId);
-      if (account === undefined) return 'pending';
       return await this.participants.updateCapabilities(
         currentMediaRoom(this.settings.roomNamePrefix, session),
         userId,
-        capabilitiesFor(account.standing),
+        await this.setOf(session, userId),
       );
     } catch (error) {
       // The adapter has logged an outage as a warning. Anything else — a

@@ -172,14 +172,19 @@ export interface ClaimResult {
 
 /**
  * The only thing that carries a media credential. Never logged, never in an
- * event, frame or audit entry. `expiresInSeconds` bounds only the FIRST
- * connection: once connected, the media server itself keeps issuing the
- * client fresh tokens with its current permissions (live.md §9).
+ * event, frame or audit entry. `expiresInSeconds` and `expiresAt` bound only
+ * the FIRST connection: once connected, the media server itself keeps issuing
+ * the client fresh tokens with its current permissions (live.md §9), and
+ * `/join` is the way back in after that.
  */
 export interface JoinTicket {
+  /** The session the ticket is for — the one in the path. */
+  readonly sessionId: string;
   readonly token: string;
   readonly url: string;
   readonly expiresInSeconds: number;
+  /** When the token stops admitting a new connection: never later than the token says. */
+  readonly expiresAt: Date;
   readonly role: LiveParticipantRole;
   readonly media: {
     readonly microphone: boolean;

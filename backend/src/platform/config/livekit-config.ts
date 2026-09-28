@@ -8,7 +8,8 @@
  *   LIVEKIT_URL      client → LiveKit: the signalling URL a join ticket
  *                    carries. ws: or wss:, and wss: only in a deployed
  *                    environment, real media enabled or not — a client never
- *                    connects in clear there.
+ *                    connects in clear there — to a host clients can reach:
+ *                    never an internal one there (P7.2).
  *   LIVEKIT_API_URL  API → LiveKit: the server API the adapter calls (the
  *                    room service and the readiness probe), e.g.
  *                    http://livekit:7880 over a private network. Optional:
@@ -68,6 +69,16 @@ export function readLiveKitServer(
     if (fault === 'insecure') {
       problems.push(
         `LIVEKIT_URL must use wss:// in ${environment}: clients never connect in clear`,
+      );
+    }
+    // Every join ticket hands this URL to clients (P7.2, audit §4.7): in a
+    // deployed environment it names a host they can reach, never one of this
+    // deployment's internal ones.
+    if (deployed && fault !== 'malformed' && isInternalHost(new URL(givenUrl).hostname)) {
+      problems.push(
+        `LIVEKIT_URL must name a public host in ${environment}, not an internal one ` +
+          '(loopback, a single-label service name or a private IPv4 address): every join ' +
+          'ticket hands it to clients',
       );
     }
   }

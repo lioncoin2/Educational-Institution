@@ -171,6 +171,50 @@ describe('loadConfig — the LiveKit server’s URLs (decision 3)', () => {
     },
   );
 
+  // P7.2 (audit §4.7): the URL every ticket hands to clients.
+  it.each([
+    'wss://localhost:7880',
+    'wss://127.0.0.1',
+    'wss://[::1]:7880',
+    'wss://livekit:7880',
+    'wss://10.0.0.7',
+    'wss://172.16.4.2:443',
+    'wss://192.168.1.10',
+  ])('refuses the internal client URL %s in a deployed environment, real media or not', (url) => {
+    for (const environment of DEPLOYED_ENVIRONMENTS) {
+      const problem =
+        `LIVEKIT_URL must name a public host in ${environment}, not an internal one ` +
+        '(loopback, a single-label service name or a private IPv4 address): every join ' +
+        'ticket hands it to clients';
+      expect(
+        problemsOf({ ...DEPLOYED, ...REAL_MEDIA, NODE_ENV: environment, LIVEKIT_URL: url }),
+      ).toEqual([problem]);
+      expect(problemsOf({ ...DEPLOYED, NODE_ENV: environment, LIVEKIT_URL: url })).toEqual([
+        problem,
+      ]);
+    }
+    // Development and test run on this machine: an internal host is what they use.
+    expect(
+      loadConfig({ ...DEPLOYED, ...REAL_MEDIA, NODE_ENV: 'test', LIVEKIT_URL: url }).livekit.url,
+    ).toBe(url);
+  });
+
+  it('reports an internal host beside an insecure scheme — both are to fix', () => {
+    expect(
+      problemsOf({
+        ...DEPLOYED,
+        ...REAL_MEDIA,
+        NODE_ENV: 'production',
+        LIVEKIT_URL: 'ws://livekit:7880',
+      }),
+    ).toEqual([
+      'LIVEKIT_URL must use wss:// in production: clients never connect in clear',
+      'LIVEKIT_URL must name a public host in production, not an internal one ' +
+        '(loopback, a single-label service name or a private IPv4 address): every join ' +
+        'ticket hands it to clients',
+    ]);
+  });
+
   it('accepts ws:// in development and test, real media enabled or not', () => {
     for (const environment of ['development', 'test']) {
       expect(

@@ -343,10 +343,11 @@ export class ParticipantSteps {
       this.media.settle(session.id, userId);
       return {};
     }
+    // The person's set, read afresh and pushed in turn with any moderator's
+    // push of theirs (`LiveMedia.pushNow`): a correction never lands an older
+    // set over a newer one.
     const push = async (): Promise<RtcApplyOutcome> => {
-      const outcome = await this.runtime.provider(() =>
-        this.participants.updateCapabilities(room, userId, desired),
-      );
+      const outcome = await this.runtime.provider(() => this.media.pushNow(session, userId));
       this.media.noteOutcome(session.id, userId, outcome);
       return outcome;
     };

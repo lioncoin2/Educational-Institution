@@ -722,7 +722,7 @@ describe('LiveReconciler — participants', () => {
         });
       });
 
-      it('counts no violation for a breach observed while the moderator’s push was still on its way', async () => {
+      it('counts no violation for a breach observed while the moderator’s push was still on its way — and corrects only after it, in turn', async () => {
         // An applied correction, and so a live window.
         h.rtc.connect(room, 'student-1', MICROPHONE, ['microphone']);
         expect(await h.reconciler.sweepParticipants()).toMatchObject({ corrected: 1 });
@@ -735,12 +735,22 @@ describe('LiveReconciler — participants', () => {
         await pushing.reached;
         const pushes = () => h.rtc.calls.filter((c) => c.operation === 'updateCapabilities');
         const before = pushes().length;
+        const correcting = jest.spyOn(h.media, 'pushNow');
         const watching = h.reconciler.watchTick();
-        while (pushes().length === before) await new Promise((resolve) => setImmediate(resolve));
+        while (correcting.mock.calls.length === 0) {
+          await new Promise((resolve) => setImmediate(resolve));
+        }
+        // The correction waits its turn behind the revoke's push (P7.2): it
+        // reaches the provider only once that push has landed.
+        for (let turn = 0; turn < 20; turn += 1) {
+          await new Promise((resolve) => setImmediate(resolve));
+        }
+        expect(pushes()).toHaveLength(before);
         pushing.release();
 
         expect((await revoking).media).toBe('applied');
         expect(await watching).toMatchObject({ corrected: 1, violations: 0, resets: 0 });
+        expect(pushes()).toHaveLength(before + 1);
         expect(await h.session(session.id)).toMatchObject({
           mediaRoomEpoch: 0,
           enforcementViolations: 0,

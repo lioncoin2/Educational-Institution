@@ -74,7 +74,15 @@ const REQUEST_KEYS = [
   'state',
   'userId',
 ].sort();
-const TICKET_KEYS = ['expiresInSeconds', 'media', 'role', 'token', 'url'].sort();
+const TICKET_KEYS = [
+  'sessionId',
+  'expiresAt',
+  'expiresInSeconds',
+  'media',
+  'role',
+  'token',
+  'url',
+].sort();
 
 /** A listener's rights: to listen, and nothing else — not even the data channel. */
 const LISTENER: RtcCapabilities = {
@@ -444,22 +452,34 @@ describe('live API', () => {
 
   it('joins with a ticket that is the server’s decision alone — never the client’s', async () => {
     const before = rtc.issued.length;
+    const askedAt = Math.floor(Date.now() / 1000);
     const listener = await call('POST', `/sessions/${sessionId}/join`, s1, {
       displayName: 'الأستاذة عائشة',
       role: 'moderator',
       identity: host.id,
       roomName: 'another-room',
       ttlSeconds: 21_600,
+      sessionId: otherCommunityId,
+      expiresAt: '2099-01-01T00:00:00.000Z',
     });
+    const answeredAt = Math.floor(Date.now() / 1000);
     expect(listener.status).toBe(200);
     expect(Object.keys(listener.body).sort()).toEqual(TICKET_KEYS);
     expect(listener.body).toEqual({
+      sessionId,
       token: `fake.${room(sessionId)}.${s1.id}.sub`,
       url: 'ws://fake-rtc.local',
       expiresInSeconds: 120,
+      expiresAt: expect.stringMatching(ISO) as string,
       role: 'listener',
       media: { microphone: false, screen: false, screenAudio: false },
     });
+    // The expiry metadata (P7.2): whole seconds, the configured lifetime from
+    // when the token was signed — never later than the token itself says.
+    const expiresAt = Date.parse(listener.body.expiresAt as string) / 1000;
+    expect(Number.isInteger(expiresAt)).toBe(true);
+    expect(expiresAt).toBeGreaterThanOrEqual(askedAt + 120);
+    expect(expiresAt).toBeLessThanOrEqual(answeredAt + 120);
     // What the token encodes: this session's room, the caller, the name the
     // directory holds (a student cannot appear as the teacher), nothing to
     // publish, and two minutes.

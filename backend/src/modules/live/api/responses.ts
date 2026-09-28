@@ -153,12 +153,16 @@ export function toHandsPageResponse(page: HandsPage): {
 
 /**
  * The only response that carries a media credential: exactly these fields.
- * Never logged, published, framed or audited.
+ * Never logged, published, framed or audited. `url` is the client-facing
+ * LIVEKIT_URL — never the server API's.
  */
 export interface JoinTicketResponse {
+  readonly sessionId: string;
   readonly token: string;
   readonly url: string;
   readonly expiresInSeconds: number;
+  /** ISO-8601: when the token stops admitting a new connection. */
+  readonly expiresAt: string;
   readonly role: LiveParticipantRole;
   readonly media: {
     readonly microphone: boolean;
@@ -169,9 +173,11 @@ export interface JoinTicketResponse {
 
 export function toJoinTicketResponse(ticket: JoinTicket): JoinTicketResponse {
   return {
+    sessionId: ticket.sessionId,
     token: ticket.token,
     url: ticket.url,
     expiresInSeconds: ticket.expiresInSeconds,
+    expiresAt: ticket.expiresAt.toISOString(),
     role: ticket.role,
     media: {
       microphone: ticket.media.microphone,

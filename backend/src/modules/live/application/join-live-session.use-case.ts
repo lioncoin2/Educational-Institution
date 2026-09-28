@@ -1,10 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import {
+  CLOCK,
   RATE_LIMITER,
   err,
   ok,
   type CallMetadata,
+  type Clock,
   type Principal,
   type RateLimiter,
   type Result,
@@ -34,6 +36,7 @@ import {
   type RtcTokenIssuer,
 } from '../domain/rtc-provider';
 import { capabilitiesFor, roleOf } from '../domain/standing';
+import { askCommunities } from './community-calls';
 import { LiveAccess } from './live-access';
 import {
   LIVE_SETTINGS,
@@ -59,8 +62,10 @@ import { mediaOf, type JoinTicket } from './views';
  *      (session, user) — never by address, which a school shares;
  *   2. the session, by id → 404;
  *   3. Communities, on the session's OWN community id: `community.live.join`,
- *      or a moderator of the session → 404 like an unknown session, 412 for
- *      the lifecycle's refusal, 503 when Communities cannot answer;
+ *      or a moderator of the session → 404 like an unknown session — a
+ *      non-member, a member of another community and a removed member alike
+ *      (P7.2 decision Q-A) — 412 for the lifecycle's refusal, 503 when
+ *      Communities cannot answer;
  *   4. the session is live → else 412;
  *   5. the caller's standing: a moderator holding `live.speak` and a speaker
  *      holding a granted hand get the microphone; the presenter, the screen;
@@ -75,10 +80,21 @@ import { mediaOf, type JoinTicket } from './views';
  *      cap — but a provider that refuses this deployment's configuration
  *      fails closed, 503 live.media_misconfigured (P7.2, Q-B): nothing could
  *      enforce anything in a room it runs;
- *   7. the name, from the account directory (never from the request);
- *   8. the token, for exactly the session's current media room, with its
- *      lifetime checked here first (audit D24) → 503 live.media_unavailable
- *      when the provider cannot sign, the disabled provider included.
+ *   7. the name, from the account directory (never from the request); a
+ *      directory that cannot answer is 503 `unavailable`, never a guess;
+ *   8. asked AGAIN, immediately before the token (P7.2; D20, as Start asks):
+ *      the provider round trips of step 6 take up to seconds, and a removal,
+ *      a revoke or an end committed meanwhile must be honoured. Communities
+ *      as in step 3, the session re-read — ended → 412, moved to a new room
+ *      by a media reset → 503 live.media_unavailable, which the client
+ *      retries — and the standing of step 5 read again: the token carries
+ *      what the caller may do now, not a few seconds ago;
+ *   9. the token, for exactly the session's current media room, with its
+ *      lifetime (LIVE_JOIN_TOKEN_TTL_SECONDS) checked here first (audit D24)
+ *      → 503 live.media_unavailable when the provider cannot sign, the
+ *      disabled provider included. The ticket names the session and when the
+ *      token stops admitting a new connection, `expiresAt` — never later than
+ *      the token itself says.
  *
  * Nothing is written, audited or published: a join is transport. Calling it
  * again is always safe and always current — it is the way back in after a
@@ -99,6 +115,7 @@ export class JoinLiveSessionUseCase {
     @Inject(RTC_TOKENS) private readonly tokens: RtcTokenIssuer,
     @Inject(RATE_LIMITER) private readonly limiter: RateLimiter,
     @Inject(LIVE_SETTINGS) private readonly settings: LiveSettings,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   async execute(command: {
@@ -128,20 +145,39 @@ export class JoinLiveSessionUseCase {
     if (!participant.ok) return participant;
     if (!isLive(session)) return err(LiveRefusals.sessionNotLive);
 
-    const { standing } = await this.standing.ofPrincipal(
+    // Moderators and speakers skip the soft cap: the standing decides admission.
+    const admission = await this.standing.ofPrincipal(
       principal,
       session,
       participant.value.moderator !== null,
     );
-    const role = roleOf(standing);
-    const capabilities = capabilitiesFor(standing);
-
-    const admitted = await this.admit(session, role);
+    const admitted = await this.admit(session, roleOf(admission.standing));
     if (!admitted.ok) return admitted;
     // The room the session uses now — a media reset may have moved it.
     const room = admitted.value;
 
-    const [account] = await this.directory.describe([principal.userId]);
+    const named = await askCommunities(this.logger, () =>
+      this.directory.describe([principal.userId]),
+    );
+    if (!named.ok) return named;
+    const [account] = named.value;
+
+    // Step 8: everything the token encodes, decided again now.
+    const still = await this.access.participant(principal, session, LiveRefusals.sessionNotFound);
+    if (!still.ok) return still;
+    const current = await this.sessions.findById(session.id);
+    if (current === null || !isLive(current)) return err(LiveRefusals.sessionNotLive);
+    if (currentMediaRoom(this.settings.roomNamePrefix, current) !== room) {
+      return err(LiveRefusals.mediaUnavailable);
+    }
+    const { standing } = await this.standing.ofPrincipal(
+      principal,
+      current,
+      still.value.moderator !== null,
+    );
+    const role = roleOf(standing);
+    const capabilities = capabilitiesFor(standing);
+
     const ttlSeconds = this.settings.joinTokenTtlSeconds;
     // The provider's SDK reads a falsy lifetime as six hours: never ask it
     // for anything but a whole number of seconds, 1 to 600 (audit D24).
@@ -150,6 +186,8 @@ export class JoinLiveSessionUseCase {
         `A join token lasts 1 to ${MAX_JOIN_TOKEN_TTL_SECONDS} whole seconds, not ${ttlSeconds}.`,
       );
     }
+    // Whole seconds, taken before signing: never later than the token's own expiry.
+    const issuedAt = Math.floor(this.clock.now().getTime() / 1000);
     let token: RtcAccessToken;
     try {
       token = await this.tokens.issueAccessToken({
@@ -167,9 +205,11 @@ export class JoinLiveSessionUseCase {
     if (role === 'listener') this.occupancy.listenerAdmitted(room);
 
     return ok({
+      sessionId: session.id,
       token: token.token,
       url: token.url,
       expiresInSeconds: token.expiresInSeconds,
+      expiresAt: new Date((issuedAt + token.expiresInSeconds) * 1000),
       role,
       media: mediaOf(capabilities),
     });

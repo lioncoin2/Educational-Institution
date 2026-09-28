@@ -325,9 +325,13 @@ describe('live security', () => {
           role,
           status: 200,
           body: {
+            sessionId,
             token: `fake.${room(sessionId)}.${account.id}.${sources.length > 0 ? 'pub' : 'sub'}`,
             url: 'ws://fake-rtc.local',
             expiresInSeconds: 120,
+            expiresAt: expect.stringMatching(
+              /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z$/,
+            ) as string,
             role,
             media: {
               microphone: capabilities.canPublishAudio,

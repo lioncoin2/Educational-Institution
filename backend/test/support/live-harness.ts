@@ -209,6 +209,7 @@ function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
       provider,
       limiter,
       settings,
+      clock,
     ),
     raise: new RaiseHandUseCase(
       identity,

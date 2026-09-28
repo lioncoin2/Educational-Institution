@@ -261,6 +261,98 @@ describe('joining a live session', () => {
     });
   });
 
+  /**
+   * P7.2 (audit §4.4, D20 as Start asks it): the provider round trips of the
+   * room check take up to seconds, so everything the token encodes is decided
+   * again just before it is signed — a removal, a revoke, an end or a reset
+   * committed meanwhile is honoured.
+   */
+  describe('decided again just before the token', () => {
+    /** Holds the room check at the provider, runs `meanwhile`, then lets the join finish. */
+    async function joinWhile(principal: Principal, meanwhile: () => Promise<unknown>) {
+      const gate = h.rtc.hold('listRooms');
+      const joining = join(principal);
+      await gate.reached;
+      await meanwhile();
+      gate.release();
+      return joining;
+    }
+
+    it('refuses someone removed from the community during the room check, as a non-member — no token', async () => {
+      const refused = await joinWhile(student, () => h.remove(communityId, owner, 'student-1'));
+      expect(codeOf(refused)).toBe('live.session_not_found');
+      expect(h.rtc.issued).toEqual([]);
+    });
+
+    it('signs what the caller may do now: a floor revoked during the room check gives no microphone', async () => {
+      const hand = await h.raised(student, session.id);
+      await h.moderate.grant({ principal: owner, requestId: hand.id, meta: META });
+      const joined = await joinWhile(student, () =>
+        h.moderate.revoke({ principal: owner, requestId: hand.id, meta: META }),
+      );
+      expect(joined.ok && joined.value).toMatchObject({
+        role: 'listener',
+        media: { microphone: false, screen: false, screenAudio: false },
+      });
+      expect(h.rtc.issued.at(-1)?.capabilities).toEqual(LISTENER);
+    });
+
+    it('refuses a session ended during the room check with 412 — no token for a room being deleted', async () => {
+      const refused = await joinWhile(student, () =>
+        h.end.execute({ principal: owner, sessionId: session.id, meta: META }),
+      );
+      expect(codeOf(refused)).toBe('live.session_not_live');
+      expect(h.rtc.issued).toEqual([]);
+    });
+
+    it('answers 503, retryable, when a media reset moved the session during the room check — never a token for the old room', async () => {
+      const refused = await joinWhile(student, () =>
+        h.sessions.bumpEpoch(session.id, 0, {
+          id: h.ids.next<'ModerationAction'>(),
+          sessionId: session.id,
+          actorUserId: null,
+          targetUserId: null,
+          type: 'reset_media',
+          at: h.clock.now(),
+        }),
+      );
+      expect(refused).toMatchObject({
+        ok: false,
+        error: { kind: 'unavailable', code: 'live.media_unavailable' },
+      });
+      expect(h.rtc.issued).toEqual([]);
+      await h.rtc.ensureRoom({
+        roomName: h.room(session.id, 1),
+        maxParticipants: 310,
+        emptyTimeoutSeconds: 1_200,
+        departureTimeoutSeconds: 1_200,
+      });
+      h.clock.advance(5);
+      expect((await ticket(student)).token).toBe(`fake.${h.room(session.id, 1)}.student-1.sub`);
+    });
+
+    it('fails closed when the account directory cannot name the caller: 503, no token, logged by class', async () => {
+      jest.spyOn(h.accounts, 'describe').mockRejectedValueOnce(new Error('directory down'));
+      const refused = await join(student);
+      expect(refused).toMatchObject({
+        ok: false,
+        error: { kind: 'unavailable', code: 'unavailable' },
+      });
+      expect(h.rtc.issued).toEqual([]);
+    });
+  });
+
+  it('names the session and when the token stops admitting a connection — never later than the token says', async () => {
+    h.clock.advance(0.75);
+    const signedAt = Math.floor(h.clock.now().getTime() / 1000);
+    const joined = await ticket(student);
+    expect(joined.sessionId).toBe(session.id);
+    expect(joined.expiresAt).toEqual(new Date((signedAt + joined.expiresInSeconds) * 1000));
+    expect(joined.expiresAt.getTime()).toBeLessThanOrEqual(
+      h.clock.now().getTime() + joined.expiresInSeconds * 1000,
+    );
+  });
+
   describe('the media room', () => {
     it('re-creates a room the provider lost, and admits the caller into it', async () => {
       await h.rtc.endRoom(h.room(session.id));
