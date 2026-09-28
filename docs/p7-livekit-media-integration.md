@@ -7,7 +7,12 @@
 no limit changed. The LiveKit pin (v1.13.7) is unchanged. Nothing here claims production media
 readiness or any capacity.
 
-**The verdict is at the end: P7.2 STATUS: BLOCKED**, on one item of the approval (§10).
+**The verdict is at the end: P7.2 STATUS: PASS WITH WAIVER** (§12). One item of the approval —
+the committed real-server reproduction of the self-renewing `#`-identity publishing chain — is
+formally waived: the R1 security behaviour is verified through unit and application tests, but
+that specific real-server reproduction was **not** produced, and manual security verification
+against the pinned production LiveKit deployment is required before any production media
+readiness.
 
 ---
 
@@ -259,14 +264,17 @@ This is local verification only: loopback, one machine, no TLS, no TURN, no NAT.
 | **VERIFIED LOCALLY** | Matrix items 1–10 and 12–26, and 11 in part, on the release binary and on the pinned image (§6, §8), item 19 as before; the committed compose service's configuration |
 | **CI VERIFIED** | CI #56 (`d001f7c`), #57 (`101b0e5`), #58 (`84f7e08`): backend verify with Postgres, build, deployment files, and the real suite, all succeeded. #59 (`014f6b1`) the same, with the real suite at **12 files and 65 tests**, all passed on GitHub's runner (the release binary) |
 | **PRODUCTION VERIFIED** | Nothing |
-| **NOT YET VERIFIED** | The `#` chain ended on the real server (§10); the refreshed token's lifetime; a join above `maxParticipants`; external clients, NAT and TURN; everything in §11 |
+| **NOT YET VERIFIED** | The `#` chain ended on the real server (§10, §12; waived, manual verification required before production); the refreshed token's lifetime; a join above `maxParticipants`; external clients, NAT and TURN; everything in §11 |
 
-## 10. Not done
+## 10. Not done — and the waiver
 
-- **Decision 6 — the real-server exploit regression.** Not written in P7.2. R1 is proven by the
-  unit and application suites against the fake provider, which model the server's behaviour as
-  the audit found it, but no committed test drives the reproduced chain against the pinned
-  server and shows it ended. By decision 12, P7.2 stays BLOCKED on this.
+- **Decision 6 — the real-server exploit regression.** Not produced. R1 is proven by the unit
+  and application suites against the fake provider, which model the server's behaviour as the
+  audit found it (§2.2 of the audit), but no committed test drives the self-renewing `#`-identity
+  publishing chain against the pinned server and shows it ended. This execution environment could
+  not safely produce that specific real-server reproduction. It is **formally waived** (§12), not
+  silently dropped: the gap is named here and in §9 and §12, the real-server reproduction is
+  marked NOT VERIFIED, and manual verification before production is made a hard prerequisite.
 - **Item 11's rejoin half** on the real server (a revoked speaker's old ticket corrected, then
   reset): covered in unit tests; the real suite shows the same-connection half and a reset.
 - **Item 19's addition** (the refreshed token's lifetime and grants): not added.
@@ -278,9 +286,49 @@ TURN decision is still the owner's); external clients; the production firewall; 
 P8 capacity testing. The 300 + 10 limit is unchanged, and nothing here supports a claim of
 3,000 users per room or 10,000 concurrent users.
 
+## 12. The waiver (2026-09-28, decided by the user)
+
+**Decision: PASS WITH WAIVER.** The user, as the project's decision-maker, accepted the residual
+gap below under a formal waiver with a hard pre-production gate.
+
+**Waived item.** The committed real-server reproduction of the self-renewing `#`-identity
+publishing chain (approval item 6).
+
+**Reason.** This execution environment could not safely produce that specific real-server
+reproduction. The waiver is a governance decision, not a change to the security implementation:
+R1 is unchanged, not weakened, and no missing real-server result is faked or implied.
+
+**Compensating controls (evidence retained).**
+
+- The R1 implementation in commit `101b0e5`.
+- Unit and application security tests of R1 (`live-reconciler-foreign-breach.spec.ts`,
+  `live-reconciler-sightings.spec.ts`, and the updated identities/participants/watch/reconciler
+  specs).
+- The adversarial review (three reviewers, then a verifier per finding) and its regression tests.
+- Mutation-tested fixes for each review finding (§3).
+- 12 real-server suites / 65 tests covering the rest of the LiveKit integration matrix (§6).
+- Verification against the pinned LiveKit v1.13.7 release binary.
+- Verification against the pinned Docker image (§8).
+- Full backend verification (189 suites, 2,761 tests, 0 skipped), architecture / dependency
+  checks, and build / schema-drift / compose validation (§7).
+
+**VERIFIED.** The application-level and R1 security behaviour, through the unit and application
+tests above.
+
+**NOT VERIFIED.** The specific real-server self-renewing `#`-identity reproduction. This has
+**not** been proven against a real LiveKit server. Nothing in this document should be read as
+such a proof.
+
+**Required before production media readiness.** Manual security verification of the
+`#`-identity chain against the pinned production LiveKit deployment. Until that is done and
+recorded, production media readiness is not established.
+
 ---
 
-**P7.2 STATUS: BLOCKED.** The security fix is implemented, reviewed adversarially, and tested
-in the main suite; the remaining matrix is proven on the pinned server, locally on the binary
-and on Docker. The committed real-server regression of the reproduced exploit (decision 6) does
-not exist, so decision 12's condition is not met. Production media readiness is not claimed.
+**P7.2 STATUS: PASS WITH WAIVER.** The security fix is implemented, reviewed adversarially,
+mutation-tested and covered by unit and application tests; the rest of the 26-item matrix is
+proven on the pinned server, locally on the binary and on Docker, and on CI. The one item not
+delivered — the committed real-server reproduction of the exploit (decision 6) — is formally
+waived (§12) because this environment could not safely produce it. That reproduction remains
+NOT VERIFIED against a real LiveKit server, manual verification against the pinned production
+deployment is required before production, and production media readiness is not claimed.
