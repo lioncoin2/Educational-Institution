@@ -466,6 +466,50 @@ describe('LiveReconciler — rooms and control', () => {
         'live.reconciler.provider_available',
       ]);
     });
+
+    // P7.2 decision Q-B: refused credentials, TLS or a wrong endpoint fail
+    // every call alike — the tick stops at the first, as at an outage, and
+    // says so once, as an error: waiting fixes nothing.
+    it('stops every tick at a configuration the provider refuses, and logs it once, with its reason', async () => {
+      const other = await h.community('teacher-2');
+      await h.startSession(other.owner, other.id);
+      h.rtc.connect(room, 'student-1', MICROPHONE);
+      logs.lines.length = 0;
+
+      for (let tick = 0; tick < 3; tick += 1) {
+        h.rtc.failNext('listRooms', 'misconfigured');
+        expect(await h.reconciler.sweepRooms()).toMatchObject({
+          skipped: 'provider_misconfigured',
+          sessionsSkipped: 0,
+        });
+        h.rtc.failNext('listParticipants', 'misconfigured');
+        const calls = h.rtc.calls.length;
+        expect(await h.reconciler.sweepParticipants()).toMatchObject({
+          skipped: 'provider_misconfigured',
+          sessions: 2,
+          sessionsSkipped: 0,
+          removed: 0,
+          corrected: 0,
+        });
+        // One call, and the tick stopped: the second session was not asked about.
+        expect(h.rtc.calls.slice(calls).map((call) => call.operation)).toEqual([
+          'listParticipants',
+        ]);
+      }
+      expect(logs.lines).toEqual([
+        {
+          level: 'error',
+          fields: { event: 'live.reconciler.provider_misconfigured', reason: 'unauthorized' },
+        },
+      ]);
+
+      // Fixed: the next call that answers says so, and reconciling resumes.
+      expect(await h.reconciler.sweepRooms()).toMatchObject({ skipped: null });
+      expect(logs.events()).toEqual([
+        'live.reconciler.provider_misconfigured',
+        'live.reconciler.provider_available',
+      ]);
+    });
   });
 
   describe('control', () => {

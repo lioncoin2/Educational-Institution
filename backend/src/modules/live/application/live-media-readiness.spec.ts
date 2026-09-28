@@ -1,6 +1,7 @@
 import { AdjustableClock } from '../../../../test/support/identity-harness';
 import { captureLogs } from '../../../../test/support/live-harness';
 import {
+  RtcMisconfiguredError,
   RtcUnavailableError,
   type RtcNotReadyReason,
   type RtcReadinessProbe,
@@ -167,6 +168,9 @@ describe('the media provider’s readiness (P7.1)', () => {
   it('counts a check that throws as not ready — never a rejection', async () => {
     probe.throws(new RtcUnavailableError('check'));
     await expect(readiness.refresh()).resolves.toEqual(notReady('unreachable'));
+    // A configuration the provider refused keeps its own reason (P7.2, Q-B).
+    probe.throws(new RtcMisconfiguredError('check', 'tls_failure'));
+    await expect(readiness.refresh()).resolves.toEqual(notReady('tls_failure'));
     probe.throws(new Error('a defect'));
     await expect(readiness.refresh()).resolves.toEqual(notReady('incompatible_response'));
     probe.throws('not even an error');

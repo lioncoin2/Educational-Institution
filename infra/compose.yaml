@@ -58,6 +58,7 @@ services:
       LIVE_ROOM_NAME_PREFIX:
       LIVE_MAX_PARTICIPANTS_PER_SESSION:
       LIVE_MODERATOR_RESERVE:
+      LIVE_JOIN_TOKEN_TTL_SECONDS:
       MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS:
     volumes:
       - api-storage:/app/.storage

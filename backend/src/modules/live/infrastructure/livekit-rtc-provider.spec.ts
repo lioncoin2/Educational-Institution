@@ -8,7 +8,11 @@ import {
 } from 'livekit-server-sdk';
 
 import type { AppConfig } from '../../../platform/config/app-config';
-import { RtcUnavailableError, type RtcCapabilities } from '../domain/rtc-provider';
+import {
+  RtcMisconfiguredError,
+  RtcUnavailableError,
+  type RtcCapabilities,
+} from '../domain/rtc-provider';
 import { LiveKitRtcProvider, permissionOf, type LiveKitRoomService } from './livekit-rtc-provider';
 import { classify, describe as describeError } from './livekit-transport';
 
@@ -172,19 +176,24 @@ describe('the LiveKit adapter — participants', () => {
     await expect(provider(reading).getParticipant('s', 'u')).resolves.toBeNull();
   });
 
-  it('reports an outage as RtcUnavailableError — a 5xx, a refused connection, a timeout', async () => {
-    for (const failure of [serverDown(), new TypeError('fetch failed'), timeout()]) {
+  it('reports an outage as RtcUnavailableError — a 5xx, a refused connection, a timeout — and which', async () => {
+    for (const [failure, reason] of [
+      [serverDown(), 'server_error'],
+      [new TypeError('fetch failed'), 'unreachable'],
+      [timeout(), 'timeout'],
+    ] as const) {
       const service = roomService({ updateParticipant: jest.fn().mockRejectedValue(failure) });
-      await expect(provider(service).updateCapabilities('s', 'u', SPEAKER)).rejects.toBeInstanceOf(
-        RtcUnavailableError,
-      );
+      const call = provider(service).updateCapabilities('s', 'u', SPEAKER);
+      await expect(call).rejects.toBeInstanceOf(RtcUnavailableError);
+      await expect(call).rejects.toMatchObject({ operation: 'updateCapabilities', reason });
     }
   });
 
-  it('treats rejected credentials as a fault, not an outage', async () => {
+  it('treats rejected credentials as a misconfiguration, not an outage (P7.2, Q-B)', async () => {
     const service = roomService({ updateParticipant: jest.fn().mockRejectedValue(badKey()) });
     const failure = provider(service).updateCapabilities('s', 'u', SPEAKER);
-    await expect(failure).rejects.toThrow('refused updateCapabilities');
+    await expect(failure).rejects.toBeInstanceOf(RtcMisconfiguredError);
+    await expect(failure).rejects.toMatchObject({ reason: 'unauthorized' });
     await expect(failure).rejects.not.toBeInstanceOf(RtcUnavailableError);
   });
 
@@ -277,9 +286,15 @@ describe('the LiveKit adapter — what it logs', () => {
     );
     const leaky = new ServerError('Unauthorized', `bad key ${SECRET}`, 401, 'unauthenticated');
     const refused = roomService({ updateParticipant: jest.fn().mockRejectedValue(leaky) });
-    await expect(provider(refused).updateCapabilities('s', 'u', SPEAKER)).rejects.toThrow(
-      'refused updateCapabilities (401)',
-    );
+    // Refused credentials are the port's misconfiguration (P7.2, Q-B): its
+    // reason and operation, never the provider's message.
+    const misconfigured = provider(refused).updateCapabilities('s', 'u', SPEAKER);
+    await expect(misconfigured).rejects.toBeInstanceOf(RtcMisconfiguredError);
+    await expect(misconfigured).rejects.toMatchObject({
+      operation: 'updateCapabilities',
+      reason: 'unauthorized',
+    });
+    await expect(misconfigured).rejects.not.toThrow(SECRET);
     expect(logged).toEqual([
       [
         'warn',
@@ -289,6 +304,7 @@ describe('the LiveKit adapter — what it logs', () => {
           name: 'ServerError',
           status: 503,
           code: 'unavailable',
+          reason: 'server_error',
         },
         'media provider unavailable',
       ],

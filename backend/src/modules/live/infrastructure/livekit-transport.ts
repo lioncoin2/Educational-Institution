@@ -99,6 +99,28 @@ export function classify(error: unknown): LiveKitFailure {
   return 'rejected';
 }
 
+/** Platform codes of a request that ran out of time (Node's own, and its fetch's). */
+const TIMEOUT_CODE =
+  /^(ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|UND_ERR_HEADERS_TIMEOUT|UND_ERR_BODY_TIMEOUT)$/;
+
+/**
+ * What kind of outage an `unavailable` failure was (P7.2, Q-B), for logs:
+ * the SDK's own request timeout (`AbortSignal.timeout`, a `TimeoutError`),
+ * a platform timeout code, a proxy's 504 or Twirp's `deadline_exceeded` is
+ * a timeout; any other answer is the server's own error; anything else never
+ * reached it.
+ */
+export function outageOf(error: unknown): 'unreachable' | 'timeout' | 'server_error' {
+  if (error instanceof ServerError) {
+    return error.status === 504 || error.code === 'deadline_exceeded' ? 'timeout' : 'server_error';
+  }
+  const failure = thrown(error);
+  if (failure === null) return 'unreachable';
+  if (failure.name === 'TimeoutError' || failure.name === 'AbortError') return 'timeout';
+  const code = errorCode(failure);
+  return code !== undefined && TIMEOUT_CODE.test(code) ? 'timeout' : 'unreachable';
+}
+
 /**
  * What of an error may be logged: its class, the HTTP status and Twirp code
  * if there was an answer, and the platform's code if there was none. Never

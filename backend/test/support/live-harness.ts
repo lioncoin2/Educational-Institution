@@ -26,12 +26,12 @@ import { RoomOccupancy } from '../../src/modules/live/application/room-occupancy
 import { LiveSessionViews } from '../../src/modules/live/application/session-views';
 import { StartLiveSessionUseCase } from '../../src/modules/live/application/start-live-session.use-case';
 import type { LiveSessionView, SpeakerRequestView } from '../../src/modules/live/application/views';
-import { JOIN_TOKEN_TTL_SECONDS } from '../../src/modules/live/domain/live-limits';
 import { mediaRoomName, type LiveSession } from '../../src/modules/live/domain/live-session';
 import type { RtcProvider } from '../../src/modules/live/domain/rtc-provider';
 import { FakeRtcProvider } from '../../src/modules/live/infrastructure/fake-rtc-provider';
 import { InMemoryLiveStore } from '../../src/modules/live/infrastructure/in-memory-live-repositories';
 import type { LiveStore } from '../../src/modules/live/live.module';
+import { DEFAULT_LIVE_JOIN_TOKEN_TTL_SECONDS } from '../../src/platform/config/app-config';
 import { Journal, META, communitiesHarness, type CommunitiesHarness } from './communities-harness';
 import { principalWith } from './principals';
 
@@ -42,7 +42,7 @@ export const LIVE_TEST_SETTINGS: LiveSettings = Object.freeze({
   roomNamePrefix: 'live-',
   participantCap: 300,
   moderatorReserve: 10,
-  joinTokenTtlSeconds: JOIN_TOKEN_TTL_SECONDS,
+  joinTokenTtlSeconds: DEFAULT_LIVE_JOIN_TOKEN_TTL_SECONDS,
 });
 
 /**

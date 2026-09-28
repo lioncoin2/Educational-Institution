@@ -11,12 +11,14 @@ import {
 import type { AppConfig } from '../../../platform/config/app-config';
 import { MAX_JOIN_TOKEN_TTL_SECONDS, isJoinTokenTtl } from '../domain/live-limits';
 import {
+  RtcMisconfiguredError,
   RtcUnavailableError,
   sourcesOf,
   type RtcAccessGrant,
   type RtcAccessToken,
   type RtcApplyOutcome,
   type RtcCapabilities,
+  type RtcMisconfiguration,
   type RtcParticipantObservation,
   type RtcProvider,
   type RtcReadinessReport,
@@ -29,6 +31,7 @@ import {
   LIVEKIT_CLIENT_OPTIONS,
   classify,
   describe,
+  outageOf,
   type LiveKitFailure,
 } from './livekit-transport';
 
@@ -88,8 +91,11 @@ const LIVEKIT_TO_SOURCE = new Map<TrackSource, RtcSource>(
  *   - Errors are reported, never swallowed: LiveKit's own "not found" becomes
  *     the port's outcome — and nothing else does, so a wrong endpoint that
  *     answers 404 is never an absent room — an outage becomes
- *     `RtcUnavailableError`, anything else a fault. Logs carry an error's
- *     class, status and code, never its message, a token or the secret.
+ *     `RtcUnavailableError` (with whether it timed out), refused
+ *     credentials, a TLS failure or an answer that is not LiveKit's becomes
+ *     `RtcMisconfiguredError` (P7.2, Q-B), and anything else is a fault.
+ *     Logs carry an error's class, status and code, never its message, a
+ *     token or the secret.
  *
  * Structured events (ids only): `live.provider.room_create`, `.room_delete`,
  * `.token_issue` and `.error`.
@@ -300,8 +306,9 @@ export class LiveKitRtcProvider implements RtcProvider {
    * Runs one provider call. `onNotFound: 'absent'` turns LiveKit's own "not
    * found" into null; otherwise it is a failure like any other. An outage
    * throws the domain's `RtcUnavailableError`; rejected credentials, a TLS
-   * failure, an answer that is not LiveKit's or any other refusal is a fault —
-   * never absence, never success.
+   * failure or an answer that is not LiveKit's throws its
+   * `RtcMisconfiguredError`; any other refusal is a fault — never absence,
+   * never success.
    */
   private async call<T>(operation: string, run: () => Promise<T>): Promise<T>;
   private async call<T>(
@@ -321,11 +328,18 @@ export class LiveKitRtcProvider implements RtcProvider {
       if (kind === 'not_found' && options?.onNotFound === 'absent') return null;
       const detail = { event: 'live.provider.error', operation, ...describe(error) };
       if (kind === 'unavailable') {
-        this.logger.warn(detail, 'media provider unavailable');
-        throw new RtcUnavailableError(operation);
+        const reason = outageOf(error);
+        this.logger.warn({ ...detail, reason }, 'media provider unavailable');
+        throw new RtcUnavailableError(operation, reason);
       }
-      // Nothing a retry fixes: loud, and a 500.
+      // Nothing a retry fixes: loud. A configuration the provider refuses is
+      // the port's own error (503 live.media_misconfigured); anything else a
+      // 500.
       this.logger.error(detail, FAULT_MESSAGES[kind]);
+      const misconfiguration = MISCONFIGURATIONS[kind];
+      if (misconfiguration !== undefined) {
+        throw new RtcMisconfiguredError(operation, misconfiguration);
+      }
       throw new Error(`The media provider refused ${operation} (${detail.status ?? kind}).`);
     }
   }
@@ -338,6 +352,17 @@ const FAULT_MESSAGES: Readonly<Record<Exclude<LiveKitFailure, 'unavailable'>, st
   incompatible: 'media provider answered, but not as LiveKit does',
   not_found: 'media provider refused a request',
   rejected: 'media provider refused a request',
+};
+
+/**
+ * The faults that are this deployment's configuration, not a request's: the
+ * readiness reason each is. LiveKit refusing a request itself (`rejected`,
+ * or `not_found` where absence is no answer) is neither.
+ */
+const MISCONFIGURATIONS: Readonly<Partial<Record<LiveKitFailure, RtcMisconfiguration>>> = {
+  misconfigured: 'unauthorized',
+  tls: 'tls_failure',
+  incompatible: 'incompatible_response',
 };
 
 /** The full LiveKit permission set for a capability set — every field stated. */

@@ -29,22 +29,21 @@ export const MAX_CONCURRENT_SPEAKERS = 4;
 export const MAX_CONCURRENT_PRESENTERS = 1;
 
 /**
- * How long a join token is good for — to START a connection (Q63).
+ * The longest join token the call site will ask for (audit D24).
  *
- * Short on purpose: a token that leaks is good for one fresh connection
- * within two minutes. It does not bound how long anyone stays: once
- * connected, the media server itself sends the client a fresh token at once
- * and every five minutes after, each valid ten minutes and carrying the
+ * How long a join token is good for — to START a connection — is each
+ * deployment's to set (LIVE_JOIN_TOKEN_TTL_SECONDS, 120 by default; Q63, P7.2
+ * decision Q-C), refused at boot outside 1 to this bound. Short on purpose: a
+ * token that leaks is good for one fresh connection within its lifetime. It
+ * does not bound how long anyone stays: once connected, the media server
+ * itself sends the client a fresh token at once, every five minutes after and
+ * on every change of its permissions, each valid ten minutes and carrying the
  * participant's current permissions (verified in LiveKit's source, live.md
  * §9). Token expiry never disconnects anyone; `/join` is the way back in and
  * decides afresh every time.
- */
-export const JOIN_TOKEN_TTL_SECONDS = 120;
-
-/**
- * The longest join token the call site will ask for (audit D24). The
- * provider's SDK turns a falsy lifetime into six hours, so the pinned
- * constant is checked again where the token is minted, and anything but a
+ *
+ * The provider's SDK turns a falsy lifetime into six hours, so the configured
+ * lifetime is checked again where the token is minted, and anything but a
  * whole number of seconds from 1 to this bound is refused there.
  */
 export const MAX_JOIN_TOKEN_TTL_SECONDS = 600;

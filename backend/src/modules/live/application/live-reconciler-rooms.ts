@@ -12,6 +12,7 @@ import {
 } from '../domain/live-session';
 import type { LiveSessionRepository } from '../domain/ports';
 import {
+  RtcMisconfiguredError,
   RtcUnavailableError,
   type RtcRoomObservation,
   type RtcRoomProvider,
@@ -90,11 +91,9 @@ export class RoomSweep {
     try {
       listed = await this.runtime.provider(() => this.rooms.listRooms());
     } catch (error) {
-      if (!(error instanceof RtcUnavailableError)) this.runtime.logTickSkipped('rooms', error);
-      return {
-        ...emptyRooms(error instanceof RtcUnavailableError ? 'provider_unavailable' : 'failed'),
-        sessions: live.length,
-      };
+      const stop = providerStop(error);
+      if (stop === null) this.runtime.logTickSkipped('rooms', error);
+      return { ...emptyRooms(stop ?? 'failed'), sessions: live.length };
     }
     const prefix = this.settings.roomNamePrefix;
     const ours = new Map(
@@ -114,9 +113,10 @@ export class RoomSweep {
           this.roomStep(session, ours.get(currentMediaRoom(prefix, session)) ?? null),
         );
       } catch (error) {
-        if (error instanceof RtcUnavailableError) {
+        const stop = providerStop(error);
+        if (stop !== null) {
           return {
-            skipped: 'provider_unavailable',
+            skipped: stop,
             sessions: live.length,
             sessionsSkipped,
             ensured,
@@ -147,9 +147,10 @@ export class RoomSweep {
           this.runtime.provider(() => this.rooms.endRoom(room.roomName)),
         );
       } catch (error) {
-        if (error instanceof RtcUnavailableError) {
+        const stop = providerStop(error);
+        if (stop !== null) {
           return {
-            skipped: 'provider_unavailable',
+            skipped: stop,
             sessions: live.length,
             sessionsSkipped,
             ensured,
@@ -241,6 +242,17 @@ export class RoomSweep {
 interface RoomStep {
   readonly ensured?: boolean;
   readonly idleEnded?: boolean;
+}
+
+/**
+ * A failure every other room would meet too — an outage, or a configuration
+ * the provider refuses (P7.2, Q-B), each logged once by the runtime — so the
+ * sweep stops; null for anything else.
+ */
+function providerStop(error: unknown): 'provider_unavailable' | 'provider_misconfigured' | null {
+  if (error instanceof RtcUnavailableError) return 'provider_unavailable';
+  if (error instanceof RtcMisconfiguredError) return 'provider_misconfigured';
+  return null;
 }
 
 /**

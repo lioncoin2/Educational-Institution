@@ -10,6 +10,8 @@ import {
 import {
   APP_CONFIG,
   ConfigurationError,
+  DEFAULT_LIVE_JOIN_TOKEN_TTL_SECONDS,
+  MAX_LIVE_JOIN_TOKEN_TTL_SECONDS,
   loadConfig,
   type AppConfig,
 } from '../../platform/config/app-config';
@@ -24,7 +26,7 @@ import { LiveSessionsReader } from './application/live-sessions.reader';
 import { LIVE_SETTINGS, type LiveSettings } from './application/live-settings';
 import { ProtectLiveSessions } from './application/protect-live-sessions';
 import { LIVE_AUDIENCE, LIVE_SESSIONS } from './contracts';
-import { JOIN_TOKEN_TTL_SECONDS } from './domain/live-limits';
+import { MAX_JOIN_TOKEN_TTL_SECONDS, isJoinTokenTtl } from './domain/live-limits';
 import { newLiveSession } from './domain/live-session';
 import {
   LIVE_SESSION_REPOSITORY,
@@ -138,14 +140,14 @@ describe('the Live module', () => {
     expect(providers).toContain(LiveMediaReadiness);
   });
 
-  it('hands the use cases the deployment’s cap, reserve and room prefix — `live-` when none — and the pinned join lifetime', () => {
+  it('hands the use cases the deployment’s cap, reserve, room prefix — `live-` when none — and join ticket lifetime', () => {
     const settingsOf = declared(LIVE_SETTINGS).useFactory as (config: AppConfig) => LiveSettings;
     expect(declared(LIVE_SETTINGS).inject).toEqual([APP_CONFIG]);
     expect(settingsOf(loadConfig({}))).toEqual({
       roomNamePrefix: 'live-',
       participantCap: 300,
       moderatorReserve: 10,
-      joinTokenTtlSeconds: JOIN_TOKEN_TTL_SECONDS,
+      joinTokenTtlSeconds: DEFAULT_LIVE_JOIN_TOKEN_TTL_SECONDS,
     });
     expect(
       settingsOf(
@@ -153,14 +155,34 @@ describe('the Live module', () => {
           LIVE_ROOM_NAME_PREFIX: 'live-staging-',
           LIVE_MAX_PARTICIPANTS_PER_SESSION: '1000',
           LIVE_MODERATOR_RESERVE: '0',
+          LIVE_JOIN_TOKEN_TTL_SECONDS: '30',
         }),
       ),
     ).toEqual({
       roomNamePrefix: 'live-staging-',
       participantCap: 1000,
       moderatorReserve: 0,
-      joinTokenTtlSeconds: 120,
+      joinTokenTtlSeconds: 30,
     });
+  });
+
+  // Configuration cannot import Live, so the two bounds are stated twice;
+  // this keeps them one (P7.2, Q-C; audit D24): nothing the boot accepts is
+  // refused at the mint, and nothing the mint refuses is accepted at boot.
+  it('refuses at boot exactly the join lifetimes the mint refuses', () => {
+    expect(MAX_LIVE_JOIN_TOKEN_TTL_SECONDS).toBe(MAX_JOIN_TOKEN_TTL_SECONDS);
+    expect(isJoinTokenTtl(DEFAULT_LIVE_JOIN_TOKEN_TTL_SECONDS)).toBe(true);
+    for (const ttl of [1, MAX_JOIN_TOKEN_TTL_SECONDS]) {
+      expect(
+        loadConfig({ LIVE_JOIN_TOKEN_TTL_SECONDS: String(ttl) }).live.joinTokenTtlSeconds,
+      ).toBe(ttl);
+    }
+    for (const ttl of [0, MAX_JOIN_TOKEN_TTL_SECONDS + 1]) {
+      expect(isJoinTokenTtl(ttl)).toBe(false);
+      expect(() => loadConfig({ LIVE_JOIN_TOKEN_TTL_SECONDS: String(ttl) })).toThrow(
+        ConfigurationError,
+      );
+    }
   });
 });
 
@@ -390,7 +412,7 @@ describe('the media provider Live binds', () => {
           speakerGrant: false,
           presenter: false,
         }),
-        ttlSeconds: JOIN_TOKEN_TTL_SECONDS,
+        ttlSeconds: DEFAULT_LIVE_JOIN_TOKEN_TTL_SECONDS,
       }),
     ).rejects.toBeInstanceOf(RtcUnavailableError);
   });

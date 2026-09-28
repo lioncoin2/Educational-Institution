@@ -8,11 +8,17 @@
  * Why a whole tick did nothing: another run of the same tick was still going
  * (ticks never queue), the media provider could not be reached, its answers
  * are positively not LiveKit's (its self-check reports
- * `incompatible_response` — a wrong endpoint), or an input every step
- * depends on — the live sessions, the room list — could not be read
- * completely.
+ * `incompatible_response` — a wrong endpoint), it refuses this deployment's
+ * configuration — credentials, TLS, endpoint (P7.2, Q-B) — or an input
+ * every step depends on — the live sessions, the room list — could not be
+ * read completely.
  */
-export type TickSkip = 'in_flight' | 'provider_unavailable' | 'provider_incompatible' | 'failed';
+export type TickSkip =
+  | 'in_flight'
+  | 'provider_unavailable'
+  | 'provider_incompatible'
+  | 'provider_misconfigured'
+  | 'failed';
 
 /** What the per-identity steps of one or more sessions did. */
 export interface IdentityTally {
@@ -70,9 +76,16 @@ export interface SessionCheckReport extends IdentityTally {
    *   community_closed      Communities no longer lets it run: ended, nothing else
    *   skipped               an input could not be read, or a fault: nothing decided
    *   provider_unavailable  the media provider could not be reached: nothing decided
+   *   provider_misconfigured  the media provider refuses this deployment's
+   *                         configuration (P7.2, Q-B): nothing decided
    */
   readonly outcome:
-    'checked' | 'not_live' | 'community_closed' | 'skipped' | 'provider_unavailable';
+    | 'checked'
+    | 'not_live'
+    | 'community_closed'
+    | 'skipped'
+    | 'provider_unavailable'
+    | 'provider_misconfigured';
 }
 
 /**

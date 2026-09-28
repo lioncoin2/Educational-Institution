@@ -1,4 +1,3 @@
-import { JOIN_TOKEN_TTL_SECONDS } from '../../src/modules/live/domain/live-limits';
 import type { RtcCapabilities } from '../../src/modules/live/domain/rtc-provider';
 import type { Principal } from '../../src/shared';
 import { META, captureLogs, codeOf } from '../support/live-harness';
@@ -84,7 +83,7 @@ describe('rooms on the pinned LiveKit server are the application’s alone', () 
       identity: 'student-1',
       displayName: 'مريم',
       capabilities: LISTENER,
-      ttlSeconds: JOIN_TOKEN_TTL_SECONDS,
+      ttlSeconds: live.settings.joinTokenTtlSeconds,
     });
 
   it('creates no room from any token it issues: not through the room API, not by joining one it never ensured', async () => {
@@ -194,7 +193,7 @@ describe('rooms on the pinned LiveKit server are the application’s alone', () 
     // Issued 200 s ago: its 120 s ended 80 s ago, past the leeway.
     const expired = await issuedAgo(200);
     const claims = claimsOf(expired.token);
-    expect(claims.exp - claims.nbf).toBe(JOIN_TOKEN_TTL_SECONDS);
+    expect(claims.exp - claims.nbf).toBe(live.settings.joinTokenTtlSeconds);
     expect(expiredFor(expired.token)).toBeGreaterThan(60);
     expect(await clients.refusal(expired)).toMatch(
       /401 Unauthorized - .*token has invalid claims: token is expired/,

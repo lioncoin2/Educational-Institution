@@ -1,4 +1,9 @@
-import { ConfigurationError, loadConfig } from './app-config';
+import {
+  ConfigurationError,
+  DEFAULT_LIVE_JOIN_TOKEN_TTL_SECONDS,
+  MAX_LIVE_JOIN_TOKEN_TTL_SECONDS,
+  loadConfig,
+} from './app-config';
 import { PINNED_LIVEKIT_SERVER_VERSION } from './livekit-config';
 
 const PRODUCTION = {
@@ -108,10 +113,11 @@ describe('loadConfig — live sessions', () => {
     LIVEKIT_API_SECRET: 's'.repeat(32),
   };
 
-  it('seats 300 listeners plus a reserve of 10, with no prefix and real media off, unless told otherwise', () => {
+  it('seats 300 listeners plus a reserve of 10, with 120-second join tickets, no prefix and real media off, unless told otherwise', () => {
     expect(loadConfig({}).live).toEqual({
       maxParticipantsPerSession: 300,
       moderatorReserve: 10,
+      joinTokenTtlSeconds: 120,
       roomNamePrefix: null,
       mediaProvider: null,
     });
@@ -119,11 +125,13 @@ describe('loadConfig — live sessions', () => {
       loadConfig({
         LIVE_MAX_PARTICIPANTS_PER_SESSION: '1000',
         LIVE_MODERATOR_RESERVE: '0',
+        LIVE_JOIN_TOKEN_TTL_SECONDS: '45',
         LIVE_ROOM_NAME_PREFIX: 'live-staging.eu_1-',
       }).live,
     ).toEqual({
       maxParticipantsPerSession: 1000,
       moderatorReserve: 0,
+      joinTokenTtlSeconds: 45,
       roomNamePrefix: 'live-staging.eu_1-',
       mediaProvider: null,
     });
@@ -149,6 +157,31 @@ describe('loadConfig — live sessions', () => {
       expect(() => loadConfig({ LIVE_MODERATOR_RESERVE: value })).toThrow(/LIVE_MODERATOR_RESERVE/);
     },
   );
+
+  // P7.2 decision Q-C: from configuration, never a constant in the use case —
+  // and checked at boot, so a deployment never runs with a lifetime the mint
+  // would refuse on every join.
+  it.each(['1', '120', '600', ' 300 '])('takes a join ticket lifetime of %j seconds', (value) => {
+    expect(loadConfig({ LIVE_JOIN_TOKEN_TTL_SECONDS: value }).live.joinTokenTtlSeconds).toBe(
+      Number(value),
+    );
+  });
+
+  it.each(['0', '-1', '601', '21600', '1.5', '2m', 'NaN', '99999999999999999999'])(
+    'refuses a join ticket lifetime of %j: whole seconds from 1 to 600',
+    (value) => {
+      expect(() => loadConfig({ LIVE_JOIN_TOKEN_TTL_SECONDS: value })).toThrow(
+        'LIVE_JOIN_TOKEN_TTL_SECONDS must be a whole number of seconds from 1 to 600',
+      );
+    },
+  );
+
+  it('bounds a join ticket at ten minutes — a token the media server refreshes lives that long', () => {
+    expect(DEFAULT_LIVE_JOIN_TOKEN_TTL_SECONDS).toBe(120);
+    expect(MAX_LIVE_JOIN_TOKEN_TTL_SECONDS).toBe(600);
+    // Blank means unset.
+    expect(loadConfig({ LIVE_JOIN_TOKEN_TTL_SECONDS: ' ' }).live.joinTokenTtlSeconds).toBe(120);
+  });
 
   it.each(['live prod', 'live/', 'live*', 'ライブ-', 'x'.repeat(49)])(
     'refuses the room name prefix %j: 1 to 48 letters, digits, ".", "_" or "-"',
@@ -232,6 +265,7 @@ describe('loadConfig — live sessions', () => {
     expect(loadConfig(PRODUCTION).live).toEqual({
       maxParticipantsPerSession: 300,
       moderatorReserve: 10,
+      joinTokenTtlSeconds: 120,
       roomNamePrefix: null,
       mediaProvider: null,
     });

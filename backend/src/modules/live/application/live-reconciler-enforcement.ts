@@ -4,6 +4,7 @@ import { currentMediaRoom, isLive, type LiveSession } from '../domain/live-sessi
 import type { ModerationAction } from '../domain/moderation';
 import type { LiveSessionRepository } from '../domain/ports';
 import {
+  RtcMisconfiguredError,
   RtcUnavailableError,
   type RtcApplyOutcome,
   type RtcRoomProvider,
@@ -178,8 +179,7 @@ export class Enforcement {
       }
       await this.runtime.provider(() => this.rooms.endRoom(from));
     } catch (error) {
-      if (!(error instanceof RtcUnavailableError))
-        this.runtime.logSkipped('reset', session.id, error);
+      if (!loggedByRuntime(error)) this.runtime.logSkipped('reset', session.id, error);
     }
     const detail = { fromEpoch: session.mediaRoomEpoch, toEpoch: moved.mediaRoomEpoch };
     await this.journal.record(
@@ -203,8 +203,11 @@ export class Enforcement {
     try {
       await this.runtime.provider(() => this.rooms.endRoom(roomName));
     } catch (error) {
-      if (!(error instanceof RtcUnavailableError))
-        this.runtime.logSkipped('reset', sessionId, error);
+      if (!loggedByRuntime(error)) this.runtime.logSkipped('reset', sessionId, error);
     }
   }
 }
+
+/** An outage, or a configuration the provider refuses: the runtime logged it when it started. */
+const loggedByRuntime = (error: unknown) =>
+  error instanceof RtcUnavailableError || error instanceof RtcMisconfiguredError;

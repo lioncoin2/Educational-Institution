@@ -46,7 +46,7 @@ describe('the disabled RTC provider (audit D19)', () => {
     async (method) => {
       const refused = EVERY_CALL[method](new DisabledRtcProvider());
       await expect(refused).rejects.toBeInstanceOf(RtcUnavailableError);
-      await expect(refused).rejects.toMatchObject({ operation: `${method} (media disabled)` });
+      await expect(refused).rejects.toMatchObject({ operation: method, reason: 'disabled' });
     },
   );
 

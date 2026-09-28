@@ -60,6 +60,7 @@ deployment binds is decided once, at boot, and logged.
 | `LIVE_ROOM_NAME_PREFIX` | unset (`live-` for the fake and the disabled provider) | this deployment's media room prefix: the orphan sweep ends every room of its form that no live session claims. 1–48 characters of `A–Z a–z 0–9 . _ -`; required with `LIVE_MEDIA_PROVIDER=livekit` |
 | `LIVE_MAX_PARTICIPANTS_PER_SESSION` | 300 | the listeners' soft cap, copied onto each session at start (PROVISIONAL, Q57) |
 | `LIVE_MODERATOR_RESERVE` | 10 | seats above the cap for moderators and current speakers (PROVISIONAL, Q57) |
+| `LIVE_JOIN_TOKEN_TTL_SECONDS` | 120 | how long a join ticket may start a media connection (Q63). Whole seconds, 1–600, or the API refuses to boot. It bounds nothing once connected: the media server refreshes a connected client's token itself |
 | `LIVEKIT_URL` | `ws://localhost:7880` (development and test only) | client → LiveKit: the signalling URL join tickets carry. `ws://` or `wss://`. Required with real media, and in staging and production; in staging and production `wss://` only, real media or not |
 | `LIVEKIT_API_URL` | `LIVEKIT_URL` with `ws→http`, `wss→https` | API → LiveKit: the server API the adapter calls, e.g. `http://livekit:7880` on a private network. `http://` or `https://`; in staging and production `https://` unless its host is internal (loopback, a single-label service name, a private IPv4 address) |
 | `LIVEKIT_VERSION` | unset | the LiveKit server release deployed. With real media it must be exactly the pinned `1.13.7` |

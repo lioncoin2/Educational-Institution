@@ -1,4 +1,9 @@
 import { failure, type Failure } from '../../../shared';
+import {
+  RtcMisconfiguredError,
+  RtcUnavailableError,
+  type RtcNotReadyReason,
+} from '../domain/rtc-provider';
 
 /** DI token. */
 export const LIVE_SETTINGS = Symbol('LIVE_SETTINGS');
@@ -20,9 +25,10 @@ export interface LiveSettings {
   /** Seats above the cap for moderators and current speakers (PROVISIONAL, Q57). */
   readonly moderatorReserve: number;
   /**
-   * The join token's lifetime: JOIN_TOKEN_TTL_SECONDS. Checked again where
-   * the token is minted (audit D24), because the provider's SDK turns a falsy
-   * lifetime into six hours.
+   * The join token's lifetime: LIVE_JOIN_TOKEN_TTL_SECONDS (P7.2, Q-C; 120
+   * by default), refused outside 1 to 600 seconds at boot. Checked again
+   * where the token is minted (audit D24), because the provider's SDK turns a
+   * falsy lifetime into six hours.
    */
   readonly joinTokenTtlSeconds: number;
 }
@@ -94,11 +100,26 @@ export const LiveRefusals = {
     'Someone else is sharing their screen.',
   ),
   cursorInvalid: failure('validation', 'live.cursor_invalid', 'That page cursor is not valid.'),
-  /** Start only: nothing was stored, and retrying is sensible. */
+  /**
+   * The media provider could not be reached, did not answer in time, or real
+   * media is not enabled (P7.2, Q-B): nothing was stored, and retrying is
+   * sensible.
+   */
   mediaUnavailable: failure(
     'unavailable',
     'live.media_unavailable',
     'Live media is unavailable right now. Try again shortly.',
+  ),
+  /**
+   * The media provider refused this deployment's configuration — its
+   * credentials, its TLS, its endpoint, or a server that would create rooms
+   * on its own (P7.2, Q-B). Nothing was stored; retrying does not help until
+   * an operator fixes it. Which of them is logged, never answered.
+   */
+  mediaMisconfigured: failure(
+    'unavailable',
+    'live.media_misconfigured',
+    'Live media is unavailable: the server’s media configuration needs attention.',
   ),
   /**
    * Communities or the account directory could not answer. Fail closed: never
@@ -122,6 +143,29 @@ export const LiveRefusals = {
  * domain's, shared with the media identity rule (`domain/live-ids.ts`).
  */
 export { isLiveId } from '../domain/live-ids';
+
+/**
+ * A media provider failure as a request's answer (P7.2, Q-B): an outage —
+ * real media disabled included — is 503 live.media_unavailable; a
+ * configuration the provider refuses is 503 live.media_misconfigured. Null
+ * for anything else, which stays a fault (an opaque 500).
+ */
+export function mediaRefusal(error: unknown): Failure | null {
+  if (error instanceof RtcUnavailableError) return LiveRefusals.mediaUnavailable;
+  if (error instanceof RtcMisconfiguredError) return LiveRefusals.mediaMisconfigured;
+  return null;
+}
+
+/**
+ * Why Start refuses a provider that is not ready (P7.2, Q-B): unreachable,
+ * or real media not enabled, is an outage; every other reason is this
+ * deployment's configuration.
+ */
+export function notReadyRefusal(reason: RtcNotReadyReason): Failure {
+  return reason === 'unreachable' || reason === 'provider_disabled'
+    ? LiveRefusals.mediaUnavailable
+    : LiveRefusals.mediaMisconfigured;
+}
 
 /** 429, with when to try again — as Communities' use cases answer it. */
 export function tooMany(code: string, retryAfterSeconds: number): Failure {

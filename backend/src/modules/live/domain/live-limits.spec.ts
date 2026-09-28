@@ -3,7 +3,6 @@ import {
   HANDS_PAGE_DEFAULT,
   HANDS_PAGE_MAX,
   IDLE_END_SECONDS,
-  JOIN_TOKEN_TTL_SECONDS,
   LIVE_SESSIONS_PAGE_MAX,
   LiveRateLimits,
   MAX_CONCURRENT_PRESENTERS,
@@ -28,7 +27,7 @@ describe('live limits (PROVISIONAL, live.md §3.8)', () => {
     expect({
       MAX_CONCURRENT_SPEAKERS,
       MAX_CONCURRENT_PRESENTERS,
-      JOIN_TOKEN_TTL_SECONDS,
+      MAX_JOIN_TOKEN_TTL_SECONDS,
       ROOM_SWEEP_SECONDS,
       PARTICIPANT_SWEEP_SECONDS,
       WATCH_TICK_SECONDS,
@@ -45,7 +44,7 @@ describe('live limits (PROVISIONAL, live.md §3.8)', () => {
     }).toEqual({
       MAX_CONCURRENT_SPEAKERS: 4,
       MAX_CONCURRENT_PRESENTERS: 1,
-      JOIN_TOKEN_TTL_SECONDS: 120,
+      MAX_JOIN_TOKEN_TTL_SECONDS: 600,
       ROOM_SWEEP_SECONDS: 30,
       PARTICIPANT_SWEEP_SECONDS: 60,
       WATCH_TICK_SECONDS: 10,
@@ -62,14 +61,10 @@ describe('live limits (PROVISIONAL, live.md §3.8)', () => {
     });
   });
 
-  // The provider's SDK turns a falsy lifetime into six hours (audit D24).
-  it('keeps the join token a whole number of seconds from 1 to 600, and checks it the same way at the call site', () => {
-    expect(Number.isInteger(JOIN_TOKEN_TTL_SECONDS)).toBe(true);
-    expect(JOIN_TOKEN_TTL_SECONDS).toBeGreaterThanOrEqual(1);
-    expect(JOIN_TOKEN_TTL_SECONDS).toBeLessThanOrEqual(600);
-    expect(MAX_JOIN_TOKEN_TTL_SECONDS).toBe(600);
-    expect(isJoinTokenTtl(JOIN_TOKEN_TTL_SECONDS)).toBe(true);
-    for (const ttl of [1, 600]) expect(isJoinTokenTtl(ttl)).toBe(true);
+  // The provider's SDK turns a falsy lifetime into six hours (audit D24). The
+  // lifetime itself is configuration (P7.2, Q-C); this is the mint's check.
+  it('accepts a join token of a whole number of seconds from 1 to 600 at the call site, and nothing else', () => {
+    for (const ttl of [1, 120, 600]) expect(isJoinTokenTtl(ttl)).toBe(true);
     for (const ttl of [0, -1, 601, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect({ ttl, accepted: isJoinTokenTtl(ttl) }).toEqual({ ttl, accepted: false });
     }

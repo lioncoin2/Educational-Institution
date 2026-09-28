@@ -55,13 +55,26 @@ describe('live media readiness in the application', () => {
       await reconciler.sweepRooms();
       expect(readiness.current?.report).toEqual({ ready: false, reason: 'auto_create_enabled' });
       const refused = await start();
+      // A server with auto-create on is this deployment's configuration: an
+      // operator must fix it (P7.2, Q-B).
       expect({ status: refused.status, error: refused.body.error }).toEqual({
         status: 503,
         error: {
           kind: 'unavailable',
-          code: 'live.media_unavailable',
+          code: 'live.media_misconfigured',
           message: expect.any(String) as string,
         },
+      });
+      expect(rtc.roomNames()).toEqual([]);
+
+      // An outage is told apart: waiting may fix it.
+      rtc.setReadiness({ ready: false, reason: 'unreachable' });
+      await reconciler.sweepRooms();
+      const unreachable = await start();
+      expect(unreachable.status).toBe(503);
+      expect(unreachable.body.error).toMatchObject({
+        kind: 'unavailable',
+        code: 'live.media_unavailable',
       });
       expect(rtc.roomNames()).toEqual([]);
 
@@ -70,7 +83,7 @@ describe('live media readiness in the application', () => {
       expect((await start()).status).toBe(201);
       expect(rtc.roomNames()).toHaveLength(1);
       // One self-check per sweep; Start asked the provider nothing itself.
-      expect(check).toHaveBeenCalledTimes(2);
+      expect(check).toHaveBeenCalledTimes(3);
     } finally {
       check.mockRestore();
     }

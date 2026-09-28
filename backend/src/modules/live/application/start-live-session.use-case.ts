@@ -32,7 +32,14 @@ import { RTC_ROOMS, RtcUnavailableError, type RtcRoomProvider } from '../domain/
 import { LiveAccess, isOutage, permitOf } from './live-access';
 import { LiveJournal, moderationAudit } from './live-journal';
 import { LiveMediaReadiness } from './live-media-readiness';
-import { LIVE_SETTINGS, LiveRefusals, tooMany, type LiveSettings } from './live-settings';
+import {
+  LIVE_SETTINGS,
+  LiveRefusals,
+  mediaRefusal,
+  notReadyRefusal,
+  tooMany,
+  type LiveSettings,
+} from './live-settings';
 import { LiveSessionViews } from './session-views';
 import type { StartResult } from './views';
 
@@ -51,11 +58,13 @@ import type { StartResult } from './views';
  *   3. a session already running → 200 with it, and nothing else happens;
  *   4. the media room first. The provider's readiness, no older than a room
  *      sweep (`LiveMediaReadiness`, P7.1), then `ensureRoom`, sized to the
- *      cap plus the reserve. A provider that is not ready — the disabled
- *      provider of a deployment without real media (D19), a server with
- *      auto-create on, refusing our credentials, unreachable — or an outage
- *      is 503 live.media_unavailable with NOTHING stored: no room, no row, no
- *      audit, no event;
+ *      cap plus the reserve. A provider that is not ready, or a failed
+ *      `ensureRoom`, answers 503 with NOTHING stored — no room, no row, no
+ *      audit, no event (P7.2, Q-B): live.media_unavailable for an outage or
+ *      the disabled provider of a deployment without real media (D19), which
+ *      waiting may fix; live.media_misconfigured for refused credentials, a
+ *      TLS failure, a wrong endpoint or a server with auto-create on, which
+ *      an operator must;
  *   5. `community.live.start` asked AGAIN (D20), so a lock or a removal that
  *      committed during the provider call is honoured: a refusal now ends the
  *      room this call ensured (best effort) and answers as in step 2;
@@ -118,7 +127,7 @@ export class StartLiveSessionUseCase {
     });
     const room = currentMediaRoom(this.settings.roomNamePrefix, session);
     const readiness = await this.readiness.ensureFresh(ROOM_SWEEP_SECONDS * 1000);
-    if (!readiness.ready) return err(LiveRefusals.mediaUnavailable);
+    if (!readiness.ready) return err(notReadyRefusal(readiness.reason));
     try {
       await this.rooms.ensureRoom({
         roomName: room,
@@ -127,7 +136,8 @@ export class StartLiveSessionUseCase {
         departureTimeoutSeconds: ROOM_PROVIDER_TIMEOUT_SECONDS,
       });
     } catch (error) {
-      if (error instanceof RtcUnavailableError) return err(LiveRefusals.mediaUnavailable);
+      const refusal = mediaRefusal(error);
+      if (refusal !== null) return err(refusal);
       throw error;
     }
 

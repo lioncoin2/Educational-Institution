@@ -8,7 +8,11 @@ import {
 } from '../../../../test/support/stub-http-server';
 import { loadConfig, type AppConfig } from '../../../platform/config/app-config';
 import { PINNED_LIVEKIT_SERVER_VERSION } from '../../../platform/config/livekit-config';
-import { RtcUnavailableError, type RtcCapabilities } from '../domain/rtc-provider';
+import {
+  RtcMisconfiguredError,
+  RtcUnavailableError,
+  type RtcCapabilities,
+} from '../domain/rtc-provider';
 import { LiveKitRtcProvider } from './livekit-rtc-provider';
 
 const KEY = 'APIfailuresspec';
@@ -64,12 +68,16 @@ const EVERY_CALL = {
 type Method = keyof typeof EVERY_CALL;
 const METHODS = Object.keys(EVERY_CALL) as Method[];
 
-/** What a call came to: the value it resolved to, an outage, or a fault and its message. */
+/**
+ * What a call came to: the value it resolved to, an outage or a
+ * misconfiguration and its reason (P7.2, Q-B), or a fault and its message.
+ */
 async function outcomeOf(call: Promise<unknown>): Promise<unknown> {
   try {
     return { resolved: await call };
   } catch (error) {
-    if (error instanceof RtcUnavailableError) return 'outage';
+    if (error instanceof RtcUnavailableError) return `outage: ${error.reason}`;
+    if (error instanceof RtcMisconfiguredError) return `misconfigured: ${error.reason}`;
     return `fault: ${(error as Error).message}`;
   }
 }
@@ -130,10 +138,10 @@ describe('the LiveKit adapter against a server that is not LiveKit (audit S1)', 
       { status: 404, contentType: 'application/json', body: '{"code":"bad_route","msg":"x"}' },
     ],
   ])(
-    'never reads %s as an absent room or participant, nor as success — every call fails loudly',
+    'never reads %s as an absent room or participant, nor as success — every call fails loudly, as a wrong endpoint',
     async (_case, answer) => {
       expect(await outcomes(stub, rtc, answer)).toEqual(
-        everyMethod((method) => `fault: The media provider refused ${method} (404).`),
+        everyMethod(() => 'misconfigured: incompatible_response'),
       );
       // Logged as what it is — a fault: its class, status and Twirp code, never its body.
       expect(logged.filter(([level]) => level === 'error')).toHaveLength(METHODS.length);
@@ -174,41 +182,58 @@ describe('the LiveKit adapter against a server that is not LiveKit (audit S1)', 
     ]);
   });
 
-  it('never reads a 2xx body that is not LiveKit’s JSON as an answer', async () => {
+  it('never reads a 2xx body that is not LiveKit’s JSON as an answer — a wrong endpoint', async () => {
     expect(
       await outcomes(stub, rtc, {
         status: 200,
         contentType: 'text/html',
         body: '<html>Welcome to nginx!</html>',
       }),
-    ).toEqual(
-      everyMethod((method) => `fault: The media provider refused ${method} (incompatible).`),
-    );
+    ).toEqual(everyMethod(() => 'misconfigured: incompatible_response'));
+  });
+
+  it('leaves a request LiveKit refused itself a plain fault — a 500, never a misconfiguration', async () => {
+    expect(
+      await outcomes(stub, rtc, {
+        status: 400,
+        contentType: 'application/json',
+        body: '{"code":"invalid_argument","msg":"room name length exceeds limits"}',
+      }),
+    ).toEqual(everyMethod((method) => `fault: The media provider refused ${method} (400).`));
   });
 
   it.each<[string, StubAnswer]>([
     ['a 401', { status: 401, body: 'invalid API key' }],
     ['a 403', { status: 403, contentType: 'text/html', body: '<h1>Forbidden</h1>' }],
-  ])('fails every call on %s as rejected credentials', async (_case, answer) => {
-    const status = typeof answer === 'object' ? answer.status : 0;
-    expect(await outcomes(stub, rtc, answer)).toEqual(
-      everyMethod((method) => `fault: The media provider refused ${method} (${status}).`),
-    );
-    expect(logged[0]?.[2]).toBe('media provider rejected our credentials');
-  });
+  ])(
+    'fails every call on %s as rejected credentials — a misconfiguration',
+    async (_case, answer) => {
+      expect(await outcomes(stub, rtc, answer)).toEqual(
+        everyMethod(() => 'misconfigured: unauthorized'),
+      );
+      expect(logged[0]?.[2]).toBe('media provider rejected our credentials');
+    },
+  );
 
-  it.each<[string, StubAnswer]>([
-    ['a 500', { status: 500, body: 'internal error' }],
-    ['a proxy’s 502', { status: 502, contentType: 'text/html', body: '<h1>Bad Gateway</h1>' }],
-    ['a connection reset', 'reset'],
-  ])('fails every call on %s as an outage', async (_case, answer) => {
-    expect(await outcomes(stub, rtc, answer)).toEqual(everyMethod(() => 'outage'));
+  it.each<[string, StubAnswer, string]>([
+    ['a 500', { status: 500, body: 'internal error' }, 'server_error'],
+    [
+      'a proxy’s 502',
+      { status: 502, contentType: 'text/html', body: '<h1>Bad Gateway</h1>' },
+      'server_error',
+    ],
+    ['a proxy’s 504', { status: 504, body: 'gateway timeout' }, 'timeout'],
+    ['a connection reset', 'reset', 'unreachable'],
+  ])('fails every call on %s as an outage', async (_case, answer, outage) => {
+    expect(await outcomes(stub, rtc, answer)).toEqual(everyMethod(() => `outage: ${outage}`));
     expect(logged.every(([level]) => level === 'warn')).toBe(true);
   });
 
-  it('fails every call to a closed port as an outage', async () => {
+  it('fails every call to a closed port as an outage: unreachable', async () => {
     const closed = new LiveKitRtcProvider(configFor(`http://127.0.0.1:${await closedPort()}`));
-    expect(await outcomes(stub, closed, { status: 200 })).toEqual(everyMethod(() => 'outage'));
+    expect(await outcomes(stub, closed, { status: 200 })).toEqual(
+      everyMethod(() => 'outage: unreachable'),
+    );
     expect(logged[0]).toEqual([
       'warn',
       {
@@ -216,15 +241,16 @@ describe('the LiveKit adapter against a server that is not LiveKit (audit S1)', 
         operation: 'ensureRoom',
         name: 'TypeError',
         code: 'ECONNREFUSED',
+        reason: 'unreachable',
       },
       'media provider unavailable',
     ]);
   });
 
-  it('fails every call on a TLS failure as a fault — never an outage a retry would fix', async () => {
+  it('fails every call on a TLS failure as a misconfiguration — never an outage a retry would fix', async () => {
     const tls = new LiveKitRtcProvider(configFor(`https://127.0.0.1:${stub.port}`));
     expect(await outcomes(stub, tls, { status: 200 })).toEqual(
-      everyMethod((method) => `fault: The media provider refused ${method} (tls).`),
+      everyMethod(() => 'misconfigured: tls_failure'),
     );
     expect(logged[0]?.[2]).toBe('media provider TLS handshake or certificate failed');
   });

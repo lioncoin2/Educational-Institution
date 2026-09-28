@@ -213,7 +213,11 @@ describe('what the LiveKit adapter writes, against a server that echoes credenti
       contentType: 'application/json',
       body: String(request.headers.authorization).slice('Bearer '.length),
     }));
-    await expect(rtc.listRooms()).rejects.toThrow('The media provider refused listRooms (401).');
+    await expect(rtc.listRooms()).rejects.toMatchObject({
+      name: 'RtcMisconfiguredError',
+      operation: 'listRooms',
+      reason: 'unauthorized',
+    });
     const token = String(stub.requests[stub.requests.length - 1]?.headers.authorization).slice(
       'Bearer '.length,
     );

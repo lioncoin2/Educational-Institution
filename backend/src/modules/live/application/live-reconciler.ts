@@ -29,6 +29,7 @@ import {
   RTC_OBSERVER,
   RTC_PARTICIPANTS,
   RTC_ROOMS,
+  RtcMisconfiguredError,
   RtcUnavailableError,
   type RtcParticipantControl,
   type RtcParticipantObserver,
@@ -103,8 +104,10 @@ export { WATCH_ENTRY_LIMIT } from './live-reconciler-watch';
  * `permittedAmong` and `heads`, identity's `live.speak`, the provider —
  * fails, that session's step (or the whole tick, for the room sweep's pages)
  * is skipped: nobody is ejected, demoted or expired, no session is ended and
- * no room deleted on a guess. An outage is logged once when it starts and
- * once when it ends, never per tick; any other failure by class name only.
+ * no room deleted on a guess. A provider outage, or a configuration the
+ * provider refuses (P7.2, Q-B), stops the tick — every other session would
+ * meet the same provider — and is logged once when it starts and once when
+ * it ends, never per tick; any other failure by class name only.
  *
  * Identities (P7.1): the application issues one media identity per
  * account, the account id. A standard participant with any other identity
@@ -317,10 +320,14 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
       const { report, foreignRemoved: foreign } = await this.forSession(listed.id, step);
       tally = addTally(tally, report);
       foreignRemoved += foreign;
-      if (report.outcome === 'provider_unavailable') {
+      // Every other session would meet the same provider: the tick stops.
+      if (
+        report.outcome === 'provider_unavailable' ||
+        report.outcome === 'provider_misconfigured'
+      ) {
         return {
           ...tally,
-          skipped: 'provider_unavailable',
+          skipped: report.outcome,
           sessions: live.length,
           sessionsSkipped,
           ended,
@@ -360,7 +367,9 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
           return work(session);
         })
         .catch((error: unknown): SessionStep => {
+          // Both logged once, by the runtime, when they start.
           if (error instanceof RtcUnavailableError) return noStep('provider_unavailable');
+          if (error instanceof RtcMisconfiguredError) return noStep('provider_misconfigured');
           this.runtime.logSkipped('session', sessionId, error);
           return noStep('skipped');
         }),

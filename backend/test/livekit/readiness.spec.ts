@@ -1,6 +1,9 @@
 import { randomBytes } from 'node:crypto';
 
-import { RtcUnavailableError } from '../../src/modules/live/domain/rtc-provider';
+import {
+  RtcMisconfiguredError,
+  RtcUnavailableError,
+} from '../../src/modules/live/domain/rtc-provider';
 import { ConfigurationError, loadConfig } from '../../src/platform/config/app-config';
 import { PINNED_LIVEKIT_SERVER_VERSION } from '../../src/platform/config/livekit-config';
 import { META, captureLogs, codeOf } from '../support/live-harness';
@@ -24,13 +27,18 @@ const anyRoom = (live: RealLive) => ({
 });
 
 /**
- * Start, where the provider is not ready: 503 live.media_unavailable, and
- * nothing stored — no session, no audit, no event, no room on the server.
+ * Start, where the provider is not ready: 503 — live.media_unavailable for
+ * an outage, live.media_misconfigured for this deployment's configuration
+ * (P7.2, Q-B) — and nothing stored: no session, no audit, no event, no room
+ * on the server.
  */
-async function expectStartRefused(live: RealLive): Promise<void> {
+async function expectStartRefused(
+  live: RealLive,
+  code: 'live.media_unavailable' | 'live.media_misconfigured',
+): Promise<void> {
   const { id, owner } = await live.community('teacher-1');
   const started = await live.start.execute({ principal: owner, communityId: id, meta: META });
-  expect(codeOf(started)).toBe('live.media_unavailable');
+  expect(codeOf(started)).toBe(code);
   expect(await live.sessions.findLiveByCommunity(id)).toBeNull();
   expect([...live.audits(), ...live.eventNames()]).toEqual([]);
   expect(await live.view.roomsNamed(live.settings.roomNamePrefix)).toEqual([]);
@@ -52,7 +60,9 @@ async function expectStartRefused(live: RealLive): Promise<void> {
  *   - a wrong endpoint — something else answering, nothing listening, no
  *     such host: NOT_READY, and every call a provider failure.
  *
- * Every NOT_READY stops Start with 503 and nothing stored.
+ * Every NOT_READY stops Start with 503 and nothing stored: an outage
+ * `live.media_unavailable`, anything else `live.media_misconfigured` (P7.2,
+ * Q-B).
  */
 describe('readiness against the pinned LiveKit server', () => {
   const policy = testServer('policy');
@@ -114,7 +124,7 @@ describe('readiness against the pinned LiveKit server', () => {
     secrets.push(secret);
     const live = realLive({ env: { LIVEKIT_API_SECRET: secret } });
     expect(await live.adapter.check()).toEqual({ ready: false, reason: 'unauthorized' });
-    await expectStartRefused(live);
+    await expectStartRefused(live, 'live.media_misconfigured');
   });
 
   it('is NOT_READY unauthorized with a key the server does not know — and Start stores nothing', async () => {
@@ -123,13 +133,13 @@ describe('readiness against the pinned LiveKit server', () => {
     expect(await live.adapter.check()).toEqual({ ready: false, reason: 'unauthorized' });
     // The server saw the request, and says so: the check below relies on it.
     expect(serverLog(policy).some((line) => line.apiKey === key)).toBe(true);
-    await expectStartRefused(live);
+    await expectStartRefused(live, 'live.media_misconfigured');
   });
 
   it('is NOT_READY auto_create_enabled where LIVEKIT_ROOM_AUTO_CREATE=true overrides the file — and Start stores nothing', async () => {
     const live = realLive({ server: 'auto_create' });
     expect(await live.adapter.check()).toEqual({ ready: false, reason: 'auto_create_enabled' });
-    await expectStartRefused(live);
+    await expectStartRefused(live, 'live.media_misconfigured');
     expect(logs.lines.map((line) => line.fields)).toContainEqual({
       event: 'live.provider.health_check',
       status: 'not_ready',
@@ -158,20 +168,18 @@ describe('readiness against the pinned LiveKit server', () => {
   });
 
   describe('a wrong endpoint is a provider failure, and never READY', () => {
-    it('something that is not LiveKit answering: NOT_READY incompatible_response, and the room API a fault', async () => {
+    it('something that is not LiveKit answering: NOT_READY incompatible_response, and the room API a misconfiguration', async () => {
       stub.answer({ status: 404, contentType: 'text/html', body: '<h1>404 Not Found</h1>' });
       const live = realLive({ env: { LIVEKIT_URL: stub.url.replace(/^http/, 'ws') } });
       expect(await live.adapter.check()).toEqual({
         ready: false,
         reason: 'incompatible_response',
       });
-      await expect(live.adapter.listRooms()).rejects.toThrow(
-        'The media provider refused listRooms (404).',
-      );
-      await expect(live.adapter.ensureRoom(anyRoom(live))).rejects.toThrow(
-        'The media provider refused ensureRoom (404).',
-      );
-      await expectStartRefused(live);
+      for (const call of [live.adapter.listRooms(), live.adapter.ensureRoom(anyRoom(live))]) {
+        await expect(call).rejects.toThrow(RtcMisconfiguredError);
+        await expect(call).rejects.toMatchObject({ reason: 'incompatible_response' });
+      }
+      await expectStartRefused(live, 'live.media_misconfigured');
     });
 
     it.each([
@@ -182,7 +190,7 @@ describe('readiness against the pinned LiveKit server', () => {
       expect(await live.adapter.check()).toEqual({ ready: false, reason: 'unreachable' });
       await expect(live.adapter.listRooms()).rejects.toThrow(RtcUnavailableError);
       await expect(live.adapter.ensureRoom(anyRoom(live))).rejects.toThrow(RtcUnavailableError);
-      await expectStartRefused(live);
+      await expectStartRefused(live, 'live.media_unavailable');
     });
   });
 

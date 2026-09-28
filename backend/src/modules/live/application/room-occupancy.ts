@@ -51,7 +51,8 @@ export class RoomOccupancy {
   /**
    * The room's occupancy, from a fresh enough sample or a new one. An outage
    * is `unavailable` (a join then fails open to the hard cap); any other
-   * provider failure is a fault and propagates.
+   * provider failure — a configuration it refuses (`RtcMisconfiguredError`),
+   * or a fault — propagates.
    */
   async sample(roomName: string): Promise<RoomSample> {
     const now = this.clock.now().getTime();

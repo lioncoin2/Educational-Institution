@@ -52,9 +52,11 @@ describe('LiveReconciler — the room sweep refreshes the provider’s readiness
     });
     expect(check).toHaveBeenCalledTimes(2);
 
-    // Start trusts the sweep's answer — 503, nothing stored — without asking again.
+    // Start trusts the sweep's answer — 503, nothing stored — without asking
+    // again: a server with auto-create on is this deployment's configuration
+    // (P7.2, Q-B).
     h.clock.advance(ROOM_SWEEP_SECONDS - 1);
-    expect(codeOf(await start())).toBe('live.media_unavailable');
+    expect(codeOf(await start())).toBe('live.media_misconfigured');
     expect(check).toHaveBeenCalledTimes(2);
     expect(h.rtc.roomNames()).toEqual([]);
     expect(await h.sessions.findLiveByCommunity(communityId)).toBeNull();

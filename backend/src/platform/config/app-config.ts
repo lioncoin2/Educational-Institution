@@ -87,6 +87,14 @@ export interface AppConfig {
     /** Seats above the cap for moderators and current speakers (PROVISIONAL 10, Q57). */
     readonly moderatorReserve: number;
     /**
+     * How long a join ticket may START a media connection
+     * (LIVE_JOIN_TOKEN_TTL_SECONDS; Q63, P7.2 decision Q-C): a whole number
+     * of seconds from 1 to MAX_LIVE_JOIN_TOKEN_TTL_SECONDS, 120 when unset.
+     * It bounds nothing once connected — the media server refreshes a
+     * connected client's token itself — so short costs nothing but a join.
+     */
+    readonly joinTokenTtlSeconds: number;
+    /**
      * The prefix of this deployment's media room names. The orphan sweep ends
      * every room of this form that no live session claims, so on a media
      * server other environments share it must be unique to the deployment.
@@ -149,6 +157,17 @@ const MIN_JWT_SECRET_BYTES = 32;
 const MIN_STORAGE_SECRET_BYTES = 32;
 
 const DAY = 24 * 60 * 60;
+
+/** The join ticket's lifetime when LIVE_JOIN_TOKEN_TTL_SECONDS is unset (Q63). */
+export const DEFAULT_LIVE_JOIN_TOKEN_TTL_SECONDS = 120;
+
+/**
+ * The longest join ticket a deployment may configure: ten minutes, as long as
+ * a token the media server refreshes itself. Live checks the same bound again
+ * where it mints a token (its `MAX_JOIN_TOKEN_TTL_SECONDS`, audit D24): the
+ * provider's SDK reads a falsy lifetime as six hours.
+ */
+export const MAX_LIVE_JOIN_TOKEN_TTL_SECONDS = 600;
 
 function readInt(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === '') return fallback;
@@ -280,6 +299,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   if (!Number.isSafeInteger(moderatorReserve) || moderatorReserve < 0) {
     problems.push('LIVE_MODERATOR_RESERVE must be a whole number, 0 or more');
   }
+  const joinTokenTtlSeconds = readWholeNumber(
+    env.LIVE_JOIN_TOKEN_TTL_SECONDS,
+    DEFAULT_LIVE_JOIN_TOKEN_TTL_SECONDS,
+  );
+  if (
+    !Number.isSafeInteger(joinTokenTtlSeconds) ||
+    joinTokenTtlSeconds < 1 ||
+    joinTokenTtlSeconds > MAX_LIVE_JOIN_TOKEN_TTL_SECONDS
+  ) {
+    problems.push(
+      `LIVE_JOIN_TOKEN_TTL_SECONDS must be a whole number of seconds from 1 to ${MAX_LIVE_JOIN_TOKEN_TTL_SECONDS}`,
+    );
+  }
   const rawPrefix = env.LIVE_ROOM_NAME_PREFIX;
   const roomNamePrefix = rawPrefix === undefined || rawPrefix.trim() === '' ? null : rawPrefix;
   if (roomNamePrefix !== null && !ROOM_NAME_PREFIX_SHAPE.test(roomNamePrefix)) {
@@ -376,6 +408,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     live: Object.freeze({
       maxParticipantsPerSession,
       moderatorReserve,
+      joinTokenTtlSeconds,
       roomNamePrefix,
       mediaProvider,
     }),

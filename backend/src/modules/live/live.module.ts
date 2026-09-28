@@ -35,7 +35,6 @@ import { LiveSessionViews } from './application/session-views';
 import { StartLiveSessionUseCase } from './application/start-live-session.use-case';
 import { LIVE_AUDIENCE } from './contracts/live-audience';
 import { LIVE_SESSIONS } from './contracts/live-sessions';
-import { JOIN_TOKEN_TTL_SECONDS } from './domain/live-limits';
 import {
   LIVE_SESSION_REPOSITORY,
   PRESENTER_GRANT_REPOSITORY,
@@ -150,7 +149,7 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
     roomNamePrefix: config.live.roomNamePrefix ?? DEFAULT_ROOM_NAME_PREFIX,
     participantCap: config.live.maxParticipantsPerSession,
     moderatorReserve: config.live.moderatorReserve,
-    joinTokenTtlSeconds: JOIN_TOKEN_TTL_SECONDS,
+    joinTokenTtlSeconds: config.live.joinTokenTtlSeconds,
   });
 }
 

@@ -6,7 +6,12 @@ import {
   type StubAnswer,
   type StubHttpServer,
 } from '../../../../test/support/stub-http-server';
-import { LIVEKIT_CLIENT_OPTIONS, classify, describe as describeError } from './livekit-transport';
+import {
+  LIVEKIT_CLIENT_OPTIONS,
+  classify,
+  describe as describeError,
+  outageOf,
+} from './livekit-transport';
 
 const KEY = 'APItransportspec';
 const SECRET = 'a-transport-spec-secret-that-is-long-enough';
@@ -131,9 +136,13 @@ describe('the LiveKit transport', () => {
       expect(classify(await sdkFailure(stub, answer))).toBe('misconfigured');
     });
 
-    it.each<[string, StubAnswer]>([
-      ['a 500', { status: 500, body: 'internal error' }],
-      ['a proxy’s 502', { status: 502, contentType: 'text/html', body: '<h1>Bad Gateway</h1>' }],
+    it.each<[string, StubAnswer, string]>([
+      ['a 500', { status: 500, body: 'internal error' }, 'server_error'],
+      [
+        'a proxy’s 502',
+        { status: 502, contentType: 'text/html', body: '<h1>Bad Gateway</h1>' },
+        'server_error',
+      ],
       [
         'LiveKit’s 503 unavailable',
         {
@@ -141,10 +150,22 @@ describe('the LiveKit transport', () => {
           contentType: 'application/json',
           body: '{"code":"unavailable","msg":"no response from servers"}',
         },
+        'server_error',
       ],
-      ['a 504', { status: 504, body: 'gateway timeout' }],
-    ])('reads %s as an outage', async (_case, answer) => {
-      expect(classify(await sdkFailure(stub, answer))).toBe('unavailable');
+      ['a 504', { status: 504, body: 'gateway timeout' }, 'timeout'],
+      [
+        'LiveKit’s deadline_exceeded',
+        {
+          status: 503,
+          contentType: 'application/json',
+          body: '{"code":"deadline_exceeded","msg":"deadline exceeded"}',
+        },
+        'timeout',
+      ],
+    ])('reads %s as an outage, and says which (P7.2, Q-B)', async (_case, answer, outage) => {
+      const error = await sdkFailure(stub, answer);
+      expect(classify(error)).toBe('unavailable');
+      expect(outageOf(error)).toBe(outage);
     });
 
     it('reads a 4xx LiveKit coded itself as a refusal', async () => {
@@ -171,12 +192,14 @@ describe('the LiveKit transport', () => {
       const error = await rooms.listRooms().catch((failure: unknown) => failure);
       expect(describeError(error)).toEqual({ name: 'TypeError', code: 'ECONNREFUSED' });
       expect(classify(error)).toBe('unavailable');
+      expect(outageOf(error)).toBe('unreachable');
     });
 
     it('reads a connection reset mid-request as an outage', async () => {
       const error = await sdkFailure(stub, 'reset');
       expect(describeError(error)).toEqual({ name: 'TypeError', code: 'UND_ERR_SOCKET' });
       expect(classify(error)).toBe('unavailable');
+      expect(outageOf(error)).toBe('unreachable');
     });
 
     it('reads a server that never answers as an outage, once the timeout passes', async () => {
@@ -188,16 +211,20 @@ describe('the LiveKit transport', () => {
       const error = await rooms.listRooms().catch((failure: unknown) => failure);
       expect(describeError(error)).toEqual({ name: 'TimeoutError' });
       expect(classify(error)).toBe('unavailable');
+      // Told apart from an outage for the logs only (P7.2, Q-B).
+      expect(outageOf(error)).toBe('timeout');
     });
 
-    it('reads an unresolvable host as an outage', () => {
-      expect(classify(fetchFailure('ENOTFOUND', 'getaddrinfo ENOTFOUND media.invalid'))).toBe(
-        'unavailable',
-      );
-      expect(classify(fetchFailure('EAI_AGAIN'))).toBe('unavailable');
-      expect(classify(fetchFailure('ETIMEDOUT'))).toBe('unavailable');
-      expect(classify(fetchFailure('EHOSTUNREACH'))).toBe('unavailable');
-      expect(classify(fetchFailure('UND_ERR_CONNECT_TIMEOUT'))).toBe('unavailable');
+    it.each([
+      ['ENOTFOUND', 'unreachable'],
+      ['EAI_AGAIN', 'unreachable'],
+      ['EHOSTUNREACH', 'unreachable'],
+      ['ETIMEDOUT', 'timeout'],
+      ['UND_ERR_CONNECT_TIMEOUT', 'timeout'],
+      ['UND_ERR_HEADERS_TIMEOUT', 'timeout'],
+    ])('reads %s as an outage — %s', (code, outage) => {
+      expect(classify(fetchFailure(code, `getaddrinfo ${code} media.invalid`))).toBe('unavailable');
+      expect(outageOf(fetchFailure(code))).toBe(outage);
     });
 
     it('reads TLS to a server that does not speak it as a TLS failure — never an outage', async () => {

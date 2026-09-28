@@ -164,6 +164,20 @@ describe('starting a live session', () => {
     expect(disabled.journal.events).toEqual([]);
   });
 
+  // P7.2 decision Q-B: refused credentials, a TLS failure or a wrong
+  // endpoint is not an outage — waiting fixes none of them.
+  it('answers a configuration the provider refuses with 503 live.media_misconfigured and stores nothing', async () => {
+    h.rtc.failNext('ensureRoom', 'misconfigured');
+    const refused = await start(owner);
+    expect(refused).toMatchObject({
+      ok: false,
+      error: { kind: 'unavailable', code: 'live.media_misconfigured' },
+    });
+    // The answer names no reason, URL or key: only the stable code and a message.
+    expect(JSON.stringify(refused)).not.toMatch(/unauthorized|ensureRoom|http|ws:/);
+    await nothingStored();
+  });
+
   it('lets a fault from the provider fail the call as the fault it is, storing nothing', async () => {
     h.rtc.failNext('ensureRoom', 'fault');
     await expect(start(owner)).rejects.toThrow('refused ensureRoom');

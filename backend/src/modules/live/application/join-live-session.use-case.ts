@@ -39,12 +39,13 @@ import {
   LIVE_SETTINGS,
   LiveRefusals,
   isLiveId,
+  mediaRefusal,
   sessionUserKey,
   tooMany,
   type LiveSettings,
 } from './live-settings';
 import { LiveStanding } from './live-standing';
-import { RoomOccupancy } from './room-occupancy';
+import { RoomOccupancy, type RoomSample } from './room-occupancy';
 import { mediaOf, type JoinTicket } from './views';
 
 /**
@@ -71,7 +72,9 @@ import { mediaOf, type JoinTicket } from './views';
  *      admitted to its current one, once; a listener over
  *      the soft cap → 412 live.session_full, moderators and speakers exempt;
  *      a provider outage skips both and fails open to the provider's hard
- *      cap;
+ *      cap — but a provider that refuses this deployment's configuration
+ *      fails closed, 503 live.media_misconfigured (P7.2, Q-B): nothing could
+ *      enforce anything in a room it runs;
  *   7. the name, from the account directory (never from the request);
  *   8. the token, for exactly the session's current media room, with its
  *      lifetime checked here first (audit D24) → 503 live.media_unavailable
@@ -157,7 +160,8 @@ export class JoinLiveSessionUseCase {
         ttlSeconds,
       });
     } catch (error) {
-      if (error instanceof RtcUnavailableError) return err(LiveRefusals.mediaUnavailable);
+      const refusal = mediaRefusal(error);
+      if (refusal !== null) return err(refusal);
       throw error;
     }
     if (role === 'listener') this.occupancy.listenerAdmitted(room);
@@ -190,7 +194,16 @@ export class JoinLiveSessionUseCase {
     moved = false,
   ): Promise<Result<string>> {
     const room = currentMediaRoom(this.settings.roomNamePrefix, session);
-    const sample = await this.occupancy.sample(room);
+    let sample: RoomSample;
+    try {
+      sample = await this.occupancy.sample(room);
+    } catch (error) {
+      // An outage is a sample of its own (`unavailable`): only a refused
+      // configuration, or a fault, is thrown.
+      const refusal = mediaRefusal(error);
+      if (refusal !== null) return err(refusal);
+      throw error;
+    }
     if (sample.kind === 'unavailable') return ok(room);
     if (sample.kind === 'missing') {
       try {
@@ -202,6 +215,8 @@ export class JoinLiveSessionUseCase {
         });
       } catch (error) {
         if (error instanceof RtcUnavailableError) return ok(room);
+        const refusal = mediaRefusal(error);
+        if (refusal !== null) return err(refusal);
         throw error;
       }
       // Without this read, a join racing End — or a media reset — would

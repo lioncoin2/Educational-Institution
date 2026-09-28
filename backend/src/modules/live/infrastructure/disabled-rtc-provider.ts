@@ -69,5 +69,5 @@ export class DisabledRtcProvider implements RtcProvider {
 }
 
 function disabled(operation: string): RtcUnavailableError {
-  return new RtcUnavailableError(`${operation} (media disabled)`);
+  return new RtcUnavailableError(operation, 'disabled');
 }

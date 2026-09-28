@@ -7,7 +7,6 @@ import {
   withUnmappedStatus,
   type LiveHarness,
 } from '../../../../test/support/live-harness';
-import { JOIN_TOKEN_TTL_SECONDS } from '../domain/live-limits';
 import { capabilitiesFor } from '../domain/standing';
 import type { LiveSessionView } from './views';
 
@@ -74,7 +73,7 @@ describe('joining a live session', () => {
 
   it('names the participant from the account directory, scoped to the session’s room, for 120 seconds', async () => {
     const joined = await ticket(student);
-    expect(JOIN_TOKEN_TTL_SECONDS).toBe(120);
+    expect(h.settings.joinTokenTtlSeconds).toBe(120);
     expect(h.rtc.issued.at(-1)).toMatchObject({
       roomName: h.room(session.id),
       identity: 'student-1',
@@ -88,6 +87,21 @@ describe('joining a live session', () => {
     jest.spyOn(h.accounts, 'describe').mockResolvedValueOnce([]);
     await ticket(student);
     expect(h.rtc.issued.at(-1)?.displayName).toBe('');
+  });
+
+  // P7.2 decision Q-C: the lifetime is the deployment's
+  // (LIVE_JOIN_TOKEN_TTL_SECONDS), never a constant of the use case.
+  it.each([1, 45, 600])('mints for the %s seconds the deployment configured', async (ttl) => {
+    const configured = liveHarness({ settings: { joinTokenTtlSeconds: ttl } });
+    const world = await configured.community('teacher-1', 'student-1');
+    const started = await configured.startSession(world.owner, world.id);
+    const joined = await configured.join.execute({
+      principal: world.students[0],
+      sessionId: started.id,
+      meta: META,
+    });
+    expect(joined.ok && joined.value.expiresInSeconds).toBe(ttl);
+    expect(configured.rtc.issued.at(-1)?.ttlSeconds).toBe(ttl);
   });
 
   it('checks the token’s lifetime where it is minted, and mints nothing outside 1..600 seconds (D24)', async () => {
@@ -329,6 +343,23 @@ describe('joining a live session', () => {
       await expect(join(student)).rejects.toThrow('refused listRooms');
       expect(h.rtc.issued).toEqual([]);
     });
+
+    // P7.2 decision Q-B: an outage fails open to the provider's hard cap; a
+    // provider refusing this deployment's configuration fails closed — nothing
+    // could enforce anything in a room it runs.
+    it.each(['listRooms', 'ensureRoom', 'issueAccessToken'] as const)(
+      'fails closed, 503 live.media_misconfigured, when %s meets a configuration the provider refuses',
+      async (operation) => {
+        if (operation === 'ensureRoom') await h.rtc.endRoom(h.room(session.id));
+        h.rtc.failNext(operation, 'misconfigured');
+        const refused = await join(student);
+        expect(refused).toMatchObject({
+          ok: false,
+          error: { kind: 'unavailable', code: 'live.media_misconfigured' },
+        });
+        expect(h.rtc.issued).toEqual([]);
+      },
+    );
 
     it('fails open when the provider cannot be asked about the room, but not when it cannot sign', async () => {
       h.rtc.failNext('listRooms', 'unavailable');

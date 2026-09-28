@@ -9,6 +9,7 @@ import {
 import { CLOCK, type Clock } from '../../../shared';
 import {
   RTC_READINESS,
+  RtcMisconfiguredError,
   RtcUnavailableError,
   type RtcNotReadyReason,
   type RtcReadinessProbe,
@@ -26,13 +27,15 @@ interface Checked {
  * P7.1): its self-check, cached. The provider is asked at boot, at the start
  * of every room sweep (the reconciler's), and again whenever a caller finds
  * the last answer too old — Start asks for one no older than a room sweep
- * (`ensureFresh(ROOM_SWEEP_SECONDS * 1000)`) and answers 503
- * `live.media_unavailable`, with nothing stored, while it is not ready.
+ * (`ensureFresh(ROOM_SWEEP_SECONDS * 1000)`) and answers 503, with nothing
+ * stored, while it is not ready: `live.media_unavailable` when it is
+ * unreachable or disabled, `live.media_misconfigured` otherwise (P7.2, Q-B).
  * Joins are not gated: a running session's room already exists.
  *
  * One check at a time: a refresh asked for while one runs shares it. A check
  * that throws — the port says it never does — counts as not ready: an outage
- * as `unreachable`, anything else as `incompatible_response`.
+ * as `unreachable`, a configuration the provider refused as its own reason,
+ * anything else as `incompatible_response`.
  *
  * `live.provider.health_check` is logged once per transition — when the
  * status or the reason changes, the first report included — with the status
@@ -122,8 +125,7 @@ export class LiveMediaReadiness implements OnApplicationBootstrap, OnModuleDestr
 }
 
 function unexpected(error: unknown): RtcReadinessReport {
-  return {
-    ready: false,
-    reason: error instanceof RtcUnavailableError ? 'unreachable' : 'incompatible_response',
-  };
+  if (error instanceof RtcUnavailableError) return { ready: false, reason: 'unreachable' };
+  if (error instanceof RtcMisconfiguredError) return { ready: false, reason: error.reason };
+  return { ready: false, reason: 'incompatible_response' };
 }

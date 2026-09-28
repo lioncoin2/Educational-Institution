@@ -105,15 +105,63 @@ export interface RtcParticipantObservation {
 }
 
 /**
- * The provider could not be reached: a network error, a timeout or a 5xx.
- * Nothing about the request is known to have happened. Callers either fail
- * with 503 (`FailureKind 'unavailable'`) or record the change and let it
- * converge; they never pretend it was applied.
+ * What kind of outage failed a call — for logs only: every outage is
+ * answered alike (P7.2, Q-B).
+ *
+ *   unreachable   nothing answered: refused, reset, a name that does not
+ *                 resolve
+ *   timeout       nothing answered in time
+ *   server_error  it answered that it could not serve (a 5xx)
+ *   disabled      real media is not enabled in this deployment
+ */
+export type RtcOutage = 'unreachable' | 'timeout' | 'server_error' | 'disabled';
+
+/**
+ * The provider could not be reached: a network error, a timeout or a 5xx —
+ * or real media is not enabled. Nothing about the request is known to have
+ * happened, and waiting may fix it. Callers either fail with 503
+ * `live.media_unavailable` or record the change and let it converge; they
+ * never pretend it was applied.
  */
 export class RtcUnavailableError extends Error {
-  constructor(readonly operation: string) {
+  constructor(
+    readonly operation: string,
+    readonly reason: RtcOutage = 'unreachable',
+  ) {
     super(`The media provider is unavailable (${operation}).`);
     this.name = 'RtcUnavailableError';
+  }
+}
+
+/**
+ * Why the provider refused this deployment's configuration (P7.2, Q-B) — the
+ * readiness reasons a call can meet. Waiting fixes none of them: an
+ * operator must.
+ *
+ *   unauthorized           it refused our key or secret
+ *   tls_failure            the TLS handshake or the certificate failed
+ *   incompatible_response  something answered, but not as the provider does:
+ *                          a wrong endpoint, a proxy's page, another server
+ */
+export type RtcMisconfiguration = Extract<
+  RtcNotReadyReason,
+  'unauthorized' | 'tls_failure' | 'incompatible_response'
+>;
+
+/**
+ * The provider answered, and its answer says this deployment is configured
+ * wrongly for it — refused credentials, a failed TLS handshake, a wrong
+ * endpoint. Callers fail with 503 `live.media_misconfigured`, never an
+ * outage's retry advice. It carries the reason and the operation only: never
+ * a URL, a key, a token or the provider's own message.
+ */
+export class RtcMisconfiguredError extends Error {
+  constructor(
+    readonly operation: string,
+    readonly reason: RtcMisconfiguration,
+  ) {
+    super(`The media provider refused this deployment's configuration (${operation}: ${reason}).`);
+    this.name = 'RtcMisconfiguredError';
   }
 }
 

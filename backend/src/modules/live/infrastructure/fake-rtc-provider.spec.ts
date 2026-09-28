@@ -1,5 +1,6 @@
 import { AdjustableClock } from '../../../../test/support/identity-harness';
 import {
+  RtcMisconfiguredError,
   RtcUnavailableError,
   type RtcCapabilities,
   type RtcRoomSpec,
@@ -222,6 +223,20 @@ describe('the fake RTC provider — failures, gates and logs', () => {
       const failed = CALL[operation](rtc);
       await expect(failed).rejects.toThrow(`refused ${operation}`);
       await expect(failed).rejects.not.toBeInstanceOf(RtcUnavailableError);
+    },
+  );
+
+  it.each(RTC_OPERATIONS)(
+    'fails the next %s as a misconfiguration — neither an outage nor a plain fault',
+    async (operation) => {
+      const { rtc } = fake();
+      rtc.failNext(operation, 'misconfigured');
+      const failed = CALL[operation](rtc);
+      await expect(failed).rejects.toBeInstanceOf(RtcMisconfiguredError);
+      await expect(failed).rejects.toMatchObject({ operation, reason: 'unauthorized' });
+      await expect(failed).rejects.not.toBeInstanceOf(RtcUnavailableError);
+      // Used up: the next call goes through.
+      await CALL[operation](rtc);
     },
   );
 

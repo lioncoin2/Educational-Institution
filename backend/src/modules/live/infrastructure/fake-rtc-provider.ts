@@ -1,5 +1,6 @@
 import type { Clock } from '../../../shared';
 import {
+  RtcMisconfiguredError,
   RtcUnavailableError,
   sourcesOf,
   type RtcAccessGrant,
@@ -31,10 +32,12 @@ export type RtcOperation = (typeof RTC_OPERATIONS)[number];
 /**
  * How a scripted call fails: `unavailable` is an outage — the port's
  * `RtcUnavailableError`, as the adapter throws for a network error, a timeout
- * or a 5xx; `fault` is a refusal or rejected credentials, which the adapter
+ * or a 5xx; `misconfigured` is the port's `RtcMisconfiguredError`, as the
+ * adapter throws for rejected credentials (a TLS failure or a wrong endpoint
+ * alike); `fault` is a request the provider refused, which the adapter
  * throws as a plain error (a 500, never mistaken for an outage).
  */
-export type RtcFailure = 'unavailable' | 'fault';
+export type RtcFailure = 'unavailable' | 'misconfigured' | 'fault';
 
 /** One call as the fake received it, reads included. */
 export interface FakeRtcCall {
@@ -407,6 +410,7 @@ export class FakeRtcProvider implements RtcProvider {
     const failure =
       this.scripted.get(operation)?.shift() ?? (this.unavailable ? 'unavailable' : null);
     if (failure === 'unavailable') throw new RtcUnavailableError(operation);
+    if (failure === 'misconfigured') throw new RtcMisconfiguredError(operation, 'unauthorized');
     if (failure === 'fault') throw new Error(`The media provider refused ${operation}.`);
   }
 

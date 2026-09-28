@@ -4,6 +4,7 @@ import { LiveMedia } from '../../src/modules/live/application/live-media';
 import { LiveMediaReadiness } from '../../src/modules/live/application/live-media-readiness';
 import { IDLE_END_SECONDS } from '../../src/modules/live/domain/live-limits';
 import {
+  RtcMisconfiguredError,
   RtcUnavailableError,
   type RtcCapabilities,
 } from '../../src/modules/live/domain/rtc-provider';
@@ -56,14 +57,19 @@ const MAY_BE_ABSENT = {
 } as const;
 type Call = keyof typeof MAY_BE_ABSENT;
 
-/** What each call came to: the answer it resolved to, an outage, or a fault. */
+/**
+ * What each call came to: the answer it resolved to, an outage, a
+ * configuration the provider refuses and why (P7.2, Q-B), or a fault.
+ */
 async function outcomes(rtc: LiveKitRtcProvider, rooms: Rooms): Promise<Record<Call, unknown>> {
   const all = {} as Record<Call, unknown>;
   for (const call of Object.keys(MAY_BE_ABSENT) as Call[]) {
     try {
       all[call] = { answered: await MAY_BE_ABSENT[call](rtc, rooms) };
     } catch (error) {
-      all[call] = error instanceof RtcUnavailableError ? 'outage' : 'fault';
+      if (error instanceof RtcUnavailableError) all[call] = 'outage';
+      else if (error instanceof RtcMisconfiguredError) all[call] = `misconfigured: ${error.reason}`;
+      else all[call] = 'fault';
     }
   }
   return all;
@@ -77,12 +83,13 @@ async function outcomes(rtc: LiveKitRtcProvider, rooms: Rooms): Promise<Record<C
  *     have: absence, as the port reports it — ended already, nobody there,
  *     `not_connected`;
  *   - against something else on the API URL — a proxy's 404 page, a JSON 404
- *     without LiveKit's code, a 200 that is not LiveKit's JSON: a fault,
- *     every time, never absence and never success;
+ *     without LiveKit's code, a 200 that is not LiveKit's JSON: a wrong
+ *     endpoint (`RtcMisconfiguredError`, `incompatible_response`; P7.2,
+ *     Q-B), every time, never absence and never success;
  *   - and so the reconciler, pointed there, takes no room for missing and
- *     no participant for gone: its sweeps do nothing at all, the session
- *     stays live and its speaker keeps the microphone — and a push reports
- *     `pending`, never `not_connected`.
+ *     no participant for gone: its sweeps stop at the first call and do
+ *     nothing at all, the session stays live and its speaker keeps the
+ *     microphone — and a push reports `pending`, never `not_connected`.
  */
 describe('answers that are not LiveKit’s, beside the pinned server’s own', () => {
   const clients = mediaClients();
@@ -145,17 +152,21 @@ describe('answers that are not LiveKit’s, beside the pinned server’s own', (
       'a 200 that is not LiveKit’s JSON',
       { status: 200, contentType: 'text/html', body: '<p>OK</p>' },
     ],
-  ])('reads %s on the API URL as a fault — never absence, never success', async (_case, answer) => {
-    stub.answer(answer);
-    expect(await outcomes(misdirected, rooms)).toEqual({
-      endRoom: 'fault',
-      listParticipants: 'fault',
-      getParticipant: 'fault',
-      updateCapabilities: 'fault',
-      removeParticipant: 'fault',
-      muteParticipant: 'fault',
-    });
-  });
+  ])(
+    'reads %s on the API URL as a wrong endpoint — never absence, never success',
+    async (_case, answer) => {
+      stub.answer(answer);
+      const wrong = 'misconfigured: incompatible_response';
+      expect(await outcomes(misdirected, rooms)).toEqual({
+        endRoom: wrong,
+        listParticipants: wrong,
+        getParticipant: wrong,
+        updateCapabilities: wrong,
+        removeParticipant: wrong,
+        muteParticipant: wrong,
+      });
+    },
+  );
 
   it('keeps the reconciler, pointed there, from taking the room for missing or its people for gone', async () => {
     stub.answer({ status: 404, contentType: 'text/html', body: '<h1>404 Not Found</h1>' });
@@ -172,17 +183,20 @@ describe('answers that are not LiveKit’s, beside the pinned server’s own', (
     const reconciler = live.reconcilerWith(misdirected);
     // The room list is unreadable: nothing ensured, nothing ended.
     expect(await reconciler.sweepRooms()).toMatchObject({
-      skipped: 'failed',
+      skipped: 'provider_misconfigured',
       ensured: 0,
       idleEnded: 0,
       orphansEnded: 0,
     });
-    // Nobody's presence is decided from it: the session is skipped whole.
+    // Nobody's presence is decided from it: the tick stops at its first
+    // call, as every other session would meet the same endpoint.
     expect(await reconciler.sweepParticipants()).toMatchObject({
-      skipped: null,
-      sessionsSkipped: 1,
+      skipped: 'provider_misconfigured',
+      sessionsSkipped: 0,
       removed: 0,
       corrected: 0,
+      violations: 0,
+      resets: 0,
     });
     // A push through it is pending — never "not connected".
     const media = new LiveMedia(misdirected, live.standing, live.settings, live.clock);
