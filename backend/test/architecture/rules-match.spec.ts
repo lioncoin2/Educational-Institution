@@ -121,6 +121,10 @@ describe('every forbidden rule can fire', () => {
       from: 'src/modules/live/infrastructure/livekit-rtc-provider.ts',
       to: 'node_modules/@livekit/rtc-node/dist/index.cjs',
     }),
+    'live-signs-and-reads-no-jwt': () => ({
+      from: 'src/modules/live/application/join-live-session.use-case.ts',
+      to: real('node_modules/@nestjs/jwt/'),
+    }),
     'websocket-library-only-in-the-realtime-adapter': () => ({
       from: 'src/modules/messaging/application/send-message.use-cases.ts',
       to: real('node_modules/ws/'),
@@ -198,6 +202,10 @@ describe('every forbidden rule can fire', () => {
       'application-has-no-vendor-sdks': {
         from: 'src/modules/live/application/join-live-session.use-case.ts',
         to: real('node_modules/@nestjs/common/'),
+      },
+      'live-signs-and-reads-no-jwt': {
+        from: 'src/modules/identity/infrastructure/jwt-token-issuer.ts',
+        to: real('node_modules/@nestjs/jwt/'),
       },
       'no-cross-module-internals': {
         from: 'src/modules/realtime/application/messaging-relay.ts',

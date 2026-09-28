@@ -34,6 +34,13 @@ export interface Participation {
    * status that closes new joins. They may still see the session.
    */
   readonly joinClosed: boolean;
+  /**
+   * Communities' code for refusing `community.live.join`; null when it
+   * permitted it. For logs only (P7.2 decision Q-A): a route answers a
+   * non-member, a member of another community and a removed member alike,
+   * and Communities itself answers all three `communities.community_not_found`.
+   */
+  readonly joinRefusal: string | null;
   /** The moderator permit (`community.live.moderate`, or the host's `community.live.host`). */
   readonly moderator: CommunityPermit | null;
 }
@@ -146,6 +153,7 @@ export class LiveAccess {
     return ok({
       join: join.ok ? join.value : null,
       joinClosed: !join.ok && join.error.kind === 'precondition_failed',
+      joinRefusal: join.ok ? null : join.error.code,
       moderator: moderator.ok ? moderator.value : null,
     });
   }

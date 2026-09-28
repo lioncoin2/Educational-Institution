@@ -90,6 +90,19 @@ describe('the real LiveKit suite and its WebRTC client', () => {
     });
   });
 
+  // P7.2 (audit §8): the adapter's behaviour — its errors, its token claims —
+  // is proven against one SDK release; a range would let another in unseen.
+  it('pins the LiveKit server SDK the adapter runs at exactly the release it is tested against', () => {
+    expect(manifest.dependencies['livekit-server-sdk']).toBe('2.19.1');
+    const lock = JSON.parse(read('package-lock.json')) as {
+      packages: Readonly<
+        Record<string, { version?: string; dependencies?: Readonly<Record<string, string>> }>
+      >;
+    };
+    expect(lock.packages['']?.dependencies?.['livekit-server-sdk']).toBe('2.19.1');
+    expect(lock.packages['node_modules/livekit-server-sdk']?.version).toBe('2.19.1');
+  });
+
   it('runs the suite on its own: excluded from npm test — never skipped — with its own server lifecycle', () => {
     const main = load(join(ROOT, 'jest.config.js')) as JestConfig;
     expect(main.testPathIgnorePatterns).toContain('<rootDir>/test/livekit/');

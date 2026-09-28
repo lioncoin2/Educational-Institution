@@ -73,6 +73,27 @@ export interface SessionSweepReport extends IdentityTally {
   readonly foreignBreaches: number;
 }
 
+/** The counts that say a tick changed something — not `sessions` or `checked`, which say it looked. */
+const CHANGES = [
+  'ensured',
+  'idleEnded',
+  'orphansEnded',
+  'ended',
+  'removed',
+  'corrected',
+  'pushed',
+  'violations',
+  'resets',
+  'foreignRemoved',
+  'foreignBreaches',
+] as const;
+
+/** Whether a tick changed anything: a room made or ended, a session ended, someone corrected… */
+export function changedAnything(report: RoomSweepReport | SessionSweepReport): boolean {
+  const counts: Partial<Record<(typeof CHANGES)[number], number>> = report;
+  return CHANGES.some((count) => (counts[count] ?? 0) > 0);
+}
+
 /** One session's check — the sweep's, the watch's, or `ProtectLiveSessions`'. */
 export interface SessionCheckReport extends IdentityTally {
   /**

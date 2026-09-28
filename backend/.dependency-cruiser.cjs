@@ -16,8 +16,7 @@ module.exports = {
     {
       name: 'no-circular',
       severity: 'error',
-      comment:
-        'Circular dependencies make modules impossible to extract into a service later.',
+      comment: 'Circular dependencies make modules impossible to extract into a service later.',
       from: {},
       to: { circular: true },
     },
@@ -48,21 +47,18 @@ module.exports = {
     {
       name: 'shared-kernel-reaches-no-npm',
       severity: 'error',
-      comment: 'The shared kernel is imported by every domain, so the same transitive rule applies.',
+      comment:
+        'The shared kernel is imported by every domain, so the same transitive rule applies.',
       from: { path: '^src/shared/' },
       to: { path: '^node_modules/', reachable: true },
     },
     {
       name: 'domain-does-not-look-outward',
       severity: 'error',
-      comment:
-        'The domain must not depend on the layers that depend on it, nor on platform.',
+      comment: 'The domain must not depend on the layers that depend on it, nor on platform.',
       from: { path: '^src/modules/[^/]+/domain/' },
       to: {
-        path: [
-          '^src/modules/[^/]+/(application|infrastructure|api)/',
-          '^src/platform/',
-        ],
+        path: ['^src/modules/[^/]+/(application|infrastructure|api)/', '^src/platform/'],
       },
     },
 
@@ -108,10 +104,10 @@ module.exports = {
       name: 'push-sdks-only-in-the-notifications-adapter',
       severity: 'error',
       comment:
-        'Push delivery is an adapter behind the notifications module\'s PushProvider ' +
+        "Push delivery is an adapter behind the notifications module's PushProvider " +
         'port: exactly one directory may know a push SDK (Firebase, APNs, web push), ' +
         'so notification logic never depends on a vendor and no other module can ' +
-        'send a push behind the notification pipeline\'s back.',
+        "send a push behind the notification pipeline's back.",
       from: { path: '^src/', pathNot: '^src/modules/notifications/infrastructure/' },
       to: {
         path: '^node_modules/(@types/)?(firebase|firebase-admin|@firebase/[^/]+|apn|@parse/node-apn|node-apn|web-push|node-pushnotifications)/',
@@ -122,8 +118,8 @@ module.exports = {
       name: 'livekit-sdk-only-in-the-live-adapter',
       severity: 'error',
       comment:
-        'Media transport is an adapter behind the live module\'s RTC ports: only the ' +
-        'LiveKit adapter\'s files — live/infrastructure/livekit-*.ts, the adapter, its ' +
+        "Media transport is an adapter behind the live module's RTC ports: only the " +
+        "LiveKit adapter's files — live/infrastructure/livekit-*.ts, the adapter, its " +
         'readiness probe and its transport rules — may know the LiveKit server SDK (or ' +
         'any @livekit package), so no other module, no other adapter, and no domain, ' +
         'application or api layer of live itself can depend on the vendor. ' +
@@ -138,13 +134,28 @@ module.exports = {
       name: 'webrtc-client-never-in-src',
       severity: 'error',
       comment:
-        'LiveKit\'s WebRTC client (@livekit/rtc-node, and its native bindings) is the real ' +
-        'LiveKit suite\'s participant — a devDependency, never shipped: no source file may ' +
+        "LiveKit's WebRTC client (@livekit/rtc-node, and its native bindings) is the real " +
+        "LiveKit suite's participant — a devDependency, never shipped: no source file may " +
         'import it, the LiveKit adapter included. test/architecture/livekit-suite.spec.ts ' +
         'keeps it under test/livekit/ and nowhere else.',
       from: { path: '^src/' },
       to: {
         path: '^node_modules/@livekit/(rtc-node|rtc-ffi-bindings[^/]*)/',
+      },
+    },
+    {
+      name: 'live-signs-and-reads-no-jwt',
+      severity: 'error',
+      comment:
+        'Live never signs, parses or inspects a token itself (P7.2, brief §2): a media ' +
+        'join token is minted through the RTC_TOKENS port, by the LiveKit adapter with ' +
+        "its SDK, and an access token is identity's. So no JWT library — jose, " +
+        'jsonwebtoken, @nestjs/jwt and the like — anywhere in live, its domain, ' +
+        'application, api and adapters alike. test/architecture/rules-match.spec.ts ' +
+        'proves the rule can fire.',
+      from: { path: '^src/modules/live/' },
+      to: {
+        path: '^node_modules/(@types/)?(jose|jsonwebtoken|@nestjs/jwt|jwt-decode|jws|jwa|fast-jwt|jsrsasign|node-jose)/',
       },
     },
 
@@ -174,9 +185,9 @@ module.exports = {
       severity: 'error',
       comment:
         'A module may only reach another module through its public `contracts/` ' +
-        'directory (or via events). Reaching into another module\'s domain, ' +
+        "directory (or via events). Reaching into another module's domain, " +
         'application, infrastructure or api couples them permanently. ' +
-        'A module\'s root `<name>.module.ts` is also allowed: in Nest the module ' +
+        "A module's root `<name>.module.ts` is also allowed: in Nest the module " +
         'class IS the composition surface — importing it grants access to exactly ' +
         'what that module lists in `exports`, and nothing more. The code-level ' +
         'boundary is still enforced, because whatever is exported can only be ' +
@@ -195,7 +206,7 @@ module.exports = {
       name: 'contracts-are-self-contained',
       severity: 'error',
       comment:
-        'A public contract must not drag a module\'s internals along with it. ' +
+        "A public contract must not drag a module's internals along with it. " +
         'Contracts may only use shared kernel types and other contracts.',
       from: { path: '^src/modules/[^/]+/contracts/' },
       to: {

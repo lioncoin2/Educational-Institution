@@ -144,6 +144,7 @@ export class ModerateSpeakerUseCase {
       }),
       [speakerGranted(session, outcome.request, outcome.stateVersion, command.meta.correlationId)],
     );
+    this.logged('live.speaker.granted', action, request, media);
     return ok({ request: speakerRequestView(outcome.request), media });
   }
 
@@ -176,7 +177,28 @@ export class ModerateSpeakerUseCase {
         ),
       ],
     );
+    this.logged('live.speaker.revoked', action, request, media);
     return ok({ request: speakerRequestView(outcome.value.request), media });
+  }
+
+  /** The floor given or taken back, as a log line (P7.2): ids and the media outcome only. */
+  private logged(
+    event: 'live.speaker.granted' | 'live.speaker.revoked',
+    action: ModerationAction,
+    request: SpeakerRequest,
+    media: MediaOutcome,
+  ): void {
+    this.logger.log(
+      {
+        event,
+        sessionId: action.sessionId,
+        requestId: request.id,
+        userId: request.userId,
+        by: action.actorUserId,
+        media,
+      },
+      event === 'live.speaker.granted' ? 'the floor was given' : 'the floor was taken back',
+    );
   }
 
   /** Passing over a pending hand. No media change: the person was never speaking. */

@@ -148,12 +148,8 @@ export class LiveMedia {
    * with its own observations.
    */
   pushNow(session: LiveSession, userId: string): Promise<RtcApplyOutcome> {
-    return this.perPerson.run(personKey(session.id, userId), async () =>
-      this.participants.updateCapabilities(
-        currentMediaRoom(this.settings.roomNamePrefix, session),
-        userId,
-        await this.setOf(session, userId),
-      ),
+    return this.perPerson.run(personKey(session.id, userId), () =>
+      this.apply(session, userId, 'reconciler'),
     );
   }
 
@@ -251,13 +247,41 @@ export class LiveMedia {
     return capabilitiesFor(account.eligible ? account.standing : NOBODY);
   }
 
+  /**
+   * Reads the set and has the provider hold it, then says so
+   * (`live.media.authorization_changed`): who, what they may publish now, and
+   * the provider's answer — the stored change's push, or the reconciler's.
+   * A failure is thrown, unlogged here.
+   */
+  private async apply(
+    session: LiveSession,
+    userId: string,
+    cause: 'stored_change' | 'reconciler',
+  ): Promise<RtcApplyOutcome> {
+    const set = await this.setOf(session, userId);
+    const outcome = await this.participants.updateCapabilities(
+      currentMediaRoom(this.settings.roomNamePrefix, session),
+      userId,
+      set,
+    );
+    this.logger.log(
+      {
+        event: 'live.media.authorization_changed',
+        sessionId: session.id,
+        userId,
+        cause,
+        outcome,
+        microphone: set.canPublishAudio,
+        screen: set.canPublishScreen,
+      },
+      'a participant’s live media rights were pushed',
+    );
+    return outcome;
+  }
+
   private async attempt(session: LiveSession, userId: string): Promise<PushOutcome> {
     try {
-      return await this.participants.updateCapabilities(
-        currentMediaRoom(this.settings.roomNamePrefix, session),
-        userId,
-        await this.setOf(session, userId),
-      );
+      return await this.apply(session, userId, 'stored_change');
     } catch (error) {
       // The adapter has logged an outage as a warning. Anything else — a
       // refusal, or Communities or the directory failing — is a fault worth

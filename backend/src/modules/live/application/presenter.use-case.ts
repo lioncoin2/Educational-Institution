@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import {
   CLOCK,
@@ -28,7 +28,7 @@ import {
 import { newPresenterGrant } from '../domain/presenter-grant';
 import { LiveAccess, permitOf } from './live-access';
 import { LiveJournal, moderationAudit } from './live-journal';
-import { LiveMedia } from './live-media';
+import { LiveMedia, type PushOutcome } from './live-media';
 import { LiveRefusals, isLiveId } from './live-settings';
 import { LiveSessionViews } from './session-views';
 import type { ClaimResult, LiveSessionView } from './views';
@@ -63,6 +63,8 @@ export interface PresenterCommand {
  */
 @Injectable()
 export class PresenterUseCase {
+  private readonly logger = new Logger(PresenterUseCase.name);
+
   constructor(
     @Inject(AUTHORIZATION_SERVICE) private readonly identity: AuthorizationService,
     private readonly access: LiveAccess,
@@ -124,6 +126,16 @@ export class PresenterUseCase {
       }),
       [screenShareStarted(session, grant, outcome.stateVersion, command.meta.correlationId)],
     );
+    this.logger.log(
+      {
+        event: 'live.presenter.claimed',
+        sessionId: session.id,
+        presenterGrantId: grant.id,
+        userId: principal.userId,
+        media,
+      },
+      'the presenter slot was claimed',
+    );
     return this.answer(principal, session, true);
   }
 
@@ -144,7 +156,7 @@ export class PresenterUseCase {
         moderation: null,
       });
       if (closed.grant !== null) {
-        await this.media.push(session, principal.userId);
+        const media = await this.media.push(session, principal.userId);
         await this.journal.record(null, [
           screenShareStopped(
             session,
@@ -153,6 +165,14 @@ export class PresenterUseCase {
             command.meta.correlationId,
           ),
         ]);
+        this.closedLog(
+          session,
+          closed.grant.id,
+          principal.userId,
+          principal.userId,
+          'stopped',
+          media,
+        );
       }
       return this.view(principal, session);
     }
@@ -191,8 +211,32 @@ export class PresenterUseCase {
           ),
         ],
       );
+      this.closedLog(session, closed.grant.id, holding.userId, principal.userId, 'revoked', media);
     }
     return this.view(principal, session);
+  }
+
+  /** The slot closed, as a log line (P7.2): ids, why, and the media outcome only. */
+  private closedLog(
+    session: LiveSession,
+    presenterGrantId: string,
+    userId: string,
+    by: string,
+    reason: 'stopped' | 'revoked',
+    media: PushOutcome,
+  ): void {
+    this.logger.log(
+      {
+        event: 'live.presenter.closed',
+        sessionId: session.id,
+        presenterGrantId,
+        userId,
+        by,
+        reason,
+        media,
+      },
+      'the presenter slot was closed',
+    );
   }
 
   private action(

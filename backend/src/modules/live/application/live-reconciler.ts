@@ -44,6 +44,7 @@ import { ParticipantSteps } from './live-reconciler-participants';
 import {
   NO_TALLY,
   addTally,
+  changedAnything,
   emptyRooms,
   emptySweep,
   noStep,
@@ -130,6 +131,8 @@ export { WATCH_ENTRY_LIMIT } from './live-reconciler-watch';
  * every period. Any other failure is the calls' own to report.
  *
  * Metrics are structured log lines with stable names (audit D15):
+ * `live.reconciler.tick` (each tick's counts and duration: logged when it
+ * changed something, at debug otherwise),
  * `live.reconciler.provider_unavailable` / `.provider_available` /
  * `.provider_misconfigured`, `.session_skipped`, `.tick_failed`,
  * `.room_ensured`, `.orphan_ended`, `.removed`, `.corrected`,
@@ -432,12 +435,13 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
   }
 
   /** A tick that never overlaps itself: a second call while one runs is skipped, not queued. */
-  private singleFlight<R>(
+  private singleFlight<R extends RoomSweepReport | SessionSweepReport>(
     tick: 'rooms' | 'participants' | 'watch',
     run: () => Promise<R>,
     skippedReport: (skipped: TickSkip) => R,
   ): Promise<R> {
     if (this.running.has(tick)) return Promise.resolve(skippedReport('in_flight'));
+    const started = performance.now();
     const running = run()
       .catch((error: unknown) => {
         this.runtime.logger.error(
@@ -450,11 +454,40 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
         );
         return skippedReport('failed');
       })
+      .then((report) => {
+        this.summarize(tick, report, performance.now() - started);
+        return report;
+      })
       .finally(() => {
         this.running.delete(tick);
       });
     this.running.set(tick, running);
     return this.track(running);
+  }
+
+  /**
+   * The per-tick reconciliation summary (P7.2, audit §4.9): the tick's
+   * report — counts only — and how long it took. A tick that changed
+   * something is logged; one that only looked, or was skipped, at debug: the
+   * runtime already says once when the provider's state changes, and a quiet
+   * tick every few seconds is not news.
+   */
+  private summarize(
+    tick: 'rooms' | 'participants' | 'watch',
+    report: RoomSweepReport | SessionSweepReport,
+    durationMs: number,
+  ): void {
+    const fields = {
+      event: 'live.reconciler.tick',
+      tick,
+      ...report,
+      durationMs: Math.round(durationMs),
+    };
+    if (changedAnything(report)) {
+      this.runtime.logger.log(fields, 'a reconciler tick changed something');
+    } else {
+      this.runtime.logger.debug(fields, 'a reconciler tick changed nothing');
+    }
   }
 
   private track<T>(work: Promise<T>): Promise<T> {

@@ -7,6 +7,7 @@ import {
   ok,
   type CallMetadata,
   type Clock,
+  type Failure,
   type Principal,
   type RateLimiter,
   type Result,
@@ -37,7 +38,7 @@ import {
 } from '../domain/rtc-provider';
 import { capabilitiesFor, roleOf } from '../domain/standing';
 import { askCommunities } from './community-calls';
-import { LiveAccess } from './live-access';
+import { LiveAccess, takesPart, type Participation } from './live-access';
 import {
   LIVE_SETTINGS,
   LiveRefusals,
@@ -50,6 +51,26 @@ import {
 import { LiveStanding } from './live-standing';
 import { RoomOccupancy, type RoomSample } from './room-occupancy';
 import { mediaOf, type JoinTicket } from './views';
+
+/**
+ * Why a join was refused, as `live.join.denied` says — never the wire, which
+ * keeps the no-enumeration 404 (P7.2 decision Q-A). `code` beside it is the
+ * refusal answered; `communities`, for `not_a_participant`, Communities' own.
+ */
+type JoinDenial =
+  | 'no_ceiling'
+  | 'malformed_id'
+  | 'rate_limited'
+  | 'no_such_session'
+  | 'not_a_participant'
+  | 'community_not_open'
+  | 'communities_unavailable'
+  | 'session_ended'
+  | 'room_check'
+  | 'directory_unavailable'
+  | 'ended_while_joining'
+  | 'moved_while_joining'
+  | 'token_not_signed';
 
 /**
  * Issues a join ticket (live.md S2) — the security boundary of live media.
@@ -125,25 +146,31 @@ export class JoinLiveSessionUseCase {
   }): Promise<Result<JoinTicket>> {
     const { principal, sessionId } = command;
     const allowed = this.identity.authorize(principal, Permissions.live.join);
-    if (!allowed.ok) return allowed;
-    // Before the limiter: its key holds the id (`isLiveId`).
-    if (!isLiveId(sessionId)) return err(LiveRefusals.sessionNotFound);
+    if (!allowed.ok) return this.denied(principal, null, 'no_ceiling', allowed.error);
+    // Before the limiter: its key holds the id (`isLiveId`). Never logged: it
+    // is not an id this API issued, so it could be anything a client sent.
+    if (!isLiveId(sessionId)) {
+      return this.denied(principal, null, 'malformed_id', LiveRefusals.sessionNotFound);
+    }
 
     const throttle = await this.limiter.consume(
       sessionUserKey(sessionId, principal.userId),
       LiveRateLimits.joinsPerSessionUser,
     );
-    if (!throttle.allowed) return err(tooMany('live.too_many_joins', throttle.retryAfterSeconds));
+    if (!throttle.allowed) {
+      const refusal = tooMany('live.too_many_joins', throttle.retryAfterSeconds);
+      return this.denied(principal, sessionId, 'rate_limited', refusal);
+    }
 
     const session = await this.sessions.findById(sessionId);
-    if (session === null) return err(LiveRefusals.sessionNotFound);
-    const participant = await this.access.participant(
-      principal,
-      session,
-      LiveRefusals.sessionNotFound,
-    );
+    if (session === null) {
+      return this.denied(principal, sessionId, 'no_such_session', LiveRefusals.sessionNotFound);
+    }
+    const participant = await this.participantIn(principal, session);
     if (!participant.ok) return participant;
-    if (!isLive(session)) return err(LiveRefusals.sessionNotLive);
+    if (!isLive(session)) {
+      return this.denied(principal, sessionId, 'session_ended', LiveRefusals.sessionNotLive);
+    }
 
     // Moderators and speakers skip the soft cap: the standing decides admission.
     const admission = await this.standing.ofPrincipal(
@@ -152,23 +179,30 @@ export class JoinLiveSessionUseCase {
       participant.value.moderator !== null,
     );
     const admitted = await this.admit(session, roleOf(admission.standing));
-    if (!admitted.ok) return admitted;
+    if (!admitted.ok) return this.denied(principal, sessionId, 'room_check', admitted.error);
     // The room the session uses now — a media reset may have moved it.
     const room = admitted.value;
 
     const named = await askCommunities(this.logger, () =>
       this.directory.describe([principal.userId]),
     );
-    if (!named.ok) return named;
+    if (!named.ok) return this.denied(principal, sessionId, 'directory_unavailable', named.error);
     const [account] = named.value;
 
     // Step 8: everything the token encodes, decided again now.
-    const still = await this.access.participant(principal, session, LiveRefusals.sessionNotFound);
+    const still = await this.participantIn(principal, session);
     if (!still.ok) return still;
     const current = await this.sessions.findById(session.id);
-    if (current === null || !isLive(current)) return err(LiveRefusals.sessionNotLive);
+    if (current === null || !isLive(current)) {
+      return this.denied(principal, sessionId, 'ended_while_joining', LiveRefusals.sessionNotLive);
+    }
     if (currentMediaRoom(this.settings.roomNamePrefix, current) !== room) {
-      return err(LiveRefusals.mediaUnavailable);
+      return this.denied(
+        principal,
+        sessionId,
+        'moved_while_joining',
+        LiveRefusals.mediaUnavailable,
+      );
     }
     const { standing } = await this.standing.ofPrincipal(
       principal,
@@ -199,20 +233,89 @@ export class JoinLiveSessionUseCase {
       });
     } catch (error) {
       const refusal = mediaRefusal(error);
-      if (refusal !== null) return err(refusal);
+      if (refusal !== null) return this.denied(principal, sessionId, 'token_not_signed', refusal);
       throw error;
     }
     if (role === 'listener') this.occupancy.listenerAdmitted(room);
 
+    const media = mediaOf(capabilities);
+    const expiresAt = new Date((issuedAt + token.expiresInSeconds) * 1000);
+    // Ids, the role and what it may publish — never the token or a name.
+    this.logger.log(
+      { event: 'live.join.admitted', sessionId, userId: principal.userId, role },
+      'a join was admitted',
+    );
+    this.logger.log(
+      {
+        event: 'live.token.issued',
+        sessionId,
+        userId: principal.userId,
+        role,
+        epoch: current.mediaRoomEpoch,
+        ttlSeconds: token.expiresInSeconds,
+        expiresAt: expiresAt.toISOString(),
+        media,
+      },
+      'a media join token was issued',
+    );
     return ok({
       sessionId: session.id,
       token: token.token,
       url: token.url,
       expiresInSeconds: token.expiresInSeconds,
-      expiresAt: new Date((issuedAt + token.expiresInSeconds) * 1000),
+      expiresAt,
       role,
-      media: mediaOf(capabilities),
+      media,
     });
+  }
+
+  /**
+   * Communities' answer for the caller in the session's own community, as
+   * `LiveAccess.participant` gives it — logged with Communities' own refusal
+   * code when it refuses (P7.2 decision Q-A), which the wire never carries.
+   */
+  private async participantIn(
+    principal: Principal,
+    session: LiveSession,
+  ): Promise<Result<Participation>> {
+    const answer = await this.access.participation(principal, session);
+    if (!answer.ok) {
+      return this.denied(principal, session.id, 'communities_unavailable', answer.error);
+    }
+    if (takesPart(answer.value)) return answer;
+    return answer.value.joinClosed
+      ? this.denied(principal, session.id, 'community_not_open', LiveRefusals.communityNotOpen)
+      : this.denied(principal, session.id, 'not_a_participant', LiveRefusals.sessionNotFound, {
+          communities: answer.value.joinRefusal,
+        });
+  }
+
+  /**
+   * A refusal, logged with the reason the wire does not carry (P7.2 decision
+   * Q-A): a non-member, a member of another community and a removed member
+   * all answer 404 live.session_not_found, and only this line says which
+   * refusal it was. Ids and codes only — the session id once it has the
+   * shape of one this API issued.
+   */
+  private denied<T>(
+    principal: Principal,
+    sessionId: string | null,
+    reason: JoinDenial,
+    refusal: Failure,
+    detail: Readonly<Record<string, string | null>> = {},
+  ): Result<T> {
+    this.logger.log(
+      {
+        event: 'live.join.denied',
+        ...(sessionId === null ? {} : { sessionId }),
+        userId: principal.userId,
+        reason,
+        code: refusal.code,
+        ...detail,
+      },
+      'a join was refused',
+    );
+    return err(refusal);
   }
 
   /**
