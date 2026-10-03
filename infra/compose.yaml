@@ -31,9 +31,12 @@ services:
       # Fixed by this topology.
       PORT: "3000"
       STORAGE_LOCAL_ROOT: /app/.storage
-      # API → LiveKit over the private network: plain HTTP to an internal host,
-      # which a deployed environment accepts (the admin tokens never leave it).
-      LIVEKIT_API_URL: http://livekit:7880
+      # API → LiveKit control. Since P7.3 (D2/decision B) LiveKit runs with
+      # network_mode: host and has no bridge alias, so the API reaches its
+      # signalling port at the private bridge gateway (172.30.0.1) over plain
+      # HTTP — an RFC-1918 internal host a deployed environment accepts, and the
+      # admin tokens never leave the host (docs/p7.3-…-design.md §3).
+      LIVEKIT_API_URL: ${LIVEKIT_API_URL:-http://172.30.0.1:7880}
       # Required in every environment.
       NODE_ENV: ${NODE_ENV:?set it in the environment file}
       JWT_SECRET: ${JWT_SECRET:?set it in the environment file}
@@ -86,6 +89,15 @@ services:
     # v1.13.7 source's Dockerfile (alpine, ENTRYPOINT /livekit-server).
     image: livekit/livekit-server:v1.13.7@sha256:6fd3b7088874c4d119160dd688798dfec852bc014786d392caad15f6f63912a3
     command: ["--config", "/etc/livekit/livekit.yaml"]
+    # P7.3 (D2 / decision B, docs/p7.3-…-design.md §0.3): LiveKit runs in the
+    # host network namespace so every embedded-TURN relay packet reaches the SFU
+    # as NODE_IP↔NODE_IP by local delivery — the Docker-bridge hairpin that broke
+    # Firefox relays is gone. The container is kept (caps dropped, no-new-privileges,
+    # read-only config); only the network namespace is shared. With host networking
+    # a "ports:" list is ignored by compose, so it is removed: livekit.yaml's
+    # bind_addresses keeps signalling 7880 on loopback + the bridge gateway only,
+    # and the firewall governs the public media/TURN ports.
+    network_mode: host
     volumes:
       - ./livekit/livekit.yaml:/etc/livekit/livekit.yaml:ro
     # An allow-list, and nothing else: any LIVEKIT_<PATH> variable would
@@ -97,13 +109,10 @@ services:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?set it in the environment file}: ${LIVEKIT_API_SECRET:?set it in the environment file}"
       # The host's address clients reach for media (main.go:70-74).
       NODE_IP: ${LIVEKIT_NODE_IP:?set it in the environment file}
-    ports:
-      # Signalling, the room API and /rtc/validate: loopback only, public
-      # solely through the TLS terminator.
-      - "127.0.0.1:7880:7880/tcp"
-      # ICE over TCP and ICE over UDP (one muxed port): media, public.
-      - "7881:7881/tcp"
-      - "7882:7882/udp"
+    # No "ports:" — host networking binds directly. livekit.yaml binds signalling
+    # 7880 to loopback + the bridge gateway (never public); 7881/tcp, 7882/udp,
+    # 3478/udp are bound on the host and opened by the firewall; the relay range
+    # 30000-32767/udp is never opened; 5349 (TURN/TLS) is reached only via nginx.
     # LiveKit's own health endpoint: 200 "OK", or 406 "Not Ready" when its node
     # stats are stale (SRV pkg/service/server.go:406-427). busybox wget ships in
     # the image.
@@ -123,3 +132,17 @@ services:
 volumes:
   # The API's stored files (STORAGE_LOCAL_ROOT), kept across container re-creation.
   api-storage:
+
+# This project's private bridge. The compose project is named "institution"
+# (above), so its default network is "institution_default"; P7.3 pins that
+# network's subnet and gateway (design §3) so the gateway IP the API uses to
+# reach the host-networked LiveKit (172.30.0.1) is deterministic, not whatever
+# Docker would otherwise pick. api, db and redis attach here automatically;
+# livekit opts out via network_mode: host.
+networks:
+  default:
+    name: institution_default
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1

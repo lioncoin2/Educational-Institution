@@ -29,7 +29,19 @@ services:
       LIVEKIT_TURN_UDP_PORT: "3478"
       LIVEKIT_TURN_TLS_PORT: "5349"
       LIVEKIT_TURN_EXTERNAL_TLS: "true"
-    ports:
-      - "3478:3478/udp"
-      # Loopback only: reached through the TLS terminator's public 443.
-      - "127.0.0.1:5349:5349/tcp"
+      # P7.3 (decision B, design §5/§6). The TURN/TLS terminator (nginx) connects
+      # to LiveKit from 127.0.0.1, so without PROXY protocol LiveKit would echo a
+      # loopback mapped address and Firefox would reject the allocation. PROXY
+      # protocol carries the real client address inward; the trusted CIDR is the
+      # loopback the terminator connects from (a list value, YAML-encoded for the
+      # env loader). nginx 1.24 sends PROXY v1, which LiveKit accepts.
+      LIVEKIT_TURN_PROXY_PROTOCOL: "true"
+      LIVEKIT_TURN_PROXY_PROTOCOL_TRUSTED_CIDRS: '["127.0.0.0/8"]'
+      # Relay range below Linux's ephemeral range (32768-60999) to avoid the
+      # 7,233-port overlap; 30000-32767 ≈ 590 concurrent relayed participants.
+      # Never opened to the internet (its only peer is the SFU on this host).
+      LIVEKIT_TURN_RELAY_RANGE_START: "30000"
+      LIVEKIT_TURN_RELAY_RANGE_END: "32767"
+    # No "ports:" — under network_mode: host (compose.yaml) LiveKit binds 3478/udp
+    # directly on the host (opened by the firewall) and 5349/tcp for TURN/TLS
+    # (reached only via nginx on 127.0.0.1:5349; the firewall blocks it publicly).

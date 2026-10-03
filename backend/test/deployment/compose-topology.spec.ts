@@ -7,6 +7,7 @@ import {
 } from '../../src/platform/config/livekit-config';
 import {
   COMPOSE_FILE,
+  DATA_FILE,
   REPO_ROOT,
   TURN_OVERRIDE_FILE,
   containerEnvironment,
@@ -50,15 +51,26 @@ const TURN_VARIABLES = [
   'LIVEKIT_TURN_EXTERNAL_TLS',
   'LIVEKIT_TURN_TLS_PORT',
   'LIVEKIT_TURN_UDP_PORT',
+  // P7.3 / decision B: the TURN/TLS terminator connects from loopback, so PROXY
+  // protocol carries the real client IP inward; the relay range is pinned below
+  // the ephemeral range. All topology constants, no secret.
+  'LIVEKIT_TURN_PROXY_PROTOCOL',
+  'LIVEKIT_TURN_PROXY_PROTOCOL_TRUSTED_CIDRS',
+  'LIVEKIT_TURN_RELAY_RANGE_START',
+  'LIVEKIT_TURN_RELAY_RANGE_END',
 ];
 
 const base = readYaml(COMPOSE_FILE);
 const override = readYaml(TURN_OVERRIDE_FILE);
+const data = readYaml(DATA_FILE);
 const services = servicesOf(base, COMPOSE_FILE);
 const overrideServices = servicesOf(override, TURN_OVERRIDE_FILE);
+const dataServices = servicesOf(data, DATA_FILE);
 const api = services.api ?? {};
 const livekit = services.livekit ?? {};
 const turn = overrideServices.livekit ?? {};
+const db = dataServices.db ?? {};
+const redis = dataServices.redis ?? {};
 const livekitPolicy = mapping(readYaml('infra/livekit/livekit.yaml'), 'livekit.yaml');
 
 /** A published port, short syntax, its protocol always stated. */
@@ -99,9 +111,56 @@ describe('the compose topology', () => {
     expect(api.build).toEqual({ context: '../backend', dockerfile: 'Dockerfile' });
     expect(api.image).toBeUndefined();
     expect(livekit.build).toBeUndefined();
-    // The override adds TURN to LiveKit and changes nothing else.
+    // The override adds TURN to LiveKit and changes nothing else. Under host
+    // networking (P7.3) it sets only environment — no ports list to publish.
     expect(Object.keys(overrideServices)).toEqual(['livekit']);
-    expect(Object.keys(turn).sort()).toEqual(['environment', 'ports']);
+    expect(Object.keys(turn).sort()).toEqual(['environment']);
+  });
+
+  it('runs the data tier (Postgres 16, Redis 7) only in the separate compose.data.yaml', () => {
+    // P7.3 / D3. Kept in its own file so compose.yaml still runs alone.
+    expect(Object.keys(dataServices).sort()).toEqual(['api', 'db', 'redis']);
+    expect(db.image).toMatch(/^postgres:16@sha256:[0-9a-f]{64}$/);
+    expect(redis.image).toMatch(/^redis:7@sha256:[0-9a-f]{64}$/);
+    // Neither publishes a host port: reachable only by service name on the bridge.
+    expect(db.ports).toBeUndefined();
+    expect(redis.ports).toBeUndefined();
+    // The API waits for both to be healthy (ordering lives in the data file so
+    // compose.yaml alone does not reference services it does not define).
+    expect(dataServices.api).toEqual({
+      depends_on: {
+        db: { condition: 'service_healthy' },
+        redis: { condition: 'service_healthy' },
+      },
+    });
+  });
+
+  it('keeps the data stores unprivileged and persistent, with explicit health checks', () => {
+    for (const [name, service] of [
+      ['db', db],
+      ['redis', redis],
+    ] as const) {
+      expect({ name, security_opt: service.security_opt }).toEqual({
+        name,
+        security_opt: ['no-new-privileges:true'],
+      });
+      expect({ name, cap_drop: service.cap_drop }).toEqual({ name, cap_drop: ['ALL'] });
+      expect({ name, privileged: service.privileged }).toEqual({ name, privileged: undefined });
+      expect({ name, network_mode: service.network_mode }).toEqual({
+        name,
+        network_mode: undefined,
+      });
+      expect(Object.keys(mapping(service.healthcheck, `${name}.healthcheck`))).toContain('test');
+      // A named volume only — never a host path, never the Docker socket.
+      for (const volume of texts(service.volumes, `${name}.volumes`)) {
+        expect(volume).not.toMatch(/^\/|docker\.sock/);
+      }
+    }
+    // Postgres adds back only the capabilities it needs to drop to its own user;
+    // Redis adds none (it runs as its image's unprivileged uid directly).
+    expect(db.cap_add).toEqual(['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'SETGID', 'SETUID']);
+    expect(redis.cap_add).toBeUndefined();
+    expect(redis.user).toBe('999:999');
   });
 
   it('runs LiveKit from the pinned release, by tag and digest', () => {
@@ -114,11 +173,13 @@ describe('the compose topology', () => {
     expect(livekit.env_file).toBeUndefined();
   });
 
-  it('grants neither container a privilege: not privileged, no Docker socket, no host namespace', () => {
+  it('grants neither container a privilege: not privileged, no Docker socket, only LiveKit’s host network', () => {
     for (const [name, service] of Object.entries(services)) {
+      // P7.3 / decision B: LiveKit shares ONLY the host network namespace, so
+      // embedded-TURN relays reach the SFU without the Docker-bridge hairpin.
+      // It keeps its container otherwise — no other namespace is shared.
       for (const key of [
         'privileged',
-        'network_mode',
         'pid',
         'ipc',
         'uts',
@@ -134,6 +195,10 @@ describe('the compose topology', () => {
           value: undefined,
         });
       }
+      expect({ service: name, network_mode: service.network_mode }).toEqual({
+        service: name,
+        network_mode: name === 'livekit' ? 'host' : undefined,
+      });
       expect({ service: name, cap_drop: service.cap_drop }).toEqual({
         service: name,
         cap_drop: ['ALL'],
@@ -158,35 +223,27 @@ describe('the compose topology', () => {
     ]);
   });
 
-  it('publishes exactly the documented ports, the signalling port on loopback only', () => {
-    expect(texts(livekit.ports, 'services.livekit.ports')).toEqual([
-      '127.0.0.1:7880:7880/tcp',
-      '7881:7881/tcp',
-      '7882:7882/udp',
-    ]);
+  it('publishes no LiveKit ports (host networking binds directly); the API stays on loopback', () => {
+    // P7.3 / decision B: a ports list is ignored under network_mode: host, so it
+    // is removed. livekit.yaml's bind_addresses keeps signalling 7880 on
+    // loopback + the bridge gateway; the firewall governs the public media/TURN
+    // ports; the relay range is never opened.
+    expect(livekit.ports).toBeUndefined();
     expect(texts(api.ports, 'services.api.ports')).toEqual(['127.0.0.1:3000:3000/tcp']);
-
-    // Each port is published where the process listens: LiveKit's policy file,
-    // the API's PORT.
-    const livekitPorts = portsOf(livekit, 'services.livekit');
-    const rtc = mapping(livekitPolicy.rtc, 'rtc');
-    expect(livekitPorts.map(({ target, protocol }) => `${target}/${protocol}`)).toEqual([
-      `${String(livekitPolicy.port)}/tcp`,
-      `${String(rtc.tcp_port)}/tcp`,
-      `${String(rtc.udp_port)}/udp`,
-    ]);
     expect(portsOf(api, 'services.api')[0]?.target).toBe(
       Number(environmentOf(api, 'services.api').PORT),
     );
+    // The policy file still declares the media/signalling ports the host binds.
+    const rtc = mapping(livekitPolicy.rtc, 'rtc');
+    expect({ signalling: livekitPolicy.port, tcp: rtc.tcp_port, udp: rtc.udp_port }).toEqual({
+      signalling: 7880,
+      tcp: 7881,
+      udp: 7882,
+    });
   });
 
-  it('publishes the TURN ports only through the TURN override, where TURN listens', () => {
-    expect(texts(turn.ports, 'override: services.livekit.ports')).toEqual([
-      '3478:3478/udp',
-      '127.0.0.1:5349:5349/tcp',
-    ]);
-    const published = [...portsOf(livekit, 'services.livekit'), ...portsOf(api, 'services.api')];
-    expect(published.filter(({ target }) => target === 3478 || target === 5349)).toEqual([]);
+  it('configures TURN only through the override, and publishes no ports for it', () => {
+    expect(turn.ports).toBeUndefined();
     expect(
       Object.keys(environmentOf(livekit, 'services.livekit')).filter((name) =>
         name.startsWith('LIVEKIT_TURN_'),
@@ -200,22 +257,12 @@ describe('the compose topology', () => {
       LIVEKIT_TURN_UDP_PORT: '3478',
       LIVEKIT_TURN_TLS_PORT: '5349',
       LIVEKIT_TURN_EXTERNAL_TLS: 'true',
+      // decision B: PROXY protocol inward, trusted to loopback; relay range pinned.
+      LIVEKIT_TURN_PROXY_PROTOCOL: 'true',
+      LIVEKIT_TURN_PROXY_PROTOCOL_TRUSTED_CIDRS: '["127.0.0.0/8"]',
+      LIVEKIT_TURN_RELAY_RANGE_START: '30000',
+      LIVEKIT_TURN_RELAY_RANGE_END: '32767',
     });
-    // TURN/UDP is public; TURN/TLS reaches LiveKit only through the TLS terminator.
-    expect(portsOf(turn, 'override: services.livekit')).toEqual([
-      {
-        hostIp: null,
-        published: Number(turnEnvironment.LIVEKIT_TURN_UDP_PORT),
-        target: Number(turnEnvironment.LIVEKIT_TURN_UDP_PORT),
-        protocol: 'udp',
-      },
-      {
-        hostIp: '127.0.0.1',
-        published: Number(turnEnvironment.LIVEKIT_TURN_TLS_PORT),
-        target: Number(turnEnvironment.LIVEKIT_TURN_TLS_PORT),
-        protocol: 'tcp',
-      },
-    ]);
   });
 
   it('checks each container’s health explicitly, on the port it listens on', () => {
@@ -307,13 +354,18 @@ describe('the compose topology', () => {
     );
   });
 
-  it('reaches LiveKit over the private network, which a deployed API accepts', () => {
-    const apiUrl = environmentOf(api, 'services.api').LIVEKIT_API_URL ?? '';
-    expect(apiUrl).toBe(`http://livekit:${String(livekitPolicy.port)}`);
-    // `livekit` is the service's name on the project network: an internal
-    // host, so plain HTTP passes the staging and production check.
+  it('reaches LiveKit at the private bridge gateway, which a deployed API accepts', () => {
+    // P7.3 / decision B: LiveKit is host-networked, so its service name no longer
+    // resolves on the bridge. The API reaches signalling at the fixed bridge
+    // gateway (a private RFC-1918 IPv4) over plain HTTP — an internal host, so it
+    // passes the staging/production security check; the admin JWT stays on-host.
+    const template = environmentOf(api, 'services.api').LIVEKIT_API_URL ?? '';
+    const apiUrl = interpolate(template, new Map()); // no env set → the gateway default
+    expect(apiUrl).toBe(`http://172.30.0.1:${String(livekitPolicy.port)}`);
     expect(apiUrlFault(apiUrl, true)).toBeNull();
-    expect(Object.keys(services)).toContain(new URL(apiUrl).hostname);
+    // The gateway is the pinned subnet's .1, and the bridge binding in the policy.
+    expect(new URL(apiUrl).hostname).toBe('172.30.0.1');
+    expect(livekitPolicy.bind_addresses).toContain(new URL(apiUrl).hostname);
   });
 
   it('passes the API every setting its configuration reads, and nothing else', () => {

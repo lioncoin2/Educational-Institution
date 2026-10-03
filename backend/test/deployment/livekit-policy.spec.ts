@@ -30,6 +30,13 @@ describe('the LiveKit server policy', () => {
     expect(rtc.node_ip).toBeUndefined();
   });
 
+  it('binds signalling to loopback and the private bridge gateway only, never a public IP', () => {
+    // P7.3 / decision B: LiveKit runs host-networked, so the signalling server
+    // must not listen on every interface. Both are deployment constants (nginx
+    // reaches 127.0.0.1; the bridged API reaches the gateway), neither public.
+    expect(policy.bind_addresses).toEqual(['127.0.0.1', '172.30.0.1']);
+  });
+
   it('listens for signalling on 7880, ICE over TCP on 7881 and ICE over UDP on one muxed 7882', () => {
     expect(policy.port).toBe(7880);
     const rtc = mapping(policy.rtc, 'rtc');
@@ -44,7 +51,15 @@ describe('the LiveKit server policy', () => {
   });
 
   it('holds only the policy: no key, no development mode, no webhook, no Redis, no TURN', () => {
-    expect(Object.keys(policy).sort()).toEqual(['logging', 'port', 'room', 'rtc']);
+    // bind_addresses is topology (loopback + bridge gateway), not a secret and
+    // not per-host; TURN is still absent (per environment, via the override).
+    expect(Object.keys(policy).sort()).toEqual([
+      'bind_addresses',
+      'logging',
+      'port',
+      'room',
+      'rtc',
+    ]);
     expect(Object.keys(mapping(policy.rtc, 'rtc')).sort()).toEqual([
       'tcp_port',
       'udp_port',

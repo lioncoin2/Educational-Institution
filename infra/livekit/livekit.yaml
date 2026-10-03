@@ -24,6 +24,15 @@
 # clients reach this port only through the TLS terminator. (SRV config.go:79)
 port: 7880
 
+# Under host networking (P7.3 / decision B) the signalling server must NOT bind
+# every host interface — that would expose 7880 publicly. Bind it to loopback
+# (nginx reaches it there) and the fixed private bridge gateway (the bridged API
+# reaches it there). Both are deployment constants, not secrets; the public
+# media/TURN ports are bound by rtc/turn, not by this list. (SRV config.go: bind_addresses)
+bind_addresses:
+  - "127.0.0.1"
+  - "172.30.0.1"
+
 rtc:
   # ICE over TCP, media's fallback when UDP is blocked: exposed on the node,
   # never behind TLS or a load balancer (SRV config-sample.yaml:59-63). (MTU config.go:46)

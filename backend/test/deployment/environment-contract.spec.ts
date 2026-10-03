@@ -9,6 +9,7 @@ import {
 } from '../../src/platform/config/livekit-config';
 import {
   COMPOSE_FILE,
+  DATA_FILE,
   DEPLOYED_ENVIRONMENTS,
   ENVIRONMENTS,
   TURN_OVERRIDE_FILE,
@@ -48,6 +49,7 @@ import {
 
 const base = readYaml(COMPOSE_FILE);
 const override = readYaml(TURN_OVERRIDE_FILE);
+const data = readYaml(DATA_FILE);
 const services = servicesOf(base, COMPOSE_FILE);
 const apiEnvironment = environmentOf(services.api ?? {}, 'services.api');
 const livekitEnvironment = environmentOf(services.livekit ?? {}, 'services.livekit');
@@ -66,7 +68,9 @@ const deployed = (environment: Environment) => DEPLOYED_ENVIRONMENTS.includes(en
 
 /** Every variable the compose files of an environment read, and those they require. */
 function variablesRead(environment: Environment): { read: Set<string>; required: string[] } {
-  const interpolated = interpolatedVariables(deployed(environment) ? [base, override] : [base]);
+  // Deployed environments layer on the TURN override and the data tier (D3).
+  const documents = deployed(environment) ? [base, override, data] : [base];
+  const interpolated = interpolatedVariables(documents);
   const passedThrough = Object.keys(apiEnvironment).filter((name) => apiEnvironment[name] === null);
   return {
     read: new Set([...interpolated.keys(), ...passedThrough]),
@@ -75,6 +79,11 @@ function variablesRead(environment: Environment): { read: Set<string>; required:
 }
 
 const SECRETS = ['JWT_SECRET', 'STORAGE_SIGNING_SECRET', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'];
+/** P7.3 / D3: the data-tier passwords — secrets too, required only where the data tier runs. */
+const DATA_SECRETS = ['POSTGRES_PASSWORD', 'REDIS_PASSWORD'];
+/** Every secret that must ship empty in an environment's example. */
+const secretsOf = (environment: Environment) =>
+  deployed(environment) ? [...SECRETS, ...DATA_SECRETS] : SECRETS;
 const LIVEKIT_CONTRACT = [
   'LIVE_MEDIA_PROVIDER',
   'LIVE_ROOM_NAME_PREFIX',
@@ -137,12 +146,13 @@ describe.each(ENVIRONMENTS)('the %s environment file', (environment) => {
 
   it('sets every variable its compose files require, and only variables they read — the secrets left empty', () => {
     const { read, required } = variablesRead(environment);
+    const secrets = secretsOf(environment);
     for (const name of required) {
       expect({ name, value: variables.get(name) }).toEqual({
         name,
         // A secret is named but empty (see "as shipped" below); every other
         // required variable has its value.
-        value: SECRETS.includes(name) ? '' : (expect.stringMatching(/./) as string),
+        value: secrets.includes(name) ? '' : (expect.stringMatching(/./) as string),
       });
     }
     expect([...variables.keys()].filter((name) => !read.has(name))).toEqual([]);
@@ -167,18 +177,24 @@ describe.each(ENVIRONMENTS)('the %s environment file', (environment) => {
   });
 
   it('holds no secret: every secret empty, and no real-looking host or address', () => {
-    for (const name of SECRETS) {
+    for (const name of secretsOf(environment)) {
       expect({ name, value: variables.get(name) }).toEqual({ name, value: '' });
     }
-    const database = variables.get('DATABASE_URL') ?? '';
-    if (database !== '') expect(new URL(database).password).toBe('change-me');
+    // The data stores carry only the placeholder password, under their private
+    // service names (D3) — not a real host, and not a secret.
+    for (const name of ['DATABASE_URL', 'REDIS_URL']) {
+      const url = variables.get(name) ?? '';
+      if (url === '') continue;
+      expect(new URL(url).password).toBe('change-me');
+      expect(new URL(url).hostname).toBe(name === 'DATABASE_URL' ? 'db' : 'redis');
+    }
+    // The gateway the API uses for LiveKit control is the pinned private subnet's .1.
+    const apiUrl = variables.get('LIVEKIT_API_URL');
+    if (apiUrl !== undefined) expect(new URL(apiUrl).hostname).toBe('172.30.0.1');
 
+    // The public-facing hosts/addresses must still be reserved documentation names.
     const hosts = [
       new URL(variables.get('LIVEKIT_URL') ?? '').hostname,
-      ...['DATABASE_URL', 'REDIS_URL']
-        .map((name) => variables.get(name) ?? '')
-        .filter((url) => url !== '')
-        .map((url) => new URL(url).hostname),
       ...(deployed(environment) ? [variables.get('LIVEKIT_TURN_DOMAIN') ?? ''] : []),
     ];
     const nodeIp = variables.get('LIVEKIT_NODE_IP') ?? '';
@@ -211,7 +227,7 @@ describe.each(ENVIRONMENTS)('the %s environment file', (environment) => {
     // example. Every secret is required by the compose files of this
     // environment, and every one is empty here.
     const { required } = variablesRead(environment);
-    for (const name of SECRETS) {
+    for (const name of secretsOf(environment)) {
       expect({ name, required: required.includes(name), value: variables.get(name) }).toEqual({
         name,
         required: true,
@@ -247,7 +263,8 @@ describe.each(ENVIRONMENTS)('the %s environment file', (environment) => {
     expect(config.live.roomNamePrefix).toBe(filled.get('LIVE_ROOM_NAME_PREFIX'));
     expect(config.livekit).toEqual({
       url: filled.get('LIVEKIT_URL'),
-      apiUrl: 'http://livekit:7880',
+      // P7.3 / decision B: control reaches host-networked LiveKit at the bridge gateway.
+      apiUrl: 'http://172.30.0.1:7880',
       apiKey: filled.get('LIVEKIT_API_KEY'),
       apiSecret: filled.get('LIVEKIT_API_SECRET'),
       version: PINNED_LIVEKIT_SERVER_VERSION,

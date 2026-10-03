@@ -25,6 +25,8 @@ export const DEPLOYED_ENVIRONMENTS: readonly Environment[] = ['staging', 'produc
 
 export const COMPOSE_FILE = 'infra/compose.yaml';
 export const TURN_OVERRIDE_FILE = 'infra/compose.turn.yaml';
+/** P7.3 / D3: the data tier (Postgres, Redis), layered onto deployed environments. */
+export const DATA_FILE = 'infra/compose.data.yaml';
 
 export function exampleFile(environment: Environment): string {
   return `infra/env/${environment}.env.example`;
@@ -97,10 +99,14 @@ export interface Reference {
 
 /** The variables a compose value interpolates. Any other use of `$` is refused. */
 export function referencesIn(template: string): Reference[] {
-  if (template.replace(REFERENCE, '').includes('$')) {
+  // Compose escapes a literal dollar as `$$` (e.g. a shell variable the container
+  // expands at runtime); it is not an interpolation. Remove escapes first, so
+  // `$${VAR}` reads as the literal `${VAR}` and never as a reference to VAR.
+  const unescaped = template.replace(/\$\$/g, '');
+  if (unescaped.replace(REFERENCE, '').includes('$')) {
     throw new Error(`unsupported interpolation in ${JSON.stringify(template)}`);
   }
-  return [...template.matchAll(REFERENCE)].map((match) => ({
+  return [...unescaped.matchAll(REFERENCE)].map((match) => ({
     name: match[1] ?? '',
     required: match[2] === ':?',
   }));
@@ -127,9 +133,12 @@ export function interpolatedVariables(document: unknown): Map<string, boolean> {
 /** Compose's interpolation of one value. A required variable unset or empty throws, as Compose refuses. */
 export function interpolate(template: string, variables: ReadonlyMap<string, string>): string {
   referencesIn(template);
+  // Handle the `$$` literal-dollar escape and `${...}` references in one
+  // left-to-right pass, so `$${VAR}` renders as the literal `${VAR}`.
   return template.replace(
-    REFERENCE,
-    (_whole: string, name: string, operator: string | undefined, argument: string | undefined) => {
+    /\$\$|\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:\?|:-)([^}]*))?\}/g,
+    (whole: string, name: string, operator: string | undefined, argument: string | undefined) => {
+      if (whole === '$$') return '$';
       const value = variables.get(name);
       const missing = value === undefined || value === '';
       if (operator === ':?' && missing) {

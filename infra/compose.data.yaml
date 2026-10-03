@@ -1,0 +1,85 @@
+# The data tier (P7.3): Postgres 16 and Redis 7 as dedicated containers on this
+# project's private network, with persistent volumes. Added by P7.3 decision D3
+# (docs/p7.3-staging-deployment-topology-design.md §4): before, Postgres and
+# Redis were "the host's" external services; now they are owned here.
+#
+#   docker compose -f infra/compose.yaml -f infra/compose.turn.yaml \
+#     -f infra/compose.data.yaml --env-file infra/env/<env>.env up -d
+#
+# Neither publishes a host port: they are reachable only by service name on the
+# private network (api → db:5432, api → redis:6379). Both pinned by tag+digest,
+# every capability dropped, no privilege escalation, no Docker socket. The named
+# volumes persist across container re-creation — they are NOT a backup (§8).
+services:
+  db:
+    # PostgreSQL 16 (16.15), pinned by tag + digest: no silent upgrade.
+    image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-institution}
+      POSTGRES_DB: ${POSTGRES_DB:-institution}
+      # A new per-environment secret (§4). Compose refuses to start without it.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in the environment file}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER:-institution}\" -d \"$${POSTGRES_DB:-institution}\" -h 127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Postgres needs a few capabilities to drop privileges from root to postgres
+    # and manage its data directory; add back only those, nothing more.
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+
+  redis:
+    # Redis 7 (7.4.11), pinned by tag + digest.
+    image: redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f
+    # requirepass is read at runtime from the container env, so the secret is not
+    # written into this committed file (the $$ keeps compose from interpolating
+    # it; redis expands $REDIS_PASSWORD itself). --appendonly yes keeps a warm
+    # restart (§4) — convenience, not durable truth; Redis is never business truth.
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set it in the environment file}
+    # Run as the image's unprivileged redis user (uid 999), which owns /data. The
+    # sh -c wrapper (needed to keep the secret out of docker inspect's Cmd) would
+    # otherwise bypass the image entrypoint's user switch and run as root — which,
+    # with every capability dropped, cannot write the 999-owned volume.
+    user: "999:999"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # The API waits for both data stores to be healthy before it starts. Declared
+  # here (not in compose.yaml) so compose.yaml still runs on its own, where db
+  # and redis are not defined.
+  api:
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:
