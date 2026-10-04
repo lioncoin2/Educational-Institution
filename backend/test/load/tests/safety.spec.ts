@@ -10,6 +10,7 @@ function config(over: Partial<HarnessConfig> & { scenario?: Scenario } = {}): Ha
     target: over.target ?? null,
     allowLoad: over.allowLoad ?? false,
     outCsv: null,
+    genOutCsv: null,
     sampleIntervalMs: 2000,
   };
 }

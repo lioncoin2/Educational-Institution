@@ -72,3 +72,15 @@ export function expandParticipants(scenario: Scenario): ParticipantPlan[] {
 export function expectedPlanSize(scenario: Scenario): number {
   return participantsPerRoom(scenario) * scenario.rooms;
 }
+
+/**
+ * The connect options for a role: listeners subscribe; publishers do not
+ * auto-subscribe (they only send). `relay` forces TURN for every role when the
+ * scenario asks for it. Pure — the single place that decides TURN mode.
+ */
+export function connectOptionsFor(
+  role: Role,
+  relay: boolean,
+): { readonly subscribe: boolean; readonly relay: boolean } {
+  return { subscribe: role === 'listener', relay };
+}

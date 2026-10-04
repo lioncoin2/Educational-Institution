@@ -26,7 +26,7 @@ import {
   validateScenario,
 } from '../core/config';
 import { decideGate } from '../core/safety';
-import { SCENARIOS, getScenario } from '../scenarios/catalog';
+import { SCENARIOS, SMOKE_SCENARIOS, getScenario } from '../scenarios/catalog';
 
 const USAGE = `P8 load harness (dry-run by default)
 
@@ -76,13 +76,21 @@ export function plan(argv: readonly string[]): Planned {
     target: args.strings.get('target') ?? null,
     allowLoad: args.bools.has('allow-load'),
     outCsv: args.strings.get('out') ?? null,
+    genOutCsv: args.strings.get('gen-out') ?? null,
     sampleIntervalMs: args.numbers.get('interval') ?? 2000,
   };
   return { config, errors: [], text: renderPlan(config) };
 }
 
 function renderList(): string {
-  return ['Scenarios:', ...SCENARIOS.map((s) => `  ${s.id.padEnd(22)} ${s.title}`)].join('\n');
+  const row = (s: Scenario) => `  ${s.id.padEnd(22)} ${s.title}`;
+  return [
+    'Capacity ladder (NOT for P8.2 — off-box, approved runs only):',
+    ...SCENARIOS.map(row),
+    '',
+    'Smoke scenarios (2 participants, path validation only):',
+    ...SMOKE_SCENARIOS.map(row),
+  ].join('\n');
 }
 
 export function renderPlan(config: HarnessConfig): string {
@@ -96,6 +104,7 @@ export function renderPlan(config: HarnessConfig): string {
     `Publishers: ${totalPublishers(s)} (speakers ${s.speakersPerRoom}/room, screen ${s.screenSharesPerRoom}/room)`,
     `Relay    : ${s.relay}   ramp: ${s.rampPerSecond}/s   hold: ${s.holdSeconds}s`,
     `API      : ${s.apiConnections} ws conns, ${s.apiRequestsPerSecond} rps`,
+    `Screen   : ${s.screenProfile ?? '(none)'}`,
     `Traffic  : ${s.expectedTraffic}`,
     `Target   : ${config.target ?? '(none — dry-run)'}`,
     `MODE     : ${gate.mode.toUpperCase()}`,
@@ -118,9 +127,19 @@ export function renderPlan(config: HarnessConfig): string {
 async function runReal(config: HarnessConfig): Promise<number> {
   // Loaded lazily so the default (dry-run) path pulls in no network/WebRTC code.
   const { Collector } = await import('../metrics/collector');
+  const { GeneratorCounters, GeneratorMetrics } = await import('../metrics/generator');
   const s = config.scenario;
   const collector = config.outCsv ? new Collector(config.outCsv) : null;
   if (collector) await collector.start(config.sampleIntervalMs);
+  const counters = new GeneratorCounters();
+  const genMetrics = config.genOutCsv
+    ? new GeneratorMetrics(
+        config.genOutCsv,
+        counters,
+        () => counters.connectOk - counters.connectFail,
+      )
+    : null;
+  if (genMetrics) await genMetrics.start(config.sampleIntervalMs);
   try {
     if (s.target === 'livekit' || s.target === 'combined') {
       const { loadLivekitEnv } = await import('../livekit/tokens');
@@ -130,7 +149,7 @@ async function runReal(config: HarnessConfig): Promise<number> {
         return 4;
       }
       const { runMediaScenario } = await import('../livekit/media-run');
-      const result = await runMediaScenario(s, env);
+      const result = await runMediaScenario(s, env, counters);
       process.stdout.write(`media: ${JSON.stringify(result)}\n`);
     }
     if (s.target === 'api' || s.target === 'combined') {
@@ -149,6 +168,7 @@ async function runReal(config: HarnessConfig): Promise<number> {
     }
   } finally {
     collector?.stop();
+    genMetrics?.stop();
   }
   return 0;
 }

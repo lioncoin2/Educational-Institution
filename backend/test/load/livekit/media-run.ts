@@ -7,12 +7,27 @@
  *
  * Flow: ensure rooms (loadtest- prefix) → ramp participants (publishers first)
  * → hold → optional churn → disconnect all → delete rooms → dispose the native
- * runtime. Counts successes and failures; collects nothing itself (the collector
- * runs in parallel).
+ * runtime. Tokens carry roomCreate so the first joiner creates the room off-box
+ * without the LiveKit control API. Updates optional generator counters.
  */
 import { type Scenario } from '../core/config';
-import { type ParticipantPlan, expandParticipants, roomName } from '../core/identity';
+import {
+  type ParticipantPlan,
+  connectOptionsFor,
+  expandParticipants,
+  roomName,
+} from '../core/identity';
+import { getScreenProfile } from '../core/screen-profiles';
+import { type GeneratorCounters } from '../metrics/generator';
 import { type LivekitEnv, type MediaTicket, deleteRooms, ensureRooms, mintTicket } from './tokens';
+
+/** Screen source dimensions handed to the driver (structural subset of ScreenProfile). */
+interface ScreenSpec {
+  readonly width: number;
+  readonly height: number;
+  readonly fps: number;
+  readonly maxBitrateKbps: number;
+}
 
 /**
  * The driver's public surface, described structurally so this file has NO static
@@ -22,7 +37,7 @@ import { type LivekitEnv, type MediaTicket, deleteRooms, ensureRooms, mintTicket
 interface LoadParticipantLike {
   readonly identity: string;
   publishMicrophone(): Promise<void>;
-  publishScreenShare(): Promise<void>;
+  publishScreenShare(spec: ScreenSpec): Promise<void>;
   disconnect(): Promise<void>;
 }
 interface Driver {
@@ -36,6 +51,23 @@ interface Driver {
 }
 type Participant = LoadParticipantLike;
 
+interface Tally {
+  connected: number;
+  failed: number;
+  published: number;
+  publishFailed: number;
+}
+
+interface RunCtx {
+  readonly driver: Driver;
+  readonly env: LivekitEnv;
+  readonly relay: boolean;
+  readonly screen: ScreenSpec | null;
+  readonly live: Map<string, Participant>;
+  readonly tally: Tally;
+  readonly counters?: GeneratorCounters;
+}
+
 export interface MediaRunResult {
   readonly attempted: number;
   readonly connected: number;
@@ -46,91 +78,111 @@ export interface MediaRunResult {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Dynamically loads the media driver. Isolated so static analysis sees no rtc-node here. */
 async function loadDriver(): Promise<Driver> {
   return import('../../livekit/load/media-driver');
 }
 
-async function admit(
-  driver: Driver,
-  env: LivekitEnv,
-  plan: ParticipantPlan,
-  relay: boolean,
-  live: Map<string, Participant>,
-  tally: { connected: number; failed: number; published: number; publishFailed: number },
-): Promise<void> {
+async function admit(ctx: RunCtx, plan: ParticipantPlan): Promise<void> {
+  const { counters } = ctx;
   try {
-    const ticket = await mintTicket(env, {
+    const ticket = await mintTicket(ctx.env, {
       identity: plan.identity,
       room: plan.room,
       role: plan.role,
+      roomCreate: true,
     });
-    const participant = await driver.LoadParticipant.connect(ticket, {
-      subscribe: plan.role === 'listener',
-      relay,
-    });
-    live.set(plan.identity, participant);
-    tally.connected += 1;
+    const participant = await ctx.driver.LoadParticipant.connect(
+      ticket,
+      connectOptionsFor(plan.role, ctx.relay),
+    );
+    ctx.live.set(plan.identity, participant);
+    ctx.tally.connected += 1;
+    if (counters) {
+      counters.connectOk += 1;
+      if (ctx.relay) counters.relayOk += 1;
+      if (plan.role === 'listener') counters.subscribeOk += 1;
+    }
     try {
       if (plan.role === 'speaker') await participant.publishMicrophone();
-      else if (plan.role === 'screen') await participant.publishScreenShare();
-      if (plan.role !== 'listener') tally.published += 1;
+      else if (plan.role === 'screen')
+        await participant.publishScreenShare(ctx.screen ?? defaultScreen());
+      if (plan.role !== 'listener') {
+        ctx.tally.published += 1;
+        if (counters) counters.publishOk += 1;
+      }
     } catch {
-      tally.publishFailed += 1;
+      ctx.tally.publishFailed += 1;
+      if (counters) counters.publishFail += 1;
     }
   } catch {
-    tally.failed += 1;
+    ctx.tally.failed += 1;
+    if (counters) {
+      counters.connectFail += 1;
+      if (ctx.relay) counters.relayFail += 1;
+      if (plan.role === 'listener') counters.subscribeFail += 1;
+    }
   }
+}
+
+function defaultScreen(): ScreenSpec {
+  return { width: 640, height: 360, fps: 15, maxBitrateKbps: 600 };
+}
+
+function resolveScreen(scenario: Scenario): ScreenSpec | null {
+  if (!scenario.screenProfile) return null;
+  const p = getScreenProfile(scenario.screenProfile);
+  return p
+    ? { width: p.width, height: p.height, fps: p.fps, maxBitrateKbps: p.maxBitrateKbps }
+    : null;
 }
 
 export async function runMediaScenario(
   scenario: Scenario,
   env: LivekitEnv,
+  counters?: GeneratorCounters,
 ): Promise<MediaRunResult> {
   const driver = await loadDriver();
   const plan = expandParticipants(scenario);
   const rooms = Array.from({ length: scenario.rooms }, (_, i) => roomName(scenario, i));
-  const live = new Map<string, Participant>();
-  const tally = { connected: 0, failed: 0, published: 0, publishFailed: 0 };
+  const ctx: RunCtx = {
+    driver,
+    env,
+    relay: scenario.relay,
+    screen: resolveScreen(scenario),
+    live: new Map<string, Participant>(),
+    tally: { connected: 0, failed: 0, published: 0, publishFailed: 0 },
+    counters,
+  };
 
   await ensureRooms(env, rooms);
-
   try {
-    // Ramp-up: admit rampPerSecond participants each second, in plan order.
     for (let i = 0; i < plan.length; i += scenario.rampPerSecond) {
       const batch = plan.slice(i, i + scenario.rampPerSecond);
-      await Promise.all(batch.map((p) => admit(driver, env, p, scenario.relay, live, tally)));
+      await Promise.all(batch.map((p) => admit(ctx, p)));
       if (i + scenario.rampPerSecond < plan.length) await sleep(1000);
     }
-
-    // Hold, then optional reconnect/churn cycles.
-    if (scenario.churn) {
-      await runChurn(driver, env, scenario, plan, live, tally);
-    } else {
-      await sleep(scenario.holdSeconds * 1000);
-    }
+    if (scenario.churn) await runChurn(ctx, scenario, plan);
+    else await sleep(scenario.holdSeconds * 1000);
   } finally {
-    for (const participant of live.values()) await participant.disconnect().catch(() => undefined);
+    for (const participant of ctx.live.values())
+      await participant.disconnect().catch(() => undefined);
     await deleteRooms(env, rooms);
     await driver.disposeMedia().catch(() => undefined);
   }
 
   return {
     attempted: plan.length,
-    connected: tally.connected,
-    failed: tally.failed,
-    published: tally.published,
-    publishFailed: tally.publishFailed,
+    connected: ctx.tally.connected,
+    failed: ctx.tally.failed,
+    published: ctx.tally.published,
+    publishFailed: ctx.tally.publishFailed,
   };
 }
 
 async function runChurn(
-  driver: Driver,
-  env: LivekitEnv,
+  ctx: RunCtx,
   scenario: Scenario,
   plan: readonly ParticipantPlan[],
-  live: Map<string, Participant>,
-  tally: { connected: number; failed: number; published: number; publishFailed: number },
 ): Promise<void> {
   const churn = scenario.churn;
   if (!churn) return;
@@ -139,14 +191,15 @@ async function runChurn(
   for (let cycle = 0; cycle < churn.cycles; cycle += 1) {
     const victims = listeners.slice(0, dropCount);
     for (const v of victims) {
-      await live
+      await ctx.live
         .get(v.identity)
         ?.disconnect()
         .catch(() => undefined);
-      live.delete(v.identity);
+      ctx.live.delete(v.identity);
     }
+    if (ctx.counters) ctx.counters.reconnects += victims.length;
     await sleep(Math.round((churn.cycleSeconds * 1000) / 2));
-    for (const v of victims) await admit(driver, env, v, scenario.relay, live, tally);
+    for (const v of victims) await admit(ctx, v);
     await sleep(Math.round((churn.cycleSeconds * 1000) / 2));
   }
 }

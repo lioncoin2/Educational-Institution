@@ -12,6 +12,7 @@
  * shutdown. It intentionally does not re-implement media-client.ts's assertion
  * helpers — it exists to create load, not to verify behaviour.
  */
+import { VideoEncoding } from '@livekit/rtc-ffi-bindings';
 import {
   AudioFrame,
   AudioSource,
@@ -24,6 +25,7 @@ import {
   TrackPublishOptions,
   TrackSource,
   VideoBufferType,
+  VideoCodec,
   VideoFrame,
   VideoSource,
   dispose,
@@ -41,8 +43,16 @@ export interface ConnectOptions {
   readonly relay: boolean;
 }
 
+/** A screen-share source: resolution, framerate and an encoder bitrate ceiling. */
+export interface ScreenSpec {
+  readonly width: number;
+  readonly height: number;
+  readonly fps: number;
+  readonly maxBitrateKbps: number;
+}
+
 const TONE = { hertz: 440, amplitude: 4_000, sampleRate: 48_000, samplesPer10Ms: 480 } as const;
-const SCREEN = { width: 320, height: 180, fps: 15 } as const;
+const DEFAULT_SCREEN: ScreenSpec = { width: 640, height: 360, fps: 15, maxBitrateKbps: 600 };
 
 /** The rtcConfig that pins a connection to relay-only candidates. */
 function relayConfig(): RoomOptions['rtcConfig'] {
@@ -99,20 +109,39 @@ export class LoadParticipant {
   }
 
   /**
-   * Publishes a synthetic screen-share video track. NOTE: the frame is a solid
-   * buffer at a modest resolution — enough to exercise a video forwarder, but
-   * NOT bandwidth-representative of real 1080p screen content (Q-P8-2). Use a
-   * real capture source before drawing screen-share bandwidth conclusions.
+   * Publishes a screen-share video track at `spec`'s resolution/fps, with the
+   * encoder bitrate CEILED at spec.maxBitrateKbps (rtc-node videoEncoding). Each
+   * frame is filled with a deterministic word-wise xorshift pattern — high
+   * entropy, so the encoder cannot compress it and sustains near the ceiling.
+   *
+   * This models a BUSY screen share (an upper bound). `maxBitrate` is a ceiling,
+   * not a guarantee; real low-motion desktop capture sits well below it. The
+   * achieved bitrate must be MEASURED (smoke test), never inferred from the
+   * resolution (Q-P8-2, docs/p8.2-offbox-load-generator.md).
    */
-  async publishScreenShare(): Promise<void> {
-    const source = new VideoSource(SCREEN.width, SCREEN.height);
+  async publishScreenShare(spec: ScreenSpec = DEFAULT_SCREEN): Promise<void> {
+    const source = new VideoSource(spec.width, spec.height);
     const track = LocalVideoTrack.createVideoTrack('screen', source);
     const options = new TrackPublishOptions();
     options.source = TrackSource.SOURCE_SCREENSHARE;
-    const buffer = new Uint8Array(SCREEN.width * SCREEN.height * 4);
-    const frame = new VideoFrame(buffer, SCREEN.width, SCREEN.height, VideoBufferType.RGBA);
-    this.feed(Math.round(1000 / SCREEN.fps), () => {
-      for (let i = 0; i < buffer.length; i += 4) buffer[i] = (buffer[i] ?? 0) + 7;
+    options.videoCodec = VideoCodec.VP8;
+    options.videoEncoding = new VideoEncoding({
+      maxBitrate: BigInt(spec.maxBitrateKbps * 1000),
+      maxFramerate: spec.fps,
+    });
+    const buffer = new Uint8Array(spec.width * spec.height * 4);
+    const words = new Uint32Array(buffer.buffer);
+    const frame = new VideoFrame(buffer, spec.width, spec.height, VideoBufferType.RGBA);
+    let seed = 0x9e3779b9;
+    this.feed(Math.round(1000 / spec.fps), () => {
+      let x = seed >>> 0;
+      for (let i = 0; i < words.length; i += 1) {
+        x ^= x << 13;
+        x ^= x >>> 17;
+        x ^= x << 5;
+        words[i] = x >>> 0;
+      }
+      seed = x >>> 0;
       source.captureFrame(frame);
     });
     await this.local().publishTrack(track, options);

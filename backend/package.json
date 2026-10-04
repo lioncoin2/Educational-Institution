@@ -16,6 +16,8 @@
     "test:livekit": "jest --config test/livekit/jest.config.js",
     "test:arch": "jest --testPathPattern=test/architecture",
     "arch:graph": "depcruise src --config .dependency-cruiser.cjs",
+    "load:preflight": "ts-node test/load/cli/preflight.ts",
+    "load:run": "ts-node test/load/cli/run.ts",
     "db:generate": "drizzle-kit generate",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run arch:graph && npm test",
     "db:migrate": "drizzle-kit migrate",

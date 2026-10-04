@@ -55,7 +55,14 @@ function sourcesFor(role: Role): TrackSource[] {
  */
 export async function mintTicket(
   env: LivekitEnv,
-  params: { identity: string; room: string; role: Role; ttlSeconds?: number },
+  params: {
+    identity: string;
+    room: string;
+    role: Role;
+    ttlSeconds?: number;
+    /** Allow this join to create the room (off-box use: no server control API needed). */
+    roomCreate?: boolean;
+  },
 ): Promise<MediaTicket> {
   const token = new AccessToken(env.apiKey, env.apiSecret, {
     identity: params.identity,
@@ -65,6 +72,7 @@ export async function mintTicket(
   token.addGrant({
     roomJoin: true,
     room: params.room,
+    roomCreate: params.roomCreate ?? false,
     canSubscribe: true,
     canPublish,
     canPublishSources: sourcesFor(params.role),

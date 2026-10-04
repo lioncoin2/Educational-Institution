@@ -212,7 +212,8 @@ export const SCENARIOS: readonly Scenario[] = [
     stopConditions: STOP_MEDIA,
     metrics: [HOST, LK],
     notes:
-      'Find the screen-share saturation point (low hundreds), not the target. Needs a realistic video source (harness driver publishes a synthetic frame; see Q-P8-2).',
+      'Find the screen-share saturation point (low hundreds), not the target. Uses the SCREEN_720P profile (P8.2); confirm achieved bitrate by measurement.',
+    screenProfile: 'SCREEN_720P',
   },
   {
     id: 'lk-relay-500',
@@ -273,12 +274,78 @@ export const SCENARIOS: readonly Scenario[] = [
   },
 ];
 
-const BY_ID = new Map(SCENARIOS.map((s) => [s.id, s]));
+/**
+ * Tiny OFF-BOX SMOKE scenarios (P8.2): 2 participants, 1 room, seconds long.
+ * These are connectivity/path validation — NOT capacity tests. Kept separate
+ * from the capacity ladder so the two can never be confused.
+ */
+export const SMOKE_SCENARIOS: readonly Scenario[] = [
+  {
+    id: 'smoke-audio',
+    title: 'Smoke: audio (1 room, 1 speaker + 1 listener)',
+    target: 'livekit',
+    rooms: 1,
+    listenersPerRoom: 1,
+    speakersPerRoom: 1,
+    screenSharesPerRoom: 0,
+    relay: false,
+    rampPerSecond: 2,
+    holdSeconds: 12,
+    apiConnections: 0,
+    apiRequestsPerSecond: 0,
+    expectedTraffic: 'one 440 Hz audio track, one subscriber — negligible',
+    stopConditions: ['connect/publish failure'],
+    metrics: [LK],
+    notes: 'Path validation only. 2 participants max.',
+  },
+  {
+    id: 'smoke-screen',
+    title: 'Smoke: screen share (1 room, 1 screen publisher + 1 listener)',
+    target: 'livekit',
+    rooms: 1,
+    listenersPerRoom: 1,
+    speakersPerRoom: 0,
+    screenSharesPerRoom: 1,
+    relay: false,
+    rampPerSecond: 2,
+    holdSeconds: 15,
+    apiConnections: 0,
+    apiRequestsPerSecond: 0,
+    expectedTraffic: 'one SCREEN_360P video track (~0.6 Mbps ceiling), one subscriber',
+    stopConditions: ['connect/publish failure'],
+    metrics: [LK],
+    notes: 'Path validation + measure achieved screen bitrate. 2 participants max.',
+    screenProfile: 'SCREEN_360P',
+  },
+  {
+    id: 'smoke-relay',
+    title: 'Smoke: forced TURN relay (1 room, 1 speaker + 1 listener)',
+    target: 'livekit',
+    rooms: 1,
+    listenersPerRoom: 1,
+    speakersPerRoom: 1,
+    screenSharesPerRoom: 0,
+    relay: true,
+    rampPerSecond: 2,
+    holdSeconds: 12,
+    apiConnections: 0,
+    apiRequestsPerSecond: 0,
+    expectedTraffic: 'one audio track over forced TURN relay, one subscriber',
+    stopConditions: ['connect failure (relay path unreachable)'],
+    metrics: [LK],
+    notes: 'Validates the TURN relay path externally. 2 participants max.',
+  },
+];
+
+/** The capacity ladder (13) plus the smoke scenarios. */
+export const ALL_SCENARIOS: readonly Scenario[] = [...SCENARIOS, ...SMOKE_SCENARIOS];
+
+const BY_ID = new Map(ALL_SCENARIOS.map((s) => [s.id, s]));
 
 export function getScenario(id: string): Scenario | undefined {
   return BY_ID.get(id);
 }
 
 export function scenarioIds(): string[] {
-  return SCENARIOS.map((s) => s.id);
+  return ALL_SCENARIOS.map((s) => s.id);
 }

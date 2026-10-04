@@ -8,6 +8,8 @@
  * load from a unit test and from the default dry-run path.
  */
 
+import { type ScreenProfileId } from './screen-profiles';
+
 /** Which plane a scenario drives. */
 export type Target = 'api' | 'livekit' | 'combined';
 
@@ -51,6 +53,8 @@ export interface Scenario {
   readonly notes: string;
   /** Present only for churn scenarios. */
   readonly churn?: ChurnSpec;
+  /** Present only for screen-share scenarios: which screen profile to publish. */
+  readonly screenProfile?: ScreenProfileId;
 }
 
 export interface HarnessConfig {
@@ -59,8 +63,10 @@ export interface HarnessConfig {
   readonly target: string | null;
   /** false => dry-run (default): validate, print the plan, connect to nothing. */
   readonly allowLoad: boolean;
-  /** Where the metrics collector writes CSV; null disables collection. */
+  /** Where the SERVER-side metrics collector writes CSV; null disables it. */
   readonly outCsv: string | null;
+  /** Where the GENERATOR-side metrics writer writes CSV; null disables it. */
+  readonly genOutCsv: string | null;
   readonly sampleIntervalMs: number;
 }
 
@@ -98,7 +104,7 @@ const NUMERIC_FLAGS = new Set([
   'api-rps',
   'interval',
 ]);
-const STRING_FLAGS = new Set(['scenario', 'target', 'out', 'kind']);
+const STRING_FLAGS = new Set(['scenario', 'target', 'out', 'gen-out', 'kind']);
 const BOOL_FLAGS = new Set(['relay', 'allow-load', 'list', 'help']);
 
 export interface RawArgs {

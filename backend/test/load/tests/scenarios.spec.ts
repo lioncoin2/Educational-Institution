@@ -1,18 +1,33 @@
-import { totalParticipants, validateScenario } from '../core/config';
+import { participantsPerRoom, totalParticipants, validateScenario } from '../core/config';
 import { LOAD_ROOM_PREFIX, expandParticipants, expectedPlanSize, roomName } from '../core/identity';
 import { checkScenarioSafety } from '../core/safety';
-import { SCENARIOS, getScenario, scenarioIds } from '../scenarios/catalog';
+import {
+  ALL_SCENARIOS,
+  SCENARIOS,
+  SMOKE_SCENARIOS,
+  getScenario,
+  scenarioIds,
+} from '../scenarios/catalog';
 
 describe('scenario catalog', () => {
-  it('defines the 13 required P8 scenarios with unique ids', () => {
+  it('defines the 13 capacity scenarios plus smoke scenarios, all with unique ids', () => {
     expect(SCENARIOS).toHaveLength(13);
-    expect(new Set(scenarioIds()).size).toBe(13);
+    expect(SMOKE_SCENARIOS.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(scenarioIds()).size).toBe(ALL_SCENARIOS.length);
   });
 
-  it('every scenario is well-formed and within safety caps', () => {
-    for (const s of SCENARIOS) {
+  it('every scenario (capacity + smoke) is well-formed and within safety caps', () => {
+    for (const s of ALL_SCENARIOS) {
       expect({ id: s.id, errs: validateScenario(s) }).toEqual({ id: s.id, errs: [] });
       expect({ id: s.id, safety: checkScenarioSafety(s) }).toEqual({ id: s.id, safety: [] });
+    }
+  });
+
+  it('every smoke scenario is capped at 2 participants in 1 room', () => {
+    for (const s of SMOKE_SCENARIOS) {
+      expect({ id: s.id, rooms: s.rooms }).toEqual({ id: s.id, rooms: 1 });
+      expect({ id: s.id, total: totalParticipants(s) }).toEqual({ id: s.id, total: 2 });
+      expect(participantsPerRoom(s)).toBeLessThanOrEqual(2);
     }
   });
 
@@ -26,6 +41,9 @@ describe('scenario catalog', () => {
     expect(getScenario('lk-churn')?.churn?.dropFraction).toBe(0.3);
     expect(getScenario('combined')?.target).toBe('combined');
     expect(getScenario('lk-screenshare')?.screenSharesPerRoom).toBe(1);
+    expect(getScenario('lk-screenshare')?.screenProfile).toBe('SCREEN_720P');
+    expect(getScenario('smoke-screen')?.screenProfile).toBe('SCREEN_360P');
+    expect(getScenario('smoke-relay')?.relay).toBe(true);
   });
 
   it('expands participants deterministically, publishers first, with non-app room prefix', () => {
