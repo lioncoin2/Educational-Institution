@@ -1,6 +1,12 @@
 import { expandParticipants } from '../core/identity';
 import { getScenario } from '../scenarios/catalog';
-import { MP_LIMITS, partitionParticipants, perWorker, validateMp } from '../mp/partition';
+import {
+  MP_LIMITS,
+  partitionParticipants,
+  perWorker,
+  rampStaggerMs,
+  validateMp,
+} from '../mp/partition';
 
 describe('MP partitioning', () => {
   it('computes participants-per-worker as a ceiling split', () => {
@@ -31,6 +37,17 @@ describe('MP partitioning', () => {
     const plan = expandParticipants(s);
     const chunks = partitionParticipants(plan, 2);
     expect(chunks.flat()).toHaveLength(2);
+  });
+
+  it('paces worker starts to honour rampPerSecond (P8.3.7 anti-thundering-herd)', () => {
+    // 10 listeners/worker at 10/s -> ~1 worker per second
+    expect(rampStaggerMs(10, 10)).toBe(1000);
+    // faster ramp -> shorter stagger, but clamped to a floor
+    expect(rampStaggerMs(10, 1000)).toBe(250);
+    // slower ramp -> longer stagger, clamped to a ceiling
+    expect(rampStaggerMs(100, 1)).toBe(3000);
+    // guards against zero/garbage
+    expect(rampStaggerMs(0, 0)).toBeGreaterThanOrEqual(250);
   });
 
   it('enforces worker and per-worker caps', () => {

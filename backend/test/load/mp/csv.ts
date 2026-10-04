@@ -2,8 +2,9 @@
  * P8.3.5 — structured multi-process event CSV. One row per worker event, keyed
  * by run/worker/participant so a run is fully reconstructable:
  *   run_id,worker_id,participant_id,t_ms,event,state
- * `state` carries the aggregate connected count at the moment (for a quick ramp
- * curve). The row formatter is pure; the writer appends to a file.
+ * `state` carries the event's own payload (e.g. `publisherState=published`,
+ * P8.3.8) or else the aggregate connected count at the moment (for a quick
+ * ramp curve). The row formatter is pure; the writer appends to a file.
  */
 import { appendFile, writeFile } from 'node:fs/promises';
 
@@ -18,13 +19,32 @@ export function eventRow(
   connectedTotal: number,
   now = Date.now(),
 ): string {
-  const pid =
-    'participantId' in msg ? msg.participantId : msg.type === 'cleaned' ? 'worker' : 'worker';
-  const state =
-    msg.type === 'failed' || msg.type === 'publishFailed' || msg.type === 'fatal'
-      ? `error:${sanitize('error' in msg ? msg.error : '')}`
-      : `connected=${connectedTotal}`;
-  return [runId, msg.workerId, pid, now, msg.type, state].join(',');
+  const pid = 'participantId' in msg ? msg.participantId : 'worker';
+  return [runId, msg.workerId, pid, now, msg.type, stateOf(msg, connectedTotal)].join(',');
+}
+
+/**
+ * The `state` column: the event's own payload where it has one (the typed
+ * PublisherState value, an attempt number, teardown counts, an error), else
+ * the aggregate connected count at that moment. Observational only.
+ */
+function stateOf(msg: WorkerMessage, connectedTotal: number): string {
+  switch (msg.type) {
+    case 'failed':
+    case 'publishFailed':
+    case 'fatal':
+      return `error:${sanitize(msg.error)}`;
+    case 'publisherState':
+      return `publisherState=${msg.state}`;
+    case 'publishAttempt':
+      return `attempt=${msg.attempt}`;
+    case 'teardownStarted':
+      return `participants=${msg.participants}`;
+    case 'teardownTimeout':
+      return `pending=${msg.pending}`;
+    default:
+      return `connected=${connectedTotal}`;
+  }
 }
 
 function sanitize(s: string): string {

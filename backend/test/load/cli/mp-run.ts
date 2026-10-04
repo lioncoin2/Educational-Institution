@@ -75,6 +75,7 @@ export function renderConfirmation(p: Plan): string {
     `WORKERS            : ${p.workers}  (~${perWorker(total, p.workers)} participants/worker; cap ${MP_LIMITS.maxParticipantsPerWorker})`,
     `MEDIA PATH         : ${p.mediaPath}${p.mediaPath === 'direct' ? ' (no forced TURN — primary SFU path)' : ' (forced TURN relay — SEPARATE test)'}`,
     `DURATION           : ${s.holdSeconds} s hold`,
+    `SEQUENCING         : publisher-first (connect + publish + verify BEFORE any listener ramps)`,
     `EXACT GATE         : hold starts only when ${total}/${total} connected AND publisher published; ANY failure aborts`,
     `TARGET             : ${p.target ?? '(none — dry-run)'}`,
     p.errors.length
@@ -112,6 +113,14 @@ export async function main(argv: readonly string[]): Promise<number> {
   if (result.aborted || !result.gateMet) {
     process.stderr.write(`RUN ABORTED: ${result.abortReason ?? 'gate not met'}\n`);
     return 5;
+  }
+  const t = result.teardown;
+  if (t.cleaned !== t.workers) {
+    // The gate passed, but teardown was not clean: never report that as success.
+    process.stderr.write(
+      `TEARDOWN NOT CLEAN: cleaned=${t.cleaned}/${t.workers} timedOut=${t.timedOut} exitedUnclean=${t.exitedUnclean} forced=${t.forced}\n`,
+    );
+    return 6;
   }
   return 0;
 }

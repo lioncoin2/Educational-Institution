@@ -1,27 +1,37 @@
 /**
- * P8.3.5 — the supervisor's aggregator and exact-participant gate. Pure logic,
- * unit-tested without forking: feed it worker messages, ask whether the gate is
- * met (EXACTLY the requested number connected, publisher published, zero
- * failures) or unreachable (any failure/crash → the run can never be the
- * requested N, so it must abort — never silently hold with fewer).
+ * P8.3.5/P8.3.6 — the supervisor's aggregator and exact-participant gate. Pure
+ * logic, unit-tested without forking: feed it worker messages, ask whether the
+ * publisher phase is done (all publishers PUBLISHED), whether the full gate is
+ * met (EXACTLY requested connected, publishers published, zero failures), or
+ * whether it is unreachable (any failure/crash → abort; never hold with fewer).
  */
-import { type WorkerMessage } from './types';
+import {
+  type PublisherState,
+  type TeardownSummary,
+  WORKER_EXIT_CODE,
+  type WorkerMessage,
+} from './types';
 
 interface WorkerState {
   connected: number;
   failed: number;
-  publisherOk: boolean;
-  publisherFail: boolean;
   crashed: boolean;
-  rampDone: boolean;
+  /** P8.3.8 teardown observations (result state; the lifecycle lives in worker.ts). */
+  cleaned: boolean;
+  teardownTimedOut: boolean;
+  exit: { code: number | null; signal: string | null } | null;
+  forced: boolean;
 }
 
 export class MpAggregator {
   private readonly workers = new Map<number, WorkerState>();
+  private readonly publishedIds = new Set<string>();
+  private readonly failedPublishIds = new Set<string>();
+  private readonly publisherStates = new Map<string, PublisherState>();
 
   constructor(
     private readonly requested: number,
-    private readonly publisherRequired: boolean,
+    private readonly publishersRequired: number,
   ) {}
 
   private state(id: number): WorkerState {
@@ -32,13 +42,43 @@ export class MpAggregator {
         (s = {
           connected: 0,
           failed: 0,
-          publisherOk: false,
-          publisherFail: false,
           crashed: false,
-          rampDone: false,
+          cleaned: false,
+          teardownTimedOut: false,
+          exit: null,
+          forced: false,
         }),
       );
     return s;
+  }
+
+  /** The supervisor observed this worker process exit. */
+  recordExit(workerId: number, code: number | null, signal: string | null): void {
+    this.state(workerId).exit = { code, signal };
+  }
+
+  /** The supervisor SIGKILLed this worker at the shutdown grace deadline. */
+  recordForcedKill(workerId: number): void {
+    this.state(workerId).forced = true;
+  }
+
+  /**
+   * How each owned worker process ended. Precedence: forced kill, then a clean
+   * `cleaned` + exit 0, then a self-reported timeout; anything else is unclean.
+   */
+  teardownSummary(workerIds: readonly number[]): TeardownSummary {
+    let cleaned = 0;
+    let timedOut = 0;
+    let exitedUnclean = 0;
+    let forced = 0;
+    for (const id of workerIds) {
+      const s = this.state(id);
+      if (s.forced) forced += 1;
+      else if (s.cleaned && s.exit?.code === WORKER_EXIT_CODE.cleaned) cleaned += 1;
+      else if (s.teardownTimedOut) timedOut += 1;
+      else exitedUnclean += 1;
+    }
+    return { workers: workerIds.length, cleaned, timedOut, exitedUnclean, forced };
   }
 
   record(msg: WorkerMessage): void {
@@ -51,19 +91,25 @@ export class MpAggregator {
         s.failed += 1;
         break;
       case 'published':
-        s.publisherOk = true;
+        this.publishedIds.add(msg.participantId);
         break;
       case 'publishFailed':
-        s.publisherFail = true;
+        this.failedPublishIds.add(msg.participantId);
         break;
-      case 'rampDone':
-        s.rampDone = true;
+      case 'publisherState':
+        this.publisherStates.set(msg.participantId, msg.state);
         break;
       case 'fatal':
         s.crashed = true;
         break;
-      default:
+      case 'cleaned':
+        s.cleaned = true;
         break;
+      case 'teardownTimeout':
+        s.teardownTimedOut = true;
+        break;
+      default:
+        break; // ready/rampDone/publishAttempt/teardownStarted: telemetry only
     }
   }
 
@@ -76,18 +122,23 @@ export class MpAggregator {
   crashes(): number {
     return this.sum((s) => (s.crashed ? 1 : 0));
   }
-  publisherPublished(): boolean {
-    return [...this.workers.values()].some((s) => s.publisherOk);
+  publishersPublished(): number {
+    return this.publishedIds.size;
   }
-  private publisherFailed(): boolean {
-    return [...this.workers.values()].some((s) => s.publisherFail);
+  publisherStateOf(id: string): PublisherState | undefined {
+    return this.publisherStates.get(id);
   }
 
-  /** EXACTLY requested connected, zero failures, publisher published if required. */
+  /** Phase A done: every required publisher has published. */
+  publishersReady(): boolean {
+    return this.publishedIds.size >= this.publishersRequired;
+  }
+
+  /** Full gate: EXACTLY requested connected, zero failures/crashes, publishers published. */
   gateMet(): boolean {
     if (this.connected() !== this.requested) return false;
     if (this.failed() !== 0 || this.crashes() !== 0) return false;
-    if (this.publisherRequired && !this.publisherPublished()) return false;
+    if (this.publishedIds.size !== this.publishersRequired) return false;
     return true;
   }
 
@@ -96,8 +147,7 @@ export class MpAggregator {
     if (this.crashes() > 0) return { yes: true, reason: `${this.crashes()} worker crash(es)` };
     if (this.failed() > 0)
       return { yes: true, reason: `${this.failed()} participant connect failure(s)` };
-    if (this.publisherRequired && this.publisherFailed())
-      return { yes: true, reason: 'publisher failed to publish' };
+    if (this.failedPublishIds.size > 0) return { yes: true, reason: 'publisher failed to publish' };
     return { yes: false, reason: '' };
   }
 

@@ -21,6 +21,19 @@ export function perWorker(total: number, workers: number): number {
   return Math.ceil(total / Math.max(1, workers));
 }
 
+/**
+ * Milliseconds to wait between starting successive listener workers, so the
+ * GLOBAL connect rate honours `rampPerSecond` instead of bursting every worker
+ * at once (the P8.3.7 thundering-herd failure). A worker admits `perWorkerCount`
+ * participants; starting one every perWorkerCount/rampPerSecond seconds keeps the
+ * aggregate near `rampPerSecond`. Clamped to a sane band. Pure.
+ */
+export function rampStaggerMs(perWorkerCount: number, rampPerSecond: number): number {
+  const rate = Math.max(1, rampPerSecond);
+  const ms = Math.round((1000 * Math.max(1, perWorkerCount)) / rate);
+  return Math.min(3000, Math.max(250, ms));
+}
+
 /** Splits the plan into `workers` contiguous chunks (empties dropped). Deterministic. */
 export function partitionParticipants(
   plan: readonly ParticipantPlan[],
