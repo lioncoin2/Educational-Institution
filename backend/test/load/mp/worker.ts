@@ -1,53 +1,36 @@
 /**
- * P8.3.5/P8.3.8 — a generator WORKER. The supervisor forks one per shard; each
- * owns its OWN rtc-node runtime and a BOUNDED set of participants, reports
- * structured events over IPC, and tears down only its own participants.
+ * P8.3.5/P8.3.8/P8.4 — a generator WORKER. Its agent forks one per shard; each
+ * owns its OWN rtc-node runtime and a BOUNDED set of participants, admitted one
+ * just-in-time ticket at a time (the controller owns pacing), reports structured
+ * events over IPC, and tears down only its own participants.
  *
- * Lifecycle (owned here, once): ready → ramp → rampDone → [shutdown] →
- * teardownStarted → (cleaned | teardownTimeout) → process exit with
- * WORKER_EXIT_CODE. `runWorker` is the lifecycle itself, free of process
- * globals so it is unit-testable with a fake driver; `runWorkerProcess` is the
- * IPC entry shared by the real worker and the test fake.
+ * Lifecycle (owned here, once): ready → admit* → [shutdown | IPC disconnect |
+ * SIGTERM] → teardownStarted → (cleaned | teardownTimeout) → process exit with
+ * WORKER_EXIT_CODE. `runWorker` is the lifecycle itself, free of process globals
+ * so it is unit-testable with a fake driver; `runWorkerProcess` is the IPC
+ * entry shared by the real worker and the test fake. Media observation is
+ * delegated to mp/worker-media.ts.
  *
- * The WebRTC client is reached by DYNAMIC import of the media driver (under
- * test/livekit/), so this file names no rtc-node and the architecture test
- * stays green. Run via: fork(worker.ts, { execArgv: ['-r','ts-node/register'] }).
+ * The WebRTC client is reached through the driver port (mp/driver.ts) whose
+ * adapter is loaded by DYNAMIC import, so this file names no rtc-node.
  */
+import { type Driver, type LoadParticipantLike } from './driver';
 import {
   type PublisherState,
   WORKER_EXIT_CODE,
   type WorkerAssignment,
+  type WorkerCommand,
   type WorkerMessage,
   type WorkerParticipant,
 } from './types';
-
-interface ScreenSpec {
-  width: number;
-  height: number;
-  fps: number;
-  maxBitrateKbps: number;
-}
-export interface LoadParticipantLike {
-  publishMicrophone(): Promise<void>;
-  publishScreenShare(spec: ScreenSpec): Promise<void>;
-  disconnect(): Promise<void>;
-}
-export interface Driver {
-  readonly LoadParticipant: {
-    connect(
-      ticket: { url: string; token: string },
-      opts: { subscribe: boolean; relay: boolean },
-    ): Promise<LoadParticipantLike>;
-  };
-  disposeMedia(): Promise<void>;
-}
+import { WorkerMedia } from './worker-media';
 
 export interface WorkerIo {
   readonly driver: Driver;
-  /** Hands a message to the supervisor; resolves once it is flushed to IPC. */
+  /** Hands a message to the host; resolves once it is flushed to IPC. */
   readonly send: (msg: WorkerMessage) => Promise<void>;
-  /** Resolves when the supervisor asks this worker to shut down. */
-  readonly shutdown: Promise<void>;
+  /** Registers the single command handler (admit / shutdown). */
+  readonly onCommand: (handler: (cmd: WorkerCommand) => void) => void;
 }
 
 export type WorkerOutcome = 'cleaned' | 'teardownTimeout';
@@ -58,32 +41,30 @@ const errorText = (e: unknown): string => String((e as Error)?.message ?? e);
 /** The worker lifecycle. Returns how teardown ended; never exits the process. */
 export async function runWorker(a: WorkerAssignment, io: WorkerIo): Promise<WorkerOutcome> {
   const { driver } = io;
-  const relay = a.mediaPath === 'relay';
   const live: LoadParticipantLike[] = [];
   const pubIds: string[] = [];
-  const queue = [...a.participants];
+  const connecting = new Set<Promise<void>>();
   const emit = (msg: WorkerMessage): void => void io.send(msg);
   const pubState = (participantId: string, state: PublisherState): void =>
     emit({ type: 'publisherState', workerId: a.workerId, participantId, state });
-
-  emit({ type: 'ready', workerId: a.workerId });
+  const media = new WorkerMedia(a, emit);
+  let closing = false;
+  let requestShutdown: () => void = () => undefined;
+  const shutdown = new Promise<void>((resolve) => {
+    requestShutdown = resolve;
+  });
 
   async function admitOne(p: WorkerParticipant): Promise<void> {
-    const isPub = p.role === 'speaker' || p.role === 'screen';
+    const isPub = p.role !== 'listener';
     if (isPub) pubState(p.identity, 'connecting');
+    let participant: LoadParticipantLike;
     try {
-      const participant = await driver.LoadParticipant.connect(p.ticket, {
+      participant = await driver.LoadParticipant.connect(p.ticket, {
         subscribe: p.role === 'listener',
-        relay,
+        ice: a.ice,
       });
-      if (isPub) pubIds.push(p.identity);
-      live.push(participant);
-      emit({ type: 'connected', workerId: a.workerId, participantId: p.identity, role: p.role });
-      if (isPub) {
-        pubState(p.identity, 'connected');
-        await publish(participant, p);
-      }
     } catch (e) {
+      // `failed` means exactly "the connect failed" — never a later error of a connected participant.
       if (isPub) pubState(p.identity, 'failed');
       emit({
         type: 'failed',
@@ -92,6 +73,19 @@ export async function runWorker(a: WorkerAssignment, io: WorkerIo): Promise<Work
         role: p.role,
         error: errorText(e),
       });
+      return;
+    }
+    if (closing) {
+      await participant.disconnect().catch(() => undefined);
+      return;
+    }
+    if (isPub) pubIds.push(p.identity);
+    live.push(participant);
+    emit({ type: 'connected', workerId: a.workerId, participantId: p.identity, role: p.role });
+    media.watch(p.identity, p.role, participant);
+    if (isPub) {
+      pubState(p.identity, 'connected');
+      await publish(participant, p); // reports its own failure (publishFailed), never throws
     }
   }
 
@@ -107,13 +101,14 @@ export async function runWorker(a: WorkerAssignment, io: WorkerIo): Promise<Work
       emit({ type: 'publishAttempt', workerId: a.workerId, participantId: p.identity, attempt });
       pubState(p.identity, 'publishing');
       try {
-        if (p.role === 'speaker') await participant.publishMicrophone();
+        let trackSid = '';
+        if (p.role === 'speaker') ({ trackSid } = await participant.publishMicrophone());
         else
           await participant.publishScreenShare(
             a.screen ?? { width: 640, height: 360, fps: 15, maxBitrateKbps: 600 },
           );
         pubState(p.identity, 'published');
-        emit({ type: 'published', workerId: a.workerId, participantId: p.identity });
+        emit({ type: 'published', workerId: a.workerId, participantId: p.identity, trackSid });
         return;
       } catch (e) {
         if (attempt === maxAttempts - 1) {
@@ -133,9 +128,12 @@ export async function runWorker(a: WorkerAssignment, io: WorkerIo): Promise<Work
 
   /** Disconnect everything, bounded by teardownTimeoutMs; report exactly one terminal event. */
   async function teardown(): Promise<WorkerOutcome> {
+    closing = true;
+    media.stop();
     emit({ type: 'teardownStarted', workerId: a.workerId, participants: live.length });
     let disconnected = 0;
     const work = (async (): Promise<true> => {
+      await Promise.allSettled([...connecting]);
       for (const participant of live) {
         await participant.disconnect().catch(() => undefined);
         disconnected += 1;
@@ -157,58 +155,75 @@ export async function runWorker(a: WorkerAssignment, io: WorkerIo): Promise<Work
     await io.send({
       type: 'teardownTimeout',
       workerId: a.workerId,
-      pending: live.length - disconnected,
+      pending: live.length - disconnected + connecting.size,
     });
     return 'teardownTimeout';
   }
 
-  // Bounded-concurrency ramp: `connectConcurrency` admits in flight at a time.
-  const lanes = Array.from({ length: Math.max(1, a.connectConcurrency) }, async () => {
-    for (;;) {
-      const next = queue.shift();
-      if (!next) return;
-      await admitOne(next);
-    }
+  io.onCommand((cmd) => {
+    if (cmd.type === 'shutdown') return requestShutdown();
+    if (closing) return;
+    const p = admitOne(cmd.participant);
+    connecting.add(p);
+    void p.finally(() => connecting.delete(p));
   });
-  await Promise.all(lanes);
-  emit({ type: 'rampDone', workerId: a.workerId });
-
-  await io.shutdown;
+  emit({ type: 'ready', workerId: a.workerId });
+  media.start();
+  await shutdown;
   return teardown();
 }
 
 /**
  * The worker process entry: wires IPC, runs the lifecycle, and EXITS with the
- * shared exit code once teardown has reported. The shutdown listener is
- * registered immediately so a shutdown sent mid-ramp is never lost.
+ * shared exit code once teardown has reported. Losing the IPC channel (the
+ * agent died) and SIGTERM/SIGINT are treated as shutdown, so a worker never
+ * outlives its host with media still connected.
  */
 export function runWorkerProcess(loadDriver: () => Promise<Driver>): void {
-  let requestShutdown: () => void = () => undefined;
-  const shutdown = new Promise<void>((resolve) => {
-    requestShutdown = resolve;
-  });
-  process.on('message', (m: { type?: string }) => {
-    if (m?.type === 'shutdown') requestShutdown();
-  });
+  // Commands that arrive before the lifecycle registers its handler (e.g. while
+  // the driver loads) are buffered, never dropped.
+  let handler: ((cmd: WorkerCommand) => void) | null = null;
+  const early: WorkerCommand[] = [];
+  let assignment: WorkerAssignment | null = null;
+  const dispatch = (cmd: WorkerCommand): void => {
+    if (handler) handler(cmd);
+    else early.push(cmd);
+  };
+  const stop = (): void => dispatch({ type: 'shutdown' });
+  process.on('disconnect', stop);
+  process.on('SIGTERM', stop);
+  process.on('SIGINT', stop);
   const send = (msg: WorkerMessage): Promise<void> =>
     new Promise((resolve) => {
-      if (!process.send) return resolve();
+      if (!process.send || !process.connected) return resolve();
       process.send(msg, undefined, undefined, () => resolve());
     });
 
-  process.once('message', (assignment: WorkerAssignment) => {
-    void (async () => {
-      try {
-        const driver = await loadDriver();
-        const outcome = await runWorker(assignment, { driver, send, shutdown });
-        process.exit(
-          outcome === 'cleaned' ? WORKER_EXIT_CODE.cleaned : WORKER_EXIT_CODE.teardownTimeout,
-        );
-      } catch (e) {
-        await send({ type: 'fatal', workerId: assignment.workerId, error: errorText(e) });
-        process.exit(WORKER_EXIT_CODE.fatal);
-      }
-    })();
+  process.on('message', (m: WorkerAssignment | WorkerCommand) => {
+    if (assignment === null && 'runId' in m) {
+      assignment = m;
+      void (async () => {
+        try {
+          const driver = await loadDriver();
+          const outcome = await runWorker(m, {
+            driver,
+            send,
+            onCommand: (h) => {
+              handler = h;
+              for (const cmd of early.splice(0)) h(cmd);
+            },
+          });
+          process.exit(
+            outcome === 'cleaned' ? WORKER_EXIT_CODE.cleaned : WORKER_EXIT_CODE.teardownTimeout,
+          );
+        } catch (e) {
+          await send({ type: 'fatal', workerId: m.workerId, error: errorText(e) });
+          process.exit(WORKER_EXIT_CODE.fatal);
+        }
+      })();
+      return;
+    }
+    if ('type' in m) dispatch(m);
   });
 }
 

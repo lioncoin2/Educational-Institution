@@ -40,9 +40,11 @@ describe('external URL validation', () => {
 
 describe('TURN mode selection', () => {
   it('listeners subscribe, publishers do not; relay flows through unchanged', () => {
-    expect(connectOptionsFor('listener', false)).toEqual({ subscribe: true, relay: false });
-    expect(connectOptionsFor('speaker', false)).toEqual({ subscribe: false, relay: false });
-    expect(connectOptionsFor('screen', true)).toEqual({ subscribe: false, relay: true });
-    expect(connectOptionsFor('listener', true)).toEqual({ subscribe: true, relay: true });
+    const relay = { mode: 'relay' } as const;
+    const turnFree = { mode: 'turn-free', stunUrls: ['stun:127.0.0.1:3479'] } as const;
+    expect(connectOptionsFor('listener', turnFree)).toEqual({ subscribe: true, ice: turnFree });
+    expect(connectOptionsFor('speaker', turnFree)).toEqual({ subscribe: false, ice: turnFree });
+    expect(connectOptionsFor('screen', relay)).toEqual({ subscribe: false, ice: relay });
+    expect(connectOptionsFor('listener', relay)).toEqual({ subscribe: true, ice: relay });
   });
 });

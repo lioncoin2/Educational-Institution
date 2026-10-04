@@ -338,79 +338,11 @@ export const SMOKE_SCENARIOS: readonly Scenario[] = [
 ];
 
 /**
- * Multi-process generator scenarios (P8.3.5). Each pins a worker count so a
- * single rtc-node process never hosts more than ~10 Rooms (RUNG 1 failed at
- * ~40 in one process). mediaPath=direct keeps the primary audio path off TURN.
+ * The capacity ladder (13) and the smoke scenarios. The P8.3 multi-process
+ * scenarios (MP_*) were retired with the single-host supervisor in P8.4; the
+ * off-box ladder lives in scenarios/p84-ladder.ts and runs only via cli/fleet-run.ts.
  */
-export const MP_SCENARIOS: readonly Scenario[] = [
-  {
-    id: 'MP_PUB',
-    title: 'MP publisher check (2 participants, 1 pub + 1 listener, 2 workers)',
-    target: 'livekit',
-    rooms: 1,
-    listenersPerRoom: 1,
-    speakersPerRoom: 1,
-    screenSharesPerRoom: 0,
-    relay: false,
-    rampPerSecond: 2,
-    holdSeconds: 10,
-    apiConnections: 0,
-    apiRequestsPerSecond: 0,
-    expectedTraffic: 'one audio publisher + one listener; validates the publisher in isolation',
-    stopConditions: ['publisher publish failure', 'any connect failure'],
-    metrics: [LK],
-    notes: 'Publisher-robustness check. 2 participants max. Multi-process.',
-    workers: 2,
-    mediaPath: 'direct',
-  },
-  {
-    id: 'MP_SMOKE',
-    title: 'MP smoke (20 participants, 1 pub + 19 listeners, 2 workers × 10)',
-    target: 'livekit',
-    rooms: 1,
-    listenersPerRoom: 19,
-    speakersPerRoom: 1,
-    screenSharesPerRoom: 0,
-    relay: false,
-    rampPerSecond: 10,
-    holdSeconds: 15,
-    apiConnections: 0,
-    apiRequestsPerSecond: 0,
-    expectedTraffic: 'audio; 20 participants across 2 worker processes (10/worker)',
-    stopConditions: ['exact-20 gate not met', 'any worker crash', 'publisher failure'],
-    metrics: [LK],
-    notes: 'Multi-process correctness validation. 20 participants. Direct ICE (no TURN).',
-    workers: 2,
-    mediaPath: 'direct',
-  },
-  {
-    id: 'MP_40',
-    title: 'MP 40 (40 participants, 1 pub + 39 listeners, 4 workers × 10)',
-    target: 'livekit',
-    rooms: 1,
-    listenersPerRoom: 39,
-    speakersPerRoom: 1,
-    screenSharesPerRoom: 0,
-    relay: false,
-    rampPerSecond: 10,
-    holdSeconds: 30,
-    apiConnections: 0,
-    apiRequestsPerSecond: 0,
-    expectedTraffic: 'audio; 40 participants across 4 worker processes (10/worker)',
-    stopConditions: ['exact-40 gate not met', 'any worker crash', 'publisher failure'],
-    metrics: [LK],
-    notes: 'The RUNG-1 failure point, now sharded. NOT to be run until MP_SMOKE is clean.',
-    workers: 4,
-    mediaPath: 'direct',
-  },
-];
-
-/** The capacity ladder (13), the smoke scenarios, and the multi-process scenarios. */
-export const ALL_SCENARIOS: readonly Scenario[] = [
-  ...SCENARIOS,
-  ...SMOKE_SCENARIOS,
-  ...MP_SCENARIOS,
-];
+export const ALL_SCENARIOS: readonly Scenario[] = [...SCENARIOS, ...SMOKE_SCENARIOS];
 
 const BY_ID = new Map(ALL_SCENARIOS.map((s) => [s.id, s]));
 

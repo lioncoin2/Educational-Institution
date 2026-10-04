@@ -1,10 +1,13 @@
 /**
- * P8.3.5/P8.3.6 — the supervisor's aggregator and exact-participant gate. Pure
- * logic, unit-tested without forking: feed it worker messages, ask whether the
- * publisher phase is done (all publishers PUBLISHED), whether the full gate is
- * met (EXACTLY requested connected, publishers published, zero failures), or
- * whether it is unreachable (any failure/crash → abort; never hold with fewer).
+ * P8.3.5/P8.3.6/P8.4 — the controller's single aggregator and exact-participant
+ * gate state (one instance, in the controller only; `workerId` is the global
+ * shard index). Pure logic, unit-tested without forking: feed it worker
+ * messages, ask whether the publisher phase is done (all publishers PUBLISHED),
+ * whether the connection gate is met (EXACTLY requested connected, publishers
+ * published, zero failures), or whether it is unreachable (any failure/crash →
+ * abort; never hold with fewer). Media evidence lives in the `media` ledger.
  */
+import { MediaLedger } from './media-ledger';
 import {
   type PublisherState,
   type TeardownSummary,
@@ -28,6 +31,9 @@ export class MpAggregator {
   private readonly publishedIds = new Set<string>();
   private readonly failedPublishIds = new Set<string>();
   private readonly publisherStates = new Map<string, PublisherState>();
+  private readonly trackSids = new Map<string, string>();
+  /** P8.4 media-delivery and transport evidence. */
+  readonly media = new MediaLedger();
 
   constructor(
     private readonly requested: number,
@@ -81,8 +87,9 @@ export class MpAggregator {
     return { workers: workerIds.length, cleaned, timedOut, exitedUnclean, forced };
   }
 
-  record(msg: WorkerMessage): void {
+  record(msg: WorkerMessage, at = Date.now()): void {
     const s = this.state(msg.workerId);
+    if (this.media.record(msg, at)) return;
     switch (msg.type) {
       case 'connected':
         s.connected += 1;
@@ -92,6 +99,7 @@ export class MpAggregator {
         break;
       case 'published':
         this.publishedIds.add(msg.participantId);
+        this.trackSids.set(msg.participantId, msg.trackSid);
         break;
       case 'publishFailed':
         this.failedPublishIds.add(msg.participantId);
@@ -109,8 +117,13 @@ export class MpAggregator {
         s.teardownTimedOut = true;
         break;
       default:
-        break; // ready/rampDone/publishAttempt/teardownStarted: telemetry only
+        break; // ready/publishAttempt/teardownStarted: telemetry only
     }
+  }
+
+  /** The SID of a publisher's published track, as its worker reported it. */
+  publishedTrackSid(participantId: string): string | undefined {
+    return this.trackSids.get(participantId);
   }
 
   connected(): number {
@@ -121,6 +134,10 @@ export class MpAggregator {
   }
   crashes(): number {
     return this.sum((s) => (s.crashed ? 1 : 0));
+  }
+  /** Worker ids that crashed (reported `fatal` or exited before shutdown). */
+  crashedWorkers(): number[] {
+    return [...this.workers.entries()].filter(([, s]) => s.crashed).map(([id]) => id);
   }
   publishersPublished(): number {
     return this.publishedIds.size;

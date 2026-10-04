@@ -1,14 +1,11 @@
 /**
- * P8.3.5 — multi-process generator shared types. The supervisor forks N worker
- * processes; each worker owns its own rtc-node runtime and a BOUNDED set of
- * participants, so the ~40-Room native-handle ceiling of a single process
- * (RUNG 1 failure) is multiplied across processes. Messages flow worker→
- * supervisor over Node IPC.
+ * P8.3.5/P8.4 — worker process contracts. A worker owns its own rtc-node
+ * runtime and a BOUNDED set of participants admitted one ticket at a time; it
+ * reports structured events over Node IPC to its host (the P8.4 agent).
  *
- * No rtc-node here (pure types); the worker reaches the WebRTC client by dynamic
- * import, preserving the architecture boundary.
+ * No rtc-node here (pure types); the worker reaches the WebRTC client through
+ * the driver port (mp/driver.ts), preserving the architecture boundary.
  */
-import { type MediaPath } from '../core/config';
 import { type Role } from '../core/identity';
 
 export interface MediaTicket {
@@ -20,7 +17,17 @@ export interface MediaTicket {
 export type PublisherState =
   'connecting' | 'connected' | 'publishing' | 'published' | 'failed' | 'disconnected';
 
-/** One participant a worker must bring up. */
+/**
+ * How a worker's clients gather ICE candidates (P8.4 §17). There is no
+ * "SDK default" mode: an empty client ICE-server list makes the SDK use the
+ * server's TURN servers (errata E2), so it is not representable here.
+ *  - `turn-free`: an explicit, non-empty, STUN-only list — the capacity ladder.
+ *  - `relay`: forced TURN relay — the S1 positive control only.
+ */
+export type IceConfig =
+  { readonly mode: 'turn-free'; readonly stunUrls: readonly string[] } | { readonly mode: 'relay' };
+
+/** One participant a worker must bring up, admitted with a just-in-time ticket. */
 export interface WorkerParticipant {
   readonly identity: string;
   readonly room: string;
@@ -28,24 +35,26 @@ export interface WorkerParticipant {
   readonly ticket: MediaTicket;
 }
 
-/** What the supervisor hands a worker when it starts. */
+/** What the host hands a worker when it starts (participants arrive later via `admit`). */
 export interface WorkerAssignment {
   readonly runId: string;
+  /** Global shard index — unique across every agent in the fleet. */
   readonly workerId: number;
-  readonly mediaPath: MediaPath;
+  readonly ice: IceConfig;
   readonly screen: { width: number; height: number; fps: number; maxBitrateKbps: number } | null;
-  /** Max concurrent connect attempts inside the worker (avoids a burst). */
-  readonly connectConcurrency: number;
   /** Bounded publisher publish retries (P8.3.6); 0 = single attempt. */
   readonly publishRetries: number;
   /** Upper bound on the worker's own teardown before it reports a timeout (P8.3.8). */
   readonly teardownTimeoutMs: number;
-  readonly participants: readonly WorkerParticipant[];
+  /** Media observation window (P8.4 §8): stats sampling and aggregation period. */
+  readonly statsIntervalMs: number;
+  /** Run the sampled 440 Hz content probe on this worker's first listener. */
+  readonly probe: boolean;
 }
 
 /**
  * How a worker process ends (P8.3.8) — the one contract the worker exits with
- * and the supervisor classifies by. A worker exits ONLY after shutdown.
+ * and its host classifies by. A worker exits ONLY after shutdown.
  */
 export const WORKER_EXIT_CODE = {
   cleaned: 0,
@@ -53,7 +62,53 @@ export const WORKER_EXIT_CODE = {
   teardownTimeout: 3,
 } as const;
 
-/** worker → supervisor messages. */
+/** Selected-pair / candidate classification reported by a participant (P8.4 §17 T2). */
+export type CandidateType = 'host' | 'srflx' | 'prflx' | 'relay' | 'unknown';
+
+export interface TransportReport {
+  readonly protocol: string;
+  readonly localType: CandidateType;
+  readonly remoteType: CandidateType;
+  readonly remotePort: number | null;
+  /** Every local candidate type the client gathered (a `relay` here fails T2). */
+  readonly localCandidateTypes: readonly CandidateType[];
+}
+
+/** Discrete media faults (P8.4 §8). `reason` carries a DisconnectReason name where known. */
+export type MediaFaultKind =
+  | 'stall'
+  | 'disconnected'
+  | 'unsubscribed'
+  | 'subscriptionFailed'
+  | 'publisherGone'
+  | 'reconnecting'
+  | 'reconnected';
+
+/** Listener counts per loss band in one window (bands from observe/rules.ts). */
+export interface LossBands {
+  readonly green: number;
+  readonly yellow: number;
+  readonly red: number;
+}
+
+/** One worker's media observation window — aggregated, never per participant. */
+export interface MediaWindow {
+  readonly t: number;
+  readonly listeners: number;
+  readonly subscribed: number;
+  readonly receiving: number;
+  readonly stalled: number;
+  /** Stats samples that were missing or late (a sampler gap, never a stall). */
+  readonly gaps: number;
+  readonly packetsReceived: number;
+  readonly packetsLost: number;
+  readonly lossBands: LossBands;
+  readonly jitterMsMax: number;
+  /** Event-loop lag p95 for this worker over the window. */
+  readonly loopLagMsP95: number;
+}
+
+/** worker → host messages. */
 export type WorkerMessage =
   | { readonly type: 'ready'; readonly workerId: number }
   | {
@@ -69,14 +124,18 @@ export type WorkerMessage =
       readonly role: Role;
       readonly error: string;
     }
-  | { readonly type: 'published'; readonly workerId: number; readonly participantId: string }
+  | {
+      readonly type: 'published';
+      readonly workerId: number;
+      readonly participantId: string;
+      readonly trackSid: string;
+    }
   | {
       readonly type: 'publishFailed';
       readonly workerId: number;
       readonly participantId: string;
       readonly error: string;
     }
-  | { readonly type: 'rampDone'; readonly workerId: number }
   // P8.3.8 teardown lifecycle: started → (cleaned | teardownTimeout), then exit.
   | { readonly type: 'teardownStarted'; readonly workerId: number; readonly participants: number }
   | { readonly type: 'teardownTimeout'; readonly workerId: number; readonly pending: number }
@@ -94,17 +153,55 @@ export type WorkerMessage =
       readonly workerId: number;
       readonly participantId: string;
       readonly attempt: number;
+    }
+  // P8.4 media-delivery and transport evidence:
+  | {
+      readonly type: 'subscribed';
+      readonly workerId: number;
+      readonly participantId: string;
+      readonly trackSid: string;
+    }
+  | { readonly type: 'receiving'; readonly workerId: number; readonly participantId: string }
+  | {
+      readonly type: 'transport';
+      readonly workerId: number;
+      readonly participantId: string;
+      readonly report: TransportReport;
+    }
+  | {
+      readonly type: 'mediaFault';
+      readonly workerId: number;
+      readonly participantId: string;
+      readonly fault: MediaFaultKind;
+      readonly reason: string | null;
+    }
+  | { readonly type: 'mediaWindow'; readonly workerId: number; readonly window: MediaWindow }
+  | {
+      readonly type: 'publisherStats';
+      readonly workerId: number;
+      readonly participantId: string;
+      readonly t: number;
+      readonly packetsSent: number;
+    }
+  | {
+      readonly type: 'probe';
+      readonly workerId: number;
+      readonly participantId: string;
+      readonly ok: boolean;
+      readonly toneRatio: number;
     };
 
-/** supervisor → worker messages. */
-export type SupervisorMessage = { readonly type: 'shutdown' };
+/** host → worker commands. */
+export type WorkerCommand =
+  | { readonly type: 'admit'; readonly participant: WorkerParticipant }
+  | { readonly type: 'shutdown' };
 
 /**
- * How every worker process the supervisor OWNS ended (P8.3.8). Forced
- * termination is never folded into a successful cleanup.
+ * How every worker process a host OWNS ended (P8.3.8). Forced termination is
+ * never folded into a successful cleanup.
  */
 export interface TeardownSummary {
-  /** Worker processes forked by the supervisor. */
+  /** Worker processes the host spawned. */
   readonly workers: number;
   /** Emitted `cleaned` and exited with WORKER_EXIT_CODE.cleaned. */
   readonly cleaned: number;
@@ -112,21 +209,6 @@ export interface TeardownSummary {
   readonly timedOut: number;
   /** Exited (code/signal) without `cleaned` or `teardownTimeout`. */
   readonly exitedUnclean: number;
-  /** Still alive at the shutdown grace deadline; SIGKILLed by the supervisor. */
+  /** Still alive at the shutdown grace deadline; SIGKILLed by its host. */
   readonly forced: number;
-}
-
-export interface MpResult {
-  readonly runId: string;
-  readonly requested: number;
-  readonly workers: number;
-  readonly teardown: TeardownSummary;
-  readonly connected: number;
-  readonly failed: number;
-  readonly publisherPublished: boolean;
-  readonly workerCrashes: number;
-  readonly gateMet: boolean;
-  readonly aborted: boolean;
-  readonly abortReason: string | null;
-  readonly holdSeconds: number;
 }

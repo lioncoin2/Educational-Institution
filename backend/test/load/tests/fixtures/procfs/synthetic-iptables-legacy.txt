@@ -1,0 +1,7 @@
+Chain ufw-user-input (1 references)
+    pkts      bytes target     prot opt in     out     source               destination         
+     120     7200 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:3478
+      40     2400 ACCEPT     udp  --  *      *       0.0.0.0/0            0.0.0.0/0            udp dpt:3478
+       5      300 ACCEPT     udp  --  *      *       198.51.100.0/24      0.0.0.0/0            udp dpt:3478
+       9      540 ACCEPT     udp  --  *      *       0.0.0.0/0            0.0.0.0/0            udp dpt:34780
+       3      180 ACCEPT     udp  --  *      *       0.0.0.0/0            0.0.0.0/0            udp dpts:30000:32767

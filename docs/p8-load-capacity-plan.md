@@ -1,5 +1,7 @@
 # P8 — Load & Capacity Test Plan (Phase 0: read-only audit)
 
+> **Errata (2026-10-04, approved D-10):** corrections to P8.3 conclusions and to findings F2, F3 and §11 of this plan are recorded in [p8/p8.3-errata.md](p8/p8.3-errata.md); this document is otherwise unchanged.
+
 **Date:** 2026-10-04. **Status: PLAN — nothing executed, nothing changed.** This is the read-only Phase-0
 output: an evidence-based audit of the live P7.3 staging deployment and the P8 load/capacity test plan built
 on it. **No load was generated. No server, Docker, nginx, LiveKit, kernel, DNS, firewall, SSH, Flutter or

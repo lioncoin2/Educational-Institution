@@ -11,7 +11,7 @@
  * Secrets are read from the environment only (LOADTEST_LIVEKIT_*). Nothing here
  * is hardcoded and nothing is logged.
  */
-import { AccessToken, RoomServiceClient, TrackSource } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient, TrackSource, type VideoGrant } from 'livekit-server-sdk';
 
 import { type Role } from '../core/identity';
 
@@ -78,6 +78,45 @@ export async function mintTicket(
     canPublishSources: sourcesFor(params.role),
     canPublishData: false,
   });
+  return { url: env.url, token: await token.toJwt() };
+}
+
+/** P8.4 fleet roles: one audio publisher, subscribe-only listeners. */
+export type TicketRole = 'listener' | 'publisher';
+
+/** P8.4 join tickets live 300 s; once joined, LiveKit refreshes the session token itself. */
+export const FLEET_TICKET_TTL_SECONDS = 300;
+
+/**
+ * The P8.4 scoped grant (design §2): join exactly one room as exactly one role.
+ * It NEVER carries roomCreate/roomAdmin/roomList/roomRecord/ingressAdmin, so a
+ * ticket cannot create a room (the SUT runs `auto_create: false`), reach
+ * another room, or call RoomService. Listeners are visible (decision D-5).
+ */
+export function scopedGrant(room: string, role: TicketRole): VideoGrant {
+  const publisher = role === 'publisher';
+  return {
+    roomJoin: true,
+    room,
+    canSubscribe: !publisher,
+    canPublish: publisher,
+    canPublishSources: publisher ? [TrackSource.MICROPHONE] : [],
+    canPublishData: false,
+    canUpdateOwnMetadata: false,
+    hidden: false,
+  };
+}
+
+/** Mints one P8.4 ticket: room- and identity-scoped, short-lived, never room-creating. */
+export async function mintScopedTicket(
+  env: LivekitEnv,
+  params: { identity: string; room: string; role: TicketRole },
+): Promise<MediaTicket> {
+  const token = new AccessToken(env.apiKey, env.apiSecret, {
+    identity: params.identity,
+    ttl: FLEET_TICKET_TTL_SECONDS,
+  });
+  token.addGrant(scopedGrant(params.room, params.role));
   return { url: env.url, token: await token.toJwt() };
 }
 

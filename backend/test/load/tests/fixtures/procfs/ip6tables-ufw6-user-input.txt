@@ -1,0 +1,8 @@
+Chain ufw6-user-input (1 references)
+    pkts      bytes target     prot opt in     out     source               destination         
+       0        0 ACCEPT     6    --  *      *       ::/0                 ::/0                 tcp dpt:22
+       0        0 ACCEPT     6    --  *      *       ::/0                 ::/0                 tcp dpt:80
+       0        0 ACCEPT     6    --  *      *       ::/0                 ::/0                 tcp dpt:443
+       0        0 ACCEPT     6    --  *      *       ::/0                 ::/0                 tcp dpt:7881
+       0        0 ACCEPT     17   --  *      *       ::/0                 ::/0                 udp dpt:7882
+       0        0 ACCEPT     17   --  *      *       ::/0                 ::/0                 udp dpt:3478

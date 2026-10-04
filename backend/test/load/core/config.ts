@@ -15,9 +15,6 @@ export type Target = 'api' | 'livekit' | 'combined';
 
 export const TARGETS: readonly Target[] = ['api', 'livekit', 'combined'];
 
-/** Media path for a run: the normal ICE path, or forced TURN relay (a SEPARATE test). */
-export type MediaPath = 'direct' | 'relay';
-
 /** Controlled connect/disconnect/reconnect churn, applied after full ramp-up. */
 export interface ChurnSpec {
   /** Fraction (0..1) of connected participants dropped then re-added each cycle. */
@@ -58,10 +55,6 @@ export interface Scenario {
   readonly churn?: ChurnSpec;
   /** Present only for screen-share scenarios: which screen profile to publish. */
   readonly screenProfile?: ScreenProfileId;
-  /** Multi-process generator: number of worker processes (P8.3.5). */
-  readonly workers?: number;
-  /** Multi-process generator: media path (default 'direct'; 'relay' = separate TURN test). */
-  readonly mediaPath?: MediaPath;
 }
 
 export interface HarnessConfig {
@@ -110,17 +103,8 @@ const NUMERIC_FLAGS = new Set([
   'api-connections',
   'api-rps',
   'interval',
-  'workers',
 ]);
-const STRING_FLAGS = new Set([
-  'scenario',
-  'target',
-  'out',
-  'gen-out',
-  'kind',
-  'media-path',
-  'event-out',
-]);
+const STRING_FLAGS = new Set(['scenario', 'target', 'out', 'gen-out', 'kind']);
 const BOOL_FLAGS = new Set(['relay', 'allow-load', 'list', 'help']);
 
 export interface RawArgs {

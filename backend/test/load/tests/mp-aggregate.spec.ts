@@ -14,14 +14,14 @@ describe('MP aggregator — phase gates', () => {
     const agg = new MpAggregator(3, 1);
     agg.record({ type: 'connected', workerId: 0, participantId: 'pub', role: 'speaker' });
     expect(agg.publishersReady()).toBe(false);
-    agg.record({ type: 'published', workerId: 0, participantId: 'pub' });
+    agg.record({ type: 'published', workerId: 0, participantId: 'pub', trackSid: 'TR_pub' });
     expect(agg.publishersReady()).toBe(true);
   });
 
   it('phase B: full gate is EXACTLY requested connected + publishers published, zero failures', () => {
     const agg = new MpAggregator(3, 1);
     agg.record({ type: 'connected', workerId: 0, participantId: 'pub', role: 'speaker' });
-    agg.record({ type: 'published', workerId: 0, participantId: 'pub' });
+    agg.record({ type: 'published', workerId: 0, participantId: 'pub', trackSid: 'TR_pub' });
     agg.record(conn(1, 'a'));
     expect(agg.gateMet()).toBe(false); // 2/3 connected
     agg.record(conn(1, 'b'));
@@ -34,7 +34,7 @@ describe('MP aggregator — phase gates', () => {
     agg.record({ type: 'connected', workerId: 0, participantId: 'pub', role: 'speaker' });
     agg.record(conn(1, 'a'));
     expect(agg.gateMet()).toBe(false);
-    agg.record({ type: 'published', workerId: 0, participantId: 'pub' });
+    agg.record({ type: 'published', workerId: 0, participantId: 'pub', trackSid: 'TR_pub' });
     expect(agg.gateMet()).toBe(true);
   });
 

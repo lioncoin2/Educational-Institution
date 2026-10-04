@@ -72,6 +72,67 @@ export function checkScenarioSafety(s: Scenario, limits: SafetyLimits = SAFETY_L
   return v;
 }
 
+/**
+ * P8.4 per-rung caps (decision D-8, design §14 — no blanket raise). The global
+ * SAFETY_LIMITS above stay as they are for every other scenario; a fleet rung
+ * is gated by the SAME function (`checkScenarioSafety`) with a profile whose
+ * ceilings ARE that rung: exactly its N in one room, one publisher, its hold,
+ * its ramp, no API load.
+ */
+export function fleetLimitsFor(rung: {
+  readonly participants: number;
+  readonly holdSeconds: number;
+  readonly rampPerSecond: number;
+}): SafetyLimits {
+  return {
+    maxTotalParticipants: rung.participants,
+    maxParticipantsPerRoom: rung.participants,
+    maxRooms: 1,
+    maxPublishersPerRoom: 1,
+    maxTotalPublishers: 1,
+    maxDurationSeconds: rung.holdSeconds,
+    maxRampPerSecond: rung.rampPerSecond,
+    maxApiConnections: 0,
+    maxApiRequestsPerSecond: 0,
+  };
+}
+
+/** Participants per worker process validated so far (P8.3: 10). Higher needs calibration evidence. */
+export const VALIDATED_DENSITY = 10;
+/** Densities a calibration run may use, and the rungs it may run on (decision D-9). */
+export const CALIBRATION_DENSITIES: readonly number[] = [10, 20, 30];
+export const CALIBRATION_RUNGS: readonly string[] = ['S2', 'R1', 'R2'];
+
+export interface FleetRequest {
+  readonly rungId: string;
+  readonly hosts: number;
+  readonly provisionedHosts: number;
+  readonly density: number;
+  /** Highest density proven GREEN by an attached calibration result (default VALIDATED_DENSITY). */
+  readonly provenDensity: number;
+  readonly calibration: boolean;
+}
+
+/** The fleet-specific part of the per-rung gate (hosts, density, calibration scope). */
+export function checkFleetRequest(r: FleetRequest): string[] {
+  const v: string[] = [];
+  if (!Number.isInteger(r.hosts) || r.hosts < 1) v.push('at least one generator host is required');
+  if (r.hosts > r.provisionedHosts)
+    v.push(`hosts ${r.hosts} exceeds provisioned generators ${r.provisionedHosts}`);
+  if (!Number.isInteger(r.density) || r.density < 1) v.push('density must be a whole number >= 1');
+  if (r.calibration) {
+    if (!CALIBRATION_RUNGS.includes(r.rungId))
+      v.push(`calibration runs only on ${CALIBRATION_RUNGS.join('/')}, not ${r.rungId}`);
+    if (!CALIBRATION_DENSITIES.includes(r.density))
+      v.push(`calibration density must be one of ${CALIBRATION_DENSITIES.join('/')}`);
+  } else if (r.density > r.provenDensity) {
+    v.push(
+      `density ${r.density} exceeds the proven density ${r.provenDensity} (run a calibration)`,
+    );
+  }
+  return v;
+}
+
 export interface GateDecision {
   /** true => actually connect/generate; false => dry-run only. */
   readonly willGenerateLoad: boolean;

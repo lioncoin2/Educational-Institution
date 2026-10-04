@@ -1,0 +1,13 @@
+qdisc mq 0: root 
+ Sent 7340032 bytes 5120 pkt (dropped 9, overlimits 4 requeues 2) 
+ backlog 0b 0p requeues 2
+qdisc fq_codel 0: parent :2 limit 10240p flows 1024 quantum 1514 target 5ms interval 100ms memory_limit 32Mb ecn drop_batch 64 
+ Sent 3145728 bytes 2048 pkt (dropped 4, overlimits 1 requeues 1) 
+ backlog 0b 0p requeues 1
+  maxpacket 1514 drop_overlimit 0 new_flow_count 12 ecn_mark 0
+  new_flows_len 0 old_flows_len 0
+qdisc fq_codel 0: parent :1 limit 10240p flows 1024 quantum 1514 target 5ms interval 100ms memory_limit 32Mb ecn drop_batch 64 
+ Sent 4194304 bytes 3072 pkt (dropped 5, overlimits 3 requeues 1) 
+ backlog 0b 0p requeues 1
+  maxpacket 1514 drop_overlimit 0 new_flow_count 9 ecn_mark 0
+  new_flows_len 0 old_flows_len 0

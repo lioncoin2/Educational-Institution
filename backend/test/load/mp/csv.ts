@@ -3,8 +3,9 @@
  * by run/worker/participant so a run is fully reconstructable:
  *   run_id,worker_id,participant_id,t_ms,event,state
  * `state` carries the event's own payload (e.g. `publisherState=published`,
- * P8.3.8) or else the aggregate connected count at the moment (for a quick
- * ramp curve). The row formatter is pure; the writer appends to a file.
+ * P8.3.8; `pair=udp host->host:7882`, `fault=stall`, P8.4) or else the
+ * aggregate connected count at the moment (for a quick ramp curve). The row
+ * formatter is pure; the writer appends to a file.
  */
 import { appendFile, writeFile } from 'node:fs/promises';
 
@@ -42,6 +43,23 @@ function stateOf(msg: WorkerMessage, connectedTotal: number): string {
       return `participants=${msg.participants}`;
     case 'teardownTimeout':
       return `pending=${msg.pending}`;
+    case 'published':
+    case 'subscribed':
+      return `track=${sanitize(msg.trackSid)}`;
+    case 'transport': {
+      const r = msg.report;
+      return `pair=${sanitize(r.protocol)} ${r.localType}->${r.remoteType}:${r.remotePort ?? '-'} gathered=${r.localCandidateTypes.join('+')}`;
+    }
+    case 'mediaFault':
+      return `fault=${msg.fault}${msg.reason ? ` reason=${sanitize(msg.reason)}` : ''}`;
+    case 'mediaWindow': {
+      const w = msg.window;
+      return `listeners=${w.listeners} subscribed=${w.subscribed} receiving=${w.receiving} stalled=${w.stalled} gaps=${w.gaps} lost=${w.packetsLost} recv=${w.packetsReceived} lagP95=${w.loopLagMsP95}`;
+    }
+    case 'publisherStats':
+      return `sent=${msg.packetsSent}`;
+    case 'probe':
+      return `toneRatio=${msg.toneRatio.toFixed(3)} ok=${msg.ok}`;
     default:
       return `connected=${connectedTotal}`;
   }

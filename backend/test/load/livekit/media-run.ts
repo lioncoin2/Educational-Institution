@@ -18,37 +18,12 @@ import {
   roomName,
 } from '../core/identity';
 import { getScreenProfile } from '../core/screen-profiles';
+import { StunResponder } from '../fleet/stun';
 import { type GeneratorCounters } from '../metrics/generator';
-import { type LivekitEnv, type MediaTicket, deleteRooms, ensureRooms, mintTicket } from './tokens';
+import { type Driver, type LoadParticipantLike, type ScreenSpec } from '../mp/driver';
+import { type IceConfig } from '../mp/types';
+import { type LivekitEnv, deleteRooms, ensureRooms, mintTicket } from './tokens';
 
-/** Screen source dimensions handed to the driver (structural subset of ScreenProfile). */
-interface ScreenSpec {
-  readonly width: number;
-  readonly height: number;
-  readonly fps: number;
-  readonly maxBitrateKbps: number;
-}
-
-/**
- * The driver's public surface, described structurally so this file has NO static
- * import of (and no type edge to) the WebRTC client. The real implementation is
- * test/livekit/load/media-driver.ts, loaded by dynamic import at run time.
- */
-interface LoadParticipantLike {
-  readonly identity: string;
-  publishMicrophone(): Promise<void>;
-  publishScreenShare(spec: ScreenSpec): Promise<void>;
-  disconnect(): Promise<void>;
-}
-interface Driver {
-  readonly LoadParticipant: {
-    connect(
-      ticket: MediaTicket,
-      opts: { subscribe: boolean; relay: boolean },
-    ): Promise<LoadParticipantLike>;
-  };
-  disposeMedia(): Promise<void>;
-}
 type Participant = LoadParticipantLike;
 
 interface Tally {
@@ -61,6 +36,7 @@ interface Tally {
 interface RunCtx {
   readonly driver: Driver;
   readonly env: LivekitEnv;
+  readonly ice: IceConfig;
   readonly relay: boolean;
   readonly screen: ScreenSpec | null;
   readonly live: Map<string, Participant>;
@@ -93,7 +69,7 @@ async function admit(ctx: RunCtx, plan: ParticipantPlan): Promise<void> {
     });
     const participant = await ctx.driver.LoadParticipant.connect(
       ticket,
-      connectOptionsFor(plan.role, ctx.relay),
+      connectOptionsFor(plan.role, ctx.ice),
     );
     ctx.live.set(plan.identity, participant);
     ctx.tally.connected += 1;
@@ -144,9 +120,16 @@ export async function runMediaScenario(
   const driver = await loadDriver();
   const plan = expandParticipants(scenario);
   const rooms = Array.from({ length: scenario.rooms }, (_, i) => roomName(scenario, i));
+  // P8.4 errata E2: never the SDK-default ICE list (it pulls in the server's TURN).
+  // Non-relay runs get an explicit TURN-free list served by an in-process STUN responder.
+  const stun = scenario.relay ? null : new StunResponder({ port: 0, host: '127.0.0.1' });
+  const ice: IceConfig = stun
+    ? { mode: 'turn-free', stunUrls: [`stun:127.0.0.1:${(await stun.start()).port}`] }
+    : { mode: 'relay' };
   const ctx: RunCtx = {
     driver,
     env,
+    ice,
     relay: scenario.relay,
     screen: resolveScreen(scenario),
     live: new Map<string, Participant>(),
@@ -168,6 +151,7 @@ export async function runMediaScenario(
       await participant.disconnect().catch(() => undefined);
     await deleteRooms(env, rooms);
     await driver.disposeMedia().catch(() => undefined);
+    await stun?.close();
   }
 
   return {

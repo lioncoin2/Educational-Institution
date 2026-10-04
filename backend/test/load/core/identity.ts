@@ -75,12 +75,12 @@ export function expectedPlanSize(scenario: Scenario): number {
 
 /**
  * The connect options for a role: listeners subscribe; publishers do not
- * auto-subscribe (they only send). `relay` forces TURN for every role when the
- * scenario asks for it. Pure — the single place that decides TURN mode.
+ * auto-subscribe (they only send). The ICE mode (TURN-free or forced relay,
+ * P8.4 §17) is the run's, the same for every role. Pure.
  */
-export function connectOptionsFor(
+export function connectOptionsFor<Ice>(
   role: Role,
-  relay: boolean,
-): { readonly subscribe: boolean; readonly relay: boolean } {
-  return { subscribe: role === 'listener', relay };
+  ice: Ice,
+): { readonly subscribe: boolean; readonly ice: Ice } {
+  return { subscribe: role === 'listener', ice };
 }
