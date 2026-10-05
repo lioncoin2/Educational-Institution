@@ -3,12 +3,13 @@
 **State: ACCEPTED (2026-10-05) — records the owner's answers to Q35 and Q36, and the later clarifications
 of the same day. It supersedes in part [0014](0014-academic-core-v1.md): the specific section *names*
 and the literacy halaqa *count* the owner's answers change. The hierarchy stays **Section → Program →
-Halaqa** (the `Level` concept that was briefly considered is RETIRED — see Decided items). Application
-of the reviewed structure to the seed is DEFERRED — two items remain underspecified (below), the owner
-wants nothing seeded yet, and a partial structure would assert facts the owner did not state.
-`institution-structure.json`, the seed code and the pinned tests are therefore UNCHANGED by this ADR.
-Every decision here is a CURRENT, REVERSIBLE institutional decision, not a permanent architectural
-lock.**
+Halaqa** (the `Level` concept that was briefly considered is RETIRED — see Decided items). The
+reconciliation **decisions are now complete** (owner, 2026-10-05): one uniform model for all sections
+(core, non-core and Tahajji), dynamic and owner-managed, no hard-coded counts. **Applying them to the
+seed is the remaining work and is the first implementation step — NOT performed by this ADR;**
+`institution-structure.json`, the seed code and the pinned tests are UNCHANGED here, and the seed is
+never run against a production/shared database. Every decision here is CURRENT and REVERSIBLE, not a
+permanent architectural lock.**
 
 **Status:** Accepted
 **Accepted:** 2026-10-05, by the owner (the Q35/Q36 answers and same-day clarifications of the P9 governance pass).
@@ -54,14 +55,17 @@ records exist.
 The operational structure of دورة التهجي وإعداد المعلمات / مدينة التهجي / its groups is **dynamic and
 owner-managed**; it is **not** to be hard-coded, and no additional institutional semantics beyond the
 owner's words are to be invented. Historical identifiers are preserved, never destroyed or reused.
-Later same-day clarifications: the **"40 groups" figure is historical/source information only** — not a
-system limit, not a required seeded count, not necessarily the current active count; the **owner**
-determines the actual number; groups are **not seeded now** (creation deferred); the owner
-adds/edits/deletes/renames/manages groups. The relationship between دورة التهجي وإعداد المعلمات and
-مدينة التهجي (operational structure inside section #7, an independent branch, or another relationship)
-is **intentionally DEFERRED** — not modelled here. What a "group" means relative to chat / LiveKit /
-educational grouping is also **DEFERRED**; these Tahajji groups are **not** equated with the existing
-Community/Messaging/Live concepts unless the owner later decides so.
+The **"40 groups" figure is historical/source information only** — not a system limit, not a required
+seeded count, not necessarily the current active count; the **owner** determines the actual number and
+adds/edits/deletes/renames/manages them; **no groups are seeded now**. Historical identifiers are
+preserved.
+
+**Final resolution (owner, 2026-10-05):** Tahajji / دورة التهجي / مدينة التهجي use the **same academic
+model, `Section → Program → Halaqa`** — no special entity, no hard-coded count, no fixed 40. A Tahajji
+"group" is an **academic halaqa** under the uniform model (it is **not** a chat / LiveKit / Community
+construct). دورة التهجي وإعداد المعلمات is core section **#7**, an ordinary section under this model; its
+programs and halaqat are **dynamic, owner-managed** data. (The separate question of whether any
+educational group ever maps to a voice/LiveKit room stays deferred — not part of this reconciliation.)
 
 ### Decided since (owner, 2026-10-05, later messages) — reversible
 
@@ -77,29 +81,40 @@ Community/Messaging/Live concepts unless the owner later decides so.
   two `academic.*` permission *descriptions* in the committed migration `drizzle/0002_seed_access_catalog.sql:29-30`
   — cosmetic, non-structural; an optional later description fix, not a migration this ADR makes.)
 
-### Still deferred — blocks applying the structure to the seed
+### Resolved (owner, 2026-10-05, final) — the structural decisions are now complete
 
-1. **دورة التهجي وإعداد المعلمات as core section #7 (Q35) vs dynamic/deferred (Q36):** the existing
-   `sec-spelling` is `SPECIAL` (kind immutable); section #7's seed representation and its مدينة التهجي
-   relationship are intentionally deferred (above). Not reconciled into a fixed seed.
-2. **The non-core sections** (`sec-kids` البراعم, `sec-languages` اللغات, `accompanying`): the owner
-   addressed only the seven core sections; there is no "core" flag in the domain, and removing or
-   reclassifying these would assert a fact the owner did not state.
+1. **دورة التهجي وإعداد المعلمات = core section #7**, an ordinary section under the uniform
+   `Section → Program → Halaqa` model (above). Proposed code **`dep-tahajji`** (recorded here as the
+   §13 code→name decision; `dep-*` family; reversible, owner-overridable). The existing `sec-spelling`
+   (قسم التهجي, `SPECIAL`) is **left as existing dynamic data** the owner may manage — this ADR does not
+   assert that it is the same section as #7, and does not delete or reclassify it.
+2. **Non-core sections** (`sec-kids` البراعم, `sec-languages` اللغات, `accompanying`) are **dynamic,
+   owner-managed data, not architectural decisions** (owner ruling 2026-10-05): they are **kept**; no
+   "core" flag is introduced; the owner adds/edits/deletes/renames/reorders them at runtime. Nothing is
+   removed or reclassified by this ADR.
 
-Because section #7 is deferred and the owner wants nothing seeded yet, §13 step 3's remaining mechanics
-— applying the renames/count/new section through the seed/API, explicit per-entry halaqa codes, the
-seed parent check, provenance marking, and updating the pinned tests (`seed.spec.ts`,
-`structure.spec.ts`, `app/test/academic/profile_structure_test.dart`) — are **not performed** here.
+**Everything academic is one uniform model** — `Section → Program → Halaqa`, dynamic and owner-managed,
+with no hard-coded counts or limits. The reconciliation **decisions are complete**.
+
+**Applying these decisions to the seed is the remaining work, and it is the first implementation
+step — NOT performed in this ADR.** It comprises: the five core renames + literacy 5→10 + the new
+`dep-tajweed-letters` section + the `dep-tahajji` section, explicit per-entry halaqa codes, the seed
+parent check, provenance marking of owner-sourced entries, and updating the pinned tests
+(`seed.spec.ts`, `structure.spec.ts`, `app/test/academic/profile_structure_test.dart`). Per the owner,
+**the seed is never run against a production or shared database**; the applied change is verified on an
+isolated/in-memory test database only.
 
 ## Consequences
 
-- The owner's Q35/Q36 answers are now on record (this ADR; `open-questions.md`), satisfying §13's
-  "written answers to Q35 and Q36" sub-step.
-- **§13 is NOT complete:** ADR 0015 records the decisions but does **not** land the applied structure,
-  so the "before any new module" step is not finished and the Attendance hold (`:19-21`) is not lifted.
-- No code, schema, migration, seed data, Flutter screen or test changed. `institution-structure.json`
-  still carries the printed profile and its "do not edit until answered" notice stands for the
-  deferred parts.
+- The owner's Q35/Q36 answers (and the 2026-10-05 Tahajji / non-core / uniform-model rulings) are on
+  record (this ADR; `open-questions.md`). The §13 **decisions** are complete.
+- **§13 is not yet LANDED as code:** ADR 0015 records the decisions but the applied structure is **not
+  yet in the seed** — that is the first implementation step, not a remaining governance decision. Until
+  it lands and is verified, the "before any new module" step is not finished.
+- No code, schema, migration, seed data, Flutter screen or test changed by this ADR.
+  `institution-structure.json` still carries the printed profile; its "do not edit until answered"
+  notice is now cleared to proceed (the questions are answered) — the edit happens in the seed
+  reconciliation step, never against a production/shared database.
 - `AttendanceAmendment` (`operations/contracts`) already requires `reason`+`amendedBy` (Q8's technical
   position); unchanged.
 

@@ -1113,10 +1113,13 @@ section, item 2), `dep-tajweed-2`→التجويد المتوسط, `dep-tajweed-
 Basic/Additional classification; «need» unused; order 1–7 is display only; sections and halaqat are
 dynamic owner-managed data; deletion safe where history exists. The **«Level» concept is RETIRED** (the
 owner rejected a `Program → Level → Halaqa` model as complexity without value): the hierarchy stays
-**Section → Program → Halaqa**, Program kept — so item 9 is withdrawn, not deferred. **Still deferred
-(ADR 0015), so the seed is NOT yet changed:** دورة التهجي as core #7 vs the deferred Q36 answer, and
-the fate of the non-core sections. Every decision here is current and reversible. The heading stays so
-links keep working.
+**Section → Program → Halaqa**, Program kept — so item 9 is withdrawn, not deferred. **Resolved
+(2026-10-05):** one **uniform model** for all sections — core, non-core (البراعم/اللغات/accompanying)
+and Tahajji §7 — all `Section → Program → Halaqa`, dynamic and owner-managed, no hard-coded counts;
+non-core sections are dynamic owner data, not an architectural decision (kept, owner-managed). The
+reconciliation **decisions are complete**; the only remaining work is **applying the structure to the
+seed + tests**, which is the first implementation step (ADR 0015), never run against production/shared
+DB. Every decision here is current and reversible. The heading stays so links keep working.
 
 **Question.** On 2026-09-23 the owner listed seven core academic sections
 ([owner-information.md](../owner-information.md), S1): محو الأمية، تلقين
@@ -1187,14 +1190,15 @@ operational structure is **dynamic and owner-managed, not hard-coded**; no addit
 semantics beyond the owner's words are invented, and historical identifiers are preserved. The **"40
 groups" figure is historical/source information only** — not a system limit, not a required seeded
 count, not necessarily the current active count; the **owner** sets the actual number and
-adds/edits/deletes/renames/manages groups; **groups are not seeded now** (creation deferred). What a
-"group" means relative to chat / LiveKit / educational grouping is **deferred**, and these groups are
-**not** equated with the existing Community/Messaging/Live concepts unless the owner later decides.
-**Deferred (ADR 0015):** the owner lists دورة التهجي وإعداد المعلمات as core section #7 (Q35) while the
-current `sec-spelling` is `SPECIAL` (immutable kind), and the relationship between دورة التهجي وإعداد
-المعلمات and مدينة التهجي (inside section #7, an independent branch, or another relationship) is
-**intentionally deferred** — so its seed representation is not decided or applied here. All of this is
-current and reversible. The heading stays so links keep working.
+adds/edits/deletes/renames/manages groups; **groups are not seeded now**.
+**Resolved (2026-10-05, [ADR 0015](decisions/0015-academic-structure-reconciliation.md)):** Tahajji /
+دورة التهجي / مدينة التهجي use the **same academic model `Section → Program → Halaqa`** — no special
+entity, no fixed 40. A Tahajji "group" is an **academic halaqa** under that model, **not** a chat /
+LiveKit / Community construct. دورة التهجي وإعداد المعلمات is core section **#7** (proposed code
+`dep-tahajji`, reversible); its programs/halaqat are dynamic owner data. The existing `sec-spelling`
+(قسم التهجي) is left as dynamic owner data (not asserted to be the same section). The separate
+voice/LiveKit-mapping question stays deferred. Current and reversible. The heading stays so links keep
+working.
 
 **Question.** The printed profile has «قسم التهجي» (page 7). It describes
 teaching reading from letters and harakat to correct recitation, with

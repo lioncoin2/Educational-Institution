@@ -39,8 +39,8 @@ directly, not throwaway versions.
 | P7.1 LiveKit server/provider readiness · P7.2 real media integration · P7.3 staging deploy · P7.4 external client test | **DONE** (staging live) |
 | P7b Flutter media binding (`livekit_client`) | **DEFERRED** (needs devices/CI + ADR) |
 | P8 Load/capacity harness (P8.0–P8.4 built, committed `9d2925e`) | **DONE (infra)**; off-box ladder S1→R6 **DEFERRED** until real users |
-| **Academic reconciliation (§13 / ADR 0015)** | **IN PROGRESS** (this checkpoint) |
-| **P9 Attendance** | **BLOCKED / HELD** (gate not cleared) |
+| **Academic reconciliation (§13 / ADR 0015)** | **DECISIONS COMPLETE**; seed not yet applied (= the first implementation step) |
+| **P9 Attendance** | **HELD** (governance decisions all made; waits on the §13 seed-application step + P9 build) |
 | P10 Notifications translators · P11 Horizontal scale · P12 Policy-gated Live features | future (P11 needs P8 evidence) |
 
 ---
@@ -67,7 +67,7 @@ order 1–7 is **display only**, not a study sequence):
 | 4 | **تجويد الحروف** | **`dep-tajweed-letters`** | **NEW**; owner-approved code |
 | 5 | التجويد المتوسط | `dep-tajweed-2` | |
 | 6 | التجويد المتقدم | `dep-tajweed-3` | |
-| 7 | دورة التهجي وإعداد المعلمات | — | **DEFERRED** (see Tahajji) |
+| 7 | دورة التهجي وإعداد المعلمات | `dep-tahajji` (proposed) | uniform model; see Tahajji |
 
 Other owner rulings: every core section has **≥ 10 halaqat** (10 = initial minimum, not a limit, not a
 "basic" class); **no Basic/Additional classification** (all halaqat equal); **"need" not used**;
@@ -78,22 +78,20 @@ historical identity preserved**; deletion must be historically safe. Academic pr
 «نظام الضخ بين الأقسام» are **institutional concepts only** — **do not** invent promotion criteria,
 mastery thresholds, assessment formulas or mandatory sequences.
 
-### Tahajji / City of Tahajji — DEFERRED
-- دورة التهجي وإعداد المعلمات is core section #7; مدينة التهجي appears as a specialized branch/structure.
-- The **"40 groups" figure is historical/source information only** — not a system limit, not a required
-  seeded count, not necessarily the current active count.
-- The **owner** determines the actual number of groups and manages them (add/delete/edit/rename);
-  **groups are NOT seeded now** (creation deferred).
-- The **relationship** between دورة التهجي وإعداد المعلمات and مدينة التهجي (operational structure inside
-  §7, an independent branch, or another relationship) is **intentionally deferred** — do not hard-code.
-- What a "group" means vs **chat / LiveKit room / educational grouping** is **deferred**; these groups
-  are **not** equated with the existing Community / Messaging / Live concepts. (Community membership ≠ a
-  temporary LiveKit session; the Live architecture stays separate.)
+### Tahajji / City of Tahajji — RESOLVED (uniform model)
+- دورة التهجي / مدينة التهجي use the **same academic model `Section → Program → Halaqa`** — no special
+  entity, no hard-coded count, no fixed 40. A Tahajji "group" is an **academic halaqa** under this model
+  (not a chat / LiveKit / Community construct).
+- دورة التهجي وإعداد المعلمات = core section **#7** (proposed code `dep-tahajji`, reversible); its
+  programs/halaqat are **dynamic, owner-managed**; **nothing seeded now** beyond the reconciliation.
+- The existing `sec-spelling` (قسم التهجي) is left as **dynamic owner data** (not asserted to be the
+  same section as #7). The separate voice/LiveKit-mapping question stays deferred; the Live architecture
+  stays separate.
 
-### Non-core sections — UNRESOLVED (documented)
-`sec-kids` (البراعم), `sec-languages` (اللغات), `accompanying` (البرامج المرافقة, incl. مدينة الحفاظ):
-the owner addressed only the seven core sections; there is no "core" flag in the domain, so their fate
-(kept, reclassified, retired) is **open** and must not be guessed.
+### Non-core sections — RESOLVED (dynamic owner data)
+`sec-kids` (البراعم), `sec-languages` (اللغات), `accompanying` (البرامج المرافقة, incl. مدينة الحفاظ) are
+**dynamic, owner-managed data — not architectural decisions** (owner, 2026-10-05). They are **kept**; no
+"core" flag; the owner manages them at runtime. Not a question to re-open.
 
 ---
 
@@ -124,26 +122,27 @@ P10 / Q67** (ADR 0020 decision 9 "no notification" stands for P9); **Q8** → am
 future attendance record, not the immutable snapshot; **Q12** → every live session + every exam, actual
 date/time, no calendar prerequisite.
 
-**Gate (attendance.md §23) still not cleared.** Q40 answered (ADR 0016); Q8/Q12/Q69 answered & recorded
-(ADR 0023). **Remaining blockers:**
-1. **§13 / ADR 0015 not fully landed** — the reviewed academic structure is **not applied to the seed**
-   (deferred: **Tahajji §7 representation**, **fate of non-core sections**; owner wants nothing seeded
-   yet). So the §13 "before any new module" step is not complete and the reconciliation hold is not
-   lifted. **This is the P9 blocker.**
-2. **Reviewer acceptance** of the final combined attendance-scoping design (Q69a: `ACADEMIC_RELATIONSHIPS`
-   + community standing) — a P9 design-review step.
+**Gate (attendance.md §23): all governance decisions now MADE.** Q40 answered (ADR 0016); Q8/Q12/Q69
+answered & recorded (ADR 0023); Q35/Q36 + Tahajji + non-core + uniform model all decided (ADR 0015).
+**What remains is implementation, not a decision:**
+1. **Apply the §13 academic-structure reconciliation to the seed + tests** (ADR 0015) — the first
+   implementation step (below). Until it lands and is verified, the §13 "before any new module" step is
+   not complete, so P9 stays HELD. **Never run the seed against production/shared DB.**
+2. **Reviewer acceptance** of the combined attendance-scoping design (Q69a: `ACADEMIC_RELATIONSHIPS` +
+   community standing) — a P9 design-review step.
 
-Progress: Q35/Q36 answered; تجويد الحروف = `dep-tajweed-letters`; Level retired; Q8/Q12/Q69a/Q69b
-answered **and recorded in ADR 0023**. **Do not implement Attendance** until blocker 1 clears. P9's
-authorization must later combine `ACADEMIC_RELATIONSHIPS` + `COMMUNITY_AUTHORIZATION` without exercising
-unscoped `attendance.*` grants (ADR 0023, decision 1 — design task, not done).
+Progress: Q35/Q36, تجويد الحروف=`dep-tajweed-letters`, Level retired, Q8/Q12/Q69 (ADR 0023), Tahajji §7
+uniform (`dep-tahajji`), non-core = dynamic owner data. **Do not implement Attendance** until step 1
+lands. P9's authorization must later combine `ACADEMIC_RELATIONSHIPS` + `COMMUNITY_AUTHORIZATION` without
+exercising unscoped `attendance.*` grants (ADR 0023, decision 1 — design task, not done).
 
-## Academic Reconciliation status: IN PROGRESS (NOT complete)
-- **Resolved:** Q35/Q36 recorded (ADR 0015); تجويد الحروف = `dep-tajweed-letters`; Level retired
-  (hierarchy stays Section→Program→Halaqa).
-- **Deferred:** Tahajji §7 / City-of-Tahajji relationship; non-core sections fate; applying the reviewed
-  structure to the seed + pinned tests (owner wants nothing seeded yet).
-- Do **not** claim reconciliation complete until the seed is reconciled and verified.
+## Academic Reconciliation status: DECISIONS COMPLETE (not yet landed in the seed)
+- **All decisions made:** Q35/Q36 (ADR 0015); تجويد الحروف=`dep-tajweed-letters`; Level retired
+  (Section→Program→Halaqa); Tahajji §7 uniform (`dep-tahajji`); non-core = dynamic owner data; one
+  uniform model, dynamic & owner-managed, no hard-coded counts.
+- **Remaining = implementation:** apply the structure to `institution-structure.json` + the seed parent
+  check + the pinned tests (backend + Flutter), verified on an isolated/in-memory DB only.
+- Do **not** claim reconciliation complete until that applied change lands and is verified.
 
 ## P8 capacity status: DEFERRED
 Off-box ladder (S1/S2/R1…R6) deferred until real users enter the app. Targets (**not proven**):
@@ -153,21 +152,23 @@ explicitly requested. (`docs/p8/*`, `docs/p8-load-capacity-plan.md`.)
 ---
 
 ## Deferred / open questions (do not guess)
-- Tahajji §7 ↔ مدينة التهجي relationship; actual Tahajji group count/creation.
-- Fate of non-core sections (البراعم / اللغات / accompanying).
-- "Group" semantics vs chat / LiveKit / educational grouping.
+- Voice/LiveKit mapping of educational groups (separate from the academic model).
 - Mastery / promotion / assessment / «نظام الضخ» operational rules.
 - Reviewer acceptance of the combined attendance-scoping design (Q69a, ADR 0023).
-- Applying the academic structure to the seed (renames, literacy 5→10, new section) + pinned tests.
 - Attendance "Collect Attendance" notifications → P10 / Q67 (deferred, ADR 0023).
+- Concrete per-section/per-halaqa seed content beyond the firmly-decided renames/new sections — these
+  are **dynamic owner data** managed at runtime, not architectural questions (do not re-open).
 
-## NEXT (exact step)
-Attendance policy is recorded (ADR 0023). The **one remaining governance blocker** for P9 is the
-academic reconciliation (§13 / ADR 0015): the owner must decide the **Tahajji §7 representation** and
-the **fate of the non-core sections**, so ADR 0015's structure can be applied to the seed and the §13
-"before any new module" step completes. Those two are **owner-deferred**, so the next action is to put
-exactly those two questions to the owner (do not guess, do not seed). Only after §13 / ADR 0015 fully
-lands — plus reviewer acceptance of the Q69a combined scoping — does P9 leave HELD. No implementation,
-no seed run, before then.
+## NEXT (exact step) — the first allowed implementation step
+All academic + attendance **governance decisions are made and recorded**. The first allowed
+implementation step is the **§13 academic-structure seed reconciliation** (ADR 0015), scoped to:
+(1) rename the five core sections (codes kept) + set محو الأمية to 10; (2) add `dep-tajweed-letters`
+(تجويد الحروف, #4) and `dep-tahajji` (دورة التهجي, #7) under the uniform `Section → Program → Halaqa`
+model; (3) make halaqa codes explicit per entry; (4) add the seed parent check and provenance marking;
+(5) update the pinned tests (`seed.spec.ts`, `structure.spec.ts`,
+`app/test/academic/profile_structure_test.dart`). **Verified on an isolated/in-memory DB only — never
+run the seed against a production/shared DB.** Non-core sections are left as-is (dynamic owner data).
+After this lands and is verified, and with reviewer acceptance of the Q69a scoping, P9 Attendance can
+begin (its own module, per ADR 0020 + ADR 0023; notifications remain a later P10/Q67 item).
 
 > Reminder: everything in this checkpoint is a current, reversible decision.
