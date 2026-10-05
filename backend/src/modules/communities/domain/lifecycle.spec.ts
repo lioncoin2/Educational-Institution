@@ -53,6 +53,9 @@ describe('the lifecycle (PROVISIONAL, Q46)', () => {
       'community.live.moderate': 'TTT',
       'community.live.host': 'TTT',
       'community.live.remain': 'TTT',
+      // Gate `always`: the community lifecycle never blocks attendance acts (§11.1).
+      'community.attendance.record': 'TTT',
+      'community.attendance.view': 'TTT',
     });
   });
 

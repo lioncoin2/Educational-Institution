@@ -123,6 +123,15 @@ export const ACT_RULES: Readonly<Record<CommunityAct, ActRule>> = Object.freeze(
     [communities.read, live.raiseHand],
     null,
   ),
+  // Attendance (P9 prerequisite, 2026-10-05): the two acts Attendance asks of
+  // Communities (attendance.md §11.1/§11.3). Delegable capabilities the owner
+  // holds and may grant; the single delegable-capability ceiling
+  // `communities.moderate` (ADR 0017), and NEVER any `attendance.*` permission
+  // (attendance.md §11.2). No oversight until Q43 says otherwise. The community
+  // lifecycle never gates them — attendance applies no lock rule of its own
+  // (§11.1) — so the gate is `always`. PROVISIONAL (Q69, Q44).
+  'community.attendance.record': rule('community.attendance.record', [communities.moderate], null),
+  'community.attendance.view': rule('community.attendance.view', [communities.moderate], null),
 });
 
 /**

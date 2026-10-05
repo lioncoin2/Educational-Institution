@@ -902,7 +902,7 @@ Owned by Communities, closed, in `communities/contracts/capabilities.ts`:
 | `community.live.join` | participation | — | Live |
 | `community.live.remain` | derived (P6): the ceiling and basis of `community.live.join`, gated by `runningLiveContinues` | — | Live (reconciler, through `permittedAmong`) |
 | `community.live.raise_hand` | participation | — | Live |
-| `community.attendance.record`, `community.attendance.view` | **reserved**; added in P9 by a CHECK migration | `group.attendance.*` | Attendance ([attendance.md](attendance.md)) |
+| `community.attendance.record`, `community.attendance.view` | capability; **active since 2026-10-05** (the P9 Attendance prerequisite — CHECK migration `0014_community_attendance_acts`) | `group.attendance.*` | Attendance ([attendance.md](attendance.md)) |
 | `community.messages.moderate` | **reserved** until Q51/Q23 | `group.messages.moderate` | — |
 
 Participation acts are satisfied only by ACTIVE membership, never by a grant.
@@ -941,8 +941,16 @@ required.
 | `live.join` | `communities.read` + `live.join` | as a member | none | yes |
 | `live.remain` (P6) | as `live.join` | as a member | none | while `runningLiveContinues` |
 | `live.raise_hand` | `communities.read` + `live.raise_hand` | as a member | none | yes |
+| `attendance.record` | `communities.moderate` | yes | none | yes |
+| `attendance.view` | `communities.moderate` | yes | none | yes |
 
-(`community.` prefixes omitted.) Decided by
+(`community.` prefixes omitted.) The two `attendance.*` rows landed on
+2026-10-05 as the P9 Attendance prerequisite: a delegable capability each, on
+the single delegable-capability ceiling `communities.moderate` (**no
+`attendance.*` permission** — attendance.md §11.1/§11.2), no oversight until
+[Q43](open-questions.md#q43--institutional-oversight-of-communities), and the
+lifecycle never gates them (attendance applies no lock rule of its own,
+attendance.md §11.1). Decided by
 [Q43](open-questions.md#q43--institutional-oversight-of-communities) (oversight
 reach), [Q44](open-questions.md#q44--who-may-hold-delegated-capabilities)
 (ceilings), [Q46](open-questions.md#q46--what-does-locked-mean-and-who-may-lock)

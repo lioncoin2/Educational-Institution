@@ -540,6 +540,16 @@ The load test measures how often each happens.
 
 ### 11.1 The two acts
 
+> **Update (2026-10-05, P9 prerequisite LANDED):** the two acts are now active
+> in Communities' vocabulary — in `COMMUNITY_CAPABILITIES`, with their
+> act-rules and ceilings ([communities.md §6.3/§6.4](communities.md#63-the-act-vocabulary))
+> and the CHECK migration `drizzle/0014_community_attendance_acts.sql`. Each is
+> a delegable capability on the `communities.moderate` ceiling, with **no
+> `attendance.*` permission** ([§11.2](#112-institutional-oversight-without-attendanceread)),
+> no oversight until Q43, and no lifecycle gate. `AttendanceAccess`
+> ([§11.3](#113-attendanceaccess-how-refusals-map)) is the next P9 step and is
+> not yet built. The paragraph below describes the earlier "reserved" state.
+
 Recording and viewing are **community acts**, asked of Communities for the one
 community concerned. `community.attendance.record` and
 `community.attendance.view` are reserved in Communities' `capabilities.ts`

@@ -20,9 +20,12 @@ export const COMMUNITY_RESOURCE = 'communities.community';
  * Capabilities: the acts an owner holds implicitly (within their ceilings)
  * and may delegate to a member, one grant per capability.
  *
- * Reserved, and added only with the migration that allows them:
- * `community.attendance.record` and `community.attendance.view` (P9, held),
- * `community.messages.moderate` (Q51/Q23).
+ * `community.attendance.record` and `community.attendance.view` became active
+ * on 2026-10-05 (the P9 Attendance prerequisite): the CHECK migration that
+ * allows them as grants is `drizzle/0014_community_attendance_acts.sql`, their
+ * rules are in `domain/act-rules.ts`, and Attendance consumes them through
+ * `COMMUNITY_AUTHORIZATION` (attendance.md §11). Still reserved until its own
+ * question is answered: `community.messages.moderate` (Q51/Q23).
  */
 export const COMMUNITY_CAPABILITIES = [
   'community.members.view',
@@ -32,6 +35,8 @@ export const COMMUNITY_CAPABILITIES = [
   'community.chat.post',
   'community.live.start',
   'community.live.moderate',
+  'community.attendance.record',
+  'community.attendance.view',
 ] as const;
 
 export type CommunityCapability = (typeof COMMUNITY_CAPABILITIES)[number];

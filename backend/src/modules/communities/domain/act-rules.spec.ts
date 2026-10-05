@@ -133,6 +133,18 @@ describe('the act rules (PROVISIONAL)', () => {
         owner: false,
         gate: 'liveJoinOpen',
       },
+      'community.attendance.record': {
+        standing: 'communities.moderate',
+        oversight: null,
+        owner: true,
+        gate: 'always',
+      },
+      'community.attendance.view': {
+        standing: 'communities.moderate',
+        oversight: null,
+        owner: true,
+        gate: 'always',
+      },
     });
   });
 
@@ -232,6 +244,8 @@ describe('the act vocabulary', () => {
       'community.chat.post',
       'community.live.start',
       'community.live.moderate',
+      'community.attendance.record',
+      'community.attendance.view',
     ]);
     expect(COMMUNITY_PARTICIPATION).toEqual([
       'community.view',
@@ -263,14 +277,17 @@ describe('the act vocabulary', () => {
     expect(isCommunityOperation(TRANSFER_OWNERSHIP.name)).toBe(true);
   });
 
-  it('keeps the reserved names out until the migration that allows them', () => {
-    for (const reserved of [
-      'community.attendance.record',
-      'community.attendance.view',
-      'community.messages.moderate',
-    ]) {
+  it('keeps the still-reserved names out until the migration that allows them', () => {
+    // Reserved until Q51/Q23 — not yet in the vocabulary.
+    for (const reserved of ['community.messages.moderate']) {
       expect(isCommunityAct(reserved)).toBe(false);
       expect(isCommunityCapability(reserved)).toBe(false);
+    }
+    // The attendance acts moved from reserved to active on 2026-10-05 (the P9
+    // Attendance prerequisite): they are now delegable capabilities and acts.
+    for (const act of ['community.attendance.record', 'community.attendance.view']) {
+      expect(isCommunityCapability(act)).toBe(true);
+      expect(isCommunityAct(act)).toBe(true);
     }
   });
 });

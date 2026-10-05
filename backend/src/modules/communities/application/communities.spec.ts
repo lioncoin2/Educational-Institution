@@ -57,6 +57,8 @@ describe('creating a community', () => {
           'community.chat.post',
           'community.live.start',
           'community.live.moderate',
+          'community.attendance.record',
+          'community.attendance.view',
         ],
         participation: [
           'community.view',
@@ -238,6 +240,9 @@ describe('locking and unlocking', () => {
       'community.members.remove',
       'community.lock',
       'community.live.moderate',
+      // Attendance acts are gated `always`, so a lock never removes them (§11.1).
+      'community.attendance.record',
+      'community.attendance.view',
     ]);
     h.person('student-1', ['STUDENT']);
     expect(

@@ -41,7 +41,7 @@ directly, not throwaway versions.
 | P7b Flutter media binding (`livekit_client`) | **DEFERRED** (needs devices/CI + ADR) |
 | P8 Load/capacity harness (P8.0–P8.4 built, committed `9d2925e`) | **DONE (infra)**; off-box ladder S1→R6 **DEFERRED** until real users |
 | **Academic reconciliation (§13 / ADR 0015)** | **LANDED** on the operational seed + tests (Option A, 2026-10-05); printed profile untouched; verified in-memory only |
-| **P9 Attendance** | **HELD** (governance decisions all made; §13 seed-application step DONE; waits on reviewer acceptance of the Q69a scoping + P9 build) |
+| **P9 Attendance** | **IN PROGRESS** (owner lifted the hold 2026-10-05, Option B; Communities attendance-act enablement LANDED; `AttendanceAccess` is the next build step, not yet done) |
 | P10 Notifications translators · P11 Horizontal scale · P12 Policy-gated Live features | future (P11 needs P8 evidence) |
 
 ---
@@ -127,14 +127,27 @@ date/time, no calendar prerequisite.
 answered & recorded (ADR 0023); Q35/Q36 + Tahajji + non-core + uniform model all decided (ADR 0015).
 1. ✅ **§13 academic-structure reconciliation applied to the seed + tests** (ADR 0015, Option A,
    2026-10-05) — DONE and verified in-memory; the §13 "before any new module" step is complete.
-2. ⏳ **Reviewer acceptance** of the combined attendance-scoping design (Q69a: `ACADEMIC_RELATIONSHIPS` +
-   community standing) — a P9 design-review step; **this is the remaining blocker before P9.**
+2. ✅ **Owner lifted the attendance hold and started P9** (2026-10-05), choosing **Option B** for the
+   Q69a composition: the academic relationship is an *additional* layer, **conditional on an
+   established academic↔community link**; while no such link exists (Q50 OPEN, untouched) community
+   standing governs and its absence never fails authorization. (The formal ADR 0023 Option-B write-up
+   is a deferred, not-yet-done step.)
+
+### P9 implementation — in progress
+**Landed (prerequisite, 2026-10-05):** the two Communities attendance acts
+`community.attendance.record` / `community.attendance.view` are now **active** — in
+`COMMUNITY_CAPABILITIES`, with act-rules/ceilings (`communities.moderate`, **no `attendance.*`**,
+gate `always`, no oversight) and the CHECK migration `drizzle/0014_community_attendance_acts.sql`, so
+`COMMUNITY_AUTHORIZATION` can be asked for them. Verified on an isolated throwaway Postgres only — no
+production/shared DB seeded or migrated.
+**Not yet built:** `AttendanceAccess` (attendance.md §11.3, the next step), the ADR 0023 Option-B
+write-up, and the rest of the attendance module (snapshots, routes, Flutter). P9's authorization must
+combine `ACADEMIC_RELATIONSHIPS` + `COMMUNITY_AUTHORIZATION` without exercising unscoped `attendance.*`
+grants (ADR 0023, decision 1 — design task, not done).
 
 Progress: Q35/Q36, تجويد الحروف=`dep-tajweed-letters`, Level retired, Q8/Q12/Q69 (ADR 0023), Tahajji §7
-uniform (`dep-tahajji`), non-core = dynamic owner data, seed reconciliation LANDED. **Do not implement
-Attendance** until the Q69a scoping design is accepted. P9's authorization must combine
-`ACADEMIC_RELATIONSHIPS` + `COMMUNITY_AUTHORIZATION` without exercising unscoped `attendance.*` grants
-(ADR 0023, decision 1 — design task, not done).
+uniform (`dep-tahajji`), non-core = dynamic owner data, seed reconciliation LANDED, Communities
+attendance-act enablement LANDED.
 
 ## Academic Reconciliation status: LANDED (operational seed + tests, Option A)
 - **All decisions made:** Q35/Q36 (ADR 0015); تجويد الحروف=`dep-tajweed-letters`; Level retired

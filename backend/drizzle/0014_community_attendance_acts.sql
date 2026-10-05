@@ -1,0 +1,2 @@
+ALTER TABLE "communities_capability_grants" DROP CONSTRAINT "communities_capability_grants_capability_valid";--> statement-breakpoint
+ALTER TABLE "communities_capability_grants" ADD CONSTRAINT "communities_capability_grants_capability_valid" CHECK ("communities_capability_grants"."capability" in ('community.members.view', 'community.members.invite', 'community.members.remove', 'community.lock', 'community.chat.post', 'community.live.start', 'community.live.moderate', 'community.attendance.record', 'community.attendance.view'));

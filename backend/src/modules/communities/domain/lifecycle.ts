@@ -80,6 +80,11 @@ export const GATE_OF_ACT: Readonly<Record<CommunityAct, LifecycleGate>> = Object
   // new joins, but ejects nobody already in a running session — never eject
   // on ignorance.
   'community.live.remain': 'runningLiveContinues',
+  // Attendance applies no lock rule of its own (attendance.md §11.1): the
+  // community lifecycle never gates recording or viewing. Whether a session is
+  // live is Live's and attendance's concern, not the lock's.
+  'community.attendance.record': 'always',
+  'community.attendance.view': 'always',
 });
 
 export function permitsGate(status: string, gate: LifecycleGate): boolean {

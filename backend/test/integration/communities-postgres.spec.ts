@@ -296,7 +296,9 @@ describeWithPostgres('Communities in Postgres', () => {
             'communities_capability_grants_not_self',
           ],
           [
-            row(`'community.attendance.record', 'admin-1', now(), null, null, null`),
+            // Still-reserved (Q51/Q23): rejected by the capability CHECK. The
+            // attendance capabilities are now allowed (migration 0014).
+            row(`'community.messages.moderate', 'admin-1', now(), null, null, null`),
             'communities_capability_grants_capability_valid',
           ],
           [
