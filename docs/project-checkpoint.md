@@ -4,9 +4,10 @@
 the authoritative docs it links) and continue without reconstructing history from chat logs.
 
 - **Branch:** `claude/quranic-education-app-prototype-gkzle8`
-- **HEAD at this checkpoint:** `9d2925e691bd34a88661200b1b1fad3c9cd71200` ("P8.4 Phase 1: finalize
-  off-box capacity harness"). This checkpoint commit adds documentation only, on top of that.
-- **Date:** 2026-10-05
+- **HEAD:** the latest `docs:` checkpoint commit on this branch (see `git log`); last code commit is
+  `9d2925e` ("P8.4 Phase 1: finalize off-box capacity harness"). All checkpoint commits are
+  documentation only.
+- **Date:** 2026-10-05 (updated with ADR 0023 — attendance policy recorded)
 - **Current focus:** Academic Reconciliation / **P9 Attendance governance** (not implementation).
 - **Every decision below is CURRENT and REVERSIBLE** — a current institutional decision, not a
   permanent architectural lock. Future requirements may change it.
@@ -116,15 +117,26 @@ Owner policy answers are **recorded** (in `open-questions.md`; enforcement is P9
   action during a broadcast creates the snapshot and notifies teacher/owner/granted; **no student or
   parent self-view**.
 
-**Gate (attendance.md §23) still not cleared.** Q40 is answered (ADR 0016). Remaining blockers:
-1. §13 / ADR 0015 is **not fully landed** — the reviewed structure is **not applied to the seed**
-   (deferred: Tahajji §7, non-core sections; and the owner wants nothing seeded yet). The §13 "before
-   any new module" step therefore is not complete and the reconciliation hold is not lifted.
-2. Q8 / Q12 / Q69a / Q69b are answered but **not yet recorded in ADR 0020** (the §23 recording step),
-   and reviewer acceptance of the Q69a scoping approach is pending.
+Attendance policy is now **recorded in [ADR 0023](architecture/decisions/0023-attendance-authorization-and-policy.md)**
+(2026-10-05): **Q69a** → authorization uses **both `ACADEMIC_RELATIONSHIPS` and community standing**
+(supersedes ADR 0020 decision 8); **Q69b** → the "Collect Attendance" **notifications are deferred to
+P10 / Q67** (ADR 0020 decision 9 "no notification" stands for P9); **Q8** → amendment applies to the
+future attendance record, not the immutable snapshot; **Q12** → every live session + every exam, actual
+date/time, no calendar prerequisite.
 
-Progress since the first P9 audit: Q35/Q36 answered; تجويد الحروف code decided; Level retired; Q8, Q12,
-Q69a, Q69b answered. **Do not implement Attendance** until the gate clears.
+**Gate (attendance.md §23) still not cleared.** Q40 answered (ADR 0016); Q8/Q12/Q69 answered & recorded
+(ADR 0023). **Remaining blockers:**
+1. **§13 / ADR 0015 not fully landed** — the reviewed academic structure is **not applied to the seed**
+   (deferred: **Tahajji §7 representation**, **fate of non-core sections**; owner wants nothing seeded
+   yet). So the §13 "before any new module" step is not complete and the reconciliation hold is not
+   lifted. **This is the P9 blocker.**
+2. **Reviewer acceptance** of the final combined attendance-scoping design (Q69a: `ACADEMIC_RELATIONSHIPS`
+   + community standing) — a P9 design-review step.
+
+Progress: Q35/Q36 answered; تجويد الحروف = `dep-tajweed-letters`; Level retired; Q8/Q12/Q69a/Q69b
+answered **and recorded in ADR 0023**. **Do not implement Attendance** until blocker 1 clears. P9's
+authorization must later combine `ACADEMIC_RELATIONSHIPS` + `COMMUNITY_AUTHORIZATION` without exercising
+unscoped `attendance.*` grants (ADR 0023, decision 1 — design task, not done).
 
 ## Academic Reconciliation status: IN PROGRESS (NOT complete)
 - **Resolved:** Q35/Q36 recorded (ADR 0015); تجويد الحروف = `dep-tajweed-letters`; Level retired
@@ -145,14 +157,17 @@ explicitly requested. (`docs/p8/*`, `docs/p8-load-capacity-plan.md`.)
 - Fate of non-core sections (البراعم / اللغات / accompanying).
 - "Group" semantics vs chat / LiveKit / educational grouping.
 - Mastery / promotion / assessment / «نظام الضخ» operational rules.
-- Recording Q8/Q12/Q69 in ADR 0020; reviewer acceptance of Q69a scoping.
+- Reviewer acceptance of the combined attendance-scoping design (Q69a, ADR 0023).
 - Applying the academic structure to the seed (renames, literacy 5→10, new section) + pinned tests.
+- Attendance "Collect Attendance" notifications → P10 / Q67 (deferred, ADR 0023).
 
 ## NEXT (exact step)
-The next governance step toward unblocking P9 is to **record the attendance answers (Q8, Q12, Q69a,
-Q69b) in ADR 0020** and obtain reviewer acceptance of the Q69a scoping, **then** decide the two
-deferred academic items (Tahajji §7 representation; non-core sections) so ADR 0015's structure can be
-applied to the seed. Only after §13 / ADR 0015 fully lands does P9 leave HELD. No implementation, no
-seed run, until the owner resolves the deferred items.
+Attendance policy is recorded (ADR 0023). The **one remaining governance blocker** for P9 is the
+academic reconciliation (§13 / ADR 0015): the owner must decide the **Tahajji §7 representation** and
+the **fate of the non-core sections**, so ADR 0015's structure can be applied to the seed and the §13
+"before any new module" step completes. Those two are **owner-deferred**, so the next action is to put
+exactly those two questions to the owner (do not guess, do not seed). Only after §13 / ADR 0015 fully
+lands — plus reviewer acceptance of the Q69a combined scoping — does P9 leave HELD. No implementation,
+no seed run, before then.
 
 > Reminder: everything in this checkpoint is a current, reversible decision.

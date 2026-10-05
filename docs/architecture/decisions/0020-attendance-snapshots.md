@@ -2,7 +2,7 @@
 
 **State: ACCEPTED as designed (2026-09-23) — implementation HELD until the institution answers the attendance policy questions, especially [Q68](../open-questions.md#q68--what-counts-as-present-in-a-snapshot) and [Q69](../open-questions.md#q69--who-records-and-who-views-snapshots). Nothing here exists.**
 
-**Status:** Accepted
+**Status:** Accepted; **superseded in part by [0023](0023-attendance-authorization-and-policy.md)** (decision 8, authorization scope — 2026-10-05). The rest stands.
 **Accepted:** 2026-09-23, by the user, as designed. Implementation stays HELD until the attendance policy questions are answered (the user's ruling on Q40, recorded in [0016](0016-communities-module.md)).
 **Date:** 2026-09-23
 **Implementation:** HELD (decision 11)
@@ -112,7 +112,15 @@ Everything below is proposed. None of it exists today.
    until [Q3] is answered; there is no per-person index and no erasure path.
 
 8. **Authorization through community standing, never through
-   `attendance.*`.** Routes are `@Authenticated()`. The use case asks
+   `attendance.*`.**
+   > **Superseded in part by [0023](0023-attendance-authorization-and-policy.md) (2026-10-05):** the
+   > owner ruled that attendance authorization uses **both** the academic relationship
+   > (`ACADEMIC_RELATIONSHIPS`) **and** community standing — not community standing *instead of*
+   > `ACADEMIC_RELATIONSHIPS`. The "never through `attendance.*`" principle stands (scope through
+   > `ACADEMIC_RELATIONSHIPS`, not role-wide grants). The combined check is a P9 design task. The rest
+   > of this decision stands.
+
+   Routes are `@Authenticated()`. The use case asks
    `COMMUNITY_AUTHORIZATION` for `community.attendance.record` or
    `community.attendance.view`, acts reserved in
    [0017](0017-community-scoped-authorization.md) and added in P9 by a CHECK

@@ -214,7 +214,7 @@ allowed amendment time window, are set by the **owner** (the owner may grant tha
 amendment must carry **`reason` and `amendedBy`** (already required by `AttendanceAmendment` in
 operations' contract). Applies to the student attendance record; no separate teacher-attendance system
 is implied. **Enforcement is P9** (permissions + a time-bound policy rule) — not implemented; still to
-be recorded in [ADR 0020](decisions/0020-attendance-snapshots.md) as a P9-entry step.
+recorded in [ADR 0023](decisions/0023-attendance-authorization-and-policy.md) (it applies to the future attendance record, not the immutable snapshot).
 
 **Question.** Attendance is the record most likely to be quietly edited after
 the fact. Who may amend it, how long after the session, and must they give a
@@ -305,8 +305,8 @@ why it is on it.
 to **every live broadcast session and every exam**, and records the **actual date/time** of the event.
 Academic term/calendar definitions are **not** a prerequisite for recording the event, and no
 term/calendar rules are invented here. The broader recurrence/term model remains future work
-(`operations`). Enforcement is P9; to be recorded in
-[ADR 0020](decisions/0020-attendance-snapshots.md) as a P9-entry step.
+(`operations`). Enforcement is P9; recorded in
+[ADR 0023](decisions/0023-attendance-authorization-and-policy.md).
 
 **Question.** Is the institution single-timezone? Are sessions scheduled in
 local time or UTC? What defines a term, and does attendance roll up by term?
@@ -2412,6 +2412,11 @@ that line widens, and messaging's relay checks `messaging.read` per frame
 
 ## Q67 — Notifications for community, live and attendance facts
 
+**Note (2026-10-05, owner Q69b; [ADR 0023](decisions/0023-attendance-authorization-and-policy.md)).**
+The owner wants an attendance "Collect Attendance" action to **notify the teacher, the owner and
+granted people** after a snapshot. This is a **recorded P10 / Q67 requirement**, explicitly **deferred**
+from P9: ADR 0020 decision 9 ("no notification; no subscriber is built") stands for P9. Reversible.
+
 **Question.** Which of the new facts deserve a notification, and how loudly:
 invited or added, removed, a live session started, a hand accepted, an
 attendance snapshot recorded? For snapshots, what does the owner receive:
@@ -2470,9 +2475,13 @@ A/B the source presented as exclusive. **Authority (Q69b):** the owner controls 
 and may grant **record** and **view** to teachers and to others as needed; during a live broadcast an
 authorized person's **"Collect Attendance"** action creates the session's snapshot and notifies the
 **teacher**, the **owner**, and anyone the owner explicitly granted the relevant attendance
-visibility; **no student/parent self-view** is authorized by this decision. Enforcement is P9 — not
-implemented; the acts' bases and the ADR-0020 recording (and reviewer acceptance of the scoping
-approach) remain the P9-entry step. The heading stays so links keep working.
+visibility; **no student/parent self-view** is authorized by this decision. **Resolved & recorded in
+[ADR 0023](decisions/0023-attendance-authorization-and-policy.md) (2026-10-05):** Q69a means
+authorization uses **both** `ACADEMIC_RELATIONSHIPS` **and** community standing — this **supersedes ADR
+0020 decision 8** (which scoped by community standing *instead of* `ACADEMIC_RELATIONSHIPS`); the
+combined check is a P9 design task. For Q69b, the **"Collect Attendance" notifications are deferred to
+P10 / Q67** — ADR 0020 decision 9 ("no notification") stands for P9. Enforcement is P9 — not
+implemented. The heading stays so links keep working.
 
 **Question.**
 
