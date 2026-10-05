@@ -209,6 +209,13 @@ context, the mechanism from Q1. No contract changes.
 
 ## Q8 — Who may amend attendance, and is a reason mandatory?
 
+**Answered (2026-10-05), by the owner (P9 governance pass).** Who may amend student attendance, and the
+allowed amendment time window, are set by the **owner** (the owner may grant that authority). Every
+amendment must carry **`reason` and `amendedBy`** (already required by `AttendanceAmendment` in
+operations' contract). Applies to the student attendance record; no separate teacher-attendance system
+is implied. **Enforcement is P9** (permissions + a time-bound policy rule) — not implemented; still to
+be recorded in [ADR 0020](decisions/0020-attendance-snapshots.md) as a P9-entry step.
+
 **Question.** Attendance is the record most likely to be quietly edited after
 the fact. Who may amend it, how long after the session, and must they give a
 reason?
@@ -293,6 +300,13 @@ why it is on it.
 ---
 
 ## Q12 — Timezone and academic calendar
+
+**Answered for attendance (2026-10-05), by the owner (P9 governance pass).** Student attendance applies
+to **every live broadcast session and every exam**, and records the **actual date/time** of the event.
+Academic term/calendar definitions are **not** a prerequisite for recording the event, and no
+term/calendar rules are invented here. The broader recurrence/term model remains future work
+(`operations`). Enforcement is P9; to be recorded in
+[ADR 0020](decisions/0020-attendance-snapshots.md) as a P9-entry step.
 
 **Question.** Is the institution single-timezone? Are sessions scheduled in
 local time or UTC? What defines a term, and does attendance roll up by term?
@@ -1011,6 +1025,12 @@ vocabulary value and a check-constraint migration.
 
 ## Q33 — How is each section organised inside, and what are its halaqat called?
 
+**Update (2026-10-05).** A `Section → Program → Level → Halaqa` model (a "Level" stage inside a program)
+was considered and then **rejected by the owner** as complexity without sufficient value. The
+inside-section organisation stays **Section → Program → Halaqa** (Program kept, no Level entity).
+Halaqa names and whether a section has tracks/cohorts remain owner-managed and otherwise open. Current
+and reversible.
+
 **Question.** The profile names five graded sections with their halaqat
 counts, but **no program inside any section**, and no halaqa by name. Is each
 section one program? Are there tracks, levels or cohorts inside it? What does
@@ -1083,6 +1103,21 @@ section, which the app then shows instead of the profile's text.
 
 ## Q35 — The seven core sections against the printed profile
 
+**Answered (2026-10-05), by the owner (P9 governance pass); recorded in
+[ADR 0015](decisions/0015-academic-structure-reconciliation.md).** The seven core section names are
+authoritative and are the **official** names (the printed «قسم …» names are not preserved). Mapping,
+codes kept: `dep-literacy`→محو الأمية, `dep-letters`→تلقين الحروف, `dep-tajweed-1`→المبتدئ (the same
+section, item 2), `dep-tajweed-2`→التجويد المتوسط, `dep-tajweed-3`→التجويد المتقدم; «تجويد الحروف» is a
+**new** section, **position 4, code `dep-tajweed-letters`** (owner-approved). Every core section has
+**≥ 10 halaqat** (10 = initial minimum, not a "basic" class; محو الأمية moves 5→10); **no**
+Basic/Additional classification; «need» unused; order 1–7 is display only; sections and halaqat are
+dynamic owner-managed data; deletion safe where history exists. The **«Level» concept is RETIRED** (the
+owner rejected a `Program → Level → Halaqa` model as complexity without value): the hierarchy stays
+**Section → Program → Halaqa**, Program kept — so item 9 is withdrawn, not deferred. **Still deferred
+(ADR 0015), so the seed is NOT yet changed:** دورة التهجي as core #7 vs the deferred Q36 answer, and
+the fate of the non-core sections. Every decision here is current and reversible. The heading stays so
+links keep working.
+
 **Question.** On 2026-09-23 the owner listed seven core academic sections
 ([owner-information.md](../owner-information.md), S1): محو الأمية، تلقين
 الحروف، المبتدئ، تجويد الحروف، التجويد المتوسط، التجويد المتقدم، دورة التهجي
@@ -1145,6 +1180,21 @@ new migration.
 ---
 
 ## Q36 — Tahajji: دورة التهجي وإعداد المعلمات، مدينة التهجي, and the 40 groups
+
+**Answered (2026-10-05), by the owner (P9 governance pass); recorded in
+[ADR 0015](decisions/0015-academic-structure-reconciliation.md).** The Tahajji / مدينة التهجي / groups
+operational structure is **dynamic and owner-managed, not hard-coded**; no additional institutional
+semantics beyond the owner's words are invented, and historical identifiers are preserved. The **"40
+groups" figure is historical/source information only** — not a system limit, not a required seeded
+count, not necessarily the current active count; the **owner** sets the actual number and
+adds/edits/deletes/renames/manages groups; **groups are not seeded now** (creation deferred). What a
+"group" means relative to chat / LiveKit / educational grouping is **deferred**, and these groups are
+**not** equated with the existing Community/Messaging/Live concepts unless the owner later decides.
+**Deferred (ADR 0015):** the owner lists دورة التهجي وإعداد المعلمات as core section #7 (Q35) while the
+current `sec-spelling` is `SPECIAL` (immutable kind), and the relationship between دورة التهجي وإعداد
+المعلمات and مدينة التهجي (inside section #7, an independent branch, or another relationship) is
+**intentionally deferred** — so its seed representation is not decided or applied here. All of this is
+current and reversible. The heading stays so links keep working.
 
 **Question.** The printed profile has «قسم التهجي» (page 7). It describes
 teaching reading from letters and harakat to correct recitation, with
@@ -2411,6 +2461,18 @@ snapshots keep theirs; no stored snapshot changes.
 ---
 
 ## Q69 — Who records and who views snapshots?
+
+**Answered (2026-10-05), by the owner (P9 governance pass).** **Scoping (Q69a):** use **both** the
+academic relationship **and** community standing/membership — complementary, not alternatives (the
+academic relationship is the academic eligibility boundary; community standing is the
+session-participation boundary; neither replaces the other). This is an explicit owner ruling on the
+A/B the source presented as exclusive. **Authority (Q69b):** the owner controls attendance permissions
+and may grant **record** and **view** to teachers and to others as needed; during a live broadcast an
+authorized person's **"Collect Attendance"** action creates the session's snapshot and notifies the
+**teacher**, the **owner**, and anyone the owner explicitly granted the relevant attendance
+visibility; **no student/parent self-view** is authorized by this decision. Enforcement is P9 — not
+implemented; the acts' bases and the ADR-0020 recording (and reviewer acceptance of the scoping
+approach) remain the P9-entry step. The heading stays so links keep working.
 
 **Question.**
 

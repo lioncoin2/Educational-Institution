@@ -36,7 +36,7 @@ recorded only in the ADR that makes them, as the package note below says.
 | [0012](0012-realtime-messaging-transport.md) | Realtime messaging: plain WebSocket, membership decided per event | Accepted |
 | [0013](0013-notifications-v1.md) | Notifications V1: a stored inbox, idempotent by the database, delivered by subscribers | Accepted |
 | [0014](0014-academic-core-v1.md) | Academic Core V1: academic owns the structure and who is in it | Accepted |
-| 0015 | *Reserved* for the academic structure change: the ADR superseding the parts of 0014 that the owner's answers change ([academic-reconciliation.md §13](../academic-reconciliation.md#13-minimal-recommended-changes-before-the-next-milestone)). Not yet written | — |
+| [0015](0015-academic-structure-reconciliation.md) | Academic structure reconciliation: records the owner's Q35/Q36 answers (hierarchy stays Section→Program→Halaqa — Level retired; «تجويد الحروف» = `dep-tajweed-letters`); supersedes in part 0014's names/count; seed application deferred (Tahajji §7 + non-core sections) | Accepted |
 | [0016](0016-communities-module.md) | Communities: a new module owns communities, membership, invitation links and lifecycle | Accepted |
 | [0017](0017-community-scoped-authorization.md) | Community-scoped authorization: identity ceilings AND community standing; delegated capabilities; host-only moderation retired | Accepted |
 | [0018](0018-community-chat-projection.md) | Community chat: messaging keeps a named, versioned projection of community membership | Accepted; superseded in part by [0022](0022-community-chat-delivery-check.md) |
