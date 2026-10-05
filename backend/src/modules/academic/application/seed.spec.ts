@@ -8,12 +8,13 @@ import {
   type AcademicHarness,
 } from '../../../../test/support/academic-harness';
 import { STRUCTURE_SEEDER } from './seed-structure.use-case';
-import { INSTITUTION_STRUCTURE } from './institution-structure';
+import { OPERATIONAL_STRUCTURE } from './operational-structure';
 
-const EXTRACT = readFileSync(
-  join(__dirname, '..', '..', '..', '..', '..', 'docs', 'pdf-content-extract.md'),
-  'utf8',
-);
+const docsDir = join(__dirname, '..', '..', '..', '..', '..', 'docs');
+/** The printed profile, page by page — the source for every `profile` entry. */
+const EXTRACT = readFileSync(join(docsDir, 'pdf-content-extract.md'), 'utf8');
+/** The owner's statements (S1) — the source for every `owner` entry (ADR 0015). */
+const OWNER = readFileSync(join(docsDir, 'owner-information.md'), 'utf8');
 
 /** The extract spaces "و" apart ("و الحركات"); compare on letters, not spacing. */
 function squeeze(text: string): string {
@@ -31,11 +32,11 @@ describe('seeding the institution structure', () => {
     return h.seed.execute({ principal: STRUCTURE_SEEDER, meta: META });
   }
 
-  it('creates the profile’s sections, programs and 45 halaqat — 5, 10, 10, 10, 10', async () => {
+  it('creates the operational structure — 11 sections, 11 programs and 70 halaqat (10 each core)', async () => {
     expect(expectOk(await seed())).toEqual({
-      sections: { created: 9, existing: 0 },
-      programs: { created: 9, existing: 0 },
-      halaqat: { created: 45, existing: 0 },
+      sections: { created: 11, existing: 0 },
+      programs: { created: 11, existing: 0 },
+      halaqat: { created: 70, existing: 0 },
     });
     const sections = await h.readModel.catalogue();
     const counts = Object.fromEntries(
@@ -45,11 +46,13 @@ describe('seeding the institution structure', () => {
       ]),
     );
     expect(counts).toEqual({
-      'dep-literacy-program': 5,
+      'dep-literacy-program': 10,
       'dep-letters-program': 10,
       'dep-tajweed-1-program': 10,
+      'dep-tajweed-letters-program': 10,
       'dep-tajweed-2-program': 10,
       'dep-tajweed-3-program': 10,
+      'dep-tahajji-program': 10,
       'prog-hifz-city': 0,
       'prog-nahw': 0,
       'prog-maqari': 0,
@@ -72,12 +75,12 @@ describe('seeding the institution structure', () => {
     expectOk(await seed());
     const audited = h.audit.entries.length;
     const announced = h.events.published.length;
-    expect(audited).toBe(63);
-    expect(announced).toBe(63);
+    expect(audited).toBe(92);
+    expect(announced).toBe(92);
     expect(expectOk(await seed())).toEqual({
-      sections: { created: 0, existing: 9 },
-      programs: { created: 0, existing: 9 },
-      halaqat: { created: 0, existing: 45 },
+      sections: { created: 0, existing: 11 },
+      programs: { created: 0, existing: 11 },
+      halaqat: { created: 0, existing: 70 },
     });
     expect(h.audit.entries).toHaveLength(audited);
     expect(h.events.published).toHaveLength(announced);
@@ -110,12 +113,12 @@ describe('seeding the institution structure', () => {
     expect((await h.repository.findHalaqa(halaqa.id))?.status).toBe('INACTIVE');
   });
 
-  it('audits what it creates as the system, from the institution profile', async () => {
+  it('audits what it creates as the system, marking each entry’s source', async () => {
     expectOk(await seed());
     expect(h.audit.entries[0]).toMatchObject({
       actorUserId: null,
       action: 'academic.section.created',
-      metadata: { code: 'dep-literacy', kind: 'PROGRESSIVE', source: 'institution-profile' },
+      metadata: { code: 'dep-literacy', kind: 'PROGRESSIVE', source: 'owner' },
     });
   });
 
@@ -126,39 +129,50 @@ describe('seeding the institution structure', () => {
     );
   });
 
-  it('names halaqat by number only — the profile gives counts, not names', async () => {
+  it('names halaqat by number only — the structure gives counts, not names', async () => {
     expectOk(await seed());
     expect((await h.halaqa('dep-tajweed-3-h10')).name).toBe('الحلقة 10');
   });
 
-  describe('its one source of facts', () => {
-    it('states nothing the institution profile does not: every name is in the page-by-page extract', () => {
+  describe('its sources of fact — split by provenance (ADR 0015)', () => {
+    it('invents no name: owner names are in owner-information.md, profile names in the extract', () => {
       const extract = squeeze(EXTRACT);
-      for (const section of INSTITUTION_STRUCTURE.sections) {
-        expect(extract).toContain(squeeze(section.name));
-        for (const program of section.programs) expect(extract).toContain(squeeze(program.name));
+      const owner = squeeze(OWNER);
+      for (const section of OPERATIONAL_STRUCTURE.sections) {
+        const where = section.provenance.source === 'owner' ? owner : extract;
+        expect(where).toContain(squeeze(section.name));
+        for (const program of section.programs) expect(where).toContain(squeeze(program.name));
       }
     });
 
-    it('takes each progressive section’s halaqat count from page 6', () => {
-      for (const section of INSTITUTION_STRUCTURE.sections.filter(
-        (s) => s.kind === 'PROGRESSIVE',
-      )) {
-        const [program] = section.programs;
-        expect(section.sourcePage).toBe(6);
-        expect(EXTRACT).toContain(`| ${section.name} | ${program?.halaqat} حلقات |`);
+    it('marks every section’s provenance: owner carries the ADR, profile carries its page', () => {
+      for (const section of OPERATIONAL_STRUCTURE.sections) {
+        if (section.provenance.source === 'owner') {
+          expect(section.provenance.ref).toBe('adr-0015');
+        } else {
+          expect(section.provenance.source).toBe('profile');
+          expect(typeof section.provenance.page).toBe('number');
+        }
       }
-      const total = INSTITUTION_STRUCTURE.sections
+    });
+
+    it('gives each of the seven owner-sourced core sections ten halaqat — 70 in all', () => {
+      const core = OPERATIONAL_STRUCTURE.sections.filter((s) => s.provenance.source === 'owner');
+      expect(core).toHaveLength(7);
+      for (const section of core) {
+        expect(section.programs.map((p) => p.halaqat)).toEqual([10]);
+      }
+      const total = OPERATIONAL_STRUCTURE.sections
         .flatMap((s) => s.programs)
         .reduce((sum, program) => sum + program.halaqat, 0);
-      expect(total).toBe(45);
+      expect(total).toBe(70);
     });
 
-    it('has five progressive sections, three special ones and the four accompanying programs', () => {
+    it('has seven progressive sections, three special ones and the four accompanying programs', () => {
       const byKind = (kind: string) =>
-        INSTITUTION_STRUCTURE.sections.filter((s) => s.kind === kind);
-      expect(byKind('PROGRESSIVE')).toHaveLength(5);
-      expect(byKind('SPECIAL').map((s) => [s.name, s.sourcePage])).toEqual([
+        OPERATIONAL_STRUCTURE.sections.filter((s) => s.kind === kind);
+      expect(byKind('PROGRESSIVE')).toHaveLength(7);
+      expect(byKind('SPECIAL').map((s) => [s.name, s.provenance.page])).toEqual([
         ['قسم التهجي', 7],
         ['قسم البراعم', 8],
         ['قسم اللغات', 9],
@@ -169,12 +183,12 @@ describe('seeding the institution structure', () => {
         'المقارئ',
         'المتون',
       ]);
-      // The special sections hold no programs or halaqat: the profile names none.
+      // The special sections hold no programs or halaqat: no source names any.
       expect(byKind('SPECIAL').every((s) => s.programs.length === 0)).toBe(true);
     });
 
-    it('names each progressive section’s own program after the section — no invented name', () => {
-      for (const section of INSTITUTION_STRUCTURE.sections.filter(
+    it('names each core section’s own program after the section — no invented name', () => {
+      for (const section of OPERATIONAL_STRUCTURE.sections.filter(
         (s) => s.kind === 'PROGRESSIVE',
       )) {
         expect(section.programs.map((p) => p.name)).toEqual([section.name]);

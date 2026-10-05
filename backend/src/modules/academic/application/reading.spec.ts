@@ -27,20 +27,24 @@ describe('reading academic data', () => {
         ['dep-literacy', 'PROGRESSIVE', 1],
         ['dep-letters', 'PROGRESSIVE', 2],
         ['dep-tajweed-1', 'PROGRESSIVE', 3],
-        ['dep-tajweed-2', 'PROGRESSIVE', 4],
-        ['dep-tajweed-3', 'PROGRESSIVE', 5],
-        ['sec-spelling', 'SPECIAL', 6],
-        ['sec-kids', 'SPECIAL', 7],
-        ['sec-languages', 'SPECIAL', 8],
-        ['accompanying', 'ACCOMPANYING', 9],
+        ['dep-tajweed-letters', 'PROGRESSIVE', 4],
+        ['dep-tajweed-2', 'PROGRESSIVE', 5],
+        ['dep-tajweed-3', 'PROGRESSIVE', 6],
+        ['dep-tahajji', 'PROGRESSIVE', 7],
+        ['sec-spelling', 'SPECIAL', 8],
+        ['sec-kids', 'SPECIAL', 9],
+        ['sec-languages', 'SPECIAL', 10],
+        ['accompanying', 'ACCOMPANYING', 11],
       ]);
       expect(sections.flatMap((s) => s.programs.map((p) => [p.code, p.activeHalaqaCount]))).toEqual(
         [
-          ['dep-literacy-program', 5],
+          ['dep-literacy-program', 10],
           ['dep-letters-program', 10],
           ['dep-tajweed-1-program', 10],
+          ['dep-tajweed-letters-program', 10],
           ['dep-tajweed-2-program', 10],
           ['dep-tajweed-3-program', 10],
+          ['dep-tahajji-program', 10],
           ['prog-hifz-city', 0],
           ['prog-nahw', 0],
           ['prog-maqari', 0],
@@ -60,7 +64,7 @@ describe('reading academic data', () => {
         }),
       );
       const [literacy] = expectOk(await h.catalogue.execute({ principal: student }));
-      expect(literacy?.programs[0]?.activeHalaqaCount).toBe(4);
+      expect(literacy?.programs[0]?.activeHalaqaCount).toBe(9);
       const program = expectOk(
         await h.getProgram.execute({
           principal: student,
@@ -73,8 +77,13 @@ describe('reading academic data', () => {
         ['dep-literacy-h3', 'ACTIVE'],
         ['dep-literacy-h4', 'ACTIVE'],
         ['dep-literacy-h5', 'INACTIVE'],
+        ['dep-literacy-h6', 'ACTIVE'],
+        ['dep-literacy-h7', 'ACTIVE'],
+        ['dep-literacy-h8', 'ACTIVE'],
+        ['dep-literacy-h9', 'ACTIVE'],
+        ['dep-literacy-h10', 'ACTIVE'],
       ]);
-      expect(program.program.activeHalaqaCount).toBe(4);
+      expect(program.program.activeHalaqaCount).toBe(9);
     });
 
     it('orders by position, then code — whatever order things were created in', async () => {
@@ -125,7 +134,7 @@ describe('reading academic data', () => {
       ] as const) {
         expect(
           expectOk(await h.catalogue.execute({ principal: h.person('someone', roles) })),
-        ).toHaveLength(9);
+        ).toHaveLength(11);
       }
       const nobody: Principal = { userId: 'nobody', roles: [], permissions: new Set() };
       expect(expectErr(await h.catalogue.execute({ principal: nobody })).kind).toBe('forbidden');
@@ -224,7 +233,7 @@ describe('reading academic data', () => {
       const bound = AcademicLimits.myActiveRelationships;
       const program = await h.repository.programByCode('prog-hifz-city');
       if (program === null) throw new Error('seed');
-      for (let n = 1; n <= bound + 1 - 45; n++) {
+      for (let n = 1; n <= bound + 1 - 70; n++) {
         expectOk(
           await h.createHalaqa.execute({
             principal: admin,

@@ -1,0 +1,106 @@
+{
+  "$comment": "The institution's OPERATIONAL academic structure — the single source the seed reads. It is NOT the printed profile: the printed profile lives in institution-structure.json (unchanged; it drives the app's ProfileData display) and is never edited to force this structure onto it (ADR 0015, Option A: the sources are split). Reconciled per docs/architecture/decisions/0015-academic-structure-reconciliation.md and owner-information.md (S1): one uniform model Section -> Program -> Halaqa for every section (core, non-core and Tahajji), dynamic and owner-managed, no Level, no hard-coded limits, no fixed count for Tahajji. Each section records its provenance: 'owner' (the owner's 2026-10-05 decisions, recorded in ADR 0015) or 'profile' (docs/institution-profile.pdf, the page it is from). Historical codes are preserved and never reused. Halaqa codes are explicit by construction — <section code>-h<n>, name 'الحلقة <n>' — and the owner renames/adds/removes halaqat at runtime; 10 is the initial minimum, not a limit.",
+  "sections": [
+    {
+      "code": "dep-literacy",
+      "name": "محو الأمية",
+      "kind": "PROGRESSIVE",
+      "order": 1,
+      "provenance": { "source": "owner", "ref": "adr-0015" },
+      "programs": [{ "code": "dep-literacy-program", "name": "محو الأمية", "order": 1, "halaqat": 10 }]
+    },
+    {
+      "code": "dep-letters",
+      "name": "تلقين الحروف",
+      "kind": "PROGRESSIVE",
+      "order": 2,
+      "provenance": { "source": "owner", "ref": "adr-0015" },
+      "programs": [{ "code": "dep-letters-program", "name": "تلقين الحروف", "order": 1, "halaqat": 10 }]
+    },
+    {
+      "code": "dep-tajweed-1",
+      "name": "المبتدئ",
+      "kind": "PROGRESSIVE",
+      "order": 3,
+      "provenance": { "source": "owner", "ref": "adr-0015" },
+      "programs": [{ "code": "dep-tajweed-1-program", "name": "المبتدئ", "order": 1, "halaqat": 10 }]
+    },
+    {
+      "code": "dep-tajweed-letters",
+      "name": "تجويد الحروف",
+      "kind": "PROGRESSIVE",
+      "order": 4,
+      "provenance": { "source": "owner", "ref": "adr-0015" },
+      "programs": [
+        { "code": "dep-tajweed-letters-program", "name": "تجويد الحروف", "order": 1, "halaqat": 10 }
+      ]
+    },
+    {
+      "code": "dep-tajweed-2",
+      "name": "التجويد المتوسط",
+      "kind": "PROGRESSIVE",
+      "order": 5,
+      "provenance": { "source": "owner", "ref": "adr-0015" },
+      "programs": [
+        { "code": "dep-tajweed-2-program", "name": "التجويد المتوسط", "order": 1, "halaqat": 10 }
+      ]
+    },
+    {
+      "code": "dep-tajweed-3",
+      "name": "التجويد المتقدم",
+      "kind": "PROGRESSIVE",
+      "order": 6,
+      "provenance": { "source": "owner", "ref": "adr-0015" },
+      "programs": [
+        { "code": "dep-tajweed-3-program", "name": "التجويد المتقدم", "order": 1, "halaqat": 10 }
+      ]
+    },
+    {
+      "code": "dep-tahajji",
+      "name": "دورة التهجي وإعداد المعلمات",
+      "kind": "PROGRESSIVE",
+      "order": 7,
+      "provenance": { "source": "owner", "ref": "adr-0015" },
+      "programs": [
+        { "code": "dep-tahajji-program", "name": "دورة التهجي وإعداد المعلمات", "order": 1, "halaqat": 10 }
+      ]
+    },
+    {
+      "code": "sec-spelling",
+      "name": "قسم التهجي",
+      "kind": "SPECIAL",
+      "order": 8,
+      "provenance": { "source": "profile", "page": 7 },
+      "programs": []
+    },
+    {
+      "code": "sec-kids",
+      "name": "قسم البراعم",
+      "kind": "SPECIAL",
+      "order": 9,
+      "provenance": { "source": "profile", "page": 8 },
+      "programs": []
+    },
+    {
+      "code": "sec-languages",
+      "name": "قسم اللغات",
+      "kind": "SPECIAL",
+      "order": 10,
+      "provenance": { "source": "profile", "page": 9 },
+      "programs": []
+    },
+    {
+      "code": "accompanying",
+      "name": "البرامج المرافقة",
+      "kind": "ACCOMPANYING",
+      "order": 11,
+      "provenance": { "source": "profile", "page": 10 },
+      "programs": [
+        { "code": "prog-hifz-city", "name": "مدينة الحفاظ", "order": 1, "halaqat": 0 },
+        { "code": "prog-nahw", "name": "علوم النحو", "order": 2, "halaqat": 0 },
+        { "code": "prog-maqari", "name": "المقارئ", "order": 3, "halaqat": 0 },
+        { "code": "prog-mutun", "name": "المتون", "order": 4, "halaqat": 0 }
+      ]
+    }
+  ]
+}

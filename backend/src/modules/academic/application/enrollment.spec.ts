@@ -41,7 +41,7 @@ describe('enrollment', () => {
       endedAt: null,
     });
     expect(enrolled.placement).toMatchObject({
-      section: { code: 'dep-tajweed-1', name: 'قسم تجويد مبتدئ', kind: 'PROGRESSIVE' },
+      section: { code: 'dep-tajweed-1', name: 'المبتدئ', kind: 'PROGRESSIVE' },
       program: { code: 'dep-tajweed-1-program' },
       halaqa: { code: 'dep-tajweed-1-h3', name: 'الحلقة 3' },
     });

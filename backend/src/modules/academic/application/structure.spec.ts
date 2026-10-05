@@ -198,7 +198,7 @@ describe('academic structure', () => {
           meta: META,
         }),
       );
-      expect(off).toMatchObject({ status: 'INACTIVE', activeHalaqaCount: 5 });
+      expect(off).toMatchObject({ status: 'INACTIVE', activeHalaqaCount: 10 });
       expect(h.audit.last('academic.program.deactivated')?.resourceId).toBe(program.id);
     });
   });

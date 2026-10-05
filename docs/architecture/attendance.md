@@ -1166,6 +1166,14 @@ reviewers and the user (rows 3a and 3b); and P6 done (hub
 | 3a | [Q69](open-questions.md#q69--who-records-and-who-views-snapshots): community standing (`community.attendance.record` / `.view`) accepted as the scoping relationship instead of `ACADEMIC_RELATIONSHIPS` (`academic-reconciliation.md:504`; `open-questions.md:824-826`) | reviewers | ADR 0020; open-questions.md |
 | 3b | Q69's record and view defaults ([§11.1](#111-the-two-acts), the brief §9/§13/§15 default) confirmed or replaced | the user (the institution) | ADR 0020; open-questions.md (Q69) |
 
+> **Note (2026-10-05, ADR 0015 landed):** row 2 is met. The §13 "before any new
+> module" step (Q35/Q36 answered; ADR 0015 applied to the operational seed + tests
+> via Option A) is complete and verified on an isolated/in-memory database — the
+> printed profile untouched, the seed never run against a production/shared
+> database (`academic-reconciliation.md` §13 step 3; ADR 0015 "Implementation
+> status"; `project-checkpoint.md`). Rows 1 and 3a/3b still stand: P9 waits on the
+> reconciliation review / Q40 ruling and on reviewer acceptance of the Q69a scoping.
+
 **Must be done.**
 
 | # | What | Phase |

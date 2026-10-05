@@ -20,6 +20,16 @@ unedited (an ADR is superseded, never rewritten).
 this reconciliation has been reviewed. [§13](#13-minimal-recommended-changes-before-the-next-milestone)
 lists what each of them needs answered first.
 
+> **Update (2026-10-05) — §13 step 3 LANDED.** The academic-structure reconciliation has been applied
+> to the seed + tests per [ADR 0015](decisions/0015-academic-structure-reconciliation.md), **Option A**:
+> a new **operational** source (`backend/src/modules/academic/application/operational-structure.json` +
+> `operational-structure.ts`) is now the seed's source (11 sections / 11 programs / 70 halaqat), with
+> profile/owner provenance, a parent check and explicit halaqa codes. The **printed profile stays
+> separate and untouched** (`institution-structure.json`, the Flutter `ProfileData`, and
+> `profile_structure_test.dart` — still green). Verified on an isolated/in-memory database only; the
+> seed was never run against a production/shared database (H1). So "What changed in this pass" below
+> describes the original 2026-09-23 audit; the seed is **no longer** the printed profile's.
+
 ---
 
 ## 0. Verdict
@@ -485,16 +495,17 @@ The essential ones:
 1. ✅ *This pass*: the owner information is recorded, the profile is labelled
    as the printed profile, unconfirmed rules are labelled, and the questions
    are written down.
-2. Send the questionnaire. Get written answers to at least **Q35 (mapping,
-   literacy count) and Q36 (Tahajji)**.
-3. Then, in one reviewed change with **ADR 0015**:
+2. ✅ *Done (2026-10-05)*: the owner gave written answers to **Q35 (mapping,
+   literacy count) and Q36 (Tahajji)** (recorded in ADR 0015 and `open-questions.md`).
+3. ✅ *Done (2026-10-05, ADR 0015, Option A)*: in one reviewed change —
    - record each code→name decision;
    - split the seed's provenance (profile vs owner entries);
    - add the seed's parent check and explicit per-entry halaqa codes;
-   - apply the structure through the seed and the API;
+   - apply the structure through the seed (a new **operational** source, not the printed profile);
    - update the pinned tests.
-4. Until step 3: **do not run the seed CLI against a production or shared
-   database**, and follow the operating rules in [§14](#14-hazards-and-operating-rules-while-the-reconciliation-is-open).
+   Verified on an isolated/in-memory database only; the printed profile is untouched.
+4. The seed CLI was **not** run against a production or shared database, and the operating rules in
+   [§14](#14-hazards-and-operating-rules-while-the-reconciliation-is-open) still apply to any future run.
 
 **What each held module needs first:**
 

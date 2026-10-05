@@ -4,12 +4,12 @@
 of the same day. It supersedes in part [0014](0014-academic-core-v1.md): the specific section *names*
 and the literacy halaqa *count* the owner's answers change. The hierarchy stays **Section → Program →
 Halaqa** (the `Level` concept that was briefly considered is RETIRED — see Decided items). The
-reconciliation **decisions are now complete** (owner, 2026-10-05): one uniform model for all sections
-(core, non-core and Tahajji), dynamic and owner-managed, no hard-coded counts. **Applying them to the
-seed is the remaining work and is the first implementation step — NOT performed by this ADR;**
-`institution-structure.json`, the seed code and the pinned tests are UNCHANGED here, and the seed is
-never run against a production/shared database. Every decision here is CURRENT and REVERSIBLE, not a
-permanent architectural lock.**
+reconciliation **decisions are complete** (owner, 2026-10-05): one uniform model for all sections
+(core, non-core and Tahajji), dynamic and owner-managed, no hard-coded counts. **These decisions were
+subsequently APPLIED to the seed + tests on 2026-10-05 via Option A (a split operational source) — see
+"Implementation status" below;** the printed profile (`institution-structure.json` and the Flutter
+`ProfileData`) is UNCHANGED, and the seed is never run against a production/shared database. Every
+decision here is CURRENT and REVERSIBLE, not a permanent architectural lock.**
 
 **Status:** Accepted
 **Accepted:** 2026-10-05, by the owner (the Q35/Q36 answers and same-day clarifications of the P9 governance pass).
@@ -108,15 +108,37 @@ isolated/in-memory test database only.
 
 - The owner's Q35/Q36 answers (and the 2026-10-05 Tahajji / non-core / uniform-model rulings) are on
   record (this ADR; `open-questions.md`). The §13 **decisions** are complete.
-- **§13 is not yet LANDED as code:** ADR 0015 records the decisions but the applied structure is **not
-  yet in the seed** — that is the first implementation step, not a remaining governance decision. Until
-  it lands and is verified, the "before any new module" step is not finished.
-- No code, schema, migration, seed data, Flutter screen or test changed by this ADR.
-  `institution-structure.json` still carries the printed profile; its "do not edit until answered"
-  notice is now cleared to proceed (the questions are answered) — the edit happens in the seed
-  reconciliation step, never against a production/shared database.
+- **§13 is now LANDED as code (2026-10-05):** the decisions are applied in the operational seed + its
+  tests (see "Implementation status" below), verified on an isolated/in-memory database only. The
+  "before any new module" step is therefore complete.
+- The printed profile was **not** edited: `institution-structure.json` and the Flutter `ProfileData`
+  still carry the printed profile unchanged (Option A split the sources). The applied structure lives
+  in a new operational source, and the seed was never run against a production/shared database.
 - `AttendanceAmendment` (`operations/contracts`) already requires `reason`+`amendedBy` (Q8's technical
   position); unchanged.
+
+## Implementation status
+
+**LANDED — 2026-10-05, Option A (split sources).** The decisions above are applied to the seed and its
+tests, and nothing else; no production or shared database was seeded.
+
+- **New operational source (the only seed source):**
+  `backend/src/modules/academic/application/operational-structure.json` + `operational-structure.ts` —
+  11 sections, 11 programs, 70 halaqat (10 under each of the seven core programs). The seed use case
+  (`seed-structure.use-case.ts`) now reads this, not the printed profile.
+- **Printed profile untouched:** `institution-structure.json`/`.ts` and the Flutter `ProfileData` are
+  unchanged; `app/test/academic/profile_structure_test.dart` passes unchanged.
+- **Provenance split (profile vs owner):** every entry carries `owner` (ref `adr-0015`) or `profile`
+  (its page); the source is recorded in each creation's audit metadata.
+- **Parent check + explicit halaqa codes:** `validateOperationalStructure` enforces globally-unique
+  codes, present provenance and well-formed parents before seeding; halaqa codes are `<section>-h<n>`,
+  names `الحلقة <n>`.
+- **Codes preserved, never reused:** `dep-literacy`, `dep-letters`, `dep-tajweed-1/2/3`, `sec-*`,
+  `accompanying`, `prog-*` kept; new `dep-tajweed-letters` (#4) and `dep-tahajji` (#7) added.
+- **Verified (in-memory only):** academic suite 101/101, architecture 141/141, Flutter profile test
+  4/4; format/lint/typecheck clean. Hazard H1 honored — no seed against a production/shared DB.
+- **Not done (out of scope):** running the explicit seed command against a real database is a separate
+  operational/deployment step.
 
 ## Alternatives considered
 

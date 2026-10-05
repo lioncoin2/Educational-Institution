@@ -4,11 +4,12 @@
 the authoritative docs it links) and continue without reconstructing history from chat logs.
 
 - **Branch:** `claude/quranic-education-app-prototype-gkzle8`
-- **HEAD:** the latest `docs:` checkpoint commit on this branch (see `git log`); last code commit is
-  `9d2925e` ("P8.4 Phase 1: finalize off-box capacity harness"). All checkpoint commits are
-  documentation only.
-- **Date:** 2026-10-05 (updated with ADR 0023 — attendance policy recorded)
-- **Current focus:** Academic Reconciliation / **P9 Attendance governance** (not implementation).
+- **HEAD:** the Academic Reconciliation commit on this branch (see `git log`) — it applies the
+  operational academic structure to the seed + tests (ADR 0015, Option A). The prior code commit is
+  `9d2925e` ("P8.4 Phase 1: finalize off-box capacity harness").
+- **Date:** 2026-10-05 (updated: Academic Reconciliation LANDED on the operational seed + tests)
+- **Current focus:** **P9 Attendance governance** — the academic-structure reconciliation is now
+  applied to the operational seed + tests (Option A); P9 build not started.
 - **Every decision below is CURRENT and REVERSIBLE** — a current institutional decision, not a
   permanent architectural lock. Future requirements may change it.
 
@@ -39,8 +40,8 @@ directly, not throwaway versions.
 | P7.1 LiveKit server/provider readiness · P7.2 real media integration · P7.3 staging deploy · P7.4 external client test | **DONE** (staging live) |
 | P7b Flutter media binding (`livekit_client`) | **DEFERRED** (needs devices/CI + ADR) |
 | P8 Load/capacity harness (P8.0–P8.4 built, committed `9d2925e`) | **DONE (infra)**; off-box ladder S1→R6 **DEFERRED** until real users |
-| **Academic reconciliation (§13 / ADR 0015)** | **DECISIONS COMPLETE**; seed not yet applied (= the first implementation step) |
-| **P9 Attendance** | **HELD** (governance decisions all made; waits on the §13 seed-application step + P9 build) |
+| **Academic reconciliation (§13 / ADR 0015)** | **LANDED** on the operational seed + tests (Option A, 2026-10-05); printed profile untouched; verified in-memory only |
+| **P9 Attendance** | **HELD** (governance decisions all made; §13 seed-application step DONE; waits on reviewer acceptance of the Q69a scoping + P9 build) |
 | P10 Notifications translators · P11 Horizontal scale · P12 Policy-gated Live features | future (P11 needs P8 evidence) |
 
 ---
@@ -122,27 +123,37 @@ P10 / Q67** (ADR 0020 decision 9 "no notification" stands for P9); **Q8** → am
 future attendance record, not the immutable snapshot; **Q12** → every live session + every exam, actual
 date/time, no calendar prerequisite.
 
-**Gate (attendance.md §23): all governance decisions now MADE.** Q40 answered (ADR 0016); Q8/Q12/Q69
+**Gate (attendance.md §23): all governance decisions MADE.** Q40 answered (ADR 0016); Q8/Q12/Q69
 answered & recorded (ADR 0023); Q35/Q36 + Tahajji + non-core + uniform model all decided (ADR 0015).
-**What remains is implementation, not a decision:**
-1. **Apply the §13 academic-structure reconciliation to the seed + tests** (ADR 0015) — the first
-   implementation step (below). Until it lands and is verified, the §13 "before any new module" step is
-   not complete, so P9 stays HELD. **Never run the seed against production/shared DB.**
-2. **Reviewer acceptance** of the combined attendance-scoping design (Q69a: `ACADEMIC_RELATIONSHIPS` +
-   community standing) — a P9 design-review step.
+1. ✅ **§13 academic-structure reconciliation applied to the seed + tests** (ADR 0015, Option A,
+   2026-10-05) — DONE and verified in-memory; the §13 "before any new module" step is complete.
+2. ⏳ **Reviewer acceptance** of the combined attendance-scoping design (Q69a: `ACADEMIC_RELATIONSHIPS` +
+   community standing) — a P9 design-review step; **this is the remaining blocker before P9.**
 
 Progress: Q35/Q36, تجويد الحروف=`dep-tajweed-letters`, Level retired, Q8/Q12/Q69 (ADR 0023), Tahajji §7
-uniform (`dep-tahajji`), non-core = dynamic owner data. **Do not implement Attendance** until step 1
-lands. P9's authorization must later combine `ACADEMIC_RELATIONSHIPS` + `COMMUNITY_AUTHORIZATION` without
-exercising unscoped `attendance.*` grants (ADR 0023, decision 1 — design task, not done).
+uniform (`dep-tahajji`), non-core = dynamic owner data, seed reconciliation LANDED. **Do not implement
+Attendance** until the Q69a scoping design is accepted. P9's authorization must combine
+`ACADEMIC_RELATIONSHIPS` + `COMMUNITY_AUTHORIZATION` without exercising unscoped `attendance.*` grants
+(ADR 0023, decision 1 — design task, not done).
 
-## Academic Reconciliation status: DECISIONS COMPLETE (not yet landed in the seed)
+## Academic Reconciliation status: LANDED (operational seed + tests, Option A)
 - **All decisions made:** Q35/Q36 (ADR 0015); تجويد الحروف=`dep-tajweed-letters`; Level retired
   (Section→Program→Halaqa); Tahajji §7 uniform (`dep-tahajji`); non-core = dynamic owner data; one
   uniform model, dynamic & owner-managed, no hard-coded counts.
-- **Remaining = implementation:** apply the structure to `institution-structure.json` + the seed parent
-  check + the pinned tests (backend + Flutter), verified on an isolated/in-memory DB only.
-- Do **not** claim reconciliation complete until that applied change lands and is verified.
+- **Applied (2026-10-05) — Option A (split sources):**
+  - **Printed Profile stays separate and untouched:** `institution-structure.json`/`.ts` and the Flutter
+    `ProfileData` are unchanged; `app/test/academic/profile_structure_test.dart` still passes unchanged.
+  - **Operational Academic Structure is now the seed's source:** new `operational-structure.json` +
+    `operational-structure.ts` (11 sections / 11 programs / 70 halaqat — 10 per core program); the seed
+    use case reads it, not the printed profile.
+  - **Provenance profile/owner applied:** each entry marked `owner` (ADR 0015) or `profile` (page),
+    threaded into audit metadata; the seed's parent/integrity check (`validateOperationalStructure`)
+    and explicit per-entry halaqa codes (`<section>-h<n>`) are enforced.
+  - **Tests + gates green:** academic suite 101/101, architecture 141/141, Flutter profile test 4/4;
+    format/lint/typecheck clean.
+  - **No seed run against production/shared DB:** verified on the in-memory harness only (H1 honored).
+- Reconciliation at the seed + test layer is **complete and verified**. Deploying it to a real DB via
+  the explicit seed command is a separate operational step, intentionally not done here.
 
 ## P8 capacity status: DEFERRED
 Off-box ladder (S1/S2/R1…R6) deferred until real users enter the app. Targets (**not proven**):
@@ -159,16 +170,16 @@ explicitly requested. (`docs/p8/*`, `docs/p8-load-capacity-plan.md`.)
 - Concrete per-section/per-halaqa seed content beyond the firmly-decided renames/new sections — these
   are **dynamic owner data** managed at runtime, not architectural questions (do not re-open).
 
-## NEXT (exact step) — the first allowed implementation step
-All academic + attendance **governance decisions are made and recorded**. The first allowed
-implementation step is the **§13 academic-structure seed reconciliation** (ADR 0015), scoped to:
-(1) rename the five core sections (codes kept) + set محو الأمية to 10; (2) add `dep-tajweed-letters`
-(تجويد الحروف, #4) and `dep-tahajji` (دورة التهجي, #7) under the uniform `Section → Program → Halaqa`
-model; (3) make halaqa codes explicit per entry; (4) add the seed parent check and provenance marking;
-(5) update the pinned tests (`seed.spec.ts`, `structure.spec.ts`,
-`app/test/academic/profile_structure_test.dart`). **Verified on an isolated/in-memory DB only — never
-run the seed against a production/shared DB.** Non-core sections are left as-is (dynamic owner data).
-After this lands and is verified, and with reviewer acceptance of the Q69a scoping, P9 Attendance can
-begin (its own module, per ADR 0020 + ADR 0023; notifications remain a later P10/Q67 item).
+## NEXT (exact step)
+The **§13 academic-structure seed reconciliation** (ADR 0015, Option A) is now **LANDED and verified**
+(2026-10-05): the five core renames + محو الأمية→10, `dep-tajweed-letters` (#4) and `dep-tahajji` (#7)
+under the uniform `Section → Program → Halaqa` model, explicit per-entry halaqa codes, the seed parent
+check and provenance marking, and the updated pinned tests — all on `operational-structure.json`/`.ts`
+with the printed profile untouched, verified on the in-memory harness only (no production/shared DB).
+
+**The one remaining blocker before P9 Attendance is reviewer acceptance of the combined
+attendance-scoping design** (Q69a: `ACADEMIC_RELATIONSHIPS` + community standing, ADR 0023 decision 1).
+Once that is accepted, P9 Attendance can begin (its own module, per ADR 0020 + ADR 0023; notifications
+remain a later P10/Q67 item). **Do not start P9 implementation before that acceptance.**
 
 > Reminder: everything in this checkpoint is a current, reversible decision.

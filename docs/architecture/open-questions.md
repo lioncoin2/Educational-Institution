@@ -1117,9 +1117,12 @@ owner rejected a `Program → Level → Halaqa` model as complexity without valu
 (2026-10-05):** one **uniform model** for all sections — core, non-core (البراعم/اللغات/accompanying)
 and Tahajji §7 — all `Section → Program → Halaqa`, dynamic and owner-managed, no hard-coded counts;
 non-core sections are dynamic owner data, not an architectural decision (kept, owner-managed). The
-reconciliation **decisions are complete**; the only remaining work is **applying the structure to the
-seed + tests**, which is the first implementation step (ADR 0015), never run against production/shared
-DB. Every decision here is current and reversible. The heading stays so links keep working.
+reconciliation **decisions are complete**, and they were **APPLIED to the seed + tests on 2026-10-05
+via Option A** (a new operational source — `operational-structure.json`/`.ts` — 11 sections / 11
+programs / 70 halaqat, profile/owner provenance, parent check, explicit halaqa codes; the printed
+profile untouched), verified on an isolated/in-memory DB only and **never run against a
+production/shared DB** (ADR 0015, "Implementation status"). Every decision here is current and
+reversible. The heading stays so links keep working.
 
 **Question.** On 2026-09-23 the owner listed seven core academic sections
 ([owner-information.md](../owner-information.md), S1): محو الأمية، تلقين
@@ -1196,9 +1199,11 @@ adds/edits/deletes/renames/manages groups; **groups are not seeded now**.
 entity, no fixed 40. A Tahajji "group" is an **academic halaqa** under that model, **not** a chat /
 LiveKit / Community construct. دورة التهجي وإعداد المعلمات is core section **#7** (proposed code
 `dep-tahajji`, reversible); its programs/halaqat are dynamic owner data. The existing `sec-spelling`
-(قسم التهجي) is left as dynamic owner data (not asserted to be the same section). The separate
-voice/LiveKit-mapping question stays deferred. Current and reversible. The heading stays so links keep
-working.
+(قسم التهجي) is left as dynamic owner data (not asserted to be the same section). **Applied (2026-10-05,
+Option A):** `dep-tahajji` is now seeded under the operational source with one program and 10 initial
+halaqat (owner-managed thereafter), provenance `owner`; verified in-memory only, never against a
+production/shared DB (ADR 0015, "Implementation status"). The separate voice/LiveKit-mapping question
+stays deferred. Current and reversible. The heading stays so links keep working.
 
 **Question.** The printed profile has «قسم التهجي» (page 7). It describes
 teaching reading from letters and harakat to correct recitation, with

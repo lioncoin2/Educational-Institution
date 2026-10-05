@@ -29,11 +29,14 @@ import { AcademicAccess } from './academic-access';
 import { AcademicJournal } from './academic-journal';
 import { AcademicAudit, AcademicResources } from './academic-settings';
 import {
-  INSTITUTION_STRUCTURE,
-  seededHalaqaCode,
-  seededHalaqaName,
-  type InstitutionStructure,
-} from './institution-structure';
+  OPERATIONAL_STRUCTURE,
+  operationalHalaqaCode,
+  operationalHalaqaName,
+  type OperationalProgram,
+  type OperationalSection,
+  type OperationalStructure,
+  validateOperationalStructure,
+} from './operational-structure';
 
 /** Who seeds: a system principal that may manage academic structure and nothing else. */
 export const STRUCTURE_SEEDER = systemPrincipal('academic-structure-seed', [
@@ -60,12 +63,10 @@ class Tally {
   }
 }
 
-const SOURCE = 'institution-profile';
-
 /**
- * Seeds the institution's structure from its profile — the sections, the
- * programs, and the halaqat the profile counts — and nothing else: no
- * students, no teachers, no progress, no descriptions.
+ * Seeds the institution's OPERATIONAL structure — the sections, programs and
+ * the halaqat each program counts — and nothing else: no students, no teachers,
+ * no progress, no descriptions.
  *
  * Idempotent by code. Whatever already exists is left exactly as it is: an
  * administrator's renaming, reordering or deactivating is never undone by a
@@ -89,26 +90,35 @@ export class SeedInstitutionStructureUseCase {
   async execute(command: {
     readonly principal: Principal;
     readonly meta: CallMetadata;
-    /** Defaults to the profile's structure; tests pass smaller ones. */
-    readonly structure?: InstitutionStructure;
+    /** Defaults to the operational structure; tests pass smaller ones. */
+    readonly structure?: OperationalStructure;
   }): Promise<Result<SeedReport>> {
     const allowed = this.access.authorize(command.principal, Permissions.academic.manage);
     if (!allowed.ok) return allowed;
-    const structure = command.structure ?? INSTITUTION_STRUCTURE;
+    // The parent / integrity check (ADR 0015): unique codes, provenance present, well-formed parents.
+    const structure = validateOperationalStructure(command.structure ?? OPERATIONAL_STRUCTURE);
     const tallies = { sections: new Tally(), programs: new Tally(), halaqat: new Tally() };
     const record = { principal: command.principal, meta: command.meta };
 
     for (const spec of structure.sections) {
+      const source = spec.provenance.source;
       const section = await this.section(spec, tallies.sections, record);
       if (!section.ok) return section;
       for (const programSpec of spec.programs) {
-        const program = await this.program(section.value, programSpec, tallies.programs, record);
+        const program = await this.program(
+          section.value,
+          programSpec,
+          source,
+          tallies.programs,
+          record,
+        );
         if (!program.ok) return program;
         for (let position = 1; position <= programSpec.halaqat; position++) {
           const halaqa = await this.halaqa(
             program.value,
-            seededHalaqaCode(spec.code, position),
+            operationalHalaqaCode(spec.code, position),
             position,
+            source,
             tallies.halaqat,
             record,
           );
@@ -124,7 +134,7 @@ export class SeedInstitutionStructureUseCase {
   }
 
   private async section(
-    spec: InstitutionStructure['sections'][number],
+    spec: OperationalSection,
     tally: Tally,
     record: { readonly principal: Principal; readonly meta: CallMetadata },
   ): Promise<Result<Section>> {
@@ -154,7 +164,11 @@ export class SeedInstitutionStructureUseCase {
         resourceType: AcademicResources.section,
         resourceId: section.value.id,
         at: section.value.createdAt,
-        metadata: { code: section.value.code, kind: section.value.kind, source: SOURCE },
+        metadata: {
+          code: section.value.code,
+          kind: section.value.kind,
+          source: spec.provenance.source,
+        },
         correlationId: record.meta.correlationId,
       },
       sectionCreated(section.value, record.meta.correlationId),
@@ -164,7 +178,8 @@ export class SeedInstitutionStructureUseCase {
 
   private async program(
     section: Section,
-    spec: InstitutionStructure['sections'][number]['programs'][number],
+    spec: OperationalProgram,
+    source: string,
     tally: Tally,
     record: { readonly principal: Principal; readonly meta: CallMetadata },
   ): Promise<Result<Program>> {
@@ -197,7 +212,7 @@ export class SeedInstitutionStructureUseCase {
         resourceType: AcademicResources.program,
         resourceId: program.value.id,
         at: program.value.createdAt,
-        metadata: { code: program.value.code, sectionId: section.id, source: SOURCE },
+        metadata: { code: program.value.code, sectionId: section.id, source },
         correlationId: record.meta.correlationId,
       },
       programCreated(program.value, record.meta.correlationId),
@@ -209,6 +224,7 @@ export class SeedInstitutionStructureUseCase {
     program: Program,
     code: string,
     position: number,
+    source: string,
     tally: Tally,
     record: { readonly principal: Principal; readonly meta: CallMetadata },
   ): Promise<Result<Halaqa>> {
@@ -221,7 +237,7 @@ export class SeedInstitutionStructureUseCase {
       id: this.ids.next<'AcademicHalaqa'>(),
       programId: program.id,
       code,
-      name: seededHalaqaName(position),
+      name: operationalHalaqaName(position),
       order: position,
       at: this.clock.now(),
     });
@@ -241,7 +257,7 @@ export class SeedInstitutionStructureUseCase {
         resourceType: AcademicResources.halaqa,
         resourceId: halaqa.value.id,
         at: halaqa.value.createdAt,
-        metadata: { code, programId: program.id, source: SOURCE },
+        metadata: { code, programId: program.id, source },
         correlationId: record.meta.correlationId,
       },
       halaqaCreated(halaqa.value, record.meta.correlationId),
@@ -268,8 +284,8 @@ function unseedable(code: string) {
 
 /**
  * Without a database the application runs on the in-memory store, which
- * starts empty on every boot; this seeds it from the profile so a
- * development server shows the institution's structure. It never runs
+ * starts empty on every boot; this seeds it from the operational structure so
+ * a development server shows the institution's structure. It never runs
  * against Postgres — there, seeding is the explicit command.
  */
 export class DevelopmentStructureSeed implements OnApplicationBootstrap {
@@ -289,7 +305,7 @@ export class DevelopmentStructureSeed implements OnApplicationBootstrap {
     if (result.ok) {
       this.logger.log(
         { ...result.value },
-        'in-memory academic structure seeded from the institution profile',
+        'in-memory academic structure seeded from the operational structure',
       );
     } else {
       this.logger.error({ code: result.error.code }, 'could not seed the academic structure');
