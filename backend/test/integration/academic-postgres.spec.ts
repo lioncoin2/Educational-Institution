@@ -234,13 +234,13 @@ describeWithPostgres('academic on Postgres', () => {
           select (select count(*)::int from academic_sections) as sections,
                  (select count(*)::int from academic_programs) as programs,
                  (select count(*)::int from academic_halaqat) as halaqat`);
-      expect(await counts()).toEqual([{ sections: 9, programs: 9, halaqat: 45 }]);
+      expect(await counts()).toEqual([{ sections: 11, programs: 11, halaqat: 70 }]);
       expect(expectOk(await h.seed.execute({ principal: STRUCTURE_SEEDER, meta: META }))).toEqual({
-        sections: { created: 0, existing: 9 },
-        programs: { created: 0, existing: 9 },
-        halaqat: { created: 0, existing: 45 },
+        sections: { created: 0, existing: 11 },
+        programs: { created: 0, existing: 11 },
+        halaqat: { created: 0, existing: 70 },
       });
-      expect(await counts()).toEqual([{ sections: 9, programs: 9, halaqat: 45 }]);
+      expect(await counts()).toEqual([{ sections: 11, programs: 11, halaqat: 70 }]);
       expect(
         await rows(sql`select count(*)::int as n from academic_enrollments
                        union all select count(*)::int from academic_teacher_assignments`),
@@ -271,7 +271,7 @@ describeWithPostgres('academic on Postgres', () => {
       const [total] = await rows<{ n: number }>(
         sql`select count(*)::int as n from academic_halaqat`,
       );
-      expect(total?.n).toBe(45);
+      expect(total?.n).toBe(70);
     });
   });
 
