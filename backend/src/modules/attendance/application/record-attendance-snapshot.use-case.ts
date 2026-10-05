@@ -23,7 +23,12 @@ import {
   type AttendanceSnapshotRepository,
   type SnapshotIdempotencyKey,
 } from '../domain/ports';
-import { takeSnapshot, type AttendanceSnapshotHeader } from '../domain/snapshot';
+import {
+  CLIENT_REQUEST_ID_INVALID,
+  isValidClientRequestId,
+  takeSnapshot,
+  type AttendanceSnapshotHeader,
+} from '../domain/snapshot';
 import { AttendanceAccess, permitOf } from './attendance-access';
 import { AttendanceJournal } from './attendance-journal';
 import { ATTENDANCE_SNAPSHOT_POLICY } from './attendance-policy';
@@ -88,44 +93,50 @@ export class RecordAttendanceSnapshotUseCase {
 
   async execute(command: RecordSnapshotCommand): Promise<Result<RecordSnapshotResult>> {
     const { principal, liveSessionId, clientRequestId } = command;
+
+    // 1. Validate the client request id first (§18 S1 step 2): before any
+    //    lookup, authorization, rate-limit charge or observation. A malformed
+    //    key never reaches Live, the store, the rate limiter or the audit.
+    if (!isValidClientRequestId(clientRequestId)) return err(CLIENT_REQUEST_ID_INVALID);
+
     const key: SnapshotIdempotencyKey = {
       liveSessionId,
       recordedBy: principal.userId,
       clientRequestId,
     };
 
-    // 1. The session's scope, from Live's own record (never from the client).
+    // 2. The session's scope, from Live's own record (never from the client).
     const scope = await this.liveSessions.describe(liveSessionId);
     if (scope === null) return err(AttendanceRefusals.sessionNotFound);
 
-    // 2. Authorization — the only one (§11.3, the record fallback order).
+    // 3. Authorization — the only one (§11.3, the record fallback order).
     const permit = await this.access.record(principal, {
       communityId: scope.communityId,
       hostUserId: scope.hostUserId,
     });
     if (!permit.ok) return permit;
 
-    // 3. Idempotency: a retry finds the stored snapshot and stops here — no
+    // 4. Idempotency: a retry finds the stored snapshot and stops here — no
     //    observation, no rate-limit charge, no audit, no event (even after the
     //    session has ended). Runs after authorization (S2 steps 5-6).
     const replay = await this.repository.findByKey(key);
     if (replay !== null) return ok({ created: false, snapshot: replay });
 
-    // 4. The session must still be live, before any charge or observation.
+    // 5. The session must still be live, before any charge or observation.
     if (!scope.active) return err(SESSION_NOT_LIVE);
 
-    // 5. Rate limit, per recorder, charged before the observation (a failed
+    // 6. Rate limit, per recorder, charged before the observation (a failed
     //    observation still counts; a replay above never reaches here).
     const decision = await this.rateLimiter.consume(principal.userId, ATTENDANCE_SNAPSHOT_POLICY);
     if (!decision.allowed) return err(tooManySnapshots(decision.retryAfterSeconds));
 
-    // 6. One observation; map its outcome (§9, §15.2).
+    // 7. One observation; map its outcome (§9, §15.2).
     const observation = await this.presence.observe(liveSessionId);
     if (observation.kind === 'not_found') return err(AttendanceRefusals.sessionNotFound);
     if (observation.kind === 'not_active') return err(SESSION_NOT_LIVE);
     if (observation.kind === 'unavailable') return err(OBSERVATION_UNAVAILABLE);
 
-    // 7. The observation must be of the authorized community, else a fault — a
+    // 8. The observation must be of the authorized community, else a fault — a
     //    500, with nothing stored (§6.2 I9).
     if (observation.communityId !== scope.communityId) {
       throw new Error(
@@ -133,7 +144,8 @@ export class RecordAttendanceSnapshotUseCase {
       );
     }
 
-    // 8. Build the snapshot (pure), mapping the observed connection states.
+    // 9. Build the snapshot (pure), mapping the observed connection states. The
+    //    key is already valid (step 1); takeSnapshot re-checks as an invariant.
     const built = takeSnapshot({
       id: this.ids.next<'AttendanceSnapshot'>(),
       communityId: scope.communityId,
@@ -152,8 +164,8 @@ export class RecordAttendanceSnapshotUseCase {
     if (!built.ok) return built;
     const snapshot = built.value;
 
-    // 9. Persist. A concurrent same-key race loses here: the winner is returned,
-    //    its own observation discarded, and nothing is audited or published.
+    // 10. Persist. A concurrent same-key race loses here: the winner is
+    //     returned, its own observation discarded, nothing audited or published.
     const outcome = await this.repository.insert(snapshot);
     if (outcome === 'duplicate') {
       const winner = await this.repository.findByKey(key);
@@ -163,7 +175,7 @@ export class RecordAttendanceSnapshotUseCase {
       return ok({ created: false, snapshot: winner });
     }
 
-    // 10. Created: audit then event, after the commit (AttendanceJournal).
+    // 11. Created: audit then event, after the commit (AttendanceJournal).
     const payload: AttendanceSnapshotRecordedPayload = {
       snapshotId: snapshot.id,
       communityId: snapshot.communityId,

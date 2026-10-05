@@ -3,6 +3,7 @@ import { SNAPSHOT_CONNECTIONS } from '../contracts/vocabulary';
 import {
   CLIENT_REQUEST_ID_INVALID,
   OBSERVATION_RULE,
+  isValidClientRequestId,
   takeSnapshot,
   type AttendanceSnapshot,
   type SnapshotEntry,
@@ -141,6 +142,20 @@ describe('takeSnapshot (attendance.md §6.1/§6.2) — the pure aggregate', () =
         expect(takeSnapshot(input({ clientRequestId: good })).ok).toBe(true);
       });
     }
+  });
+
+  describe('isValidClientRequestId (the shared regex, one source of truth)', () => {
+    it('accepts a well-formed key and the length boundaries', () => {
+      for (const good of ['a'.repeat(8), 'A1_-b2c3', 'x'.repeat(64)]) {
+        expect(isValidClientRequestId(good)).toBe(true);
+      }
+    });
+
+    it('rejects too short, too long and disallowed characters', () => {
+      for (const bad of ['', 'short', 'a'.repeat(7), 'a'.repeat(65), 'bad key!', 'has/slash']) {
+        expect(isValidClientRequestId(bad)).toBe(false);
+      }
+    });
   });
 
   it('treats zero entries as a valid snapshot', () => {

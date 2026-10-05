@@ -77,6 +77,16 @@ export const CLIENT_REQUEST_ID_INVALID = failure(
 );
 
 /**
+ * Whether a `clientRequestId` matches `^[A-Za-z0-9_-]{8,64}$` — the one regex,
+ * the one source of truth. The record use case checks this first (attendance.md
+ * §18 S1 step 2, before any lookup, authorization, charge or observation), and
+ * `takeSnapshot` re-checks it as a domain invariant.
+ */
+export function isValidClientRequestId(value: string): boolean {
+  return CLIENT_REQUEST_ID.test(value);
+}
+
+/**
  * Build a snapshot from an observation (attendance.md §6.1). **Pure**: no clock,
  * no store, no side effect, no framework. It
  *
@@ -91,7 +101,7 @@ export const CLIENT_REQUEST_ID_INVALID = failure(
  * immutable, and nothing here (or anywhere) mutates one (§6.2 I5).
  */
 export function takeSnapshot(input: TakeSnapshotInput): Result<AttendanceSnapshot> {
-  if (!CLIENT_REQUEST_ID.test(input.clientRequestId)) return err(CLIENT_REQUEST_ID_INVALID);
+  if (!isValidClientRequestId(input.clientRequestId)) return err(CLIENT_REQUEST_ID_INVALID);
 
   const entries = collapse(input.entries);
   const connectedCount = entries.filter((entry) => entry.connection === 'CONNECTED').length;

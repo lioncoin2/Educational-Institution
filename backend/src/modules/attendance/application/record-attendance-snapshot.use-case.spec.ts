@@ -28,6 +28,7 @@ import type {
   SnapshotIdempotencyKey,
   SnapshotInsertOutcome,
 } from '../domain/ports';
+import { CLIENT_REQUEST_ID_INVALID } from '../domain/snapshot';
 import type {
   AttendanceSnapshot,
   AttendanceSnapshotHeader,
@@ -92,10 +93,12 @@ function header(id: string): AttendanceSnapshotHeader {
 }
 
 class FakeAuth implements CommunityAuthorization {
+  calls = 0;
   answer: (act: CommunityAct) => Result<CommunityPermit> = (act) =>
     act === 'community.attendance.record' ? ok(grantPermit(act)) : CAPABILITY_REQUIRED;
 
   authorize(_p: Principal, _c: string, act: CommunityAct): Promise<Result<CommunityPermit>> {
+    this.calls += 1;
     return Promise.resolve(this.answer(act));
   }
   authorizeEach(): never {
@@ -107,6 +110,7 @@ class FakeAuth implements CommunityAuthorization {
 }
 
 class FakeLiveSessions implements LiveSessions {
+  calls = 0;
   scope: LiveSessionScope | null = {
     liveSessionId: SESSION,
     communityId: COMMUNITY,
@@ -114,6 +118,7 @@ class FakeLiveSessions implements LiveSessions {
     active: true,
   };
   describe(): Promise<LiveSessionScope | null> {
+    this.calls += 1;
     return Promise.resolve(this.scope);
   }
 }
@@ -459,6 +464,48 @@ describe('RecordAttendanceSnapshotUseCase (attendance.md §18 S1/S2/S3)', () => 
       await h.useCase.execute({ ...command, clientRequestId: 'req_BBBBBBBB' });
       expect(h.presence.calls).toBe(2);
       expect(h.repo.inserted).toHaveLength(2);
+    });
+  });
+
+  describe('client request id validation ordering (§18 S1 step 2)', () => {
+    // A malformed clientRequestId is refused first — before the session lookup,
+    // the authorization, the idempotency lookup, the rate-limit charge and the
+    // observation — so none of those side effects occur.
+    const malformed = ['short', 'has space', 'bad*char', 'a'.repeat(65)];
+
+    for (const bad of malformed) {
+      it(`refuses ${JSON.stringify(bad)} with 422 before any lookup, charge or observation`, async () => {
+        const h = harness();
+        const result = await h.useCase.execute({ ...command, clientRequestId: bad });
+
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error('expected refusal');
+        expect(result.error).toBe(CLIENT_REQUEST_ID_INVALID);
+        expect(result.error.code).toBe('attendance.client_request_id_invalid');
+        expect(result.error.kind).toBe('validation');
+
+        // Nothing downstream ran: no session lookup, no authorization, no
+        // idempotency lookup, no rate charge, no observation, no persistence,
+        // no audit and no event.
+        expect(h.liveSessions.calls).toBe(0);
+        expect(h.auth.calls).toBe(0);
+        expect(h.rateLimiter.calls).toHaveLength(0);
+        expect(h.presence.calls).toBe(0);
+        expect(h.repo.inserted).toHaveLength(0);
+        expect(h.order).toEqual([]);
+      });
+    }
+
+    it('lets a well-formed clientRequestId through to the full S1 path', async () => {
+      const h = harness();
+      const result = await h.useCase.execute({ ...command, clientRequestId: 'req_AAAAAAAA' });
+
+      expect(result.ok).toBe(true);
+      expect(h.liveSessions.calls).toBe(1);
+      expect(h.auth.calls).toBe(1);
+      expect(h.presence.calls).toBe(1);
+      expect(h.repo.inserted).toHaveLength(1);
+      expect(h.order).toEqual(['audit', 'event']);
     });
   });
 });
