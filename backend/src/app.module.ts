@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AcademicModule } from './modules/academic/academic.module';
 import { AssignmentsModule } from './modules/assignments/assignments.module';
+import { AttendanceModule } from './modules/attendance/attendance.module';
 import { AutomationModule } from './modules/automation/automation.module';
 import { CommunitiesModule } from './modules/communities/communities.module';
 import { FilesModule } from './modules/files/files.module';
@@ -36,6 +37,7 @@ import { PlatformModule } from './platform/platform.module';
     AssignmentsModule,
     MessagingModule,
     LiveModule,
+    AttendanceModule,
     FilesModule,
     NotificationsModule,
     RealtimeModule,
