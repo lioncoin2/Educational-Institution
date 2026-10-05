@@ -26,8 +26,10 @@ import { cruise, edgesFrom, reachableFrom, type CruiseOutput } from '../support/
  *     notifications, academic, operations, attendance — those that exist),
  *     not even through their module files; its module file wires identity
  *     and Communities and nothing else;
- *   - live exports exactly its two contract tokens, LIVE_AUDIENCE and
- *     LIVE_SESSIONS (live.md §13);
+ *   - live exports exactly its contract tokens — LIVE_AUDIENCE, LIVE_SESSIONS
+ *     and LIVE_PRESENCE (live.md §13);
+ *   - live/contracts/presence.ts, the principal-less presence contract, is
+ *     imported only by attendance and the app wiring (§5.1);
  *   - live's tables are touched only by live's own adapters, and live reads
  *     no other module's tables.
  */
@@ -242,7 +244,7 @@ describe('live boundaries', () => {
     ]);
   });
 
-  it('exports exactly LIVE_AUDIENCE and LIVE_SESSIONS, each from its own contract', () => {
+  it('exports exactly LIVE_AUDIENCE, LIVE_PRESENCE and LIVE_SESSIONS, each from its own contract', () => {
     const text = readFileSync(join(MODULES_DIR, 'live', 'live.module.ts'), 'utf8');
     const exported = /exports:\s*\[([^\]]*)\]/.exec(text);
     expect(exported).not.toBeNull();
@@ -251,9 +253,27 @@ describe('live boundaries', () => {
       .map((entry) => entry.trim())
       .filter(Boolean)
       .sort();
-    expect(tokens).toEqual(['LIVE_AUDIENCE', 'LIVE_SESSIONS']);
+    expect(tokens).toEqual(['LIVE_AUDIENCE', 'LIVE_PRESENCE', 'LIVE_SESSIONS']);
     expect(text).toContain("import { LIVE_AUDIENCE } from './contracts/live-audience';");
+    expect(text).toContain("import { LIVE_PRESENCE } from './contracts/presence';");
     expect(text).toContain("import { LIVE_SESSIONS } from './contracts/live-sessions';");
+  });
+
+  it('keeps presence.ts to attendance and the app wiring — the principal-less presence contract', () => {
+    const PRESENCE = 'src/modules/live/contracts/presence.ts';
+    const importers = edgesFrom(output, () => true)
+      .filter((edge) => edge.resolved === PRESENCE)
+      .map((edge) => edge.source);
+    // Only Live's own files, attendance, and the app composition root may import it (§5.1).
+    const outside = importers.filter(
+      (source) =>
+        !source.startsWith('src/modules/live/') &&
+        !source.startsWith('src/modules/attendance/') &&
+        source !== 'src/app.module.ts',
+    );
+    expect(outside).toEqual([]);
+    // Not vacuous: Live's own presence service implements the contract.
+    expect(importers).toContain('src/modules/live/application/live-presence.service.ts');
   });
 
   it('keeps its tables to its own adapters, and reads no other module’s tables', () => {

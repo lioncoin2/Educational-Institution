@@ -16,6 +16,7 @@ import { LiveAccess } from './application/live-access';
 import { LiveJournal } from './application/live-journal';
 import { LiveMedia } from './application/live-media';
 import { LiveMediaReadiness } from './application/live-media-readiness';
+import { LivePresenceService } from './application/live-presence.service';
 import { LiveReconciler } from './application/live-reconciler';
 import { LiveSessionLifecycle } from './application/live-session-lifecycle';
 import { LiveSessionsReader } from './application/live-sessions.reader';
@@ -34,6 +35,7 @@ import { RoomOccupancy } from './application/room-occupancy';
 import { LiveSessionViews } from './application/session-views';
 import { StartLiveSessionUseCase } from './application/start-live-session.use-case';
 import { LIVE_AUDIENCE } from './contracts/live-audience';
+import { LIVE_PRESENCE } from './contracts/presence';
 import { LIVE_SESSIONS } from './contracts/live-sessions';
 import {
   LIVE_SESSION_REPOSITORY,
@@ -172,10 +174,12 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
  * Communities announces a removal, a revocation, a transfer or a lock
  * (§11.6), and the sweep backstops any event that is lost.
  *
- * It exports its two contracts only (§13):
+ * It exports its contracts only (§13):
  *
  *   LIVE_SESSIONS   a session's scope, from Live's own record
  *   LIVE_AUDIENCE   who a session's facts may reach, as Communities answers it
+ *   LIVE_PRESENCE   one observation of who the provider holds now (P9), over
+ *                   RTC_OBSERVER; importable by attendance only
  */
 @Module({
   imports: [IdentityModule, CommunitiesModule],
@@ -241,7 +245,8 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
     ProtectLiveSessions,
     { provide: LIVE_SESSIONS, useClass: LiveSessionsReader },
     { provide: LIVE_AUDIENCE, useClass: LiveAudienceService },
+    { provide: LIVE_PRESENCE, useClass: LivePresenceService },
   ],
-  exports: [LIVE_AUDIENCE, LIVE_SESSIONS],
+  exports: [LIVE_AUDIENCE, LIVE_SESSIONS, LIVE_PRESENCE],
 })
 export class LiveModule {}

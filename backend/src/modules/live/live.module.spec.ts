@@ -26,6 +26,7 @@ import { LiveSessionsReader } from './application/live-sessions.reader';
 import { LIVE_SETTINGS, type LiveSettings } from './application/live-settings';
 import { ProtectLiveSessions } from './application/protect-live-sessions';
 import { LIVE_AUDIENCE, LIVE_SESSIONS } from './contracts';
+import { LIVE_PRESENCE } from './contracts/presence';
 import { MAX_JOIN_TOKEN_TTL_SECONDS, isJoinTokenTtl } from './domain/live-limits';
 import { newLiveSession } from './domain/live-session';
 import {
@@ -110,7 +111,7 @@ const REAL_MEDIA = {
 };
 
 describe('the Live module', () => {
-  it('imports identity and Communities, and exports its two contracts — nothing else', () => {
+  it('imports identity and Communities, and exports its contracts — nothing else', () => {
     expect(Reflect.getMetadata(MODULE_METADATA.IMPORTS, LiveModule)).toEqual([
       IdentityModule,
       CommunitiesModule,
@@ -118,6 +119,7 @@ describe('the Live module', () => {
     expect(Reflect.getMetadata(MODULE_METADATA.EXPORTS, LiveModule)).toEqual([
       LIVE_AUDIENCE,
       LIVE_SESSIONS,
+      LIVE_PRESENCE,
     ]);
   });
 
