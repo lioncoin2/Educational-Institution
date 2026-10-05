@@ -96,6 +96,7 @@ describe('route authorization', () => {
       'modules/academic/api/my-academic.controller.ts#MyAcademicController',
       'modules/academic/api/relationships.controller.ts#AcademicRelationshipsController',
       'modules/academic/api/structure.controller.ts#AcademicStructureController',
+      'modules/attendance/api/attendance.controller.ts#AttendanceController',
       'modules/communities/api/communities.controller.ts#CommunitiesController',
       'modules/communities/api/community-grants.controller.ts#CommunityGrantsController',
       'modules/communities/api/community-invitations.controller.ts#CommunityInvitationsController',

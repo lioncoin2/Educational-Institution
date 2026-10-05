@@ -3,7 +3,9 @@ import { Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/app-config';
 import { DATABASE, type Database } from '../../platform/database';
 import { CommunitiesModule } from '../communities/communities.module';
+import { IdentityModule } from '../identity/identity.module';
 import { LiveModule } from '../live/live.module';
+import { AttendanceController } from './api/attendance.controller';
 import { AttendanceAccess } from './application/attendance-access';
 import { AttendanceJournal } from './application/attendance-journal';
 import { RecordAttendanceSnapshotUseCase } from './application/record-attendance-snapshot.use-case';
@@ -32,15 +34,21 @@ export function attendanceSnapshotRepositoryFor(
  * `RecordAttendanceSnapshotUseCase`.
  *
  * It imports `CommunitiesModule` for `COMMUNITY_AUTHORIZATION` (through
- * `AttendanceAccess`) and `LiveModule` for `LIVE_SESSIONS` and `LIVE_PRESENCE`
- * — contracts only (§4, live.md §13); Live never imports Attendance, so the
- * graph stays acyclic and needs no `forwardRef`. The clock, id generator, rate
- * limiter, audit log and event publisher are global (platform). `IdentityModule`
- * is not needed here — it joins in the later API slice, with the controller and
- * routes, which are not part of this slice.
+ * `AttendanceAccess`), `LiveModule` for `LIVE_SESSIONS` and `LIVE_PRESENCE`, and
+ * `IdentityModule` for `ACCOUNT_DIRECTORY` — the API layer resolves the
+ * recorder's name at view time (§6.3). Contracts only (§4, live.md §13); none
+ * of them imports Attendance, so the graph stays acyclic and needs no
+ * `forwardRef`. The clock, id generator, rate limiter, audit log and event
+ * publisher are global (platform).
+ *
+ * The API slice adds one authenticated route — `AttendanceController`,
+ * `POST /attendance/live-sessions/:liveSessionId/snapshots` — which only
+ * transports input to `RecordAttendanceSnapshotUseCase` and formats its result;
+ * it decides no access. List/entries routes are a later slice.
  */
 @Module({
-  imports: [CommunitiesModule, LiveModule],
+  imports: [IdentityModule, CommunitiesModule, LiveModule],
+  controllers: [AttendanceController],
   providers: [
     AttendanceAccess,
     AttendanceJournal,
