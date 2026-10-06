@@ -164,6 +164,31 @@ export function messageSentFrame(input: {
   });
 }
 
+/**
+ * "A message in this conversation was deleted" (Q51/Q23, ADR 0029) — a hint,
+ * like the Communities and Live frames: the ids and the sequence, never the
+ * body and never who deleted it. The client marks that sequence a tombstone or
+ * re-reads the conversation over HTTP, which returns the tombstone; the
+ * original is reachable only through the audited moderation review, never here.
+ * A message is deleted once, so its id names the fact — a redelivery is a
+ * duplicate a client drops.
+ */
+export function messageDeletedFrame(input: {
+  readonly occurredAt: Date;
+  readonly conversationId: string;
+  readonly messageId: string;
+  readonly sequence: number;
+}): string {
+  return frame({
+    type: 'message.deleted',
+    eventId: `message.deleted:${input.messageId}`,
+    occurredAt: input.occurredAt.toISOString(),
+    conversationId: input.conversationId,
+    messageId: input.messageId,
+    sequence: input.sequence,
+  });
+}
+
 export function conversationCreatedFrame(input: {
   readonly occurredAt: Date;
   readonly conversationId: string;

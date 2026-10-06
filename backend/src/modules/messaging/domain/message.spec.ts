@@ -21,7 +21,7 @@ const base = {
 
 const stored = (draft: ReturnType<typeof textDraft>): Message => {
   if (!draft.ok) throw new Error(draft.error.code);
-  return { ...draft.value, sequence: 1, editedAt: null, deletedAt: null };
+  return { ...draft.value, sequence: 1, editedAt: null, deletedAt: null, deletedBy: null };
 };
 
 describe('message bodies', () => {
@@ -89,8 +89,18 @@ describe('idempotent retries', () => {
 describe('tombstones', () => {
   it('shows that a deleted message existed, and nothing of what it said', () => {
     const message = stored(textDraft({ ...base, body: 'secret' }));
-    const deleted = { ...message, deletedAt: new Date('2026-09-02T00:00:00Z') };
-    expect(asSeen(deleted)).toMatchObject({ body: null, attachments: [], sequence: 1 });
+    const deleted: Message = {
+      ...message,
+      deletedAt: new Date('2026-09-02T00:00:00Z'),
+      deletedBy: 'moderator-1',
+    };
+    const seen = asSeen(deleted);
+    // The content is gone; where, when and who sent it remain.
+    expect(seen).toMatchObject({ body: null, attachments: [], sequence: 1, senderId: 'u-1' });
+    // The deletion stamps stay on the domain object (MessageView is what drops
+    // `deletedBy` from the wire a normal reader sees).
+    expect(seen.deletedAt).toEqual(deleted.deletedAt);
+    expect(seen.deletedBy).toBe('moderator-1');
     expect(asSeen(message)).toBe(message);
   });
 });

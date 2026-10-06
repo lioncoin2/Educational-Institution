@@ -148,6 +148,7 @@ message history, no profile data.
 | --- | --- |
 | `conversation.created` | its members at creation (so a new conversation appears before anything is said) |
 | `message.sent` | every **current** member whose history window includes the message's sequence — the sender's own devices too, with their `clientMessageId`; nobody else sees that key |
+| `message.deleted` | the same audience as the send it tombstones (a moderator deleted it, Q51/Q23) — ids and the sequence only, no body and never who deleted it; the client re-reads to see the tombstone |
 | `message.read` | the **reader's own** devices (read on the phone, badge clears on the laptop). Not other members: read receipts are open question Q25 |
 | `participant.added` | the person added |
 | `participant.removed` | the person removed or who left — no content |

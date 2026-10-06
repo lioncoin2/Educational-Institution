@@ -1556,5 +1556,91 @@ Each item below is deliberately later, and none is needed for what P4 does:
   This cannot happen under `FULL`, the current setting.
 - **The rest of §19:**
   - sequence allocation without the row lock, if Q51 lets many post;
-  - `community.messages.moderate`, which waits on Q51 and Q23;
+  - `community.messages.moderate` — **landed in P12 (2026-10-07, §21,
+    [ADR 0029](decisions/0029-community-message-moderation.md))**;
   - the Q28 collapse seam.
+
+---
+
+## 21. Message moderation (Q51/Q23)
+
+Deleting and reviewing others' messages in a community's chat, built in P12
+(2026-10-07, [ADR 0029](decisions/0029-community-message-moderation.md)). It
+reuses the projection and authorization machinery of §5–§7; it adds no generic
+framework, no new identity permission and no new role.
+
+### 21.1 The authority
+
+A new delegable Community capability, **`community.messages.moderate`** — the
+owner holds it implicitly, or delegates it to a member. Its standing ceiling is
+`communities.moderate` alone (the single delegable-capability ceiling, ADR 0017),
+**never** identity's `messaging.manage` (that permission is the OWNER role's
+alone, so requiring it would deny every teacher and delegated moderator the
+act). Its lifecycle gate is `always`: content moderation is management, open
+even while the community is LOCKED, as member removal is. No oversight reaches
+it (`communities.manage` never reads or moderates a chat — §7.1, Q43).
+
+Every delete and every review asks Communities, per request, for this capability
+in the message's OWN community (`CommunityChats.mayModerate` →
+`COMMUNITY_AUTHORIZATION.authorize`). It is **never** decided from the projected
+participant rows and **never** from `community.chat.read`: moderation is not
+read, and reading the chat is neither implied by it nor required for it. A grant
+in community A gives nothing in B. The refusals mirror a read's: a non-member
+hears the 404 any non-member hears; a member without the capability (a student)
+is 403 `messaging.message_moderation_forbidden`; Communities unreachable is 503.
+
+### 21.2 Delete — a tombstone
+
+`DELETE /messaging/conversations/:conversationId/messages/:messageId`
+(`@Authenticated()`; the decision is the use case's). The conversation must be a
+community chat, or it is the 404 a non-member hears — moderation is a
+community-chat operation only, never a DIRECT or GROUP message.
+
+`softDeleteMessage` stamps `deleted_at` and `deleted_by` in one idempotent,
+atomic statement (set only if unset), so a repeat or a concurrent delete cannot
+clobber the first delete's stamps and raises no second event or audit. The body
+and attachment rows are KEPT for the review window. `asSeen` already blanks a
+deleted message's body and attachments in every normal read path, so the
+retained original never leaks; `MessageView` carries `deleted_at` (that it is
+gone) but not `deleted_by` (who acted). 204 whether the delete applied now or had
+already applied. Audited as `messaging.moderation.message_deleted` with the
+permit's basis; `messaging.message.deleted` is raised.
+
+### 21.3 Review — the original, for exactly 7 days
+
+`POST /messaging/conversations/:conversationId/messages/:messageId/review` — a
+POST because it is a sensitive, audited disclosure, never a cacheable GET. Gated
+by `community.messages.moderate`, it returns the ORIGINAL body, attachments and
+`deleted_by` (the one un-tombstoned render, `MessagingViews.reviewed`) while
+`now < deleted_at + 7d`. Past the window it is 404
+`messaging.deleted_message_review_expired`; absent or not-deleted is 404
+`messaging.deleted_message_not_found`. It widens neither `messaging.read` nor
+`community.chat.read`, and is audited as `messaging.moderation.message_reviewed`.
+
+### 21.4 Retention — the original wiped, the tombstone kept
+
+`MessageRetentionSweeper` (the §7.5 sweeper pattern — boot tick, unref'd
+interval, single-flight) wipes the body and deletes the attachment rows of
+messages deleted on or before `now − 7d`, in batches. The review bound
+(`now < deleted_at + 7d`) and the retention bound (`deleted_at + 7d ≤ now`) are
+complementary, so the 7-day boundary is deterministic. It never hard-deletes a
+message ROW — ordering, read state and the tombstone survive — and is a pure
+backstop: review refuses past the window whether or not retention has run.
+
+### 21.5 Realtime — a content-free hint
+
+`messaging.message.deleted` (ids and the sequence only; never the body, never
+who deleted it) is relayed as a `message.deleted` frame to the same audience the
+send reached — current members who can see that sequence. The client marks the
+sequence a tombstone or re-reads over HTTP; the original is reachable only
+through §21.3, never the wire. The moderator is in the audit trail, never on a
+subscriber's stream.
+
+### 21.6 The attachment / Files boundary
+
+Wiping a deleted message's content is self-contained in messaging:
+`message_attachments` reference rows are messaging-owned (cascaded on a row
+delete, deleted directly by retention), and `file_asset_id` is a plain reference,
+not a foreign key into Files. The `FileAssets` contract has no delete method, so
+messaging never deletes a file asset; the bytes are Files' own to retire under
+its own retention. No cross-module deletion is invented (ADR 0029).

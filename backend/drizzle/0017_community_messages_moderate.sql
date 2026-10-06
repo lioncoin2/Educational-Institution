@@ -1,0 +1,4 @@
+ALTER TABLE "communities_capability_grants" DROP CONSTRAINT "communities_capability_grants_capability_valid";--> statement-breakpoint
+ALTER TABLE "messages" ADD COLUMN "deleted_by" text;--> statement-breakpoint
+ALTER TABLE "communities_capability_grants" ADD CONSTRAINT "communities_capability_grants_capability_valid" CHECK ("communities_capability_grants"."capability" in ('community.members.view', 'community.members.invite', 'community.members.remove', 'community.lock', 'community.chat.post', 'community.messages.moderate', 'community.live.start', 'community.live.moderate', 'community.attendance.record', 'community.attendance.view'));--> statement-breakpoint
+ALTER TABLE "messages" ADD CONSTRAINT "messages_deleted_by_consistent" CHECK (("messages"."deleted_at" is null) = ("messages"."deleted_by" is null));

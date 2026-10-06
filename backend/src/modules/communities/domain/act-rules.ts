@@ -25,8 +25,9 @@ import { GATE_OF_ACT, type LifecycleGate } from './lifecycle';
  *   gate               the lifecycle effect the act needs (lifecycle.ts)
  *
  * Decided by Q43 (oversight reach), Q44 (ceilings), Q46 (the gate), Q51 (who
- * posts) and Q54 (who starts and moderates live sessions). Answering any of
- * them edits this table and its pinning test; no consumer changes.
+ * posts, and — with Q23 — who moderates messages) and Q54 (who starts and
+ * moderates live sessions). Answering any of them edits this table and its
+ * pinning test; no consumer changes.
  *
  * Kept inside Communities: no other module holds a copy of these rules —
  * they ask COMMUNITY_AUTHORIZATION.
@@ -102,6 +103,16 @@ export const ACT_RULES: Readonly<Record<CommunityAct, ActRule>> = Object.freeze(
   // narrow by exactly the ceiling this rule asks of a person (§7.3).
   'community.chat.read': rule('community.chat.read', COMMUNITY_CHAT_READ_CEILING, null),
   'community.chat.post': rule('community.chat.post', [communities.moderate, messaging.send], null),
+  // Deleting and reviewing others' messages in the community's chat (Q51/Q23,
+  // P12, ADR 0029). A delegable capability the owner holds and may grant; the
+  // single delegable-capability ceiling `communities.moderate` (ADR 0017), and
+  // NEVER `messaging.manage` — that identity permission is the OWNER role's
+  // alone (provisional-policy.ts), so requiring it would deny every teacher and
+  // every delegated moderator the act. No oversight reaches it: oversight never
+  // reads a community's chat (Q43), so it never moderates one either. The gate
+  // is `always` — content moderation is management, open even while LOCKED
+  // (lifecycle.ts), as live moderation and member removal are.
+  'community.messages.moderate': rule('community.messages.moderate', [communities.moderate], null),
   'community.live.start': rule('community.live.start', [communities.moderate, live.moderate], null),
   // Backed by live.start: the same ceiling and the same holders.
   'community.live.host': rule('community.live.host', [communities.moderate, live.moderate], null),

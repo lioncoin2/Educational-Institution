@@ -110,4 +110,45 @@ describe('a community chat, in real time', () => {
     expect(errorOf(present)).toMatchObject({ code: 'SERVER_ERROR', conversationId: chatId });
     expect(present.link.ofType('subscribed')).toEqual([]);
   });
+
+  it('delivers message.deleted as a content-free hint when a moderator deletes a message (Q51/Q23)', async () => {
+    const present = await h.connect(member.accessToken);
+    const original = await h.messaging.text(owner.principal, chatId, 'a message to be removed');
+    await h.settle();
+    expect(sentTo(present).map((frame) => frame.messageId)).toEqual([original.message.id]);
+
+    // The owner moderates by ownership; the deletion reaches the same member.
+    const deleted = await h.messaging.moderateMessage.execute({
+      principal: owner.principal,
+      conversationId: chatId,
+      messageId: original.message.id,
+      meta: META,
+    });
+    expect(deleted.ok).toBe(true);
+    await h.settle();
+
+    const frames = present.link.ofType('message.deleted');
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toMatchObject({
+      type: 'message.deleted',
+      conversationId: chatId,
+      messageId: original.message.id,
+      sequence: original.message.sequence,
+    });
+    // A hint and nothing more: no body, never who deleted it, and not one field
+    // beyond ids, the sequence and the envelope — the client re-reads to see the
+    // tombstone, and the original is reachable only through the audited review.
+    const serialized = JSON.stringify(frames[0]);
+    expect(serialized).not.toContain('a message to be removed');
+    expect(serialized).not.toContain(owner.userId);
+    expect(Object.keys(frames[0] ?? {}).sort()).toEqual([
+      'conversationId',
+      'eventId',
+      'messageId',
+      'occurredAt',
+      'sequence',
+      'type',
+      'version',
+    ]);
+  });
 });

@@ -71,6 +71,10 @@ export const GATE_OF_ACT: Readonly<Record<CommunityAct, LifecycleGate>> = Object
   'community.members.invite': 'acceptsMembers',
   'community.chat.read': 'chatReadable',
   'community.chat.post': 'chatPostingOpen',
+  // Content moderation is management (Q51/Q23, ADR 0029): a moderator may delete
+  // a rule-breaking message even while the community is LOCKED — as member
+  // removal and live moderation stay open — so no status closes it.
+  'community.messages.moderate': 'always',
   'community.live.start': 'liveStartOpen',
   'community.live.join': 'liveJoinOpen',
   'community.live.raise_hand': 'liveJoinOpen',

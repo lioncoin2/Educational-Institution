@@ -9,6 +9,7 @@ import type {
   MessageView,
   ParticipantView,
   PersonView,
+  ReviewedMessageView,
 } from '../application/views';
 
 /** Wire shapes: explicit, flat, ISO-8601 instants. */
@@ -47,6 +48,29 @@ export interface MessagePageResponse {
   readonly hasNewer: boolean;
   readonly lastReadSequence: number;
   readonly senders: readonly PersonView[];
+}
+
+/**
+ * A deleted message's original, as the audited moderation review returns it
+ * (Q51/Q23). Unlike `MessageResponse` it carries `deletedBy` (and a name),
+ * because this is the one disclosure of who moderated and what was said — and
+ * it is reached only with `community.messages.moderate`, within the window.
+ */
+export interface ReviewedMessageResponse {
+  readonly id: string;
+  readonly conversationId: string;
+  readonly sequence: number;
+  readonly senderId: string;
+  readonly senderName: string | null;
+  readonly type: MessageType;
+  readonly body: string | null;
+  readonly replyToMessageId: string | null;
+  readonly createdAt: string;
+  readonly editedAt: string | null;
+  readonly deletedAt: string;
+  readonly deletedBy: string;
+  readonly deletedByName: string | null;
+  readonly attachments: readonly AttachmentResponse[];
 }
 
 export interface MessagePreviewResponse {
@@ -126,6 +150,25 @@ export function toMessagePageResponse(page: MessagePage): MessagePageResponse {
     hasNewer: page.hasNewer,
     lastReadSequence: page.lastReadSequence,
     senders: page.senders,
+  };
+}
+
+export function toReviewedMessageResponse(view: ReviewedMessageView): ReviewedMessageResponse {
+  return {
+    id: view.id,
+    conversationId: view.conversationId,
+    sequence: view.sequence,
+    senderId: view.senderId,
+    senderName: view.senderName,
+    type: view.type,
+    body: view.body,
+    replyToMessageId: view.replyToMessageId,
+    createdAt: view.createdAt.toISOString(),
+    editedAt: iso(view.editedAt),
+    deletedAt: view.deletedAt.toISOString(),
+    deletedBy: view.deletedBy,
+    deletedByName: view.deletedByName,
+    attachments: view.attachments.map(toAttachmentResponse),
   };
 }
 

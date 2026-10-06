@@ -18,6 +18,7 @@ import {
   MessagingEvents,
   type ConversationCreated,
   type MessageDelivery,
+  type MessageDeleted,
   type MessageRead,
   type MessageRecipients,
   type MessageSent,
@@ -27,6 +28,7 @@ import {
 import { ConnectionManager } from './connection-manager';
 import {
   conversationCreatedFrame,
+  messageDeletedFrame,
   messageReadFrame,
   messageSentFrame,
   participantAddedFrame,
@@ -45,6 +47,9 @@ import { onlineAudience } from './online-audience';
  *                        that has committed is already in effect — the
  *                        sender's own devices included, with the
  *                        clientMessageId that reconciles their optimistic send
+ *   message.deleted      the same audience as the send it tombstones (Q51/Q23):
+ *                        ids and the sequence only — no body, and never who
+ *                        deleted it; the client re-reads and sees a tombstone
  *   message.read         the reader's own devices: their read mark moved.
  *                        Nobody else — whether others may see how far someone
  *                        has read is an open question (Q25)
@@ -81,6 +86,7 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
     for (const name of [
       MessagingEvents.conversationCreated,
       MessagingEvents.messageSent,
+      MessagingEvents.messageDeleted,
       MessagingEvents.messageRead,
       MessagingEvents.participantAdded,
       MessagingEvents.participantRemoved,
@@ -133,6 +139,8 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
       }
       case MessagingEvents.messageSent:
         return this.messageSent(event);
+      case MessagingEvents.messageDeleted:
+        return this.messageDeleted(event);
       case MessagingEvents.messageRead: {
         const payload = messageReadPayload(event);
         if (payload === null) return this.malformed(event);
@@ -199,6 +207,25 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private async messageDeleted(event: DomainEvent): Promise<void> {
+    const payload = messageDeletedPayload(event);
+    if (payload === null) return this.malformed(event);
+
+    // The same audience as the send it tombstones: current members who can see
+    // that sequence and are connected here. One content-free frame to them all.
+    const online = await this.onlineMembers(payload.conversationId, payload.sequence);
+    if (online.length === 0) return;
+    this.connections.sendToUsers(
+      online,
+      messageDeletedFrame({
+        occurredAt: event.occurredAt,
+        conversationId: payload.conversationId,
+        messageId: payload.messageId,
+        sequence: payload.sequence,
+      }),
+    );
+  }
+
   /**
    * The conversation's current members — who can see `visibleSequence`,
    * when given — that are connected to this instance (gate G1). Messaging
@@ -261,6 +288,19 @@ function messageSentPayload(event: DomainEvent): MessageSent['payload'] | null {
     return null;
   }
   return p as MessageSent['payload'];
+}
+
+function messageDeletedPayload(event: DomainEvent): MessageDeleted['payload'] | null {
+  const p = fieldsOf<MessageDeleted['payload']>(event, MessagingEvents.messageDeleted);
+  if (
+    p === null ||
+    typeof p.conversationId !== 'string' ||
+    typeof p.messageId !== 'string' ||
+    !isCount(p.sequence)
+  ) {
+    return null;
+  }
+  return p as MessageDeleted['payload'];
 }
 
 function messageReadPayload(event: DomainEvent): MessageRead['payload'] | null {

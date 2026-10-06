@@ -97,6 +97,12 @@ describe('the act rules (PROVISIONAL)', () => {
         owner: true,
         gate: 'chatPostingOpen',
       },
+      'community.messages.moderate': {
+        standing: 'communities.moderate',
+        oversight: null,
+        owner: true,
+        gate: 'always',
+      },
       'community.live.start': {
         standing: 'communities.moderate + live.moderate',
         oversight: null,
@@ -242,6 +248,7 @@ describe('the act vocabulary', () => {
       'community.members.remove',
       'community.lock',
       'community.chat.post',
+      'community.messages.moderate',
       'community.live.start',
       'community.live.moderate',
       'community.attendance.record',
@@ -277,17 +284,26 @@ describe('the act vocabulary', () => {
     expect(isCommunityOperation(TRANSFER_OWNERSHIP.name)).toBe(true);
   });
 
-  it('keeps the still-reserved names out until the migration that allows them', () => {
-    // Reserved until Q51/Q23 — not yet in the vocabulary.
-    for (const reserved of ['community.messages.moderate']) {
-      expect(isCommunityAct(reserved)).toBe(false);
-      expect(isCommunityCapability(reserved)).toBe(false);
-    }
-    // The attendance acts moved from reserved to active on 2026-10-05 (the P9
-    // Attendance prerequisite): they are now delegable capabilities and acts.
-    for (const act of ['community.attendance.record', 'community.attendance.view']) {
+  it('has activated every once-reserved name — the vocabulary is closed with nothing reserved', () => {
+    // Moved from reserved to active: message moderation on 2026-10-07 (Q51/Q23,
+    // P12); the attendance acts on 2026-10-05 (the P9 prerequisite). All are now
+    // delegable capabilities and acts.
+    for (const act of [
+      'community.messages.moderate',
+      'community.attendance.record',
+      'community.attendance.view',
+    ]) {
       expect(isCommunityCapability(act)).toBe(true);
       expect(isCommunityAct(act)).toBe(true);
+    }
+    // A name the vocabulary does not list is still no act: the union stays closed.
+    for (const unknown of [
+      'community.messages.pin',
+      'community.secrets.read',
+      'community.messages',
+    ]) {
+      expect(isCommunityAct(unknown)).toBe(false);
+      expect(isCommunityCapability(unknown)).toBe(false);
     }
   });
 });

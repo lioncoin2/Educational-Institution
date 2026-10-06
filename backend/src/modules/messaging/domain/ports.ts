@@ -18,6 +18,16 @@ export type AppendOutcome =
   /** The sender is not (or no longer) a current member. */
   | { readonly kind: 'not_participant' };
 
+export type SoftDeleteOutcome =
+  /**
+   * The message is deleted. `alreadyDeleted` is true when a concurrent or
+   * repeated delete had already set the tombstone, so this call changed
+   * nothing — the stamps are the FIRST delete's, and no event or audit follows.
+   */
+  | { readonly kind: 'deleted'; readonly message: Message; readonly alreadyDeleted: boolean }
+  /** No message with that id in that conversation. */
+  | { readonly kind: 'not_found' };
+
 export type AddParticipantsOutcome =
   | {
       readonly kind: 'added';
@@ -114,6 +124,36 @@ export interface MessagingRepository {
     userId: string,
     sequence: number,
   ): Promise<MarkReadOutcome>;
+
+  // ── Moderation (Q51/Q23, community-chat.md §21; ADR 0029). ──
+
+  /**
+   * Soft-delete one message, by a moderator. ONE idempotent, atomic statement:
+   * `deletedAt`/`deletedBy` are set only if still unset, so two moderators (or
+   * a retry) race without clobbering — the loser gets `alreadyDeleted: true`
+   * and nothing is rewritten. The body and attachment rows are KEPT for the
+   * review window; sequence, read state and ordering never change. No
+   * conversation lock: a deleted message is terminal and shares no row with
+   * sequence assignment. `not_found` if the message is not in the conversation.
+   */
+  softDeleteMessage(input: {
+    readonly conversationId: ConversationId;
+    readonly messageId: MessageId;
+    readonly deletedBy: string;
+    readonly at: Date;
+  }): Promise<SoftDeleteOutcome>;
+
+  /**
+   * Retention: hard-delete the CONTENT of messages soft-deleted on or before
+   * `deletedBefore` — the body set to null and the attachment rows removed —
+   * at most `limit` of them, oldest deletion first, and returns how many were
+   * wiped (fewer than `limit` means the backlog is clear). The tombstone ROW
+   * stays, so history still shows a deleted message. The referenced file assets
+   * are never touched: a message only references them and Files owns their
+   * lifecycle — there is no Files deletion contract to call (ADR 0029). Idempotent:
+   * a message already wiped (no body, no attachments) is not counted again.
+   */
+  purgeDeletedBefore(deletedBefore: Date, limit: number): Promise<number>;
 
   // ── Community chats (community-chat.md §5–§7). Silent: no event, no audit. ──
 

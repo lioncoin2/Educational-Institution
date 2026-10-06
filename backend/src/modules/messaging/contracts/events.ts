@@ -19,6 +19,7 @@ export const MessagingEvents = {
   participantRemoved: 'messaging.participant.removed',
   messageSent: 'messaging.message.sent',
   messageRead: 'messaging.message.read',
+  messageDeleted: 'messaging.message.deleted',
 } as const;
 
 export type ConversationCreated = DomainEvent<
@@ -74,5 +75,25 @@ export type MessageRead = DomainEvent<
   }
 >;
 
+/**
+ * A moderator deleted a message (Q51/Q23). Ids and a sequence only — never the
+ * body, and never WHO deleted it: the moderator is in the audit trail, not on
+ * any subscriber's stream. A reader learns the message is now a tombstone by
+ * re-reading it; the realtime frame built from this carries no more than this.
+ */
+export type MessageDeleted = DomainEvent<
+  typeof MessagingEvents.messageDeleted,
+  {
+    readonly conversationId: string;
+    readonly messageId: string;
+    readonly sequence: number;
+  }
+>;
+
 export type MessagingEvent =
-  ConversationCreated | ParticipantAdded | ParticipantRemoved | MessageSent | MessageRead;
+  | ConversationCreated
+  | ParticipantAdded
+  | ParticipantRemoved
+  | MessageSent
+  | MessageRead
+  | MessageDeleted;

@@ -33,6 +33,11 @@ import {
   RemoveParticipantUseCase,
 } from './application/membership.use-cases';
 import { MessageRecipientsService } from './application/message-recipients.service';
+import { MessageRetentionSweeper } from './application/message-retention.sweeper';
+import {
+  ModerateMessageUseCase,
+  ReviewDeletedMessageUseCase,
+} from './application/moderate-message.use-cases';
 import { MessagingViews } from './application/messaging-views';
 import {
   GetConversationUseCase,
@@ -115,6 +120,7 @@ import { InMemoryMessagingStore } from './infrastructure/in-memory-messaging-sto
     CommunityChatSync,
     CommunityChatReconciler,
     CommunityChatSweeper,
+    MessageRetentionSweeper,
     CommunityChats,
     MessagingViews,
     ConversationFactory,
@@ -136,6 +142,8 @@ import { InMemoryMessagingStore } from './infrastructure/in-memory-messaging-sto
     LeaveConversationUseCase,
     GetAttachmentLinkUseCase,
     GetCommunityChatUseCase,
+    ModerateMessageUseCase,
+    ReviewDeletedMessageUseCase,
     { provide: MESSAGE_RECIPIENTS, useClass: MessageRecipientsService },
     { provide: MESSAGE_DELIVERY, useClass: MessageDeliveryService },
   ],

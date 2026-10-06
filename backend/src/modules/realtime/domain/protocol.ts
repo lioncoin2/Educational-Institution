@@ -20,6 +20,7 @@
  *   error                 { code, message } — codes below, never a stack trace
  *   conversation.created  the reader is in a conversation just created
  *   message.sent          a new message
+ *   message.deleted       a message was deleted (a moderator); ids + sequence only
  *   message.read          the reader's own read mark moved (their other devices)
  *   participant.added     the reader was added to a conversation
  *   participant.removed   the reader was removed from, or left, a conversation

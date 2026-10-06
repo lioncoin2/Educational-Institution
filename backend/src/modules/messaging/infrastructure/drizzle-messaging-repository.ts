@@ -19,6 +19,7 @@ import type {
   CreateDirectOutcome,
   MarkReadOutcome,
   MessagingRepository,
+  SoftDeleteOutcome,
 } from '../domain/ports';
 import {
   conversationRow,
@@ -176,7 +177,13 @@ export class DrizzleMessagingRepository implements MessagingRepository {
             ),
           );
 
-        const message: Message = { ...draft, sequence, editedAt: null, deletedAt: null };
+        const message: Message = {
+          ...draft,
+          sequence,
+          editedAt: null,
+          deletedAt: null,
+          deletedBy: null,
+        };
         return { kind: 'appended', message } as const;
       });
     } catch (error) {
@@ -332,6 +339,64 @@ export class DrizzleMessagingRepository implements MessagingRepository {
     return isActive(current)
       ? { kind: 'unchanged', lastReadSequence: current.lastReadSequence }
       : { kind: 'not_participant' };
+  }
+
+  async softDeleteMessage(input: {
+    readonly conversationId: ConversationId;
+    readonly messageId: MessageId;
+    readonly deletedBy: string;
+    readonly at: Date;
+  }): Promise<SoftDeleteOutcome> {
+    // Set the tombstone only if it is not set yet: one atomic UPDATE, so a
+    // repeat or a concurrent delete cannot clobber the first delete's stamps.
+    const updated = await this.db
+      .update(messages)
+      .set({ deletedAt: input.at, deletedBy: input.deletedBy })
+      .where(
+        and(
+          eq(messages.conversationId, input.conversationId),
+          eq(messages.id, input.messageId),
+          isNull(messages.deletedAt),
+        ),
+      )
+      .returning();
+    const row = updated[0];
+    if (row !== undefined) {
+      const message = toMessage(row, await this.attachmentsOf(this.db, row.id));
+      return { kind: 'deleted', message, alreadyDeleted: false };
+    }
+    // No row updated: either it does not exist, or it was already deleted.
+    const existing = await this.findMessage(input.conversationId, input.messageId);
+    return existing === null
+      ? { kind: 'not_found' }
+      : { kind: 'deleted', message: existing, alreadyDeleted: true };
+  }
+
+  async purgeDeletedBefore(deletedBefore: Date, limit: number): Promise<number> {
+    if (!Number.isInteger(limit) || limit < 1) {
+      throw new RangeError('A purge limit is a positive whole number.');
+    }
+    return this.db.transaction(async (tx) => {
+      // The oldest deletions that still hold content, locked so parallel
+      // sweepers never fight over the same rows.
+      const victims = await tx.execute(sql`
+        select ${messages.id} as id
+        from ${messages}
+        where ${messages.deletedAt} is not null
+          and ${messages.deletedAt} <= ${deletedBefore.toISOString()}::timestamptz
+          and (${messages.body} is not null or exists (
+            select 1 from ${messageAttachments} a where a.message_id = ${messages.id}))
+        order by ${messages.deletedAt} asc
+        limit ${limit}
+        for update skip locked`);
+      const ids = victims.rows.map((row) => String(row.id));
+      if (ids.length === 0) return 0;
+      // The reference rows go; the file assets they point at are Files' to
+      // retire, never messaging's (ADR 0029). The tombstone row itself stays.
+      await tx.delete(messageAttachments).where(inArray(messageAttachments.messageId, ids));
+      await tx.update(messages).set({ body: null }).where(inArray(messages.id, ids));
+      return ids.length;
+    });
   }
 
   async materializeCommunityChat(input: {

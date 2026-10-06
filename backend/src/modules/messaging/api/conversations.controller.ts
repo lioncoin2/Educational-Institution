@@ -31,6 +31,10 @@ import {
   RemoveParticipantUseCase,
 } from '../application/membership.use-cases';
 import {
+  ModerateMessageUseCase,
+  ReviewDeletedMessageUseCase,
+} from '../application/moderate-message.use-cases';
+import {
   GetConversationUseCase,
   ListConversationsUseCase,
   ListMessagesUseCase,
@@ -61,10 +65,12 @@ import {
   toMessagePageResponse,
   toMessageResponse,
   toParticipantResponse,
+  toReviewedMessageResponse,
   type ConversationResponse,
   type MessagePageResponse,
   type MessageResponse,
   type ParticipantResponse,
+  type ReviewedMessageResponse,
 } from './responses';
 
 /**
@@ -97,6 +103,8 @@ export class ConversationsController {
     private readonly removeParticipant: RemoveParticipantUseCase,
     private readonly leaveConversation: LeaveConversationUseCase,
     private readonly attachmentLink: GetAttachmentLinkUseCase,
+    private readonly moderateMessage: ModerateMessageUseCase,
+    private readonly reviewDeletedMessage: ReviewDeletedMessageUseCase,
   ) {}
 
   @Get()
@@ -277,6 +285,51 @@ export class ConversationsController {
     return toLinkResponse(
       unwrap(
         await this.attachmentLink.execute({ principal, conversationId, messageId, fileAssetId }),
+      ),
+    );
+  }
+
+  /**
+   * Delete a message in a community's chat, as a moderator (Q51/Q23, ADR 0029).
+   * Authenticated at the edge; the use case asks Communities for
+   * `community.messages.moderate` — never a projected row, never chat read, and
+   * the decision is never here. 204 whether the delete applied now or had
+   * already applied (idempotent). A message, or a conversation that is not a
+   * community chat, the caller may not moderate is 404; a member without the
+   * capability is 403; Communities unreachable is 503.
+   */
+  @Delete(':conversationId/messages/:messageId')
+  @Authenticated()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteMessage(
+    @CurrentPrincipal() principal: Principal,
+    @Param('conversationId') conversationId: string,
+    @Param('messageId') messageId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ): Promise<void> {
+    unwrap(await this.moderateMessage.execute({ principal, conversationId, messageId, meta }));
+  }
+
+  /**
+   * Review a deleted message's original (Q51/Q23) — the one path that reveals a
+   * tombstone's content and who deleted it. A POST, not a GET: it is an audited
+   * disclosure, never cached or prefetched. Gated by `community.messages.
+   * moderate` and the 7-day window; 404 when there is no such deleted message
+   * or the window has passed. It widens neither `messaging.read` nor
+   * `community.chat.read`.
+   */
+  @Post(':conversationId/messages/:messageId/review')
+  @Authenticated()
+  @HttpCode(HttpStatus.OK)
+  async reviewMessage(
+    @CurrentPrincipal() principal: Principal,
+    @Param('conversationId') conversationId: string,
+    @Param('messageId') messageId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ): Promise<ReviewedMessageResponse> {
+    return toReviewedMessageResponse(
+      unwrap(
+        await this.reviewDeletedMessage.execute({ principal, conversationId, messageId, meta }),
       ),
     );
   }

@@ -24,8 +24,18 @@ export const COMMUNITY_RESOURCE = 'communities.community';
  * on 2026-10-05 (the P9 Attendance prerequisite): the CHECK migration that
  * allows them as grants is `drizzle/0014_community_attendance_acts.sql`, their
  * rules are in `domain/act-rules.ts`, and Attendance consumes them through
- * `COMMUNITY_AUTHORIZATION` (attendance.md §11). Still reserved until its own
- * question is answered: `community.messages.moderate` (Q51/Q23).
+ * `COMMUNITY_AUTHORIZATION` (attendance.md §11).
+ *
+ * `community.messages.moderate` became active on 2026-10-07 (Q51/Q23 answered,
+ * P12): deleting and reviewing others' messages in a community's chat. The
+ * CHECK migration that allows it as a grant is
+ * `drizzle/0017_community_messages_moderate.sql`, its rule is in
+ * `domain/act-rules.ts` (the single delegable-capability ceiling
+ * `communities.moderate`, never `messaging.manage` — ADR 0017, ADR 0029), and
+ * Messaging consumes it through `COMMUNITY_AUTHORIZATION`. It never grants chat
+ * read: reading a community chat stays `community.chat.read` on the membership
+ * basis (community-chat.md §7.1). The whole vocabulary is now active; nothing
+ * is reserved.
  */
 export const COMMUNITY_CAPABILITIES = [
   'community.members.view',
@@ -33,6 +43,7 @@ export const COMMUNITY_CAPABILITIES = [
   'community.members.remove',
   'community.lock',
   'community.chat.post',
+  'community.messages.moderate',
   'community.live.start',
   'community.live.moderate',
   'community.attendance.record',

@@ -452,16 +452,23 @@ volumes; a dedicated engine later sits behind the same interface, fed from
 
 ---
 
-## 16. Moderation, editing and deletion — ready, not built
+## 16. Moderation, editing and deletion
 
-- **Deletion** — `deleted_at` exists; readers already see a tombstone
-  (`asSeen`), unread counts already skip deleted rows, and the text CHECK
-  already permits a wiped body. Whether deletion wipes the text or keeps it
-  for review is Q23.
-- **Editing** — `edited_at` exists; the sequence never changes on edit.
-- **Moderation** — removal by `messaging.manage` exists and is audited. Reading
-  a conversation one is not in — even for safeguarding — is deliberately not
-  possible (Q23).
+- **Deletion** — BUILT for community chats (Q51/Q23, P12,
+  [ADR 0029](decisions/0029-community-message-moderation.md)): a holder of
+  `community.messages.moderate` deletes a message, which becomes a tombstone
+  (`asSeen` blanks the body and attachments; `deleted_by` records the moderator,
+  off the normal wire). The original is kept and reviewable for exactly 7 days
+  through a separate audited operation, then retention wipes it while the
+  tombstone row remains. Deletion in DIRECT and GROUP conversations is still not
+  exposed. See [community-chat.md §21](community-chat.md#21-message-moderation-q51q23).
+- **Editing** — `edited_at` exists; the sequence never changes on edit. Not
+  built.
+- **Moderation** — two kinds: participant REMOVAL by identity's `messaging.manage`
+  (existing, audited), and community-chat message DELETION/review by the
+  Community capability `community.messages.moderate` (ADR 0029). Reading a
+  conversation one is not in — even for safeguarding — is deliberately not
+  possible, and the moderation capability never grants read (Q23).
 - **Pins, mute, member roles** — additive: a pins table keyed by (conversation,
   message); a `muted_until` on participants; new role codes.
 

@@ -35,7 +35,12 @@ import {
   RemoveParticipantUseCase,
 } from '../../src/modules/messaging/application/membership.use-cases';
 import { MessageRecipientsService } from '../../src/modules/messaging/application/message-recipients.service';
+import { MessageRetentionSweeper } from '../../src/modules/messaging/application/message-retention.sweeper';
 import { SENDS_PER_USER } from '../../src/modules/messaging/application/messaging-settings';
+import {
+  ModerateMessageUseCase,
+  ReviewDeletedMessageUseCase,
+} from '../../src/modules/messaging/application/moderate-message.use-cases';
 import { MessagingViews } from '../../src/modules/messaging/application/messaging-views';
 import {
   GetConversationUseCase,
@@ -282,6 +287,9 @@ export async function messagingHarness(
       clock,
       ids,
     ),
+    moderateMessage: new ModerateMessageUseCase(repository, communityChats, audit, events, clock),
+    reviewMessage: new ReviewDeletedMessageUseCase(repository, communityChats, views, audit, clock),
+    retentionSweeper: new MessageRetentionSweeper(repository, clock),
 
     /**
      * A new ACTIVE account with these roles, and the principal it signs in as —

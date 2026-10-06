@@ -64,3 +64,30 @@ export interface ParticipantView {
   readonly role: ParticipantRole;
   readonly joinedAt: Date;
 }
+
+/**
+ * A deleted message's ORIGINAL, as the audited moderation review reveals it
+ * (Q51/Q23, ADR 0029) — NOT a tombstone. This is the one view that shows a
+ * deleted message's body and attachments, and the only one that names who
+ * deleted it; it never travels over realtime and only a holder of
+ * `community.messages.moderate` ever receives it, within the 7-day window.
+ */
+export interface ReviewedMessageView {
+  readonly id: string;
+  readonly conversationId: string;
+  readonly sequence: number;
+  readonly senderId: string;
+  readonly senderName: string | null;
+  readonly type: MessageType;
+  /** The original text or caption, revealed within the review window. */
+  readonly body: string | null;
+  readonly replyToMessageId: string | null;
+  readonly createdAt: Date;
+  readonly editedAt: Date | null;
+  /** Non-null: only a deleted message is reviewed. */
+  readonly deletedAt: Date;
+  /** The moderator who deleted it, and their name. */
+  readonly deletedBy: string;
+  readonly deletedByName: string | null;
+  readonly attachments: readonly AttachmentView[];
+}

@@ -152,7 +152,10 @@ export const messages = pgTable(
   {
     id: text('id').primaryKey(),
     // RESTRICT: a conversation that holds messages cannot be hard-deleted by
-    // accident. Retention, when designed, will do it deliberately.
+    // accident. Moderation retention (Q51/Q23, ADR 0029) never hard-deletes a
+    // message ROW either: it wipes a deleted message's body and attachment rows
+    // after the 7-day review window, and the tombstone row stays — so ordering,
+    // read state and the audit trail stay intact.
     conversationId: text('conversation_id')
       .notNull()
       .references(() => conversations.id, { onDelete: 'restrict' }),
@@ -167,6 +170,8 @@ export const messages = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     editedAt: timestamp('edited_at', { withTimezone: true }),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    /** The moderator who deleted it (Q51/Q23); set exactly when `deleted_at` is. */
+    deletedBy: text('deleted_by'),
   },
   (table) => [
     // The timeline index: every page, unread count and "last message" is a
@@ -194,6 +199,11 @@ export const messages = pgTable(
     check(
       'messages_lifecycle_after_creation',
       sql`(${table.editedAt} is null or ${table.editedAt} >= ${table.createdAt}) and (${table.deletedAt} is null or ${table.deletedAt} >= ${table.createdAt})`,
+    ),
+    // A deletion stamps who and when together, or neither (Q51/Q23).
+    check(
+      'messages_deleted_by_consistent',
+      sql`(${table.deletedAt} is null) = (${table.deletedBy} is null)`,
     ),
   ],
 );

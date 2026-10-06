@@ -4,6 +4,7 @@ import { err, ok, type Principal, type Result } from '../../../shared';
 import {
   COMMUNITY_AUTHORIZATION,
   type CommunityAuthorization,
+  type CommunityPermit,
 } from '../../communities/contracts/authorization';
 import {
   COMMUNITY_DIRECTORY,
@@ -20,6 +21,7 @@ import {
 } from './community-chat-settings';
 import { CommunityChatSync } from './community-chat-sync';
 import { CONVERSATION_NOT_FOUND, ConversationAccess } from './conversation-access';
+import { MESSAGE_MODERATION_FORBIDDEN } from './messaging-settings';
 
 /** How a community chat is shown: its community's title, and whether the viewer may post now. */
 export interface CommunityChatDetails {
@@ -74,6 +76,44 @@ export class CommunityChats {
     }
     if (this.overCapacity(conversation)) return err(COMMUNITY_CHAT_OVER_CAPACITY);
     return ok(undefined);
+  }
+
+  /**
+   * A moderation request's community check (Q51/Q23, ADR 0029): the
+   * `community.messages.moderate` permit — the owner implicitly, or a member
+   * the owner delegated it to — asked of Communities NOW. It never consults the
+   * projected participant rows and never asks `community.chat.read`: moderation
+   * authority is the moderator's own community standing, and reading the chat
+   * is neither implied by it nor required for it. The winning permit comes back
+   * so the caller can audit which standing authorized the delete or the review.
+   *
+   *   unavailable  503, as it came — Communities could not answer
+   *   not_found    an unknown community or a non-member: the 404 a non-member
+   *                always hears, so moderation is no enumeration surface
+   *   otherwise    a member without the capability, or no identity ceiling (a
+   *                student has no `communities.moderate`): "you may not
+   *                moderate here" (403). A lock never reaches here — the act's
+   *                gate is `always`.
+   */
+  async mayModerate(
+    principal: Principal,
+    conversation: Conversation,
+  ): Promise<Result<CommunityPermit>> {
+    if (conversation.communityId === null) throw new Error('Not a community chat.');
+    const permit = await this.access.communityPermit(
+      principal,
+      conversation.communityId,
+      'community.messages.moderate',
+    );
+    if (permit.ok) return permit;
+    switch (permit.error.kind) {
+      case 'unavailable':
+        return permit;
+      case 'not_found':
+        return err(CONVERSATION_NOT_FOUND);
+      default:
+        return err(MESSAGE_MODERATION_FORBIDDEN);
+    }
   }
 
   /**

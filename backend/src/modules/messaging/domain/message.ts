@@ -14,12 +14,20 @@ export interface MessageAttachment {
 }
 
 /**
- * A message. Immutable once stored, except for the two lifecycle stamps the
- * schema reserves for later:
+ * A message. Immutable once stored, except for the lifecycle stamps:
  *
  *   editedAt   set by a future edit; the body would change, the sequence never
- *   deletedAt  a future soft delete: the row stays, so ordering, read state and
- *              the audit trail stay intact; readers see a tombstone
+ *   deletedAt  a soft delete: the row stays, so ordering, read state and the
+ *              audit trail stay intact; readers see a tombstone (`asSeen`). A
+ *              community-chat message is deleted by a moderator holding
+ *              `community.messages.moderate` (Q51/Q23, ADR 0029); the original
+ *              body and attachments are kept for a 7-day review window and then
+ *              wiped by retention, the tombstone row remaining
+ *   deletedBy  who deleted it — the moderator (never the author unless they are
+ *              one). Set exactly when `deletedAt` is, and never put on the wire
+ *              a normal reader sees: `MessageView` carries `deletedAt` (that it
+ *              is gone) but not `deletedBy` (who acted), which only the audited
+ *              moderation review reveals
  *
  * `sequence` is the order — assigned by the server, never by a client clock.
  */
@@ -37,11 +45,13 @@ export interface Message {
   readonly createdAt: Date;
   readonly editedAt: Date | null;
   readonly deletedAt: Date | null;
+  /** The moderator who deleted it; null exactly when `deletedAt` is. */
+  readonly deletedBy: string | null;
   readonly attachments: readonly MessageAttachment[];
 }
 
 /** Everything about a message except its sequence, which only the store assigns. */
-export type MessageDraft = Omit<Message, 'sequence' | 'editedAt' | 'deletedAt'>;
+export type MessageDraft = Omit<Message, 'sequence' | 'editedAt' | 'deletedAt' | 'deletedBy'>;
 
 /**
  * A client-generated id, retried verbatim until the send is acknowledged. A
@@ -167,7 +177,14 @@ export function sameContent(stored: Message, draft: MessageDraft): boolean {
   );
 }
 
-/** What a reader sees of a deleted message: that it existed, where, and by whom. */
+/**
+ * What a reader sees of a deleted message: that it existed, where, when, and
+ * who SENT it — never its content. The body and attachments are blanked; every
+ * other field, `deletedBy` included, is carried on the domain object but it is
+ * `MessageView` (contracts/message-view.ts) that decides the wire, and that
+ * view omits `deletedBy`. The one path that reveals the original content and
+ * `deletedBy` is the audited moderation review, which does NOT go through here.
+ */
 export function asSeen(message: Message): Message {
   return message.deletedAt === null ? message : { ...message, body: null, attachments: [] };
 }

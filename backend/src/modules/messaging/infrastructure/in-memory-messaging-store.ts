@@ -24,6 +24,7 @@ import type {
   MessagingReadModel,
   MessagingRepository,
   ProjectionRow,
+  SoftDeleteOutcome,
 } from '../domain/ports';
 
 const key = (conversationId: string, userId: string) => `${conversationId}\u0000${userId}`;
@@ -92,7 +93,13 @@ export class InMemoryMessagingStore implements MessagingRepository, MessagingRea
     }
 
     const sequence = conversation.lastSequence + 1;
-    const message: Message = { ...draft, sequence, editedAt: null, deletedAt: null };
+    const message: Message = {
+      ...draft,
+      sequence,
+      editedAt: null,
+      deletedAt: null,
+      deletedBy: null,
+    };
     timeline.push(message);
     this.timelines.set(draft.conversationId, timeline);
     this.conversations.set(conversation.id, {
@@ -185,6 +192,52 @@ export class InMemoryMessagingStore implements MessagingRepository, MessagingRea
       lastReadSequence: target,
     });
     return { kind: 'advanced', lastReadSequence: target };
+  }
+
+  async softDeleteMessage(input: {
+    readonly conversationId: ConversationId;
+    readonly messageId: MessageId;
+    readonly deletedBy: string;
+    readonly at: Date;
+  }): Promise<SoftDeleteOutcome> {
+    const timeline = this.timeline(input.conversationId);
+    const index = timeline.findIndex((message) => message.id === input.messageId);
+    const found = index === -1 ? undefined : timeline[index];
+    if (found === undefined) return { kind: 'not_found' };
+    // Already a tombstone: idempotent — the first delete's stamps stand.
+    if (found.deletedAt !== null) return { kind: 'deleted', message: found, alreadyDeleted: true };
+    const deleted: Message = { ...found, deletedAt: input.at, deletedBy: input.deletedBy };
+    timeline[index] = deleted;
+    this.timelines.set(input.conversationId, timeline);
+    return { kind: 'deleted', message: deleted, alreadyDeleted: false };
+  }
+
+  async purgeDeletedBefore(deletedBefore: Date, limit: number): Promise<number> {
+    if (!Number.isInteger(limit) || limit < 1) {
+      throw new RangeError('A purge limit is a positive whole number.');
+    }
+    const victims: { timeline: Message[]; index: number; deletedAt: Date }[] = [];
+    for (const timeline of this.timelines.values()) {
+      timeline.forEach((message, index) => {
+        if (
+          message.deletedAt !== null &&
+          message.deletedAt <= deletedBefore &&
+          (message.body !== null || message.attachments.length > 0)
+        ) {
+          victims.push({ timeline, index, deletedAt: message.deletedAt });
+        }
+      });
+    }
+    victims.sort((a, b) => a.deletedAt.getTime() - b.deletedAt.getTime());
+    const batch = victims.slice(0, limit);
+    for (const victim of batch) {
+      const message = victim.timeline[victim.index];
+      if (message === undefined) continue;
+      // The content goes; the tombstone row stays. File assets are Files' own
+      // to retire (ADR 0029).
+      victim.timeline[victim.index] = { ...message, body: null, attachments: [] };
+    }
+    return batch.length;
   }
 
   async materializeCommunityChat(input: {

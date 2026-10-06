@@ -2,6 +2,7 @@ import { domainEvent } from '../../../shared/domain-event';
 import {
   MessagingEvents,
   type ConversationCreated,
+  type MessageDeleted,
   type MessageRead,
   type MessageSent,
   type ParticipantAdded,
@@ -98,6 +99,21 @@ export function messageRead(
     conversationId,
     { conversationId, userId, lastReadSequence },
     at,
+    correlationId,
+  );
+}
+
+/** Ids and a sequence only — the body, and who deleted it, stay in messaging. */
+export function messageDeleted(
+  conversation: Pick<Conversation, 'id'>,
+  message: Message,
+  correlationId?: string,
+): MessageDeleted {
+  return domainEvent(
+    MessagingEvents.messageDeleted,
+    conversation.id,
+    { conversationId: conversation.id, messageId: message.id, sequence: message.sequence },
+    message.deletedAt ?? message.createdAt,
     correlationId,
   );
 }

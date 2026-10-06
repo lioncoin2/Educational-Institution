@@ -55,6 +55,7 @@ describe('creating a community', () => {
           'community.members.remove',
           'community.lock',
           'community.chat.post',
+          'community.messages.moderate',
           'community.live.start',
           'community.live.moderate',
           'community.attendance.record',
@@ -239,6 +240,8 @@ describe('locking and unlocking', () => {
       'community.members.view',
       'community.members.remove',
       'community.lock',
+      // Gated `always`: content moderation stays open while LOCKED (Q51/Q23).
+      'community.messages.moderate',
       'community.live.moderate',
       // Attendance acts are gated `always`, so a lock never removes them (§11.1).
       'community.attendance.record',

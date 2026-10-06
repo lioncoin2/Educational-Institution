@@ -46,6 +46,8 @@ describe('the lifecycle (PROVISIONAL, Q46)', () => {
       'community.lock': 'TTT',
       'community.members.invite': 'TFF',
       'community.chat.post': 'TFF',
+      // Gate `always`: content moderation is management, open even while LOCKED (Q51/Q23).
+      'community.messages.moderate': 'TTT',
       'community.live.start': 'TFF',
       'community.chat.read': 'TTF',
       'community.live.join': 'TTF',

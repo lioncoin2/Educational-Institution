@@ -605,6 +605,19 @@ Built in P2: the reservation is a comment beside `COMMUNITY_CAPABILITIES`
 (`communities/contracts/capabilities.ts`), not a capability, and oversight
 removes members but never adds them.
 
+**Answered (2026-10-07, P12, [ADR 0029](decisions/0029-community-message-moderation.md)).**
+Moderation, deletion and review are now built for community chats, exactly as
+predicted: a new audited use case with its own authority — the Community
+capability `community.messages.moderate` — never a widening of `messaging.read`
+or `community.chat.read`. A moderator deletes a message (a tombstone; the
+original kept), its original is reviewable for exactly 7 days through a separate
+audited operation, and retention then wipes the original while the tombstone
+remains. Who may read a conversation is still unchanged: nobody reads one they
+are not in, and moderation never grants read. Still open beyond community chats:
+safeguarding review of a conversation one is not in, and a general message
+retention horizon (this slice fixes 7 days for deleted community-chat content
+only; see Q3).
+
 ---
 
 ## Q24 — Notifications: push provider, lock-screen previews, quiet hours, mute
@@ -1894,12 +1907,24 @@ default:
   `messaging.community_chat_over_capacity` and `canPost` is false, until
   gates G1–G4 hold; reading is unaffected
   ([community-chat.md §11.2](community-chat.md#112-gates-g1g4));
-- no moderation of messages in v1 (`community.messages.moderate` is
-  reserved).
+- message moderation is now built (2026-10-07, P12): deleting and reviewing
+  others' messages in the chat, through the Community capability
+  `community.messages.moderate` — see the **Answered** note below.
 
 **When answered.** Posting rules change Communities' act rules only;
 messaging does not change (it asks `community.chat.post` on every send). Moderating messages adds
 `community.messages.moderate` together with Q23's answer (P12).
+
+**Answered (2026-10-07, P12, [ADR 0029](decisions/0029-community-message-moderation.md)).**
+Who may delete or moderate others' messages: a holder of
+`community.messages.moderate` — the owner implicitly, or a member the owner
+delegated it to — never a plain member, and never oversight. As predicted,
+Communities' act table gained the capability and messaging asks it per request
+(`CommunityChats.mayModerate`); the capability is NOT chat read and is decided
+from the message's own community, never a projected row. Deletion, the 7-day
+review window and retention are [ADR 0029](decisions/0029-community-message-moderation.md)
+with [Q23](#q23--moderation-deletion-and-review). Posting rules are unchanged;
+only the moderation half of this question is now answered.
 
 ---
 

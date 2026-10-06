@@ -16,6 +16,7 @@ import type {
   MessageView,
   ParticipantView,
   PersonView,
+  ReviewedMessageView,
 } from './views';
 
 const PREVIEW_LENGTH = 140;
@@ -111,6 +112,45 @@ export class MessagingViews {
         })),
       })),
       senders: [...names].map(([userId, displayName]) => ({ userId, displayName })),
+    };
+  }
+
+  /**
+   * A deleted message's ORIGINAL, for the audited moderation review (Q51/Q23)
+   * — deliberately WITHOUT `asSeen`, the one render that reveals a tombstone's
+   * body, attachments and the moderator who deleted it. Every other path keeps
+   * `asSeen`; this one is reached only after `community.messages.moderate` and
+   * the review-window check. Throws if handed a message that is not deleted,
+   * so it can never be a second way to render a live message.
+   */
+  async reviewed(message: Message): Promise<ReviewedMessageView> {
+    if (message.deletedAt === null || message.deletedBy === null) {
+      throw new Error('Only a deleted message is reviewed.');
+    }
+    const assetIds = message.attachments.map((attachment) => attachment.fileAssetId);
+    const [files, names] = await Promise.all([
+      assetIds.length === 0 ? Promise.resolve([]) : this.files.describe([...new Set(assetIds)]),
+      this.names([message.senderId, message.deletedBy]),
+    ]);
+    const fileById = new Map(files.map((file) => [file.id, file]));
+    return {
+      id: message.id,
+      conversationId: message.conversationId,
+      sequence: message.sequence,
+      senderId: message.senderId,
+      senderName: names.get(message.senderId) ?? null,
+      type: message.type,
+      body: message.body,
+      replyToMessageId: message.replyToMessageId,
+      createdAt: message.createdAt,
+      editedAt: message.editedAt,
+      deletedAt: message.deletedAt,
+      deletedBy: message.deletedBy,
+      deletedByName: names.get(message.deletedBy) ?? null,
+      attachments: message.attachments.map((attachment) => ({
+        fileAssetId: attachment.fileAssetId,
+        file: fileById.get(attachment.fileAssetId) ?? null,
+      })),
     };
   }
 

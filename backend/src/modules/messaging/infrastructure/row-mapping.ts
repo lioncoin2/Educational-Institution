@@ -88,6 +88,7 @@ export function toMessage(row: MessageRow, attachments: readonly MessageAttachme
     createdAt: row.createdAt,
     editedAt: row.editedAt,
     deletedAt: row.deletedAt,
+    deletedBy: row.deletedBy,
     attachments,
   };
 }
