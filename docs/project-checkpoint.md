@@ -14,14 +14,35 @@ the authoritative docs it links) and continue without reconstructing history fro
   permanent architectural lock. Future requirements may change it.
 
 ## Engineering principles (standing)
-Clean modular architecture; strict domain/application/infrastructure boundaries; no spaghetti, no hacks
-sold as final. File size: 100–300 preferred, 300–500 ok, 500–700 review, >700 decompose, >1000
-prohibited unless justified; split by cohesion, not artificially. Tests mandatory; architecture/
-dependency checks mandatory. Security and historical-data integrity matter. Document decisions. Never
-silently invent institutional rules — record unknowns as deferred. Build toward the final architecture
-directly, not throwaway versions.
+
+**Mandatory: every implementation task MUST read and obey
+[`docs/ENGINEERING_RULES.md`](ENGINEERING_RULES.md) before writing any code.**
+That document is the permanent, project-wide engineering governance (clean/modular
+architecture, responsibility ownership, SRP, dependency direction, module
+boundaries, contract-first and vertical-slice development, test strategy and
+non-vacuous architecture tests, authorization ownership, error taxonomy,
+database/migration discipline, security, observability, performance, ADR
+discipline, and the Definition of Done). It is authoritative; this checkpoint's
+reversible decisions never override it.
+
+Every task follows the required workflow:
+**INSPECT → UNDERSTAND ARCHITECTURE → IDENTIFY RESPONSIBILITY OWNER → IDENTIFY
+DEPENDENCY BOUNDARIES → PLAN FILES → DEFINE CONTRACTS → DEFINE TESTS → IMPLEMENT →
+VERIFY → REVIEW DIFF → UPDATE DOCS/ADR IF REQUIRED → COMMIT.** No step is skipped;
+real conflicts are surfaced and resolved explicitly, never guessed or silently
+patched.
+
+The digest (full rules in `ENGINEERING_RULES.md`): clean modular architecture;
+strict domain/application/infrastructure boundaries; no spaghetti, no hacks sold
+as final. File size: 100–300 preferred, 300–500 ok, 500–700 review, >700
+decompose, >1000 prohibited unless justified; split by cohesion, not artificially.
+Tests mandatory; architecture/dependency checks mandatory. Security and
+historical-data integrity matter. Document decisions. Never silently invent
+institutional rules — record unknowns as deferred. Build toward the final
+architecture directly, not throwaway versions.
 
 ## Authoritative documents (read these)
+- **Engineering governance (read first, obey always): [`docs/ENGINEERING_RULES.md`](ENGINEERING_RULES.md)** — the permanent rules and the required implementation workflow for every task.
 - Phase roadmap: `docs/architecture/communities-live-attendance.md` §25 (status + plan tables).
 - Open questions (answers recorded inline): `docs/architecture/open-questions.md`.
 - Academic reconciliation: `docs/architecture/academic-reconciliation.md` (§13), `docs/owner-information.md`.

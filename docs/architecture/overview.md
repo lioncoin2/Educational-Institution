@@ -268,6 +268,7 @@ receives a short-lived, capability-scoped join token minted server-side.
 
 ## 8. Reading order
 
+- [../ENGINEERING_RULES.md](../ENGINEERING_RULES.md) — **read first, obey always**: the permanent engineering governance and the mandatory implementation workflow for every task
 - [dependency-rules.md](dependency-rules.md) — the enforced rules
 - [module-boundaries.md](module-boundaries.md) — each module's remit
 - [authentication.md](authentication.md) — sign-in, tokens, passwords, provisioning
