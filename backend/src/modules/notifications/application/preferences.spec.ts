@@ -23,6 +23,7 @@ describe('notification preferences', () => {
   it('start with every channel on, for the categories that have notifications — and only those', async () => {
     expect(expectOk(await h.getPreferences.execute({ principal: ali }))).toEqual([
       { category: 'MESSAGES', inApp: true, realtime: true, push: true },
+      { category: 'COMMUNITY', inApp: true, realtime: true, push: true },
     ]);
   });
 
@@ -31,12 +32,16 @@ describe('notification preferences', () => {
       expectOk(
         await h.updatePreferences.execute({ principal: ali, category: 'MESSAGES', push: false }),
       ),
-    ).toEqual([{ category: 'MESSAGES', inApp: true, realtime: true, push: false }]);
+    ).toEqual([
+      { category: 'MESSAGES', inApp: true, realtime: true, push: false },
+      { category: 'COMMUNITY', inApp: true, realtime: true, push: true },
+    ]);
     expectOk(
       await h.updatePreferences.execute({ principal: ali, category: 'MESSAGES', realtime: false }),
     );
     expect(expectOk(await h.getPreferences.execute({ principal: ali }))).toEqual([
       { category: 'MESSAGES', inApp: true, realtime: false, push: false },
+      { category: 'COMMUNITY', inApp: true, realtime: true, push: true },
     ]);
   });
 
@@ -51,7 +56,10 @@ describe('notification preferences', () => {
       expectOk(
         await h.updatePreferences.execute({ principal: ali, category: 'MESSAGES', inApp: true }),
       ),
-    ).toEqual([{ category: 'MESSAGES', inApp: true, realtime: true, push: false }]);
+    ).toEqual([
+      { category: 'MESSAGES', inApp: true, realtime: true, push: false },
+      { category: 'COMMUNITY', inApp: true, realtime: true, push: true },
+    ]);
   });
 
   it('are one person’s own: changing mine leaves everyone else’s alone', async () => {
@@ -60,6 +68,7 @@ describe('notification preferences', () => {
     );
     expect(expectOk(await h.getPreferences.execute({ principal: sara }))).toEqual([
       { category: 'MESSAGES', inApp: true, realtime: true, push: true },
+      { category: 'COMMUNITY', inApp: true, realtime: true, push: true },
     ]);
   });
 

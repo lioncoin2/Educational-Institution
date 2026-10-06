@@ -5,6 +5,7 @@ import { DATABASE, type Database } from '../../platform/database';
 import { IdentityModule } from '../identity/identity.module';
 import { MessagingModule } from '../messaging/messaging.module';
 import { NotificationsController } from './api/notifications.controller';
+import { CommunityNotificationTranslator } from './application/community-notification.translator';
 import { RegisterDeviceUseCase, UnregisterDeviceUseCase } from './application/devices.use-cases';
 import {
   CountUnreadNotificationsUseCase,
@@ -47,18 +48,19 @@ import { LoggingPushProvider } from './infrastructure/logging-push-provider';
 /**
  * Notifications — a person's inbox, and delivery of what lands in it.
  *
- *   business event (messaging's, today)
- *     → MessagingNotificationTranslator  who, and what kind of notification
+ *   business event (messaging's or communities')
+ *     → a NotificationTranslator         who, and what kind of notification
  *     → NotificationDispatcher           active account? wanted? new? → stored once
  *     → notifications.notification.created
  *         → realtime (another module): live to the recipient's connections
  *         → PushDelivery: to the recipient's devices, through PUSH_PROVIDER
  *
  * It depends on identity's contracts (who is active, what an account is
- * called) and messaging's (its events; who may read a conversation). Nothing
- * depends on it but realtime, through `NOTIFICATION_READER`. The push
- * provider is chosen here: in V1, a logging adapter — no push SDK is
- * installed (docs/architecture/notifications.md, "Push").
+ * called), messaging's (its events; who may read a conversation) and
+ * communities' (its events). Nothing depends on it but realtime, through
+ * `NOTIFICATION_READER`. The push provider is chosen here: in V1, a logging
+ * adapter — no push SDK is installed (docs/architecture/notifications.md,
+ * "Push").
  */
 @Module({
   imports: [IdentityModule, MessagingModule],
@@ -94,6 +96,7 @@ import { LoggingPushProvider } from './infrastructure/logging-push-provider';
 
     NotificationDispatcher,
     MessagingNotificationTranslator,
+    CommunityNotificationTranslator,
     PushDelivery,
     ListNotificationsUseCase,
     CountUnreadNotificationsUseCase,

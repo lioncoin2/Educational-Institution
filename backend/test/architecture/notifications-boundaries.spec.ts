@@ -112,6 +112,25 @@ describe('notifications boundaries', () => {
     ).toBe(true);
   });
 
+  it('consumes communities’ event contract — the community translator really is subscribed to it', () => {
+    const translatorEdges = edgesFrom(
+      output,
+      (source) =>
+        source === 'src/modules/notifications/application/community-notification.translator.ts',
+    ).map((edge) => edge.resolved);
+    // It reaches communities' contracts (its events) and nothing of communities'
+    // internals (the generic "contracts only" check above enforces the latter
+    // for every edge).
+    expect(
+      translatorEdges.some((path) => path.startsWith('src/modules/communities/contracts/')),
+    ).toBe(true);
+    expect(
+      translatorEdges.some((path) =>
+        /^src\/modules\/communities\/(domain|application|infrastructure|api)\//.test(path),
+      ),
+    ).toBe(false);
+  });
+
   it('keeps the notification domain and application free of push SDKs and every other vendor', () => {
     const logic = (source: string) =>
       /^src\/modules\/notifications\/(domain|application|contracts)\//.test(source);

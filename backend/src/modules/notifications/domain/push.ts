@@ -99,6 +99,8 @@ function threadKeyOf(target: NotificationTarget): string {
       return `halaqa:${target.halaqaId}`;
     case 'live_room':
       return `live_room:${target.liveSessionId}`;
+    case 'community':
+      return `community:${target.communityId}`;
     case 'profile':
       return 'profile';
   }

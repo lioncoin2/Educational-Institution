@@ -15,8 +15,9 @@
  * do not know (a newer server): the notification shows, and tapping it says
  * the content is not available in this version.
  *
- * Only `conversation` is created today; the others are reserved, with the
- * notification types that will use them.
+ * `conversation` and `community` are created today (messaging and the P10
+ * community facts); the others are reserved, with the notification types that
+ * will use them.
  */
 export type NotificationTarget =
   | { readonly kind: 'conversation'; readonly conversationId: string }
@@ -25,6 +26,8 @@ export type NotificationTarget =
   | { readonly kind: 'certificate'; readonly certificateId: string }
   | { readonly kind: 'halaqa'; readonly halaqaId: string }
   | { readonly kind: 'live_room'; readonly liveSessionId: string }
+  /** A community — where a community-membership, grant or ownership fact leads. */
+  | { readonly kind: 'community'; readonly communityId: string }
   /** The recipient's own profile — no identifier: it can only ever be theirs. */
   | { readonly kind: 'profile' };
 
@@ -39,6 +42,7 @@ export const NOTIFICATION_TARGET_FIELDS: Readonly<Record<NotificationTargetKind,
     certificate: 'certificateId',
     halaqa: 'halaqaId',
     live_room: 'liveSessionId',
+    community: 'communityId',
     profile: null,
   });
 

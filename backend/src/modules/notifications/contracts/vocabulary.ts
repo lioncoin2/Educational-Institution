@@ -12,6 +12,15 @@
  *   CONVERSATION_CREATED    someone started a conversation that includes you
  *   ADDED_TO_CONVERSATION   someone added you to an existing conversation
  *
+ * Community facts (P10, active — the `COMMUNITY` category), each a single,
+ * directed notification to the affected account:
+ *
+ *   COMMUNITY_MEMBER_ADDED            you joined / were added to a community
+ *   COMMUNITY_MEMBER_REMOVED          you were removed from a community
+ *   COMMUNITY_CAPABILITY_GRANTED      you were granted a community capability
+ *   COMMUNITY_CAPABILITY_REVOKED      a community capability of yours was taken
+ *   COMMUNITY_OWNERSHIP_TRANSFERRED   a community was handed to you
+ *
  * Reserved — named so the vocabulary is stable, but NOTHING creates them:
  * the modules whose facts they would announce publish no such events yet,
  * and the dispatcher refuses a type that is not active (see the catalog in
@@ -27,6 +36,12 @@ export const NOTIFICATION_TYPES = [
   'MESSAGE_RECEIVED',
   'CONVERSATION_CREATED',
   'ADDED_TO_CONVERSATION',
+  // Community facts (P10, active): each a single, directed notification.
+  'COMMUNITY_MEMBER_ADDED',
+  'COMMUNITY_MEMBER_REMOVED',
+  'COMMUNITY_CAPABILITY_GRANTED',
+  'COMMUNITY_CAPABILITY_REVOKED',
+  'COMMUNITY_OWNERSHIP_TRANSFERRED',
   'ASSIGNMENT_CREATED',
   'ASSIGNMENT_UPDATED',
   'ANNOUNCEMENT_CREATED',
@@ -44,6 +59,7 @@ export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
  */
 export const NOTIFICATION_CATEGORIES = [
   'MESSAGES',
+  'COMMUNITY',
   'ASSIGNMENTS',
   'ANNOUNCEMENTS',
   'CERTIFICATES',

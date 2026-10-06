@@ -233,7 +233,10 @@ describe('notifications API', () => {
     it('read and change one’s own, and refuse what is not a category', async () => {
       const read = await r.api.call('GET', '/notifications/preferences', { token: khalid.token });
       expect(read.body).toEqual({
-        categories: [{ category: 'MESSAGES', inApp: true, realtime: true, push: true }],
+        categories: [
+          { category: 'MESSAGES', inApp: true, realtime: true, push: true },
+          { category: 'COMMUNITY', inApp: true, realtime: true, push: true },
+        ],
       });
       const changed = await r.api.call('PATCH', '/notifications/preferences', {
         token: khalid.token,
@@ -241,7 +244,10 @@ describe('notifications API', () => {
       });
       expect(changed.status).toBe(200);
       expect(changed.body).toEqual({
-        categories: [{ category: 'MESSAGES', inApp: true, realtime: true, push: false }],
+        categories: [
+          { category: 'MESSAGES', inApp: true, realtime: true, push: false },
+          { category: 'COMMUNITY', inApp: true, realtime: true, push: true },
+        ],
       });
       const other = await r.api.call('GET', '/notifications/preferences', { token: bilal.token });
       expect(other.body).toEqual(read.body);
