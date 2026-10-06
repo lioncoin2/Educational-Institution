@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import { ok, type Principal, type Result } from '../../../shared';
-import { PENDING_HANDS_COUNT_CAP } from '../domain/live-limits';
+import { MAX_CONCURRENT_PRESENTERS, PENDING_HANDS_COUNT_CAP } from '../domain/live-limits';
 import { isLive, type LiveSession } from '../domain/live-session';
 import { SPEAKER_REQUEST_REPOSITORY, type SpeakerRequestRepository } from '../domain/ports';
 import { roleOf } from '../domain/standing';
@@ -48,7 +48,7 @@ export class LiveSessionViews {
   ): Promise<Result<LiveSessionView>> {
     const moderator = participation.moderator !== null;
     const live = isLive(session);
-    const { standing, hand, presenter } = await this.standing.ofPrincipal(
+    const { standing, hand, presenters } = await this.standing.ofPrincipal(
       principal,
       session,
       moderator,
@@ -67,12 +67,14 @@ export class LiveSessionViews {
     const pendingHands = moderator
       ? await this.requests.countPending(session.id, PENDING_HANDS_COUNT_CAP)
       : null;
-    const slotFree = presenter === null || presenter.userId === principal.userId;
+    // A slot is open to the caller when they already hold one, or fewer than
+    // the cap are in use (Q56).
+    const slotOpen = standing.presenter || presenters.length < MAX_CONCURRENT_PRESENTERS;
 
     return ok(
       liveSessionView(session, {
         speakerCount,
-        presenterUserId: presenter?.userId ?? null,
+        presenterUserIds: presenters.map((grant) => grant.userId),
         pendingHands,
         me: {
           role: roleOf(standing),
@@ -81,7 +83,7 @@ export class LiveSessionViews {
           canRaiseHand,
           canModerate: live && moderator,
           canEnd: live && moderator,
-          canPresent: live && standing.publishesByRight && slotFree,
+          canPresent: live && standing.publishesByRight && slotOpen,
           presenting: standing.presenter,
           hand: hand === null ? null : { requestId: hand.id, state: hand.state },
         },

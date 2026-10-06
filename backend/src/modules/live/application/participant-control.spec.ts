@@ -12,6 +12,7 @@ const LISTENER = capabilitiesFor({
   publishesByRight: false,
   speakerGrant: false,
   presenter: false,
+  presenterDelegated: false,
 });
 
 /** A well-formed id no session has. */

@@ -1,0 +1,2 @@
+DROP INDEX "live_presenter_grants_one_open_per_session";--> statement-breakpoint
+CREATE UNIQUE INDEX "live_presenter_grants_one_open_per_user" ON "live_presenter_grants" USING btree ("session_id","user_id") WHERE "live_presenter_grants"."ended_at" is null;

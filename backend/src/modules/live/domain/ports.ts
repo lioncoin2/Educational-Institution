@@ -232,12 +232,13 @@ export interface SpeakerRequestRepository {
 
 export interface PresenterOpenOutcome {
   /**
-   * `opened` — the slot was free and is now theirs, one version later, with
-   * the `grant_presenter` row; `held` — they already hold it; `occupied` —
-   * someone else does; `session_not_live` — the session is unknown or not live.
+   * `opened` — a slot was free and is now `userId`'s, one version later, with
+   * the `grant_presenter` row; `held` — `userId` already holds an open grant;
+   * `slots_full` — `cap` grants are already open; `session_not_live` — the
+   * session is unknown or not live.
    */
-  readonly kind: 'opened' | 'held' | 'occupied' | 'session_not_live';
-  /** The open grant after the call; null for `session_not_live`. */
+  readonly kind: 'opened' | 'held' | 'slots_full' | 'session_not_live';
+  /** `userId`'s open grant after the call — the one opened, or the one already `held`; null otherwise. */
   readonly grant: PresenterGrant | null;
   readonly stateVersion: number;
 }
@@ -266,16 +267,23 @@ export interface PresenterCloseOutcome {
   readonly stateVersion: number;
 }
 
-/** The screen-share slot: at most one open grant per session (P1). */
+/** Screen-share grants: at most `MAX_CONCURRENT_PRESENTERS` open per session (Q56, ADR 0028). */
 export interface PresenterGrantRepository {
-  /** The session's open grant, if any. */
-  active(sessionId: string): Promise<PresenterGrant | null>;
+  /** The session's open grants — each person at most once — in a determinate (grantedAt, id) order. */
+  activeGrants(sessionId: string): Promise<readonly PresenterGrant[]>;
   /**
-   * Claims the slot under the session's lock: the open grant is read first,
-   * so a repeat by the holder (`held`) and a rival (`occupied`) are told
-   * apart — in Postgres the partial unique index is only a backstop.
+   * Opens `grant` under the session's lock, counted against `cap` in the
+   * grant's own transaction — the speaker floor's pattern (R2): a racing open
+   * waits on the lock, then counts this one. The open grants are read first,
+   * so a repeat by the holder (`held`) and a full house (`slots_full`) are
+   * told apart. A person holds at most one open grant; in Postgres a per-user
+   * partial unique index is the backstop the lock makes unreachable.
    */
-  open(grant: PresenterGrant, moderation: ModerationAction): Promise<PresenterOpenOutcome>;
+  openWithinCap(
+    grant: PresenterGrant,
+    cap: number,
+    moderation: ModerationAction,
+  ): Promise<PresenterOpenOutcome>;
   /**
    * Closes `userId`'s open grant, one version later, with the moderation row
    * if one is given. Nothing is written when they hold none, or when the

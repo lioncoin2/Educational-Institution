@@ -29,6 +29,7 @@ const LISTENER = capabilitiesFor({
   publishesByRight: false,
   speakerGrant: false,
   presenter: false,
+  presenterDelegated: false,
 });
 
 /** How many API processes each race runs across. */

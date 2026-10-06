@@ -208,9 +208,12 @@ export const livePresenterGrants = pgTable(
     endReason: text('end_reason').$type<PresenterEndReason>(),
   },
   (table) => [
-    // At most one open grant per session (P1).
-    uniqueIndex('live_presenter_grants_one_open_per_session')
-      .on(table.sessionId)
+    // At most one OPEN grant per person per session (Q56): the per-user
+    // backstop the session lock makes unreachable. The ≤ MAX_CONCURRENT_PRESENTERS
+    // cap is counted under that lock, exactly as the speaker floor is — not by
+    // a unique index, which cannot express a count.
+    uniqueIndex('live_presenter_grants_one_open_per_user')
+      .on(table.sessionId, table.userId)
       .where(sql`${table.endedAt} is null`),
     // Grants closed at or after an instant — the targeted watch.
     index('live_presenter_grants_closed_idx').on(table.sessionId, table.endedAt),

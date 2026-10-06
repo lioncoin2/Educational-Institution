@@ -237,7 +237,11 @@ export class LiveController {
     return toModerationResponse(unwrap(await this.moderate.revoke({ principal, requestId, meta })));
   }
 
-  /** The presenter slot, for the caller themself: 201 when this call took it, 200 when they held it. */
+  /**
+   * A by-right presenter (owner/moderator/teacher holding `live.speak`) claims
+   * a screen-share slot for themself (Q56): 201 when this call opened one, 200
+   * when they already held one; 409 `live.presenter_slots_full` at the cap.
+   */
   @Post('sessions/:sessionId/screen-share')
   @RequirePermission(Permissions.live.moderate)
   async claimScreenShare(
@@ -251,7 +255,31 @@ export class LiveController {
     return toLiveSessionResponse(result.session);
   }
 
-  /** The presenter stops, or a moderator takes the slot back; nothing open answers 200 too. */
+  /**
+   * A moderator grants a participant (a student) a delegated screen-share slot
+   * (Q56): 201 when opened, 200 when they already held one, 409 at the cap. The
+   * `:userId` names the target only; who may grant is the server's own
+   * `live.moderate` + Communities decision, and the target is validated as a
+   * current participant (404 otherwise). The student presents without
+   * `live.speak`, for this session only, until they stop or it is revoked.
+   */
+  @Post('sessions/:sessionId/screen-share/:userId/grant')
+  @RequirePermission(Permissions.live.moderate)
+  async grantScreenShare(
+    @CurrentPrincipal() principal: Principal,
+    @Param('sessionId') sessionId: string,
+    @Param('userId') userId: string,
+    @RequestMetadata() meta: CallMetadata,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = unwrap(
+      await this.presenter.grant({ principal, sessionId, targetUserId: userId, meta }),
+    );
+    response.status(result.opened ? HttpStatus.CREATED : HttpStatus.OK);
+    return toLiveSessionResponse(result.session);
+  }
+
+  /** The caller stops their OWN screen share; nothing open answers 200 too. No permit needed. */
   @Delete('sessions/:sessionId/screen-share')
   @Authenticated()
   @HttpCode(HttpStatus.OK)
@@ -261,6 +289,26 @@ export class LiveController {
     @RequestMetadata() meta: CallMetadata,
   ) {
     return toLiveSessionResponse(unwrap(await this.presenter.stop({ principal, sessionId, meta })));
+  }
+
+  /**
+   * A moderator revokes a participant's screen-share grant (Q56): nothing open
+   * for them answers 200 too. The `:userId` names the target only; who may
+   * revoke is the server's `live.moderate` + Communities decision, and only
+   * the host may revoke the host's own grant (Q54).
+   */
+  @Delete('sessions/:sessionId/screen-share/:userId')
+  @RequirePermission(Permissions.live.moderate)
+  @HttpCode(HttpStatus.OK)
+  async revokeScreenShare(
+    @CurrentPrincipal() principal: Principal,
+    @Param('sessionId') sessionId: string,
+    @Param('userId') userId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toLiveSessionResponse(
+      unwrap(await this.presenter.revoke({ principal, sessionId, targetUserId: userId, meta })),
+    );
   }
 
   /**

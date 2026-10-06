@@ -16,6 +16,7 @@ const LISTENER = capabilitiesFor({
   publishesByRight: false,
   speakerGrant: false,
   presenter: false,
+  presenterDelegated: false,
 });
 const MICROPHONE = { ...LISTENER, canPublishAudio: true };
 /** What LiveKit gives a publishing token's second connection: its microphone, no subscription. */

@@ -322,11 +322,12 @@ Q40 and [Q69](open-questions.md#q69--who-records-and-who-views-snapshots).
 >    `community_closed` by the participant sweep (`sweepStep`); meanwhile
 >    every route answers it as unknown. No recovery mechanism.
 >    [Q47](open-questions.md#q47--retiring-a-community).
-> 3. **No student screen sharing in the current product (P6, P7).** Only a
->    session moderator holding `live.speak` may present; students listen,
->    raise hands, and speak when promoted. A student path later is additive
->    (the `grantedBy` seam) and needs no core rewrite. Q56 is resolved for
->    this scope.
+> 3. **Student screen sharing by delegated grant (Q56, ADR 0028).** By right,
+>    only a session moderator holding `live.speak` may present; a student
+>    presents only under an explicit, session-scoped PresenterGrant a
+>    moderator opens for them (the `grantedBy` seam) — never `live.speak`,
+>    never a community permission. Up to two present at once. (Through P6–P7
+>    the student path was not built; ADR 0028 builds it.)
 > 4. **300 + 10 is an initial, configurable safety limit — not capacity.**
 >    The targets — about 3,000 listeners per room with a teacher and one or
 >    two speakers, and about 10,000 concurrent live users across rooms — are
@@ -623,9 +624,11 @@ states and transitions are §5.
 ### 3.4 `PresenterGrant`
 
 `{id, sessionId, userId, grantedBy, grantedAt, endedAt?, endedBy?, endReason?
-'stopped' | 'revoked' | 'session_ended' | 'ineligible'}`. At most one is open
-per session. In v1 `grantedBy = userId` (a moderator claims it for themself,
-[Q56](open-questions.md#q56--screen-sharing)). §6.
+'stopped' | 'revoked' | 'session_ended' | 'ineligible'}`. Up to
+`MAX_CONCURRENT_PRESENTERS` are open per session, at most one per user. A
+by-right presenter claims for themself (`grantedBy = userId`); a moderator
+grants a student (`grantedBy` the moderator, `userId` the student) — the
+`grantedBy` seam ([Q56](open-questions.md#q56--screen-sharing), ADR 0028). §6.
 
 ### 3.5 `ModerationAction`
 
@@ -658,8 +661,8 @@ rows; never stored, never cached across requests.
 | Field | Value | Why |
 | --- | --- | --- |
 | `canPublishAudio` | `speakerGrant` or `publishesByRight` | the microphone |
-| `canPublishScreen` | `presenter` and `publishesByRight` | the one slot (§6), a moderator's who holds `live.speak` (P6 review decision 1) |
-| `canPublishScreenAudio` | `false` | Q56 |
+| `canPublishScreen` | `presenterDelegated`, or (`presenter` and `publishesByRight`) | up to two slots (§6): a by-right moderator holding `live.speak` (P6 review decision 1), or a student under a delegated grant (Q56, ADR 0028) |
+| `canPublishScreenAudio` | `false` | no screen audio — Q56 did not enable it |
 | `canSubscribe` | `true` | everyone listens |
 | `canPublishData` | `false` | nothing uses the data channel; a listener must not broadcast |
 | `hidden` | `false` | no hidden listeners — enforced-false invariant ([Q59](open-questions.md#q59--visibility-inside-a-live-session), decided; ADR 0027) |
@@ -683,8 +686,8 @@ No standing ever maps to the camera. The role shown is `moderator` >
 | R3 | `decidedBy` null ⇔ `pending` or `expired` | CHECK |
 | R4 | FCFS by (`requestedAt`, `id`); no time-based expiry of a pending hand ([Q62](open-questions.md#q62--floor-rules-beyond-first-come-first-served)) | keyset index |
 | R5 | A grant is session state; it never confers a community act | a test asserts it |
-| P1 | At most one open presenter grant per session | partial unique index |
-| P2 | Opened only while live, by a moderator with `live.speak`, for themself | session row `FOR UPDATE`; `LiveAccess` |
+| P1 | At most `MAX_CONCURRENT_PRESENTERS` (2) open grants per session; at most one per user (Q56, ADR 0028) | counted under the session row lock; a per-(session, user) partial unique index backstop |
+| P2 | Opened only while live: a by-right moderator holding `live.speak` for themself, or a moderator for a student (delegated, `grantedBy` ≠ `userId`) | session row `FOR UPDATE`; `LiveAccess` |
 
 ### 3.8 Limits
 
@@ -694,7 +697,7 @@ plus `AppConfig.live`. They are measured in P8 before anything is raised.
 | Constant | Value | Question |
 | --- | --- | --- |
 | `MAX_CONCURRENT_SPEAKERS` | 4 (unchanged; PROVISIONAL [Q54](open-questions.md#q54--who-starts-ends-and-moderates-a-live-session): moderators publishing by right and the presenter do not use a slot) | Q4 |
-| `MAX_CONCURRENT_PRESENTERS` | 1 | Q56 |
+| `MAX_CONCURRENT_PRESENTERS` | 2 (Q56, ADR 0028) | Q56 |
 | `config.live.joinTokenTtlSeconds` | 120 (was 600), env `LIVE_JOIN_TOKEN_TTL_SECONDS`, 1–600 (P7.2 Q-C; was the constant `JOIN_TOKEN_TTL_SECONDS`) | [Q63](open-questions.md#q63--losing-standing-during-a-running-session) |
 | `ROOM_SWEEP_SECONDS` / `PARTICIPANT_SWEEP_SECONDS` / `WATCH_TICK_SECONDS` | 30 / 60 / 10 | Q63 |
 | `ENFORCEMENT_WATCH_SECONDS` | 720 (P7.2 Q-D; was 660), extended on every violation | Q63 |
@@ -888,23 +891,24 @@ The stream is a LiveKit track with source `SCREEN_SHARE`
 is not a file or a message.
 
 ```
-   (none) ── claim (a session moderator holding live.speak, for themself; session FOR UPDATE) ──▶ open
-     open ── stop (the presenter) ───────────────────────────────▶ closed 'stopped'        event; not audited
-     open ── revoke (another moderator; not the host's grant, Q54) ▶ closed 'revoked'        event; audited
-     open ── the presenter loses moderator standing or live.speak ▶ closed 'ineligible'     event (P6 review)
-     open ── the session ends ───────────────────────────────────▶ closed 'session_ended'  no event (implied)
-   A claim by the holder → 200. A claim while another holds it → 409 live.presenter_slot_taken.
+   (none) ── claim (a by-right moderator holding live.speak, for themself; session FOR UPDATE) ──▶ open
+   (none) ── grant (a moderator, for a student; the delegated grant) ─────────────────────────▶ open
+     open ── stop (the presenter themself) ──────────────────────▶ closed 'stopped'        event; not audited
+     open ── revoke (a moderator; not the host's grant, Q54) ─────▶ closed 'revoked'        event; audited
+     open ── a BY-RIGHT presenter loses moderator standing or live.speak ▶ closed 'ineligible' event (a delegated student is NOT closed here)
+     open ── the presenter becomes ineligible to remain, or the session ends ▶ closed 'ineligible'/'session_ended'
+   A claim/grant for a current holder → 200. A claim or grant past the cap → 409 live.presenter_slots_full.
    A stop with nothing open → 200.
 ```
 
-| Rule | PROVISIONAL default (Q56) |
+| Rule | Decided (Q56, ADR 0028) |
 | --- | --- |
-| Who may present | a session moderator who holds identity `live.speak`, for themself only |
-| How many at once | one — an engineering bound on egress: a screen-share video costs about one subscriber's worth of egress per listener |
-| Screen audio | never (`canPublishScreenAudio: false`) |
-| Delegation to a student | not built; a seam only |
+| Who may present | an owner/moderator/teacher by right (a session moderator holding `live.speak`), for themself; or a student under a delegated grant a moderator opens for them |
+| How many at once | up to `MAX_CONCURRENT_PRESENTERS` (2) — an engineering bound on egress (about one subscriber's worth per listener); the cap is counted under the session lock |
+| Screen audio | never (`canPublishScreenAudio: false`); Q56 did not enable it |
+| Delegation to a student | a moderator grants it (`grantedBy` ≠ `userId`); the student presents without `live.speak`, session-scoped, revocable |
 | Recording | none (realtime.md `:610` defers it) |
-| Audit | opening, and closing with reason `revoked` |
+| Audit | opening (by right or delegated), and closing with reason `revoked` |
 
 **Effect on the wire.** After the claim commits, `updateCapabilities` sends
 the presenter's **full** set with `canPublishScreen: true`; the moderator's
@@ -1053,7 +1057,7 @@ export type RtcSource = 'microphone' | 'screen_share' | 'screen_share_audio';
 export interface RtcCapabilities {
   readonly canPublishAudio: boolean;
   readonly canPublishScreen: boolean;
-  readonly canPublishScreenAudio: boolean; // implies canPublishScreen; false until Q56
+  readonly canPublishScreenAudio: boolean; // implies canPublishScreen; always false (Q56 kept it off)
   readonly canSubscribe: boolean;
   readonly canPublishData: boolean;        // always false
   readonly hidden: boolean;                // always false — no hidden listeners (Q59, ADR 0027)
@@ -1649,7 +1653,7 @@ controller list is updated in P1 and P6.
 | `live.speaker_slots_full` | precondition_failed → 412 | existing code: 4 speakers already |
 | `live.target_not_eligible` | precondition_failed → 412 | grant: the requester may no longer take part |
 | `live.invalid_transition` | conflict → 409 | existing code: a transition outside the table |
-| `live.presenter_slot_taken` | conflict → 409 | another moderator holds the slot |
+| `live.presenter_slots_full` | conflict → 409 | both screen-share slots are in use (Q56, ADR 0028) |
 | `live.too_many_starts`, `live.too_many_joins`, `live.too_many_hands` | rate_limited → 429 | PROVISIONAL limits (Q26) |
 | `live.media_unavailable` | unavailable → 503 | start and join: LiveKit unreachable, timed out or disabled; nothing stored (P7.2 Q-B; join still signs during an outage) |
 | `live.media_misconfigured` | unavailable → 503 | start and join: LiveKit refuses this deployment's configuration — credentials, TLS, a wrong endpoint; nothing stored (P7.2 Q-B) |
@@ -1910,8 +1914,8 @@ Nothing is stored on join, audited or published: a join is transport noise.
   │ 1 POST /live/sessions/S/screen-share (no body)     │                          │                       │                        │
   │────────────────────▶│ 2 gate live.moderate; moderator of S? can(T, live.speak)? (else 403 live.presenter_not_permitted)     │
   │                     │─────────────────────────────▶│                          │                       │                        │
-  │                     │ 3 BEGIN; session FOR UPDATE (live); open grant? T's → 200; another's → 409 live.presenter_slot_taken   │
-  │                     │   none → INSERT (S, T, grantedBy T); state_version+1; moderation grant_presenter; COMMIT               │
+  │                     │ 3 BEGIN; session FOR UPDATE (live); T's open grant → 200; cap (2) reached → 409 live.presenter_slots_full │
+  │                     │   under cap → INSERT (S, T, grantedBy T); state_version+1; moderation grant_presenter; COMMIT            │
   │                     │────────────────────────────────────────────────────────▶│                       │                        │
   │                     │ 4 updateCapabilities(room, T, {audio: by right, screen: true, screenAudio: false, data: false, hidden: false})
   │                     │─────────────────────────────────────────────────────────────────────────────────▶│                        │
@@ -1992,7 +1996,7 @@ session is still live, and the moderator retries (End is idempotent).
 | Session started twice | Step 3 of §4.1 returns the running session with no provider call, and so does step 2 when a lock came in between. Racing starts: the partial unique index keeps one row; the loser ends its own room and returns the winner (200). An orphan from a crashed start goes after the 60 s grace |
 | Join racing end | A token minted before the end is useless after `endRoom` (`auto_create=false`). A join that re-created a missing room re-reads `ended`, deletes it and answers 412 |
 | Grant to someone not connected | The adapter maps NotFound to `not_connected`; the grant is recorded, audited and published; the next `/join` carries the microphone. (Today the throw after save skips audit and event, `moderate-speaker.use-case.ts:98-109`) |
-| Concurrent grants past the cap; two presenter claims | Exactly 4 speakers (412 for the rest); exactly one presenter (409 for the other) |
+| Concurrent grants past the cap; presenter claims past the cap | Exactly 4 speakers (412 for the rest); exactly 2 presenters (409 `live.presenter_slots_full` for the rest) |
 | Duplicate raise; hand storm | The open request is returned (200); only created rows publish; moderator frames are coalesced; raises serialize briefly on the session row, queued in memory behind the per-session mutex so they do not hold pool connections (§10.2; measured in profile 1) |
 | Member removed, suspended, or losing `live.join` or a delegated capability mid-session | The event path, or at worst the 60 s sweep: the hand or floor expires (`ineligible`), the presenter grant closes, then `removeParticipant` or a demotion. Only their client sees `PARTICIPANT_REMOVED` (Q63) |
 | Host loses `community.live.start` or leaves mid-session | The host loses moderation; the session continues for the others (Q63); a presenter grant closes as `ineligible` |
@@ -2094,7 +2098,7 @@ is PROVISIONAL.
 | [Q46](open-questions.md#q46--what-does-locked-mean-and-who-may-lock) | LOCKED during a session | §7.3 |
 | [Q54](open-questions.md#q54--who-starts-ends-and-moderates-a-live-session) | start, host, moderators, acting on the host | §7.2 |
 | [Q55](open-questions.md#q55--parallel-live-sessions-in-one-community) | parallel sessions | one per community |
-| [Q56](open-questions.md#q56--screen-sharing) | screen share | one presenter, a moderator with `live.speak`, no audio |
+| [Q56](open-questions.md#q56--screen-sharing) | screen share | up to two; owner/moderator/teacher by right, a student by delegated grant; no audio (ADR 0028) |
 | [Q57](open-questions.md#q57--live-session-size-and-concurrency) | cap, reserve, full | 300 + 10; 412 when full; no waitlist |
 | [Q58](open-questions.md#q58--more-listeners-than-one-room-can-hold) | beyond one room | not built; a seam inside Live |
 | [Q59](open-questions.md#q59--visibility-inside-a-live-session) | roster, hands visibility | roster visible; hands to moderators; `hidden` false |

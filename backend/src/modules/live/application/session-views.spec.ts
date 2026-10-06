@@ -16,6 +16,7 @@ const LISTENER = capabilitiesFor({
   publishesByRight: false,
   speakerGrant: false,
   presenter: false,
+  presenterDelegated: false,
 });
 
 /**
@@ -60,7 +61,7 @@ describe('live session views', () => {
         endReason: null,
         participantCap: 300,
         speakerCount: 0,
-        presenterUserId: null,
+        presenterUserIds: [],
         me: {
           role: 'listener',
           isHost: false,

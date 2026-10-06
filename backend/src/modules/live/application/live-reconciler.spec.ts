@@ -29,6 +29,7 @@ const LISTENER = capabilitiesFor({
   publishesByRight: false,
   speakerGrant: false,
   presenter: false,
+  presenterDelegated: false,
 });
 const MICROPHONE = { ...LISTENER, canPublishAudio: true };
 

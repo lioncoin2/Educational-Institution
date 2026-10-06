@@ -16,6 +16,7 @@ const LISTENER = capabilitiesFor({
   publishesByRight: false,
   speakerGrant: false,
   presenter: false,
+  presenterDelegated: false,
 });
 const MICROPHONE = { ...LISTENER, canPublishAudio: true };
 const PRESENTING = { ...MICROPHONE, canPublishScreen: true };
@@ -213,7 +214,7 @@ describe('ProtectLiveSessions', () => {
       await deliver();
 
       expect(checks.mock.calls).toEqual([[session.id, ['teacher-2']]]);
-      expect(await h.presenters.active(session.id)).toBeNull();
+      expect(await h.presenters.activeGrants(session.id)).toEqual([]);
       expect(h.journal.events.map((event) => event.payload)).toEqual([
         expect.objectContaining({ userId: 'teacher-2', reason: 'ineligible', stoppedBy: null }),
       ]);
@@ -474,12 +475,12 @@ describe('ProtectLiveSessions', () => {
       await presenter(false);
       await revokeModeration('teacher-2');
       lose();
-      expect(await h.presenters.active(session.id)).not.toBeNull();
+      expect(await h.presenters.activeGrants(session.id)).toHaveLength(1);
       h.journal.clear();
 
       await h.reconciler.sweepParticipants();
 
-      expect(await h.presenters.active(session.id)).toBeNull();
+      expect(await h.presenters.activeGrants(session.id)).toEqual([]);
       expect(h.journal.events.map((event) => event.payload)).toEqual([
         expect.objectContaining({ userId: 'teacher-2', reason: 'ineligible', stoppedBy: null }),
       ]);

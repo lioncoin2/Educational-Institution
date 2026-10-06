@@ -20,7 +20,7 @@ import {
   type PresenterGrantRepository,
   type SpeakerRequestRepository,
 } from '../domain/ports';
-import type { PresenterGrant } from '../domain/presenter-grant';
+import { isDelegatedGrant, type PresenterGrant } from '../domain/presenter-grant';
 import type { SpeakerRequest } from '../domain/speaker-request';
 import type { ParticipantStanding } from '../domain/standing';
 
@@ -29,8 +29,8 @@ export interface PrincipalStanding {
   readonly standing: ParticipantStanding;
   /** The caller's open (pending or granted) request, if any. */
   readonly hand: SpeakerRequest | null;
-  /** The session's open presenter grant — whoever holds it. */
-  readonly presenter: PresenterGrant | null;
+  /** The session's open presenter grants — whoever holds them (at most MAX_CONCURRENT_PRESENTERS). */
+  readonly presenters: readonly PresenterGrant[];
 }
 
 /** An account's standing, decided with no principal. */
@@ -76,16 +76,18 @@ export class LiveStanding {
     moderator: boolean,
   ): Promise<PrincipalStanding> {
     const hand = await this.requests.findOpen(session.id, principal.userId);
-    const presenter = await this.presenters.active(session.id);
+    const presenters = await this.presenters.activeGrants(session.id);
+    const mine = presenters.find((grant) => grant.userId === principal.userId) ?? null;
     return {
       standing: {
         moderator,
         publishesByRight: moderator && this.identity.can(principal, Permissions.live.speak),
         speakerGrant: hand?.state === 'granted',
-        presenter: presenter?.userId === principal.userId,
+        presenter: mine !== null,
+        presenterDelegated: mine !== null && isDelegatedGrant(mine),
       },
       hand,
-      presenter,
+      presenters,
     };
   }
 
@@ -135,21 +137,27 @@ export class LiveStanding {
     const granted = new Set(
       (await this.requests.granted(session.id)).map((request) => request.userId),
     );
-    const presenter = (await this.presenters.active(session.id))?.userId ?? null;
+    const presentersByUser = new Map(
+      (await this.presenters.activeGrants(session.id)).map((grant) => [grant.userId, grant]),
+    );
 
     return new Map(
-      ids.map((userId) => [
-        userId,
-        {
-          standing: {
-            moderator: moderators.has(userId),
-            publishesByRight: moderators.has(userId) && speakByRight.has(userId),
-            speakerGrant: granted.has(userId),
-            presenter: presenter === userId,
+      ids.map((userId) => {
+        const grant = presentersByUser.get(userId) ?? null;
+        return [
+          userId,
+          {
+            standing: {
+              moderator: moderators.has(userId),
+              publishesByRight: moderators.has(userId) && speakByRight.has(userId),
+              speakerGrant: granted.has(userId),
+              presenter: grant !== null,
+              presenterDelegated: grant !== null && isDelegatedGrant(grant),
+            },
+            eligible: remain.has(userId) || moderators.has(userId),
           },
-          eligible: remain.has(userId) || moderators.has(userId),
-        },
-      ]),
+        ];
+      }),
     );
   }
 }

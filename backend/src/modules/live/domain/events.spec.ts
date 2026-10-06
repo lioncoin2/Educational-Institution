@@ -147,6 +147,7 @@ describe('live events', () => {
       id: asId<'PresenterGrant'>('grant-1'),
       sessionId: session.id,
       userId: 'teacher-1',
+      grantedBy: 'teacher-1',
       at: T(20),
     });
     expect(screenShareStarted(session, grant, 5)).toEqual({

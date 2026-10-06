@@ -13,6 +13,7 @@ const grant = newPresenterGrant({
   id: asId<'PresenterGrant'>('grant-1'),
   sessionId: 'session-1',
   userId: 'teacher-1',
+  grantedBy: 'teacher-1',
   at: AT,
 });
 

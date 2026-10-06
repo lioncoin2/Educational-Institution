@@ -78,7 +78,7 @@ describe('live authorization after host-only moderation', () => {
         session: await h.session(session.id),
         pending: await h.requests.findById(pending.id),
         granted: await h.requests.findById(granted.id),
-        presenter: await h.presenters.active(session.id),
+        presenters: await h.presenters.activeGrants(session.id),
       };
       const calls = h.rtc.calls.length;
 
@@ -110,7 +110,7 @@ describe('live authorization after host-only moderation', () => {
         session: await h.session(session.id),
         pending: await h.requests.findById(pending.id),
         granted: await h.requests.findById(granted.id),
-        presenter: await h.presenters.active(session.id),
+        presenters: await h.presenters.activeGrants(session.id),
       }).toEqual(before);
     });
 
@@ -150,7 +150,7 @@ describe('live authorization after host-only moderation', () => {
         jest.spyOn(h.sessions, 'findById'),
         jest.spyOn(h.requests, 'findById'),
         jest.spyOn(h.requests, 'findOpen'),
-        jest.spyOn(h.presenters, 'active'),
+        jest.spyOn(h.presenters, 'activeGrants'),
         jest.spyOn(h.authorization, 'authorize'),
         jest.spyOn(h.authorization, 'permittedAmong'),
       ];

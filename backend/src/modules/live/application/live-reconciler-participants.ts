@@ -136,8 +136,7 @@ export class ParticipantSteps {
     //    through an event that was lost, or that never exists, must not keep
     //    a floor a later join would honour.
     const holders = (await this.requests.granted(session.id)).map((request) => request.userId);
-    const presenter = await this.presenters.active(session.id);
-    if (presenter !== null) holders.push(presenter.userId);
+    for (const grant of await this.presenters.activeGrants(session.id)) holders.push(grant.userId);
     const people = [...new Set([...connected.keys(), ...holders])];
     return this.stepAll(session, people, connected, { mark, before }, sightings);
   }
@@ -222,7 +221,10 @@ export class ParticipantSteps {
 
   private async rightsOf(session: LiveSession): Promise<HeldRights> {
     const floor = new Set((await this.requests.granted(session.id)).map((r) => r.userId));
-    return { floor, presenter: (await this.presenters.active(session.id))?.userId ?? null };
+    const presenters = new Set(
+      (await this.presenters.activeGrants(session.id)).map((grant) => grant.userId),
+    );
+    return { floor, presenters };
   }
 
   /**
@@ -358,7 +360,7 @@ export class ParticipantSteps {
     const after = await this.rightsOf(session);
     return (userId) =>
       (before.floor.has(userId) && !after.floor.has(userId)) ||
-      (before.presenter === userId && after.presenter !== userId);
+      (before.presenters.has(userId) && !after.presenters.has(userId));
   }
 
   /**
@@ -403,11 +405,14 @@ export class ParticipantSteps {
     }
 
     let standing = account.standing;
-    if (standing.presenter && !standing.publishesByRight) {
-      // The slot is a moderator's who holds `live.speak` (P6 decision 1): a
-      // presenter who is no longer a moderator, or who lost `live.speak`
-      // and stays one, has it closed before the capability step. A later
-      // `live.speak` restores nothing: presenting again is a new claim.
+    if (standing.presenter && !standing.presenterDelegated && !standing.publishesByRight) {
+      // A BY-RIGHT presenter's slot follows `live.speak` (P6 decision 1): one
+      // who is no longer a moderator, or who lost `live.speak` and stays one,
+      // has it closed before the capability step. A later `live.speak`
+      // restores nothing: presenting again is a new claim. A DELEGATED
+      // presenter (a student a moderator granted, Q56/ADR 0028) is NOT closed
+      // here — the grant is their authority, independent of `live.speak`; it
+      // ends only by a stop, a revoke, the session's end, or ineligibility.
       const closed = await this.presenters.close({
         sessionId: session.id,
         userId,
@@ -421,7 +426,7 @@ export class ParticipantSteps {
           screenShareStopped(session, closed.grant, closed.stateVersion),
         ]);
       }
-      standing = { ...standing, presenter: false };
+      standing = { ...standing, presenter: false, presenterDelegated: false };
     }
 
     if (observed === null) {
@@ -472,7 +477,7 @@ function counted(tally: IdentityTally, outcome: StepOutcome, checked: boolean): 
 /** Who held the floor, and the presenter slot, at one moment of a step. */
 interface HeldRights {
   readonly floor: ReadonlySet<string>;
-  readonly presenter: string | null;
+  readonly presenters: ReadonlySet<string>;
 }
 
 /** What a step takes before it observes the provider: the push mark, and who held what. */

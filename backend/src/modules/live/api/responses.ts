@@ -29,7 +29,7 @@ export interface LiveSessionResponse {
   readonly endReason: LiveSessionView['endReason'];
   readonly participantCap: number;
   readonly speakerCount: number;
-  readonly presenterUserId: string | null;
+  readonly presenterUserIds: readonly string[];
   /** The caller's own flags: display hints, computed on the server — every command asks again. */
   readonly me: {
     readonly role: LiveParticipantRole;
@@ -66,7 +66,7 @@ export function toLiveSessionResponse(view: LiveSessionView): LiveSessionRespons
     endReason: view.endReason,
     participantCap: view.participantCap,
     speakerCount: view.speakerCount,
-    presenterUserId: view.presenterUserId,
+    presenterUserIds: view.presenterUserIds,
     me: {
       role: me.role,
       isHost: me.isHost,

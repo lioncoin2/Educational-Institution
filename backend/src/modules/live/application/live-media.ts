@@ -46,6 +46,7 @@ const NOBODY: ParticipantStanding = {
   publishesByRight: false,
   speakerGrant: false,
   presenter: false,
+  presenterDelegated: false,
 };
 
 /**

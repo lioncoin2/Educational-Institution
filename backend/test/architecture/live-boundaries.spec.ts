@@ -2,6 +2,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, relative } from 'node:path';
 
+import { COMMUNITY_CAPABILITIES } from '../../src/modules/communities/contracts/capabilities';
+import { Permissions } from '../../src/modules/identity/contracts';
 import { cruise, edgesFrom, reachableFrom, type CruiseOutput } from '../support/dependency-graph';
 
 /**
@@ -309,5 +311,28 @@ describe('live boundaries', () => {
         'src/modules/live/live.module.ts',
       ].filter(exempt),
     ).toEqual([]);
+  });
+});
+
+/**
+ * Q56 / ADR 0028 — screen sharing is a session-scoped PresenterGrant, not a
+ * standing permission. This guard keeps it that way: no community-level
+ * screen-share capability, and no new `live.*` identity permission, are ever
+ * introduced. A student presents only under an explicit grant.
+ */
+describe('Q56 screen sharing adds no permission (ADR 0028)', () => {
+  it('introduces no community-level screen-share capability — authority is the session presenter grant', () => {
+    // Non-vacuous: the capability the presenter routes already gate on is present…
+    expect(COMMUNITY_CAPABILITIES).toContain('community.live.moderate');
+    // …and nothing in the vocabulary names a screen, a share or presenting.
+    expect(
+      COMMUNITY_CAPABILITIES.filter((capability) => /screen|present|share/i.test(capability)),
+    ).toEqual([]);
+  });
+
+  it('introduces no new live identity permission — the screen follows live.speak and the grant', () => {
+    expect(new Set(Object.values(Permissions.live))).toEqual(
+      new Set(['live.join', 'live.raise_hand', 'live.speak', 'live.moderate']),
+    );
   });
 });

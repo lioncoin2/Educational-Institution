@@ -122,7 +122,7 @@ describe('the presenter slot on the pinned LiveKit server', () => {
       violations: 0,
       resets: 0,
     });
-    expect(await live.presenters.active(sessionId)).toBeNull();
+    expect(await live.presenters.activeGrants(sessionId)).toEqual([]);
     await live.view.unpublished(room, 'teacher-2', TrackSource.SCREEN_SHARE);
     expect(await permissionOf('teacher-2')).toMatchObject(LISTENING);
     expect(await live.view.publishing(room, 'teacher-2')).toEqual([]);
@@ -149,7 +149,7 @@ describe('the presenter slot on the pinned LiveKit server', () => {
     ] as const) {
       expect(codeOf(await live.presenter.claim({ principal, sessionId, meta: META }))).toBe(code);
     }
-    expect(await live.presenters.active(sessionId)).toBeNull();
+    expect(await live.presenters.activeGrants(sessionId)).toEqual([]);
     // Nothing pushed to anyone.
     expect(
       logs.lines.filter((line) => line.fields.event === 'live.media.authorization_changed'),

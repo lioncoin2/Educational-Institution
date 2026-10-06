@@ -17,11 +17,17 @@ export type PresenterEndReason = (typeof PRESENTER_END_REASONS)[number];
 export type PresenterStopReason = Exclude<PresenterEndReason, 'session_ended'>;
 
 /**
- * The screen-share slot (live.md §6): a separate, audited grant, never a
- * speaker right and never a token flag. At most one is open per session (P1),
- * opened only while the session is live, by a moderator holding `live.speak`,
- * for themself (P2; Q56). `grantedBy` is kept apart from `userId` as the seam
- * for a later, delegated path; in v1 they are the same person.
+ * A screen-share grant (live.md §6; Q56, ADR 0028): a separate, audited grant,
+ * never a speaker right and never a token flag. At most
+ * `MAX_CONCURRENT_PRESENTERS` are open per session, each opened only while the
+ * session is live. Two kinds, told apart by `grantedBy`:
+ *
+ *   by right    an owner/moderator/teacher holding `live.speak` opens one for
+ *               themself — `grantedBy === userId`;
+ *   delegated   a moderator opens one FOR a student — `grantedBy` the
+ *               moderator, `userId` the student. This grant is the student's
+ *               only authority to present; it is session-scoped, revocable,
+ *               and never a community capability.
  *
  * Open while `endedAt` is null; a later claim is a new grant.
  */
@@ -39,18 +45,22 @@ export interface PresenterGrant {
   readonly endReason: PresenterEndReason | null;
 }
 
-/** A grant as a claim stores it: open, claimed by the presenter for themself. */
+/**
+ * A grant as a claim stores it: open, held by `userId`, opened by `grantedBy`
+ * — equal for a by-right self-claim, the moderator for a delegated student.
+ */
 export function newPresenterGrant(input: {
   readonly id: PresenterGrantId;
   readonly sessionId: string;
   readonly userId: string;
+  readonly grantedBy: string;
   readonly at: Date;
 }): PresenterGrant {
   return {
     id: input.id,
     sessionId: input.sessionId,
     userId: input.userId,
-    grantedBy: input.userId,
+    grantedBy: input.grantedBy,
     grantedAt: input.at,
     endedAt: null,
     endedBy: null,
@@ -60,6 +70,11 @@ export function newPresenterGrant(input: {
 
 export function isOpenGrant(grant: PresenterGrant): boolean {
   return grant.endedAt === null;
+}
+
+/** Delegated: opened by a moderator for someone else (a student). By-right when equal. */
+export function isDelegatedGrant(grant: PresenterGrant): boolean {
+  return grant.grantedBy !== grant.userId;
 }
 
 /** The grant, closed. Closing is once: a closed grant is never reopened or closed again. */

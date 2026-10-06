@@ -47,7 +47,7 @@ const SESSION_KEYS = [
   'me',
   'moderation',
   'participantCap',
-  'presenterUserId',
+  'presenterUserIds',
   'speakerCount',
   'startedAt',
   'state',
@@ -367,7 +367,7 @@ describe('live API', () => {
       endReason: null,
       participantCap: 300,
       speakerCount: 0,
-      presenterUserId: null,
+      presenterUserIds: [],
       me: {
         role: 'moderator',
         isHost: true,
@@ -824,7 +824,7 @@ describe('live API', () => {
     });
   });
 
-  it('lends the screen to one moderator at a time, for themself — and the host’s grant is the host’s', async () => {
+  it('lends the screen to up to two moderators, refuses a third, and DELETE stops only the caller’s own (Q56)', async () => {
     // A body is no input: the presenter is the caller.
     const claimed = await call('POST', `/sessions/${sessionId}/screen-share`, host, {
       userId: delegate.id,
@@ -832,55 +832,111 @@ describe('live API', () => {
     expect(claimed.status).toBe(201);
     expect(Object.keys(claimed.body).sort()).toEqual(SESSION_KEYS);
     expect(claimed.body).toMatchObject({
-      presenterUserId: host.id,
+      presenterUserIds: [host.id],
       me: { presenting: true, canPresent: true },
     });
     const held = await call('POST', `/sessions/${sessionId}/screen-share`, host);
     expect(held.status).toBe(200);
     expect(held.body).toMatchObject({
-      presenterUserId: host.id,
+      presenterUserIds: [host.id],
       stateVersion: claimed.body.stateVersion,
     });
 
-    expect(refusal(await call('POST', `/sessions/${sessionId}/screen-share`, delegate))).toEqual({
-      status: 409,
-      code: 'live.presenter_slot_taken',
-    });
-    expect(refusal(await call('DELETE', `/sessions/${sessionId}/screen-share`, delegate))).toEqual({
-      status: 403,
-      code: 'live.target_is_host',
-    });
-    expect(refusal(await call('DELETE', `/sessions/${sessionId}/screen-share`, teacher))).toEqual({
+    // A second moderator fits the cap of two.
+    const second = await call('POST', `/sessions/${sessionId}/screen-share`, delegate);
+    expect(second.status).toBe(201);
+    expect([...(second.body.presenterUserIds as string[])].sort()).toEqual(
+      [delegate.id, host.id].sort(),
+    );
+    // A third presenter does not fit — reached on the grant path, which consults
+    // the cap: the host grants a student with both slots full.
+    expect(
+      refusal(await call('POST', `/sessions/${sessionId}/screen-share/${s1.id}/grant`, host)),
+    ).toEqual({ status: 409, code: 'live.presenter_slots_full' });
+    // A non-moderator is refused before the cap is ever consulted.
+    expect(refusal(await call('POST', `/sessions/${sessionId}/screen-share`, teacher))).toEqual({
       status: 403,
       code: 'live.not_a_moderator',
     });
-    // A member who may never moderate is told what a stranger is told.
-    expect(refusal(await call('DELETE', `/sessions/${sessionId}/screen-share`, s2))).toEqual({
-      status: 404,
-      code: 'live.session_not_found',
-    });
 
+    // DELETE screen-share stops the CALLER's own share only.
     const stopped = await call('DELETE', `/sessions/${sessionId}/screen-share`, host);
     expect(stopped.status).toBe(200);
     expect(Object.keys(stopped.body).sort()).toEqual(SESSION_KEYS);
-    expect(stopped.body).toMatchObject({ presenterUserId: null, me: { presenting: false } });
+    expect(stopped.body).toMatchObject({
+      presenterUserIds: [delegate.id],
+      me: { presenting: false },
+    });
     const again = await call('DELETE', `/sessions/${sessionId}/screen-share`, host);
     expect(again.status).toBe(200);
-    expect(again.body).toEqual(stopped.body);
+    expect(again.body).toMatchObject({ presenterUserIds: [delegate.id] });
 
-    // Another moderator presents, and the host takes the slot back.
-    const byDelegate = await call('POST', `/sessions/${sessionId}/screen-share`, delegate);
-    expect(byDelegate.status).toBe(201);
-    expect(byDelegate.body).toMatchObject({ presenterUserId: delegate.id });
-    expect((await call('DELETE', `/sessions/${sessionId}/screen-share`, host)).body).toMatchObject({
-      presenterUserId: null,
-    });
+    // The host revokes the delegate's grant via the targeted route; a non-host may not take the host's own.
+    expect(
+      refusal(await call('DELETE', `/sessions/${sessionId}/screen-share/${delegate.id}`, teacher)),
+    ).toEqual({ status: 403, code: 'live.not_a_moderator' });
+    const revoked = await call(
+      'DELETE',
+      `/sessions/${sessionId}/screen-share/${delegate.id}`,
+      host,
+    );
+    expect(revoked.status).toBe(200);
+    expect(revoked.body).toMatchObject({ presenterUserIds: [] });
 
-    // Opening is audited, and taking it back; the host's own stop is not.
+    // Opening is audited (twice), the revoke under its own name against the delegate.
     expect(audits('live.screen_share.started')).toHaveLength(2);
     expect(audits('live.screen_share.revoked')).toMatchObject([
       { actorUserId: host.id, metadata: { targetUserId: delegate.id } },
     ]);
+  });
+
+  it('grants a student the screen on a moderator’s explicit approval, and revokes it (Q56)', async () => {
+    // s4 is a plain listener member here (their floor was revoked earlier, not their membership).
+    // A student cannot self-claim: the edge permission refuses them.
+    expect(code(await call('POST', `/sessions/${sessionId}/screen-share`, s4))).toBe(
+      'identity.permission_denied',
+    );
+    // A moderator grants the student a delegated slot; the path names the target only.
+    const granted = await call('POST', `/sessions/${sessionId}/screen-share/${s4.id}/grant`, host);
+    expect(granted.status).toBe(201);
+    expect(granted.body.presenterUserIds).toEqual([s4.id]);
+
+    // The student now presents by the grant alone: the join ticket carries the screen,
+    // never the microphone or live.speak.
+    const ticket = await call('POST', `/sessions/${sessionId}/join`, s4);
+    expect(ticket.body.media).toEqual({ microphone: false, screen: true, screenAudio: false });
+    expect((await call('GET', `/sessions/${sessionId}`, s4)).body.me).toMatchObject({
+      presenting: true,
+      canPresent: false,
+    });
+
+    // A non-moderator cannot grant; a non-participant target is one 404.
+    expect(
+      code(await call('POST', `/sessions/${sessionId}/screen-share/${s3.id}/grant`, teacher)),
+    ).toBe('live.not_a_moderator');
+    expect(
+      code(
+        await call(
+          'POST',
+          `/sessions/${sessionId}/screen-share/00000000-0000-4000-8000-0000000000aa/grant`,
+          host,
+        ),
+      ),
+    ).toBe('live.target_not_in_session');
+
+    // The moderator revokes the student's grant.
+    const revoked = await call('DELETE', `/sessions/${sessionId}/screen-share/${s4.id}`, host);
+    expect(revoked.status).toBe(200);
+    expect(revoked.body.presenterUserIds).toEqual([]);
+    // The most recent grant and revoke name the teacher as actor and the student as target.
+    expect(audits('live.screen_share.started').at(-1)).toMatchObject({
+      actorUserId: host.id,
+      metadata: { targetUserId: s4.id },
+    });
+    expect(audits('live.screen_share.revoked').at(-1)).toMatchObject({
+      actorUserId: host.id,
+      metadata: { targetUserId: s4.id },
+    });
   });
 
   it('lets a moderator present only while identity lets them speak', async () => {
@@ -999,7 +1055,7 @@ describe('live API', () => {
       endedAt: expect.stringMatching(ISO),
       endReason: 'moderator',
       speakerCount: 0,
-      presenterUserId: null,
+      presenterUserIds: [],
       me: {
         role: 'moderator',
         canJoin: false,
@@ -1246,7 +1302,7 @@ describe('live API', () => {
     expect((await call('GET', `/sessions/${nextSessionId}`, host)).body).toMatchObject({
       state: 'live',
       stateVersion: 1,
-      presenterUserId: null,
+      presenterUserIds: [],
     });
   });
 
@@ -1280,8 +1336,9 @@ describe('live API', () => {
         (Reflect.getMetadata(ROUTE_ARGS_METADATA, LiveController, handler) ?? {}) as object,
       ).map((key) => Number(key.split(':')[0]));
     const bodies: readonly number[] = [RouteParamtypes.BODY, RouteParamtypes.RAW_BODY];
-    // 13 P6 routes + the 2 Q64 participant-control routes (remove, reset).
-    expect(handlers).toHaveLength(15);
+    // 13 P6 routes + 2 Q64 participant-control routes (remove, reset) + 2 Q56
+    // screen-share routes (grant, revoke).
+    expect(handlers).toHaveLength(17);
     expect(
       handlers.filter((handler) => parameters(handler).some((type) => bodies.includes(type))),
     ).toEqual([]);
@@ -1292,6 +1349,9 @@ describe('live API', () => {
     expect(parameters('removeParticipant')).toContain(RouteParamtypes.PARAM);
     expect(parameters('removeParticipant')).toContain(RouteParamtypes.QUERY);
     expect(parameters('reset')).toContain(RouteParamtypes.PARAM);
+    // The Q56 delegated grant/revoke take their target from the path, never a body.
+    expect(parameters('grantScreenShare')).toContain(RouteParamtypes.PARAM);
+    expect(parameters('revokeScreenShare')).toContain(RouteParamtypes.PARAM);
   });
 
   it('never logs a join ticket, or any other token — in a log line, an audit entry or an event', () => {

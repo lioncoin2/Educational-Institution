@@ -56,7 +56,7 @@ describe('ending a live session', () => {
       stateVersion: before + 1,
       endReason: 'moderator',
       speakerCount: 0,
-      presenterUserId: null,
+      presenterUserIds: [],
       me: { canJoin: false, canModerate: false, canEnd: false, canPresent: false, hand: null },
     });
     for (const hand of hands) {

@@ -413,6 +413,7 @@ describe('the media provider Live binds', () => {
           publishesByRight: false,
           speakerGrant: false,
           presenter: false,
+          presenterDelegated: false,
         }),
         ttlSeconds: DEFAULT_LIVE_JOIN_TOKEN_TTL_SECONDS,
       }),

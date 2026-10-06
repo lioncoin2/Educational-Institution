@@ -6,13 +6,22 @@ const NOBODY: ParticipantStanding = {
   publishesByRight: false,
   speakerGrant: false,
   presenter: false,
+  presenterDelegated: false,
 };
 
-/** Every one of the sixteen standings. */
+/** Every one of the thirty-two standings (`presenterDelegated` added for Q56). */
 const EVERY_STANDING: readonly ParticipantStanding[] = [false, true].flatMap((moderator) =>
   [false, true].flatMap((publishesByRight) =>
     [false, true].flatMap((speakerGrant) =>
-      [false, true].map((presenter) => ({ moderator, publishesByRight, speakerGrant, presenter })),
+      [false, true].flatMap((presenter) =>
+        [false, true].map((presenterDelegated) => ({
+          moderator,
+          publishesByRight,
+          speakerGrant,
+          presenter,
+          presenterDelegated,
+        })),
+      ),
     ),
   ),
 );
@@ -28,7 +37,7 @@ const LISTENS_ONLY: RtcCapabilities = {
 
 describe('capabilitiesFor — the capability matrix', () => {
   it('covers every standing, stating every field every time', () => {
-    expect(EVERY_STANDING).toHaveLength(16);
+    expect(EVERY_STANDING).toHaveLength(32);
     for (const standing of EVERY_STANDING) {
       const capabilities = capabilitiesFor(standing);
       expect(Object.keys(capabilities).sort()).toEqual(Object.keys(LISTENS_ONLY).sort());
@@ -36,7 +45,8 @@ describe('capabilitiesFor — the capability matrix', () => {
         standing,
         capabilities: {
           canPublishAudio: standing.speakerGrant || standing.publishesByRight,
-          canPublishScreen: standing.presenter && standing.publishesByRight,
+          canPublishScreen:
+            standing.presenterDelegated || (standing.presenter && standing.publishesByRight),
           canPublishScreenAudio: false,
           canSubscribe: true,
           canPublishData: false,
@@ -66,7 +76,7 @@ describe('capabilitiesFor — the capability matrix', () => {
     });
   });
 
-  it('gives the presenter the screen, never its audio — only while they hold live.speak', () => {
+  it('gives a by-right presenter the screen only while they hold live.speak (Q56)', () => {
     const presenter = { ...NOBODY, moderator: true, publishesByRight: true, presenter: true };
     expect(capabilitiesFor(presenter)).toEqual({
       ...LISTENS_ONLY,
@@ -76,10 +86,12 @@ describe('capabilitiesFor — the capability matrix', () => {
     // A moderator who lost live.speak, still holding the slot: no screen
     // (P6 decision 1) — and no microphone by right either.
     expect(capabilitiesFor({ ...presenter, publishesByRight: false })).toEqual(LISTENS_ONLY);
+    // A bare presenter flag with no right and no delegation: no screen.
     expect(capabilitiesFor({ ...NOBODY, presenter: true })).toEqual(LISTENS_ONLY);
     expect(
       sourcesOf(
         capabilitiesFor({
+          ...NOBODY,
           moderator: true,
           publishesByRight: true,
           speakerGrant: true,
@@ -87,6 +99,14 @@ describe('capabilitiesFor — the capability matrix', () => {
         }),
       ),
     ).toEqual(['microphone', 'screen_share']);
+  });
+
+  it('gives a delegated presenter (a student) the screen by the grant alone — no live.speak, no microphone (Q56, ADR 0028)', () => {
+    const student = { ...NOBODY, presenter: true, presenterDelegated: true };
+    expect(capabilitiesFor(student)).toEqual({ ...LISTENS_ONLY, canPublishScreen: true });
+    expect(sourcesOf(capabilitiesFor(student))).toEqual(['screen_share']);
+    // The grant gives the screen and nothing else — never the microphone.
+    expect(capabilitiesFor(student).canPublishAudio).toBe(false);
   });
 
   it('maps no standing to the camera, the data channel, screen audio or hiding', () => {

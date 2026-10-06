@@ -2067,9 +2067,17 @@ default:
 > again is a new, explicit claim. Tests: `live-reconciler-participants.spec.ts`,
 > "presenter authority follows live.speak (P6 decision 1)".
 
-**When answered.** Who may present is a rule in `LiveAccess` (P6). Delegated
-or audio sharing is P12. Recording would need its own ADR, storage and a Q3
-answer.
+> **Decided in full (2026-10-06, Q56; [ADR 0028](decisions/0028-screen-sharing-two-presenters-and-delegated-student-access.md)).**
+> Up to TWO concurrent screen sharers. Owner/Moderator/Teacher present by right (`live.speak`), as
+> above. A Student presents only under an explicit, session-scoped PresenterGrant a moderator opens for
+> them (the `grantedBy` seam) — never `live.speak`, never a community permission; the grant survives a
+> stop/restart, a Q64 Room Reset and a Q64 Kick, and ends on revoke or the session's end. The two-slot
+> cap is a compare-and-set under the session's lock, never a LiveKit count. This REVERSES the
+> 2026-09-27 restriction that a student must not present. Screen audio stays disabled.
+
+**When answered.** Who may present is a rule in `LiveAccess` (P6); the two-slot cap and delegated
+student sharing are built (Q56, ADR 0028). Audio sharing and recording remain deferred — recording
+would need its own ADR, storage and a Q3 answer.
 
 ---
 

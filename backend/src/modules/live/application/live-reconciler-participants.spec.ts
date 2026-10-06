@@ -18,6 +18,7 @@ const LISTENER = capabilitiesFor({
   publishesByRight: false,
   speakerGrant: false,
   presenter: false,
+  presenterDelegated: false,
 });
 const MICROPHONE = { ...LISTENER, canPublishAudio: true };
 const PRESENTING = { ...MICROPHONE, canPublishScreen: true };
@@ -120,7 +121,7 @@ describe('LiveReconciler — participants', () => {
         'teacher-1',
       ]);
       expect(await requestState(hand)).toBe('expired');
-      expect(await h.presenters.active(session.id)).toBeNull();
+      expect(await h.presenters.activeGrants(session.id)).toEqual([]);
       // Announced, never audited: the system's bookkeeping, not a moderator's act.
       expect(h.journal.order).toEqual([
         'event:live.speaker.expired',
@@ -242,7 +243,7 @@ describe('LiveReconciler — participants', () => {
       h.journal.clear();
 
       await h.reconciler.sweepParticipants();
-      expect(await h.presenters.active(session.id)).toBeNull();
+      expect(await h.presenters.activeGrants(session.id)).toEqual([]);
       expect(h.journal.events.map((event) => event.payload)).toEqual([
         expect.objectContaining({ userId: 'teacher-2', reason: 'ineligible', stoppedBy: null }),
       ]);
@@ -294,7 +295,7 @@ describe('LiveReconciler — participants', () => {
     it('revokes the presenter slot of a moderator who loses live.speak; they stay a moderator, and the screen stops', async () => {
       const moderator = await presenter();
       h.rtc.connect(room, 'teacher-2', PRESENTING, ['microphone', 'screen_share']);
-      const grant = await h.presenters.active(session.id);
+      const [grant] = await h.presenters.activeGrants(session.id);
       expect(grant?.userId).toBe('teacher-2');
       const silenced = withoutSpeak(moderator);
       h.journal.clear();
@@ -307,7 +308,7 @@ describe('LiveReconciler — participants', () => {
       });
 
       // The slot is closed as `ineligible`, by the system, and announced.
-      expect(await h.presenters.active(session.id)).toBeNull();
+      expect(await h.presenters.activeGrants(session.id)).toEqual([]);
       expect(h.journal.eventNames()).toEqual(['live.screen_share.stopped']);
       expect(h.journal.events[0]?.payload).toEqual(
         expect.objectContaining({ userId: 'teacher-2', reason: 'ineligible', stoppedBy: null }),
@@ -325,7 +326,7 @@ describe('LiveReconciler — participants', () => {
         canModerate: true,
         presenting: false,
       });
-      expect(view.value.presenterUserId).toBeNull();
+      expect(view.value.presenterUserIds).toEqual([]);
       // A rejoin is issued no screen either.
       const ticket = await h.join.execute({
         principal: silenced,
@@ -342,7 +343,7 @@ describe('LiveReconciler — participants', () => {
       h.journal.clear();
 
       await h.reconciler.sweepParticipants();
-      expect(await h.presenters.active(session.id)).toBeNull();
+      expect(await h.presenters.activeGrants(session.id)).toEqual([]);
       expect(h.journal.eventNames()).toEqual(['live.screen_share.stopped']);
       expect(h.rtc.removed).toEqual([]);
     });
@@ -350,16 +351,16 @@ describe('LiveReconciler — participants', () => {
     it('does not give the slot back when live.speak returns: presenting again is an explicit new claim', async () => {
       const moderator = await presenter();
       h.rtc.connect(room, 'teacher-2', PRESENTING, ['microphone', 'screen_share']);
-      const first = await h.presenters.active(session.id);
+      const [first] = await h.presenters.activeGrants(session.id);
       withoutSpeak(moderator);
       await h.reconciler.sweepParticipants();
-      expect(await h.presenters.active(session.id)).toBeNull();
+      expect(await h.presenters.activeGrants(session.id)).toEqual([]);
 
       const restored = restoreSpeak(moderator);
       h.journal.clear();
       await h.reconciler.sweepParticipants();
       // Nothing restored by the sweep: no grant, no screen in any set pushed.
-      expect(await h.presenters.active(session.id)).toBeNull();
+      expect(await h.presenters.activeGrants(session.id)).toEqual([]);
       expect(h.journal.eventNames()).toEqual([]);
       expect(capabilitiesOf('teacher-2')?.canPublishScreen).toBe(false);
       const ticket = await h.join.execute({
@@ -378,7 +379,7 @@ describe('LiveReconciler — participants', () => {
       });
       if (!claimed.ok) throw new Error(claimed.error.code);
       expect(claimed.value.opened).toBe(true);
-      const second = await h.presenters.active(session.id);
+      const [second] = await h.presenters.activeGrants(session.id);
       expect(second?.userId).toBe('teacher-2');
       expect(second?.id).not.toBe(first?.id);
     });
@@ -396,7 +397,71 @@ describe('LiveReconciler — participants', () => {
         meta: META,
       });
       expect(claimed.ok ? null : claimed.error.code).toBe('live.presenter_not_permitted');
-      expect(await h.presenters.active(session.id)).toBeNull();
+      expect(await h.presenters.activeGrants(session.id)).toEqual([]);
+    });
+  });
+
+  describe('a delegated student presenter (Q56, ADR 0028)', () => {
+    /** A moderator grants `student` a delegated slot; the student is connected, publishing the screen. */
+    async function grantStudent(): Promise<Principal> {
+      const moderator = await h.delegate(
+        communityId,
+        owner,
+        'teacher-2',
+        'community.live.moderate',
+      );
+      h.rtc.connect(room, student.userId, PRESENTING, ['screen_share']);
+      const granted = await h.presenter.grant({
+        principal: moderator,
+        sessionId: session.id,
+        targetUserId: student.userId,
+        meta: META,
+      });
+      if (!granted.ok) throw new Error(granted.error.code);
+      return moderator;
+    }
+
+    it('is not closed by the sweep though the student holds no live.speak — the grant is their authority', async () => {
+      await grantStudent();
+      h.journal.clear();
+      await h.reconciler.sweepParticipants();
+      expect((await h.presenters.activeGrants(session.id)).map((g) => g.userId)).toEqual([
+        student.userId,
+      ]);
+      expect(h.journal.eventNames()).toEqual([]);
+      expect(capabilitiesOf(student.userId)?.canPublishScreen).toBe(true);
+      expect(h.rtc.removed).toEqual([]);
+    });
+
+    it('keeps two valid presenters — a by-right moderator and a delegated student — through a sweep', async () => {
+      const moderator = await grantStudent(); // student delegated by teacher-2
+      h.rtc.connect(room, 'teacher-2', PRESENTING, ['microphone', 'screen_share']);
+      const claimed = await h.presenter.claim({
+        principal: moderator,
+        sessionId: session.id,
+        meta: META,
+      });
+      if (!claimed.ok) throw new Error(claimed.error.code);
+      h.journal.clear();
+      await h.reconciler.sweepParticipants();
+      expect((await h.presenters.activeGrants(session.id)).map((g) => g.userId).sort()).toEqual([
+        'student-1',
+        'teacher-2',
+      ]);
+      expect(capabilitiesOf(student.userId)?.canPublishScreen).toBe(true);
+      expect(capabilitiesOf('teacher-2')?.canPublishScreen).toBe(true);
+    });
+
+    it('never makes a third presenter valid: a connected non-holder publishing a screen is corrected, not admitted', async () => {
+      await grantStudent();
+      // student-2, with no grant, observed publishing a screen.
+      h.rtc.connect(room, 'student-2', PRESENTING, ['screen_share']);
+      await h.reconciler.sweepParticipants();
+      // No grant was opened for them, and their screen is stripped as drift.
+      expect((await h.presenters.activeGrants(session.id)).map((g) => g.userId)).toEqual([
+        student.userId,
+      ]);
+      expect(capabilitiesOf('student-2')?.canPublishScreen).toBe(false);
     });
   });
 
@@ -998,7 +1063,7 @@ describe('LiveReconciler — participants', () => {
         // One ended event implies every expiry and the presenter's close.
         expect(h.journal.eventNames()).toEqual(['live.session.ended']);
         expect(await requestState(hand)).toBe('expired');
-        expect(await h.presenters.active(session.id)).toBeNull();
+        expect(await h.presenters.activeGrants(session.id)).toEqual([]);
         expect(h.rtc.ended).toContain(room);
         expect(h.rtc.roomNames()).not.toContain(room);
         // No capability was pushed from membership nobody can vouch for.

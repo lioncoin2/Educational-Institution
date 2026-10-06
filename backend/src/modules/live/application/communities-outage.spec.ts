@@ -76,7 +76,7 @@ describe('a Communities outage', () => {
       session: await h.session(session.id),
       pending: await h.requests.findById(pending.id),
       granted: await h.requests.findById(granted.id),
-      presenter: await h.presenters.active(session.id),
+      presenters: await h.presenters.activeGrants(session.id),
     };
     const calls = h.rtc.calls.length;
     jest
@@ -93,7 +93,7 @@ describe('a Communities outage', () => {
       session: await h.session(session.id),
       pending: await h.requests.findById(pending.id),
       granted: await h.requests.findById(granted.id),
-      presenter: await h.presenters.active(session.id),
+      presenters: await h.presenters.activeGrants(session.id),
     }).toEqual(before);
   });
 

@@ -483,11 +483,11 @@ describeWithPostgres('Live at scale', () => {
       expect(seqScans(allNodes(raise))).toEqual([]);
     });
 
-    it('finds the open screen share by the one-open partial unique index, past 2,000 closed ones', async () => {
-      const lookup = await plansOf(() => h.presenters.active(sessions.many.id));
+    it('finds the open screen shares by the one-open-per-user partial index, past 2,000 closed ones', async () => {
+      const lookup = await plansOf(() => h.presenters.activeGrants(sessions.many.id));
       expect(seqScans(allNodes(lookup))).toEqual([]);
       expect(indexes(allNodes(lookup))).toEqual(
-        new Set(['live_presenter_grants_one_open_per_session']),
+        new Set(['live_presenter_grants_one_open_per_user']),
       );
     });
 

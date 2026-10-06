@@ -16,6 +16,7 @@ const LISTENER = capabilitiesFor({
   publishesByRight: false,
   speakerGrant: false,
   presenter: false,
+  presenterDelegated: false,
 });
 const MICROPHONE = { ...LISTENER, canPublishAudio: true };
 const PRESENTING = { ...MICROPHONE, canPublishScreen: true };
@@ -131,9 +132,10 @@ describe('LiveReconciler — a withdrawn publisher’s second identities (R1)', 
           meta: META,
         });
         if (!claimed.ok) throw new Error(claimed.error.code);
-        const closed = await h.presenter.stop({
+        const closed = await h.presenter.revoke({
           principal: owner,
           sessionId: session.id,
+          targetUserId: 'teacher-2',
           meta: META,
         });
         if (!closed.ok) throw new Error(closed.error.code);

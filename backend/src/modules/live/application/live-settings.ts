@@ -104,10 +104,10 @@ export const LiveRefusals = {
     'live.invalid_transition',
     'This hand has already been decided otherwise.',
   ),
-  presenterSlotTaken: failure(
+  presenterSlotsFull: failure(
     'conflict',
-    'live.presenter_slot_taken',
-    'Someone else is sharing their screen.',
+    'live.presenter_slots_full',
+    'The maximum number of people are already sharing their screen.',
   ),
   cursorInvalid: failure('validation', 'live.cursor_invalid', 'That page cursor is not valid.'),
   /**

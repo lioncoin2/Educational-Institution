@@ -88,8 +88,8 @@ class LiveMemory {
   /** Requests that ever held the floor, per session — the targeted watch's rows. */
   readonly flooredBySession = new Map<string, Set<string>>();
   readonly presenterById = new Map<string, PresenterGrant>();
-  /** The partial unique index `(session_id) WHERE ended_at IS NULL` (P1). */
-  readonly openPresenterBySession = new Map<string, string>();
+  /** The partial unique index `(session_id, user_id) WHERE ended_at IS NULL` (Q56): one open grant per person. */
+  readonly openPresentersBySession = new Map<string, Set<string>>();
   readonly presentersBySession = new Map<string, string[]>();
   readonly moderation: ModerationAction[] = [];
 
@@ -109,9 +109,19 @@ class LiveMemory {
     return id === undefined ? null : (this.requestById.get(id) ?? null);
   }
 
-  openPresenter(sessionId: string): PresenterGrant | null {
-    const id = this.openPresenterBySession.get(sessionId);
-    return id === undefined ? null : (this.presenterById.get(id) ?? null);
+  /** The session's open grants, by grantedAt then id — Postgres' determinate order. */
+  openPresenters(sessionId: string): PresenterGrant[] {
+    return [...(this.openPresentersBySession.get(sessionId) ?? [])]
+      .flatMap((id) => {
+        const grant = this.presenterById.get(id);
+        return grant === undefined ? [] : [grant];
+      })
+      .sort(presenterOrder);
+  }
+
+  /** `userId`'s open grant in the session, if any — at most one is. */
+  openPresenterOf(sessionId: string, userId: string): PresenterGrant | null {
+    return this.openPresenters(sessionId).find((grant) => grant.userId === userId) ?? null;
   }
 
   /** The requests one of the per-session indexes names. */
@@ -155,10 +165,7 @@ class LiveMemory {
       this.presentersBySession.set(grant.sessionId, ids);
     }
     this.presenterById.set(grant.id, grant);
-    if (isOpenGrant(grant)) this.openPresenterBySession.set(grant.sessionId, grant.id);
-    else if (this.openPresenterBySession.get(grant.sessionId) === grant.id) {
-      this.openPresenterBySession.delete(grant.sessionId);
-    }
+    index(this.openPresentersBySession, grant.sessionId, grant.id, isOpenGrant(grant));
   }
 
   record(action: ModerationAction): void {
@@ -204,19 +211,17 @@ class InMemoryLiveSessions implements LiveSessionRepository {
       ...this.memory.requestsIn(this.memory.pendingBySession, session.id),
       ...this.memory.requestsIn(this.memory.grantedBySession, session.id),
     ];
-    const presenting = this.memory.openPresenter(session.id);
+    const presenting = this.memory.openPresenters(session.id);
     this.memory.putSession(ended);
     for (const request of expiring) {
       const expired = transition(request, 'expired', input.at, null);
       if (expired !== null) this.memory.putRequest(expired);
     }
-    if (presenting !== null) {
+    // Every open presenter grant closes in the same step (S5): the one
+    // `live.session.ended` implies them all.
+    for (const grant of presenting) {
       this.memory.putPresenter(
-        closePresenterGrant(presenting, {
-          at: input.at,
-          by: input.endedBy,
-          reason: 'session_ended',
-        }),
+        closePresenterGrant(grant, { at: input.at, by: input.endedBy, reason: 'session_ended' }),
       );
     }
     this.memory.record(input.moderation);
@@ -378,10 +383,10 @@ class InMemorySpeakerRequests implements SpeakerRequestRepository {
     const nothing = { request: null, presenter: null, stateVersion: session.stateVersion };
     if (!isLive(session)) return nothing;
     const open = this.memory.openRequest(sessionId, userId);
-    const presenting = this.memory.openPresenter(sessionId);
+    const presenting = this.memory.openPresenterOf(sessionId, userId);
     const expired = open === null ? null : transition(open, 'expired', at, null);
     const closed =
-      presenting !== null && presenting.userId === userId
+      presenting !== null
         ? closePresenterGrant(presenting, { at, by: null, reason: 'ineligible' })
         : null;
     if (expired === null && closed === null) return nothing;
@@ -407,24 +412,30 @@ class InMemorySpeakerRequests implements SpeakerRequestRepository {
 class InMemoryPresenterGrants implements PresenterGrantRepository {
   constructor(private readonly memory: LiveMemory) {}
 
-  async active(sessionId: string): Promise<PresenterGrant | null> {
-    return this.memory.openPresenter(sessionId);
+  async activeGrants(sessionId: string): Promise<readonly PresenterGrant[]> {
+    return this.memory.openPresenters(sessionId);
   }
 
-  async open(grant: PresenterGrant, moderation: ModerationAction): Promise<PresenterOpenOutcome> {
+  async openWithinCap(
+    grant: PresenterGrant,
+    cap: number,
+    moderation: ModerationAction,
+  ): Promise<PresenterOpenOutcome> {
     const session = this.memory.session(grant.sessionId);
     if (session === null) return { kind: 'session_not_live', grant: null, stateVersion: 0 };
     if (!isLive(session)) {
       return { kind: 'session_not_live', grant: null, stateVersion: session.stateVersion };
     }
-    // The open grant is read first, so a repeat and a rival are told apart.
-    const holding = this.memory.openPresenter(grant.sessionId);
-    if (holding !== null) {
-      return {
-        kind: holding.userId === grant.userId ? 'held' : 'occupied',
-        grant: holding,
-        stateVersion: session.stateVersion,
-      };
+    // The open grants are read first, so a repeat by the holder and a full
+    // house are told apart.
+    const open = this.memory.openPresenters(grant.sessionId);
+    const held = open.find((g) => g.userId === grant.userId);
+    if (held !== undefined) {
+      return { kind: 'held', grant: held, stateVersion: session.stateVersion };
+    }
+    // The cap is counted in the same step as the open (R2's pattern).
+    if (open.length >= cap) {
+      return { kind: 'slots_full', grant: null, stateVersion: session.stateVersion };
     }
     if (!isOpenGrant(grant)) throw new RangeError('a claim stores an open grant');
     if (this.memory.presenterById.has(grant.id)) throw new Error('duplicate presenter grant id');
@@ -436,8 +447,8 @@ class InMemoryPresenterGrants implements PresenterGrantRepository {
   async close(input: PresenterCloseInput): Promise<PresenterCloseOutcome> {
     const session = this.memory.session(input.sessionId);
     if (session === null) return { grant: null, stateVersion: 0 };
-    const holding = this.memory.openPresenter(input.sessionId);
-    if (!isLive(session) || holding === null || holding.userId !== input.userId) {
+    const holding = this.memory.openPresenterOf(input.sessionId, input.userId);
+    if (!isLive(session) || holding === null) {
       return { grant: null, stateVersion: session.stateVersion };
     }
     const closed = closePresenterGrant(holding, {
@@ -479,6 +490,11 @@ function index(byKey: Map<string, Set<string>>, key: string, id: string, member:
 /** Each id once, in ascending text order — Postgres' order for these ASCII ids. */
 function distinctInOrder(ids: readonly string[]): readonly string[] {
   return [...new Set(ids)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/** Open grants in a determinate order — (grantedAt, id), as Postgres returns them. */
+function presenterOrder(a: PresenterGrant, b: PresenterGrant): number {
+  return a.grantedAt.getTime() - b.grantedAt.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 
 function requireLimit(method: string, limit: number, max: number): void {

@@ -1124,7 +1124,8 @@ request; a grant comes only from a raised hand (PROVISIONAL,
 [Q62](open-questions.md#q62--floor-rules-beyond-first-come-first-served));
 the session's end expires
 every open request; revoking the floor never touches membership. Screen share
-is one presenter slot per session. Detail: [live.md](live.md). Sequence:
+is up to two presenter slots per session (Q56, ADR 0028). Detail:
+[live.md](live.md). Sequence:
 [Appendix A3](#a3-raise-hand-grant-publish-revoke).
 
 ## 13. Attendance snapshot model
@@ -1328,7 +1329,7 @@ row, including 412 `live.community_not_open`, 403 `live.not_a_moderator` and
 | `POST /live/requests/:requestId/grant` | `live.moderate` (coarse, before load) | `LiveAccess`; the target is still eligible | 200 `{request, media: 'applied' \| 'not_connected' \| 'pending'}`; already granted is 200 with no side effects | 404 `live.request_not_found`; 412 `live.target_not_eligible`, `live.speaker_slots_full`, `live.session_not_live`; 409 `live.invalid_transition` |
 | `POST /live/requests/:requestId/revoke` | `live.moderate` | as grant | 200 `{request, media}`; repeat 200 | as grant |
 | `POST /live/requests/:requestId/decline` | `live.moderate` | as grant | 200; repeat 200 | 409 from any other state |
-| `POST /live/sessions/:sessionId/screen-share` (no body) | `live.moderate` | session moderator holding `live.speak`; for themself only ([Q56](open-questions.md#q56--screen-sharing)) | 201 `LiveSessionView`; 200 when already held | 409 `live.presenter_slot_taken`; 412 `live.session_not_live` |
+| `POST /live/sessions/:sessionId/screen-share` (no body) | `live.moderate` | a by-right moderator holding `live.speak`, for themself; a student via `…/screen-share/:userId/grant` ([Q56](open-questions.md#q56--screen-sharing), ADR 0028) | 201 `LiveSessionView`; 200 when already held | 409 `live.presenter_slots_full`; 412 `live.session_not_live` |
 | `DELETE /live/sessions/:sessionId/screen-share` | authenticated | the presenter (`stopped`) or a session moderator (`revoked`) | 200, idempotent | 404; 403 |
 
 Not added: a moderator-initiated media-room reset (P12), a moderator "remove participant" route
@@ -1535,7 +1536,7 @@ the messaging sweeper every 60 s
 | Join racing end | A token minted before the end is useless after `endRoom`, because `auto_create=false`. A join that re-created a missing room re-reads `ended` and deletes it (ensure-then-recheck) → 412. |
 | Concurrent starts | The partial unique index keeps one row; the loser ends its own room and returns the winner (200). An orphan room from a crashed start is deleted by the room sweep after a 60 s grace. |
 | Grants beyond the speaker cap | Serialized on the session row, counted, then compare-and-set: exactly 4 (Q4). The loser gets 412 `live.speaker_slots_full`. |
-| Two moderators claim the presenter slot | One open grant; the other gets 409 `live.presenter_slot_taken`. |
+| Two moderators claim the presenter slot | Both open a grant (the cap is two); a third claim or grant gets 409 `live.presenter_slots_full`. |
 | Duplicate raise hand, hand storm | The existing open request is returned (200); only created rows publish; moderator frames are coalesced; the queue is a keyset page. |
 | Media room vanished while live | The room sweep ensures it again within 30 s; `/join` does so at once. Hands, floors and the presenter grant survive in the record. |
 | Room full | The hard cap is LiveKit `maxParticipants` = cap + reserve. Listeners over the soft cap get 412 `live.session_full`; moderators and speakers skip it. Residual: a storm inside one sample can take reserve slots. |
@@ -1841,7 +1842,7 @@ decided.
 | [Q53](open-questions.md#q53--system-notices-in-a-community-chat) | System notices in a community chat | None; the chat is written by people only |
 | [Q54](open-questions.md#q54--who-starts-ends-and-moderates-a-live-session) | Who starts, ends and moderates a live session? | Start: `live.moderate` + `community.live.start`; moderate: `community.live.moderate` or the host; no institution-wide override |
 | [Q55](open-questions.md#q55--parallel-live-sessions-in-one-community) | Parallel live sessions in one community | At most one; a second start returns the running one |
-| [Q56](open-questions.md#q56--screen-sharing) | Screen sharing | One presenter; a moderator holding `live.speak`, for themself; no screen audio, no recording |
+| [Q56](open-questions.md#q56--screen-sharing) | Screen sharing | Up to two; owner/moderator/teacher by right (`live.speak`), a student by delegated PresenterGrant (ADR 0028); no screen audio, no recording |
 | [Q57](open-questions.md#q57--live-session-size-and-concurrency) | Live session size and concurrency | Cap 300 + reserve 10; 412 when full; raised only after profiles 1–3 |
 | [Q58](open-questions.md#q58--more-listeners-than-one-room-can-hold) | More listeners than one room can hold | Not built; a broadcast seam reserved inside Live |
 | [Q59](open-questions.md#q59--visibility-inside-a-live-session) | Visibility inside a live session | Roster visible; hands queue to moderators; `hidden` always false |

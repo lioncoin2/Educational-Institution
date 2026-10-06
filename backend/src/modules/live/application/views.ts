@@ -28,7 +28,8 @@ export interface LiveSessionView {
   readonly participantCap: number;
   /** Granted hands: at most MAX_CONCURRENT_SPEAKERS. */
   readonly speakerCount: number;
-  readonly presenterUserId: string | null;
+  /** The current presenters: at most MAX_CONCURRENT_PRESENTERS (Q56), in a determinate order. */
+  readonly presenterUserIds: readonly string[];
   readonly me: LiveSessionMe;
   readonly moderation: LiveSessionModeration | null;
 }
@@ -45,8 +46,9 @@ export interface LiveSessionMe {
   readonly canModerate: boolean;
   /** They may end the session — any of its moderators (audit D2). */
   readonly canEnd: boolean;
-  /** They may take the presenter slot now: a moderator holding `live.speak`, and the slot is free or theirs. */
+  /** They may claim a presenter slot now: a moderator holding `live.speak`, and a slot is free or already theirs. */
   readonly canPresent: boolean;
+  /** They hold an open presenter grant — by right, or delegated to them (Q56). */
   readonly presenting: boolean;
   /** Their open hand, if any. */
   readonly hand: { readonly requestId: string; readonly state: SpeakerRequestState } | null;
@@ -63,7 +65,7 @@ export function liveSessionView(
   session: LiveSession,
   extras: {
     readonly speakerCount: number;
-    readonly presenterUserId: string | null;
+    readonly presenterUserIds: readonly string[];
     readonly me: LiveSessionMe;
     readonly pendingHands: number | null;
   },
@@ -79,7 +81,7 @@ export function liveSessionView(
     endReason: session.endReason,
     participantCap: session.participantCap,
     speakerCount: extras.speakerCount,
-    presenterUserId: extras.presenterUserId,
+    presenterUserIds: extras.presenterUserIds,
     me: extras.me,
     moderation:
       extras.pendingHands === null

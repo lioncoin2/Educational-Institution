@@ -2,12 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, asc, eq, gte, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import { KeyedMutex } from '../../../platform/concurrency/keyed-mutex';
-import {
-  DATABASE,
-  isUniqueViolation,
-  postgresErrorCode,
-  type Database,
-} from '../../../platform/database';
+import { DATABASE, postgresErrorCode, type Database } from '../../../platform/database';
 import {
   HANDS_PAGE_MAX,
   LIVE_SESSIONS_PAGE_MAX,
@@ -60,9 +55,6 @@ type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 type Reader = Pick<Database, 'select'>;
 
 const DEADLOCK = '40P01';
-
-/** The presenter slot's partial unique index (P1): the claim's backstop. */
-const PRESENTER_SLOT = 'live_presenter_grants_one_open_per_session';
 
 /*
  * The partial unique indexes' predicates, unqualified — as an ON CONFLICT
@@ -588,22 +580,42 @@ class DrizzleSpeakerRequests implements SpeakerRequestRepository {
 class DrizzlePresenterGrants implements PresenterGrantRepository {
   constructor(private readonly store: LiveTransactions) {}
 
-  async active(sessionId: string): Promise<PresenterGrant | null> {
-    return openGrantOf(this.store.db, sessionId);
+  async activeGrants(sessionId: string): Promise<readonly PresenterGrant[]> {
+    return openGrantsOf(this.store.db, sessionId);
   }
 
-  async open(grant: PresenterGrant, moderation: ModerationAction): Promise<PresenterOpenOutcome> {
-    return this.store.admitted(grant.sessionId, async () => {
-      try {
-        return await this.store.transaction((tx) => claim(tx, grant, moderation));
-      } catch (error) {
-        if (!isUniqueViolation(error, PRESENTER_SLOT)) throw error;
-        // The backstop held: a writer that bypassed the session's lock took
-        // the slot between this claim's read and its insert. The transaction
-        // rolled back, writing nothing; the claim is decided again, and the
-        // slot's holder now answers it — held or occupied.
-        return this.store.transaction((tx) => claim(tx, grant, moderation));
+  async openWithinCap(
+    grant: PresenterGrant,
+    cap: number,
+    moderation: ModerationAction,
+  ): Promise<PresenterOpenOutcome> {
+    return this.store.locked(grant.sessionId, async (tx) => {
+      const session = await lockSession(tx, grant.sessionId);
+      if (session === null) return { kind: 'session_not_live', grant: null, stateVersion: 0 };
+      if (!isLive(session)) {
+        return { kind: 'session_not_live', grant: null, stateVersion: session.stateVersion };
       }
+      // Under the session's lock: the open grants are read first — a repeat by
+      // the holder and a full house are told apart — and the cap is counted in
+      // the open's own transaction (R2's pattern), so a racing open waits on
+      // the lock, then counts this one.
+      const open = await openGrantsOf(tx, grant.sessionId);
+      const held = open.find((existing) => existing.userId === grant.userId);
+      if (held !== undefined) {
+        return { kind: 'held', grant: held, stateVersion: session.stateVersion };
+      }
+      if (open.length >= cap) {
+        return { kind: 'slots_full', grant: null, stateVersion: session.stateVersion };
+      }
+      if (!isOpenGrant(grant)) throw new RangeError('a claim stores an open grant');
+      const [row] = await tx
+        .insert(livePresenterGrants)
+        .values(presenterGrantRow(grant))
+        .returning();
+      if (row === undefined) throw new Error(`presenter grant ${grant.id} was not stored`);
+      const stateVersion = await stepVersion(tx, grant.sessionId);
+      await record(tx, moderation);
+      return { kind: 'opened', grant: toPresenterGrant(row), stateVersion };
     });
   }
 
@@ -643,35 +655,6 @@ class DrizzlePresenterGrants implements PresenterGrantRepository {
       .orderBy(asc(livePresenterGrants.userId));
     return rows.map((row) => row.userId);
   }
-}
-
-/** Claims the presenter slot, in a transaction under the session's lock. */
-async function claim(
-  tx: Transaction,
-  grant: PresenterGrant,
-  moderation: ModerationAction,
-): Promise<PresenterOpenOutcome> {
-  const session = await lockSession(tx, grant.sessionId);
-  if (session === null) return { kind: 'session_not_live', grant: null, stateVersion: 0 };
-  if (!isLive(session)) {
-    return { kind: 'session_not_live', grant: null, stateVersion: session.stateVersion };
-  }
-  // The open grant is read under the lock first, so a repeat by the holder
-  // and a rival are told apart — which a unique violation cannot do.
-  const holding = await openGrantOf(tx, grant.sessionId);
-  if (holding !== null) {
-    return {
-      kind: holding.userId === grant.userId ? 'held' : 'occupied',
-      grant: holding,
-      stateVersion: session.stateVersion,
-    };
-  }
-  if (!isOpenGrant(grant)) throw new RangeError('a claim stores an open grant');
-  const [row] = await tx.insert(livePresenterGrants).values(presenterGrantRow(grant)).returning();
-  if (row === undefined) throw new Error(`presenter grant ${grant.id} was not stored`);
-  const stateVersion = await stepVersion(tx, grant.sessionId);
-  await record(tx, moderation);
-  return { kind: 'opened', grant: toPresenterGrant(row), stateVersion };
 }
 
 /**
@@ -734,13 +717,14 @@ async function openRequestOf(
   return row === undefined ? null : toSpeakerRequest(row);
 }
 
-/** The session's open presenter grant, if any — at most one is (P1). */
-async function openGrantOf(db: Reader, sessionId: string): Promise<PresenterGrant | null> {
-  const [row] = await db
+/** The session's open presenter grants, by (grantedAt, id) — the determinate order (Q56). */
+async function openGrantsOf(db: Reader, sessionId: string): Promise<PresenterGrant[]> {
+  const rows = await db
     .select()
     .from(livePresenterGrants)
-    .where(and(eq(livePresenterGrants.sessionId, sessionId), isNull(livePresenterGrants.endedAt)));
-  return row === undefined ? null : toPresenterGrant(row);
+    .where(and(eq(livePresenterGrants.sessionId, sessionId), isNull(livePresenterGrants.endedAt)))
+    .orderBy(asc(livePresenterGrants.grantedAt), asc(livePresenterGrants.id));
+  return rows.map(toPresenterGrant);
 }
 
 /**

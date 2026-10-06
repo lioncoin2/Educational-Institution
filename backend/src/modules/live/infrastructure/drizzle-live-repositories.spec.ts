@@ -2,8 +2,7 @@ import { Logger } from '@nestjs/common';
 
 import type { Database } from '../../../platform/database';
 import { asId } from '../../../shared';
-import type { EndInput, PresenterOpenOutcome } from '../domain/ports';
-import { newPresenterGrant } from '../domain/presenter-grant';
+import type { EndInput } from '../domain/ports';
 import { DrizzleLiveStore } from './drizzle-live-repositories';
 
 /** A Postgres error as node-postgres reports it under Drizzle's wrapping. */
@@ -88,54 +87,5 @@ describe('a deadlock victim', () => {
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(store.deadlockRetries).toBe(0);
     expect(warned).not.toHaveBeenCalled();
-  });
-});
-
-/**
- * The presenter slot's backstop (live.md §10.1): a claim reads the open grant
- * under the session's lock, so only a writer that bypassed the lock can make
- * its insert trip the partial unique index. Then the transaction has rolled
- * back, and the claim is decided again — answered by the slot's holder.
- */
-describe('a claim that trips the presenter slot’s unique index', () => {
-  const grant = newPresenterGrant({
-    id: asId<'PresenterGrant'>('grant-1'),
-    sessionId: 'session-1',
-    userId: 'teacher-1',
-    at,
-  });
-  const moderation = {
-    id: asId<'ModerationAction'>('action-2'),
-    sessionId: 'session-1',
-    actorUserId: 'teacher-1',
-    targetUserId: 'teacher-1',
-    type: 'grant_presenter' as const,
-    at,
-  };
-
-  it('is decided again, and answered as the holder says', async () => {
-    const holder: PresenterOpenOutcome = {
-      kind: 'occupied',
-      grant: { ...grant, id: asId<'PresenterGrant'>('grant-rival'), userId: 'teacher-2' },
-      stateVersion: 2,
-    };
-    const transaction = jest
-      .fn()
-      .mockRejectedValueOnce(
-        failure('23505', { constraint: 'live_presenter_grants_one_open_per_session' }),
-      )
-      .mockResolvedValueOnce(holder);
-    const store = storeOver(transaction);
-    await expect(store.presenters.open(grant, moderation)).resolves.toBe(holder);
-    expect(transaction).toHaveBeenCalledTimes(2);
-    expect(store.deadlockRetries).toBe(0);
-  });
-
-  it('throws any other unique violation — a reused grant id is a fault, not a rival', async () => {
-    const duplicate = failure('23505', { constraint: 'live_presenter_grants_pkey' });
-    const transaction = jest.fn().mockRejectedValue(duplicate);
-    const store = storeOver(transaction);
-    await expect(store.presenters.open(grant, moderation)).rejects.toBe(duplicate);
-    expect(transaction).toHaveBeenCalledTimes(1);
   });
 });

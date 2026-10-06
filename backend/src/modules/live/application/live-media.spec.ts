@@ -15,6 +15,7 @@ const SPEAKING: ParticipantStanding = {
   publishesByRight: false,
   speakerGrant: true,
   presenter: false,
+  presenterDelegated: false,
 };
 const LISTENER = capabilitiesFor({ ...SPEAKING, speakerGrant: false });
 const MICROPHONE = capabilitiesFor(SPEAKING);

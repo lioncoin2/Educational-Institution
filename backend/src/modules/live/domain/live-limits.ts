@@ -22,11 +22,15 @@ import type { RateLimitPolicy } from '../../../shared';
 export const MAX_CONCURRENT_SPEAKERS = 4;
 
 /**
- * One screen at a time (Q56). A screen share costs about one subscriber's
- * worth of egress per listener, so the slot is bounded and audited rather
- * than a flag in every moderator's token.
+ * At most two screens at a time (Q56; ADR 0028). A screen share costs about
+ * one subscriber's worth of egress per listener, so presenting is a bounded,
+ * audited grant rather than a flag in every moderator's token. The cap is
+ * counted under the session's lock, exactly as the speaker floor is — never
+ * from a LiveKit participant count. Owner/moderator/teacher present by right
+ * (`live.speak`); a student presents only under an explicit, session-scoped
+ * grant a moderator opened for them (the presenter grant's `grantedBy` seam).
  */
-export const MAX_CONCURRENT_PRESENTERS = 1;
+export const MAX_CONCURRENT_PRESENTERS = 2;
 
 /**
  * The longest join token the call site will ask for (audit D24).

@@ -46,7 +46,7 @@ describe('starting a live session', () => {
       endReason: null,
       participantCap: 300,
       speakerCount: 0,
-      presenterUserId: null,
+      presenterUserIds: [],
       me: { role: 'moderator', isHost: true, canJoin: true, canModerate: true, canEnd: true },
       moderation: { pendingHands: 0, violations: 0, lastViolationAt: null },
     });

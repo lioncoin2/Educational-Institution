@@ -7,17 +7,21 @@ import { sourcesOf, type RtcCapabilities, type RtcSource } from './rtc-provider'
  * join and every sweep, never stored, never cached across requests, and never
  * taken from anything the client says.
  *
- *   moderator         Communities answers `community.live.moderate`, or they
- *                     are the host and it answers `community.live.host`
- *   publishesByRight  a moderator who holds identity's `live.speak` (Q54)
- *   speakerGrant      holds a granted request in this session
- *   presenter         holds the session's open presenter grant
+ *   moderator          Communities answers `community.live.moderate`, or they
+ *                      are the host and it answers `community.live.host`
+ *   publishesByRight   a moderator who holds identity's `live.speak` (Q54)
+ *   speakerGrant       holds a granted request in this session
+ *   presenter          holds one of the session's open presenter grants
+ *   presenterDelegated holds one a moderator opened FOR them (a student): the
+ *                      authority to present without `live.speak` (Q56, ADR 0028)
  */
 export interface ParticipantStanding {
   readonly moderator: boolean;
   readonly publishesByRight: boolean;
   readonly speakerGrant: boolean;
   readonly presenter: boolean;
+  /** Implies `presenter`: their open grant's `grantedBy` is not themselves. */
+  readonly presenterDelegated: boolean;
 }
 
 /**
@@ -26,10 +30,13 @@ export interface ParticipantStanding {
  * defaults (audit §8.4).
  *
  *   the microphone     a speaker grant, or a moderator publishing by right
- *   the screen         the presenter, through the one slot — and only while
- *                      they publish by right: a moderator who loses
- *                      `live.speak` loses the screen with it (P6 decision 1)
- *   screen audio       never (Q56)
+ *   the screen         a presenter (Q56, ADR 0028): a by-right presenter
+ *                      (owner/moderator/teacher) only while they publish by
+ *                      right, so one who loses `live.speak` loses the screen
+ *                      (P6 decision 1); a delegated presenter — a student a
+ *                      moderator granted — by the grant alone, without
+ *                      `live.speak`
+ *   screen audio       never (Q56): this decision does not enable it
  *   subscribing        always: everyone listens
  *   the data channel   never: nothing uses it, and a listener must not broadcast
  *   hidden             never: there are no hidden listeners (Q59, ADR 0027)
@@ -39,7 +46,8 @@ export interface ParticipantStanding {
 export function capabilitiesFor(standing: ParticipantStanding): RtcCapabilities {
   return {
     canPublishAudio: standing.speakerGrant || standing.publishesByRight,
-    canPublishScreen: standing.presenter && standing.publishesByRight,
+    canPublishScreen:
+      standing.presenterDelegated || (standing.presenter && standing.publishesByRight),
     canPublishScreenAudio: false,
     canSubscribe: true,
     canPublishData: false,

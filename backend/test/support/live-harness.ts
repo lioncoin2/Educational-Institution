@@ -255,6 +255,7 @@ function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
       media,
       views,
       liveJournal,
+      standing,
     ),
     kick: new KickParticipantUseCase(
       identity,

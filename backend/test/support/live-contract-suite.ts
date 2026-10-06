@@ -1,6 +1,9 @@
 import { UuidIdGenerator } from '../../src/platform/primitives/uuid-id-generator';
 import { asId } from '../../src/shared';
-import { MAX_CONCURRENT_SPEAKERS } from '../../src/modules/live/domain/live-limits';
+import {
+  MAX_CONCURRENT_PRESENTERS,
+  MAX_CONCURRENT_SPEAKERS,
+} from '../../src/modules/live/domain/live-limits';
 import {
   endSession,
   liveSessionOrder,
@@ -185,15 +188,17 @@ export function liveRepositoryContract(
         moderation: null,
       });
 
-    const claim = (session: LiveSession, userId: string, when: Date) =>
-      s.presenters.open(
+    const claim = (session: LiveSession, userId: string, when: Date, grantedBy = userId) =>
+      s.presenters.openWithinCap(
         newPresenterGrant({
           id: ids.next<'PresenterGrant'>(),
           sessionId: session.id,
           userId,
+          grantedBy,
           at: when,
         }),
-        action(session.id, 'grant_presenter', userId, userId, when),
+        MAX_CONCURRENT_PRESENTERS,
+        action(session.id, 'grant_presenter', grantedBy, userId, when),
       );
 
     const stop = (
@@ -355,7 +360,7 @@ export function liveRepositoryContract(
         expect(await s.requests.pendingPage(session.id, null, 100)).toEqual([]);
         expect(await s.requests.countPending(session.id, 100)).toBe(0);
 
-        expect(await s.presenters.active(session.id)).toBeNull();
+        expect(await s.presenters.activeGrants(session.id)).toEqual([]);
         expect(await s.presenterGrantsOf(session.id)).toEqual([
           expect.objectContaining({
             userId: moderator,
@@ -438,7 +443,7 @@ export function liveRepositoryContract(
         expect(await request(theirs.id)).toEqual(theirs);
         expect(await s.requests.findOpen(other.id, both)).toEqual(theirs);
         expect(await request(speaker.id)).toMatchObject({ state: 'granted', decidedAt: at(3) });
-        expect(await s.presenters.active(other.id)).toEqual(presenting.grant);
+        expect(await s.presenters.activeGrants(other.id)).toEqual([presenting.grant]);
         expect(await version(other)).toBe(before);
         expect(await rows(other)).toEqual(['start_session', 'grant_speaker', 'grant_presenter']);
         expect(await s.requests.floorClosedSince(other.id, at(0))).toEqual([]);
@@ -1134,36 +1139,55 @@ export function liveRepositoryContract(
           },
           stateVersion: 2,
         });
-        expect(await s.presenters.active(session.id)).toEqual(outcome.grant);
+        expect(await s.presenters.activeGrants(session.id)).toEqual([outcome.grant]);
         expect(await rows(session)).toEqual(['start_session', 'grant_presenter']);
       });
 
-      it('answers the holder held and anyone else occupied, writing nothing', async () => {
+      it('answers the holder held, admits a second, and refuses a third with slots_full (Q56)', async () => {
         const session = await started();
         const opened = await claim(session, session.hostUserId, at(5));
+        // The holder again: held, nothing written.
         expect(await claim(session, session.hostUserId, at(6))).toEqual({
           kind: 'held',
           grant: opened.grant,
           stateVersion: 2,
         });
-        expect(await claim(session, person(), at(7))).toEqual({
-          kind: 'occupied',
-          grant: opened.grant,
-          stateVersion: 2,
+        // A second person fits the cap of two.
+        expect((await claim(session, person(), at(7))).kind).toBe('opened');
+        // A third does not: slots_full, nothing written, no version step.
+        expect(await claim(session, person(), at(8))).toMatchObject({
+          kind: 'slots_full',
+          grant: null,
+          stateVersion: 3,
         });
-        expect(await s.presenterGrantsOf(session.id)).toHaveLength(1);
-        expect(await rows(session)).toEqual(['start_session', 'grant_presenter']);
+        expect(await s.presenterGrantsOf(session.id)).toHaveLength(2);
+        expect(await rows(session)).toEqual([
+          'start_session',
+          'grant_presenter',
+          'grant_presenter',
+        ]);
       });
 
-      it('gives the slot to exactly one of two racing claims', async () => {
+      it('admits two racing claims when both slots are free (Q56)', async () => {
         const session = await started();
         const outcomes = await Promise.all([
           claim(session, person(), at(5)),
           claim(session, person(), at(5)),
         ]);
-        expect(outcomes.map((outcome) => outcome.kind).sort()).toEqual(['occupied', 'opened']);
-        expect(await s.presenterGrantsOf(session.id)).toHaveLength(1);
-        expect(await version(session)).toBe(2);
+        expect(outcomes.map((outcome) => outcome.kind)).toEqual(['opened', 'opened']);
+        expect(await s.presenterGrantsOf(session.id)).toHaveLength(2);
+      });
+
+      it('gives the last free slot to exactly one of two racing claims (Q56)', async () => {
+        const session = await started();
+        await claim(session, person(), at(4)); // one of two slots taken
+        const outcomes = await Promise.all([
+          claim(session, person(), at(5)),
+          claim(session, person(), at(5)),
+        ]);
+        expect(outcomes.map((outcome) => outcome.kind).sort()).toEqual(['opened', 'slots_full']);
+        expect(await s.presenterGrantsOf(session.id)).toHaveLength(2);
+        expect(await version(session)).toBe(3);
       });
 
       it('closes the holder’s grant, saying who and why, one version later', async () => {
@@ -1175,7 +1199,7 @@ export function liveRepositoryContract(
           grant: { userId: presenter, endedAt: at(9), endedBy: presenter, endReason: 'stopped' },
           stateVersion: 3,
         });
-        expect(await s.presenters.active(session.id)).toBeNull();
+        expect(await s.presenters.activeGrants(session.id)).toEqual([]);
         // A presenter's own stop is not moderation.
         expect(await rows(session)).toEqual(['start_session', 'grant_presenter']);
 
@@ -1207,7 +1231,7 @@ export function liveRepositoryContract(
           grant: null,
           stateVersion: 2,
         });
-        expect(await s.presenters.active(session.id)).toEqual(opened.grant);
+        expect(await s.presenters.activeGrants(session.id)).toEqual([opened.grant]);
         expect(await rows(session)).toEqual(['start_session', 'grant_presenter']);
       });
 
@@ -1221,7 +1245,7 @@ export function liveRepositoryContract(
         expect(await s.presenterGrantsOf(session.id)).toHaveLength(2);
       });
 
-      it('refuses to store a closed grant — unless the slot is taken, which is the answer', async () => {
+      it('refuses to store a closed grant — unless the holder already holds one, which is the answer', async () => {
         const session = await started();
         const presenter = session.hostUserId;
         const closed = () =>
@@ -1230,17 +1254,22 @@ export function liveRepositoryContract(
               id: ids.next<'PresenterGrant'>(),
               sessionId: session.id,
               userId: presenter,
+              grantedBy: presenter,
               at: at(1),
             }),
             { at: at(2), by: presenter, reason: 'stopped' },
           );
         const row = () => action(session.id, 'grant_presenter', presenter, presenter, at(3));
-        await expect(s.presenters.open(closed(), row())).rejects.toThrow(RangeError);
+        await expect(
+          s.presenters.openWithinCap(closed(), MAX_CONCURRENT_PRESENTERS, row()),
+        ).rejects.toThrow(RangeError);
         expect(await s.presenterGrantsOf(session.id)).toEqual([]);
         expect(await version(session)).toBe(1);
-        // The slot is read first, as for any claim.
+        // The open grants are read first, as for any claim.
         const opened = await claim(session, presenter, at(4));
-        expect(await s.presenters.open(closed(), row())).toEqual({
+        expect(
+          await s.presenters.openWithinCap(closed(), MAX_CONCURRENT_PRESENTERS, row()),
+        ).toEqual({
           kind: 'held',
           grant: opened.grant,
           stateVersion: 2,
@@ -1273,8 +1302,8 @@ export function liveRepositoryContract(
           grant: { sessionId: here.id, endReason: 'stopped' },
           stateVersion: 3,
         });
-        expect(await s.presenters.active(here.id)).toBeNull();
-        expect(await s.presenters.active(there.id)).toEqual(elsewhere.grant);
+        expect(await s.presenters.activeGrants(here.id)).toEqual([]);
+        expect(await s.presenters.activeGrants(there.id)).toEqual([elsewhere.grant]);
         expect(await version(there)).toBe(2);
         expect(await s.presenters.closedSince(here.id, at(0))).toEqual([presenter]);
         expect(await s.presenters.closedSince(there.id, at(0))).toEqual([]);
@@ -1306,7 +1335,7 @@ export function liveRepositoryContract(
         });
         expect(outcome.stateVersion).toBe(6);
         expect(await s.requests.findOpen(session.id, userId)).toBeNull();
-        expect(await s.presenters.active(session.id)).toBeNull();
+        expect(await s.presenters.activeGrants(session.id)).toEqual([]);
         // Nobody else is touched, and an expiry is not moderation.
         expect(await request(bystander.id)).toEqual(bystander);
         expect(await rows(session)).toEqual(['start_session', 'grant_speaker', 'grant_presenter']);
@@ -1323,7 +1352,7 @@ export function liveRepositoryContract(
           presenter: null,
           stateVersion: 4,
         });
-        expect(await s.presenters.active(session.id)).toEqual(opened.grant);
+        expect(await s.presenters.activeGrants(session.id)).toEqual([opened.grant]);
       });
 
       it('changes nothing, the version included, for someone holding nothing', async () => {
@@ -1363,7 +1392,7 @@ export function liveRepositoryContract(
           decidedAt: at(2),
           decidedBy: there.hostUserId,
         });
-        expect(await s.presenters.active(there.id)).toEqual(presenting.grant);
+        expect(await s.presenters.activeGrants(there.id)).toEqual([presenting.grant]);
         expect(await version(there)).toBe(before);
         expect(await s.requests.floorClosedSince(there.id, at(0))).toEqual([]);
         expect(await s.requests.floorClosedSince(here.id, at(0))).toEqual([userId]);

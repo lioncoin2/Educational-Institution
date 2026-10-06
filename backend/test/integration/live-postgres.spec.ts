@@ -4,7 +4,10 @@ import { Pool } from 'pg';
 
 import type { Database } from '../../src/platform/database';
 import { UuidIdGenerator } from '../../src/platform/primitives/uuid-id-generator';
-import { MAX_CONCURRENT_SPEAKERS } from '../../src/modules/live/domain/live-limits';
+import {
+  MAX_CONCURRENT_PRESENTERS,
+  MAX_CONCURRENT_SPEAKERS,
+} from '../../src/modules/live/domain/live-limits';
 import {
   LIVE_SESSION_END_REASONS,
   LIVE_SESSION_STATES,
@@ -184,13 +187,15 @@ describeWithPostgres('Live in Postgres', () => {
     });
 
   const claim = (store: DrizzleLiveStore, session: LiveSession, userId: string, when: Date) =>
-    store.presenters.open(
+    store.presenters.openWithinCap(
       newPresenterGrant({
         id: ids.next<'PresenterGrant'>(),
         sessionId: session.id,
         userId,
+        grantedBy: userId,
         at: when,
       }),
+      MAX_CONCURRENT_PRESENTERS,
       action(session.id, 'grant_presenter', userId, userId, when),
     );
 
@@ -1156,22 +1161,22 @@ describeWithPostgres('Live in Postgres', () => {
       expect(await committed(session)).toBe(1 + 12 + MAX_CONCURRENT_SPEAKERS);
     });
 
-    it('ten presenter claims by distinct moderators: one opened, the rest occupied by it', async () => {
+    it('ten presenter claims by distinct moderators: exactly two opened, the rest slots_full (Q56)', async () => {
       const session = await started(store(0));
       const outcomes = await Promise.all(
         Array.from({ length: 10 }, (_, i) => claim(store(i), session, `moderator-${i}`, at(5))),
       );
       const opened = outcomes.filter((outcome) => outcome.kind === 'opened');
-      expect(opened).toHaveLength(1);
-      expect(outcomes.filter((outcome) => outcome.kind === 'occupied')).toHaveLength(9);
-      expect(new Set(outcomes.map((outcome) => outcome.grant?.id))).toEqual(
-        new Set([opened[0]?.grant?.id]),
+      expect(opened).toHaveLength(MAX_CONCURRENT_PRESENTERS);
+      expect(outcomes.filter((outcome) => outcome.kind === 'slots_full')).toHaveLength(
+        10 - MAX_CONCURRENT_PRESENTERS,
       );
+      // Never a third grant past the cap, however many raced.
       expect(
         await count(sql`select count(*)::int as n from live_presenter_grants
                          where session_id = ${session.id}`),
-      ).toBe(1);
-      expect(await committed(session)).toBe(2);
+      ).toBe(MAX_CONCURRENT_PRESENTERS);
+      expect(await committed(session)).toBe(1 + MAX_CONCURRENT_PRESENTERS);
     });
 
     it('End racing raises and grants: after End nothing is open, and nothing changes', async () => {
