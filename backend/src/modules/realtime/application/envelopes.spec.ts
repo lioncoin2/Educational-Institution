@@ -7,6 +7,8 @@ import {
   communityMemberAddedFrame,
   communityMemberRemovedFrame,
   communityUnlockedFrame,
+  liveMediaResetFrame,
+  liveParticipantRemovedFrame,
   liveSessionChangedFrame,
   liveSessionEndedFrame,
   liveSessionStartedFrame,
@@ -178,6 +180,13 @@ const LIVE_BUILT: Record<string, string> = {
     sessionId,
     stateVersion: 7,
   }),
+  'live.participant.removed': liveParticipantRemovedFrame({ occurredAt, communityId, sessionId }),
+  'live.session.media_reset': liveMediaResetFrame({
+    occurredAt,
+    communityId,
+    sessionId,
+    toEpoch: 3,
+  }),
 };
 
 /**
@@ -232,6 +241,8 @@ describe('live frames, as the golden fixtures state them', () => {
       'live.session.ended.idle': 'live.session.ended:session-1',
       'live.session.ended.community_closed': 'live.session.ended:session-1',
       'live.session.changed': 'live.session.changed:session-1:7',
+      'live.participant.removed': `live.participant.removed:session-1:${occurredAt.getTime()}`,
+      'live.session.media_reset': 'live.session.media_reset:session-1:3',
     });
     // A redelivery is a duplicate; the next version is not.
     expect(
@@ -245,5 +256,23 @@ describe('live frames, as the golden fixtures state them', () => {
     expect(
       liveSessionChangedFrame({ occurredAt, communityId, sessionId, stateVersion: 8 }),
     ).not.toBe(LIVE_BUILT['live.session.changed']);
+    // A second removal after a re-join is its own fact: a later instant, a new id.
+    expect(
+      liveParticipantRemovedFrame({ occurredAt: new Date(occurredAt), communityId, sessionId }),
+    ).toBe(LIVE_BUILT['live.participant.removed']);
+    expect(
+      liveParticipantRemovedFrame({
+        occurredAt: new Date(occurredAt.getTime() + 1),
+        communityId,
+        sessionId,
+      }),
+    ).not.toBe(LIVE_BUILT['live.participant.removed']);
+    // Each generation is reset once; the next generation is a new id.
+    expect(liveMediaResetFrame({ occurredAt, communityId, sessionId, toEpoch: 3 })).toBe(
+      LIVE_BUILT['live.session.media_reset'],
+    );
+    expect(liveMediaResetFrame({ occurredAt, communityId, sessionId, toEpoch: 4 })).not.toBe(
+      LIVE_BUILT['live.session.media_reset'],
+    );
   });
 });

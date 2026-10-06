@@ -1,0 +1,8 @@
+{
+  "type": "live.participant.removed",
+  "eventId": "live.participant.removed:session-1:1790244000000",
+  "occurredAt": "2026-09-24T10:00:00.000Z",
+  "communityId": "community-1",
+  "sessionId": "session-1",
+  "version": 1
+}

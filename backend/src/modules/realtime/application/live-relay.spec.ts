@@ -10,6 +10,7 @@ import {
 } from '../../../../test/support/realtime-harness';
 import { domainEvent, type DomainEvent, type Principal } from '../../../shared';
 import { LiveEvents, MAX_AUDIENCE_PROBE, MODERATOR_FRAME_COALESCE_MS } from '../../live/contracts';
+import { capabilitiesFor } from '../../live/domain/standing';
 
 /** The live frames a device received, in order. */
 const liveFrames = (link: FakeLink): Frame[] =>
@@ -55,6 +56,14 @@ const ONLY_TIMEOUTS = [
 
 /** Lets every pending promise callback run, without letting a timer fire. */
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+/** Enough rights to be in a room, so a removal applies to a scripted participant. */
+const LISTENER = capabilitiesFor({
+  moderator: false,
+  publishesByRight: false,
+  speakerGrant: false,
+  presenter: false,
+});
 
 /**
  * Live's facts over the realtime pipeline (live.md §16;
@@ -774,6 +783,102 @@ describe('Live events, delivered in real time', () => {
       expect(host.frames).toEqual([]);
       expect(s.frames).toEqual([]);
       expect(jest.getTimerCount()).toBe(0);
+    });
+  });
+
+  describe('participant control (Q64)', () => {
+    it('tells a removed participant they are out — them alone — and no one else of it', async () => {
+      const hostDev = h.connect(owner.userId);
+      const modDev = h.connect(moderator.userId);
+      const speakerDev = h.connect(speaker.userId);
+      const leaverDev = h.connect(leaver.userId);
+      const sessionId = await start();
+      await h.settle();
+
+      // The leaver is in the room, so a moderator's removal applies.
+      l.rtc.connect(l.room(sessionId), leaver.userId, LISTENER);
+      const removed = await l.kick.execute({
+        principal: moderator,
+        sessionId,
+        targetUserId: leaver.userId,
+        meta: META,
+      });
+      if (!removed.ok) throw new Error(removed.error.code);
+      await h.settle();
+
+      // The removed person is told once; the frame names the session, never the reason.
+      expect(
+        liveFrames(leaverDev).filter((frame) => frame.type === LiveEvents.participantRemoved),
+      ).toEqual([
+        {
+          type: 'live.participant.removed',
+          eventId: expect.stringMatching(
+            new RegExp(`^live\\.participant\\.removed:${sessionId}:\\d+$`),
+          ),
+          occurredAt: expect.any(String) as string,
+          communityId,
+          sessionId,
+          version: 1,
+        },
+      ]);
+      // No one else hears of the removal — not the host, not a moderator, not another member.
+      for (const device of [hostDev, modDev, speakerDev]) {
+        expect(types(device)).not.toContain('live.participant.removed');
+      }
+    });
+
+    it('tells the removed person even when the participant gate would deny them — the one exception', async () => {
+      const leaverDev = h.connect(leaver.userId);
+      const sessionId = await start();
+      await h.settle(); // the leaver, a member, heard the start through the gate
+
+      // From here the gate denies everyone: a change would be suppressed…
+      jest.spyOn(h.audience, 'participantsAmong').mockResolvedValue([]);
+      // …yet the removal still reaches the person it concerns, bypassing the gate.
+      await h.bus.publish([
+        domainEvent(
+          LiveEvents.participantRemoved,
+          sessionId,
+          {
+            sessionId,
+            communityId,
+            userId: leaver.userId,
+            removedBy: moderator.userId,
+            reason: null,
+          },
+          new Date('2026-09-27T10:00:00.000Z'),
+        ),
+      ]);
+      await h.settle();
+
+      expect(types(leaverDev)).toEqual(['live.session.started', 'live.participant.removed']);
+    });
+
+    it('tells a media reset to the session’s participants, so they re-join — an outsider nothing', async () => {
+      const devices = [owner, moderator, speaker, listener].map((person) =>
+        h.connect(person.userId),
+      );
+      const stranger = h.connect(outsider.userId);
+      const sessionId = await start();
+      await h.settle();
+
+      const reset = await l.reset.execute({ principal: moderator, sessionId, meta: META });
+      if (!reset.ok) throw new Error(reset.error.code);
+      await h.settle();
+
+      for (const device of devices) {
+        expect(liveFrames(device).filter((frame) => frame.type === LiveEvents.mediaReset)).toEqual([
+          {
+            type: 'live.session.media_reset',
+            eventId: `live.session.media_reset:${sessionId}:1`,
+            occurredAt: expect.any(String) as string,
+            communityId,
+            sessionId,
+            version: 1,
+          },
+        ]);
+      }
+      expect(types(stranger)).not.toContain('live.session.media_reset');
     });
   });
 });

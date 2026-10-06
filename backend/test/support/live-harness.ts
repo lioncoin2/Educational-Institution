@@ -9,11 +9,13 @@ import { EndLiveSessionUseCase } from '../../src/modules/live/application/end-li
 import { GetCurrentLiveSessionUseCase } from '../../src/modules/live/application/get-current-live-session.use-case';
 import { GetLiveSessionUseCase } from '../../src/modules/live/application/get-live-session.use-case';
 import { JoinLiveSessionUseCase } from '../../src/modules/live/application/join-live-session.use-case';
+import { KickParticipantUseCase } from '../../src/modules/live/application/kick-participant.use-case';
 import { ListHandsUseCase } from '../../src/modules/live/application/list-hands.use-case';
 import { LiveAccess } from '../../src/modules/live/application/live-access';
 import { LiveJournal } from '../../src/modules/live/application/live-journal';
 import { LiveMedia } from '../../src/modules/live/application/live-media';
 import { LiveMediaReadiness } from '../../src/modules/live/application/live-media-readiness';
+import { LiveMediaReset } from '../../src/modules/live/application/live-media-reset';
 import { LiveReconciler } from '../../src/modules/live/application/live-reconciler';
 import { LiveSessionLifecycle } from '../../src/modules/live/application/live-session-lifecycle';
 import type { LiveSettings } from '../../src/modules/live/application/live-settings';
@@ -22,6 +24,7 @@ import { LowerHandUseCase } from '../../src/modules/live/application/lower-hand.
 import { ModerateSpeakerUseCase } from '../../src/modules/live/application/moderate-speaker.use-case';
 import { PresenterUseCase } from '../../src/modules/live/application/presenter.use-case';
 import { RaiseHandUseCase } from '../../src/modules/live/application/raise-hand.use-case';
+import { ResetRoomUseCase } from '../../src/modules/live/application/reset-room.use-case';
 import { RoomOccupancy } from '../../src/modules/live/application/room-occupancy';
 import { LiveSessionViews } from '../../src/modules/live/application/session-views';
 import { StartLiveSessionUseCase } from '../../src/modules/live/application/start-live-session.use-case';
@@ -124,6 +127,9 @@ function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
     media,
     liveJournal,
   );
+  // The shared epoch bump + room swap (Q64, ADR 0026), over the default provider;
+  // the moderator reset and the reconciler's own reset both go through it.
+  const mediaReset = new LiveMediaReset(store.sessions, provider, occupancy, liveJournal, settings);
   /**
    * The reconciler over the harness's stores, clock, standing and journal —
    * and `media` (the provider it reconciles; the harness's by default, the
@@ -147,6 +153,10 @@ function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
       communities.membership,
       standing,
       media,
+      // The reset reconciles the same provider the reconciler does.
+      media_ === provider
+        ? mediaReset
+        : new LiveMediaReset(store.sessions, media_, occupancy, liveJournal, settings),
       occupancy,
       lifecycle,
       liveJournal,
@@ -177,6 +187,7 @@ function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
     media,
     readiness,
     occupancy,
+    mediaReset,
     views,
     lifecycle,
     reconciler: reconcilerWith(),
@@ -245,6 +256,17 @@ function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
       views,
       liveJournal,
     ),
+    kick: new KickParticipantUseCase(
+      identity,
+      access,
+      store.sessions,
+      provider,
+      settings,
+      clock,
+      ids,
+      liveJournal,
+    ),
+    reset: new ResetRoomUseCase(identity, access, store.sessions, mediaReset, clock, ids),
 
     /** A signed-in person with these roles, known to the directory by `name`. */
     person(userId: string, roles: readonly KnownRoleCode[], name = userId): Principal {

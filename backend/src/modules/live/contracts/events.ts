@@ -29,6 +29,8 @@ export const LiveEvents = {
   speakerExpired: 'live.speaker.expired',
   screenShareStarted: 'live.screen_share.started',
   screenShareStopped: 'live.screen_share.stopped',
+  participantRemoved: 'live.participant.removed',
+  mediaReset: 'live.session.media_reset',
 } as const;
 
 /** A start created the community's live session — never a repeat, never a lost race. */
@@ -130,6 +132,42 @@ export type ScreenShareStopped = DomainEvent<
   }
 >;
 
+/**
+ * A moderator removed a participant from the live session (Q64, ADR 0026): an
+ * administrative disconnect, not a ban — the person may re-enter through the
+ * normal join. `reason` is an optional code, never free text; `removedBy` is
+ * the moderator who acted. The media-plane removals the reconciler performs on
+ * ineligible/foreign identities (ADR 0019 §11.4) are not this fact.
+ */
+export type LiveParticipantRemoved = DomainEvent<
+  typeof LiveEvents.participantRemoved,
+  {
+    readonly sessionId: string;
+    readonly communityId: string;
+    readonly userId: string;
+    readonly removedBy: string;
+    readonly reason: string | null;
+  }
+>;
+
+/**
+ * A moderator reset the session's media room (Q64, ADR 0026): the room
+ * generation moved from `fromEpoch` to `toEpoch`, the old room is gone, and the
+ * session's current participants re-join the new generation. `resetBy` is the
+ * moderator. The reconciler's own automatic reset (ADR 0019 §11.4) still
+ * publishes no event; this fact is the moderator-commanded reset alone.
+ */
+export type LiveMediaReset = DomainEvent<
+  typeof LiveEvents.mediaReset,
+  {
+    readonly sessionId: string;
+    readonly communityId: string;
+    readonly fromEpoch: number;
+    readonly toEpoch: number;
+    readonly resetBy: string;
+  }
+>;
+
 /** Every fact live publishes. */
 export type LiveEvent =
   | LiveSessionStarted
@@ -141,4 +179,6 @@ export type LiveEvent =
   | SpeakerRequestWithdrawn
   | SpeakerRequestExpired
   | ScreenShareStarted
-  | ScreenShareStopped;
+  | ScreenShareStopped
+  | LiveParticipantRemoved
+  | LiveMediaReset;

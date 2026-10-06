@@ -1,6 +1,8 @@
 import { domainEvent } from '../../../shared/domain-event';
 import {
   LiveEvents,
+  type LiveMediaReset,
+  type LiveParticipantRemoved,
   type LiveSessionEnded,
   type LiveSessionStarted,
   type LiveSpeakerFact,
@@ -29,6 +31,8 @@ import { lastOpenState, type SpeakerRequest } from './speaker-request';
  */
 export type {
   LiveEvent,
+  LiveMediaReset,
+  LiveParticipantRemoved,
   LiveSessionEnded,
   LiveSessionStarted,
   ScreenShareStarted,
@@ -225,6 +229,42 @@ export function screenShareStopped(
       stateVersion,
     },
     grant.endedAt,
+    correlationId,
+  );
+}
+
+/** A moderator removed a participant (Q64). An administrative disconnect, not a ban. */
+export function participantRemoved(
+  session: SessionRef,
+  userId: string,
+  removedBy: string,
+  reason: string | null,
+  at: Date,
+  correlationId?: string,
+): LiveParticipantRemoved {
+  return domainEvent(
+    LiveEvents.participantRemoved,
+    session.id,
+    { sessionId: session.id, communityId: session.communityId, userId, removedBy, reason },
+    at,
+    correlationId,
+  );
+}
+
+/** A moderator reset the media room (Q64): the room generation moved `fromEpoch` → `toEpoch`. */
+export function mediaReset(
+  session: SessionRef,
+  fromEpoch: number,
+  toEpoch: number,
+  resetBy: string,
+  at: Date,
+  correlationId?: string,
+): LiveMediaReset {
+  return domainEvent(
+    LiveEvents.mediaReset,
+    session.id,
+    { sessionId: session.id, communityId: session.communityId, fromEpoch, toEpoch, resetBy },
+    at,
     correlationId,
   );
 }

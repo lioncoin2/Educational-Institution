@@ -22,11 +22,15 @@ import {
   MAX_AUDIENCE_PROBE,
   MODERATOR_FRAME_COALESCE_MS,
   type LiveAudience,
+  type LiveMediaReset,
+  type LiveParticipantRemoved,
   type LiveSessionEnded,
   type LiveSessionStarted,
 } from '../../live/contracts';
 import { ConnectionManager } from './connection-manager';
 import {
+  liveMediaResetFrame,
+  liveParticipantRemovedFrame,
   liveSessionChangedFrame,
   liveSessionEndedFrame,
   liveSessionStartedFrame,
@@ -90,6 +94,14 @@ interface ModeratorWindow {
  *                          session, carrying the latest version. Listeners
  *                          hear nothing of it: LiveKit tells the room what the
  *                          room needs
+ *   live.session.media_reset to the session's current participants, as a start
+ *                          or an end is — they re-join the new room generation
+ *                          (Q64, ADR 0026)
+ *   live.participant.removed to the removed person alone, directly — the one
+ *                          exception to "a removed member is told nothing",
+ *                          because the frame's whole point is that they are out
+ *                          of the room; the reason is audited, never framed
+ *                          (Q64, ADR 0026)
  *
  * Every audience is resolved at delivery time from the owners' contracts —
  * Communities' members, Live's audience — never from the event alone, from a
@@ -184,6 +196,25 @@ export class LiveRealtimeRelay implements OnModuleInit, OnModuleDestroy {
         }),
       );
     }
+    if (event.name === LiveEvents.mediaReset) {
+      const payload = mediaResetPayload(event);
+      if (payload === null) return this.malformed(event);
+      return this.toParticipants(
+        payload.communityId,
+        payload.sessionId,
+        liveMediaResetFrame({
+          occurredAt: event.occurredAt,
+          communityId: payload.communityId,
+          sessionId: payload.sessionId,
+          toEpoch: payload.toEpoch,
+        }),
+      );
+    }
+    if (event.name === LiveEvents.participantRemoved) {
+      const payload = removedPayload(event);
+      if (payload === null) return this.malformed(event);
+      return this.toRemoved(payload, event.occurredAt);
+    }
     if (CHANGES.includes(event.name)) {
       const payload = changePayload(event);
       if (payload === null) return this.malformed(event);
@@ -225,6 +256,26 @@ export class LiveRealtimeRelay implements OnModuleInit, OnModuleDestroy {
     const [still] = await this.audience.participantsAmong(change.sessionId, [userId]);
     if (still !== userId) return;
     this.connections.sendToUser(userId, liveSessionChangedFrame(change));
+  }
+
+  /**
+   * The removed person, told they are out — directly, to them alone, without
+   * the `participantsAmong` gate every other fact passes (Q64, ADR 0026). That
+   * gate exists to stop telling someone no longer in the session; here the fact
+   * IS that they are out of it, so the gate would suppress the very frame it
+   * should carry. It names the session and community only — never the reason,
+   * which is audited — and the person may re-join at once over HTTP.
+   */
+  private toRemoved(payload: LiveParticipantRemoved['payload'], occurredAt: Date): void {
+    if (!this.connections.isOnline(payload.userId)) return;
+    this.connections.sendToUser(
+      payload.userId,
+      liveParticipantRemovedFrame({
+        occurredAt,
+        communityId: payload.communityId,
+        sessionId: payload.sessionId,
+      }),
+    );
   }
 
   /**
@@ -376,4 +427,18 @@ function changePayload(
     },
     userId: p.userId,
   };
+}
+
+/** A removal names the person removed; the reason and remover ride the audit, not the frame. */
+function removedPayload(event: DomainEvent): LiveParticipantRemoved['payload'] | null {
+  const p = fieldsOf(event);
+  if (p === null || !isId(p.userId)) return null;
+  return p as unknown as LiveParticipantRemoved['payload'];
+}
+
+/** A reset names the generation it moved to, which the frame's id carries. */
+function mediaResetPayload(event: DomainEvent): LiveMediaReset['payload'] | null {
+  const p = fieldsOf(event);
+  if (p === null || !isVersion(p.toEpoch)) return null;
+  return p as unknown as LiveMediaReset['payload'];
 }

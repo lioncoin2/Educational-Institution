@@ -475,3 +475,48 @@ export function liveSessionChangedFrame(input: {
     stateVersion: input.stateVersion,
   });
 }
+
+/**
+ * "A moderator removed you from this session" (Q64, ADR 0026) — told to the
+ * removed person alone, the one exception to "a removed member is told
+ * nothing" (live.relay). It names the session and community and nothing of
+ * why: the moderator's reason is audited, never put on the wire. No version to
+ * compare — the person is simply out of the room and may re-join over HTTP;
+ * the instant is in the id so a second removal after a re-join is its own fact.
+ */
+export function liveParticipantRemovedFrame(input: {
+  readonly occurredAt: Date;
+  readonly communityId: string;
+  readonly sessionId: string;
+}): string {
+  return frame({
+    type: 'live.participant.removed',
+    eventId: `live.participant.removed:${input.sessionId}:${input.occurredAt.getTime()}`,
+    occurredAt: input.occurredAt.toISOString(),
+    communityId: input.communityId,
+    sessionId: input.sessionId,
+  });
+}
+
+/**
+ * "This session's media room reset — re-join" (Q64, ADR 0026): the generation
+ * moved on, every current token names the room that is now gone, so the
+ * session's participants must `POST …/join` again for a ticket to the new one.
+ * The epoch is a room-naming detail and stays off the wire — it is in the id
+ * only, so each reset is one fact a client applies once; the client re-reads
+ * and re-joins over HTTP, which hands out the only credential.
+ */
+export function liveMediaResetFrame(input: {
+  readonly occurredAt: Date;
+  readonly communityId: string;
+  readonly sessionId: string;
+  readonly toEpoch: number;
+}): string {
+  return frame({
+    type: 'live.session.media_reset',
+    eventId: `live.session.media_reset:${input.sessionId}:${input.toEpoch}`,
+    occurredAt: input.occurredAt.toISOString(),
+    communityId: input.communityId,
+    sessionId: input.sessionId,
+  });
+}

@@ -1,21 +1,17 @@
 import type { IdGenerator } from '../../../shared';
 import { ENFORCEMENT_WATCH_SECONDS } from '../domain/live-limits';
-import { currentMediaRoom, isLive, type LiveSession } from '../domain/live-session';
+import type { LiveSession } from '../domain/live-session';
 import type { ModerationAction } from '../domain/moderation';
 import type { LiveSessionRepository } from '../domain/ports';
 import {
   RtcMisconfiguredError,
   RtcUnavailableError,
   type RtcApplyOutcome,
-  type RtcRoomProvider,
 } from '../domain/rtc-provider';
-import { moderationAudit, type LiveJournal } from './live-journal';
 import type { LiveMedia } from './live-media';
-import type { LiveSettings } from './live-settings';
-import { roomSpec } from './live-reconciler-rooms';
+import { type LiveMediaReset } from './live-media-reset';
 import type { ReconcilerRuntime } from './live-reconciler-runtime';
 import type { ReconcilerWatch } from './live-reconciler-watch';
-import type { RoomOccupancy } from './room-occupancy';
 
 /** What one per-identity step did. */
 export interface StepOutcome {
@@ -57,11 +53,8 @@ export class Enforcement {
     private readonly runtime: ReconcilerRuntime,
     private readonly watch: ReconcilerWatch,
     private readonly sessions: LiveSessionRepository,
-    private readonly rooms: RtcRoomProvider,
-    private readonly occupancy: RoomOccupancy,
     private readonly media: LiveMedia,
-    private readonly journal: LiveJournal,
-    private readonly settings: LiveSettings,
+    private readonly mediaReset: LiveMediaReset,
     private readonly ids: IdGenerator,
   ) {}
 
@@ -221,21 +214,13 @@ export class Enforcement {
   }
 
   /**
-   * The media reset (§11.4), at most once per violation and exactly once per
-   * epoch: the compare-and-set epoch bump with its `reset_media` row decides
-   * it — null means another reset, or the end, won — then the new room is
-   * ensured and the old one ended. Every token the violator holds names the
-   * deleted room; eligible clients follow the provider's room-deleted signal
-   * and join again. A provider failure after the bump is left to the room
-   * sweep: the new room is ensured as missing, the old one ends as an orphan
-   * after its grace. Audited with a null actor; no event.
-   *
-   * Ensure-then-recheck (§4.4), as join and the room sweep do: an End — which
-   * takes no lock of the reconciler's — or another reset that committed while
-   * the new room was being made has ended, or will never use, the room this
-   * call has just created. The session is read again: unless it is still
-   * live on the new epoch, the new room is ended (best effort) and never
-   * reported ensured. The old room is ended either way.
+   * The media reset (§11.4), at most once per violation: the shared
+   * `LiveMediaReset` makes the compare-and-set epoch bump with its
+   * `reset_media` row and the room swap (ensure-new, recheck, end-old), run
+   * through THIS reconciler's own provider wrapper and skipped-logging so the
+   * reconciler's behaviour is unchanged (ADR 0026). A null bump — another
+   * reset, or the end, won — is not a reset. System actor, no event; the
+   * `live.session.media_reset` line stays this reconciler's.
    */
   private async resetMedia(session: LiveSession, violator: string, now: Date): Promise<boolean> {
     const action: ModerationAction = {
@@ -246,47 +231,28 @@ export class Enforcement {
       type: 'reset_media',
       at: now,
     };
-    const moved = await this.sessions.bumpEpoch(session.id, session.mediaRoomEpoch, action);
+    const moved = await this.mediaReset.reset({
+      session,
+      action,
+      hooks: {
+        runProvider: (call) => this.runtime.provider(call),
+        onSkipped: (error) => {
+          if (!loggedByRuntime(error)) this.runtime.logSkipped('reset', session.id, error);
+        },
+      },
+    });
     if (moved === null) return false;
-    const prefix = this.settings.roomNamePrefix;
-    const from = currentMediaRoom(prefix, session);
-    const to = currentMediaRoom(prefix, moved);
-    try {
-      await this.runtime.provider(() => this.rooms.ensureRoom(roomSpec(to, moved)));
-      const after = await this.sessions.findById(session.id);
-      if (after !== null && isLive(after) && after.mediaRoomEpoch === moved.mediaRoomEpoch) {
-        this.occupancy.ensured(to);
-      } else {
-        await this.endQuietly(session.id, to);
-      }
-      await this.runtime.provider(() => this.rooms.endRoom(from));
-    } catch (error) {
-      if (!loggedByRuntime(error)) this.runtime.logSkipped('reset', session.id, error);
-    }
-    const detail = { fromEpoch: session.mediaRoomEpoch, toEpoch: moved.mediaRoomEpoch };
-    await this.journal.record(
-      moderationAudit(action, { communityId: session.communityId, detail }),
-      [],
-    );
     this.runtime.logger.warn(
       {
         event: 'live.session.media_reset',
         sessionId: session.id,
         targetUserId: violator,
-        ...detail,
+        fromEpoch: session.mediaRoomEpoch,
+        toEpoch: moved.mediaRoomEpoch,
       },
       'reset a live session’s media room after a repeated violation',
     );
     return true;
-  }
-
-  /** Ends a room nobody may use, best effort: what is left is the orphan sweep's. */
-  private async endQuietly(sessionId: string, roomName: string): Promise<void> {
-    try {
-      await this.runtime.provider(() => this.rooms.endRoom(roomName));
-    } catch (error) {
-      if (!loggedByRuntime(error)) this.runtime.logSkipped('reset', sessionId, error);
-    }
   }
 }
 

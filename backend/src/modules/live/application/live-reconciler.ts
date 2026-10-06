@@ -38,6 +38,7 @@ import {
 import { LiveJournal } from './live-journal';
 import { LiveMedia } from './live-media';
 import { LiveMediaReadiness } from './live-media-readiness';
+import { LiveMediaReset } from './live-media-reset';
 import { Enforcement } from './live-reconciler-enforcement';
 import { ForeignIdentities } from './live-reconciler-foreign';
 import { ParticipantSteps } from './live-reconciler-participants';
@@ -174,6 +175,7 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
     @Inject(COMMUNITY_MEMBERSHIP) membership: CommunityMembership,
     standing: LiveStanding,
     media: LiveMedia,
+    mediaReset: LiveMediaReset,
     occupancy: RoomOccupancy,
     lifecycle: LiveSessionLifecycle,
     journal: LiveJournal,
@@ -184,17 +186,7 @@ export class LiveReconciler implements OnApplicationBootstrap, OnModuleDestroy {
   ) {
     this.readiness = readiness;
     this.runtime = new ReconcilerRuntime(new Logger(LiveReconciler.name), sessions);
-    const enforcement = new Enforcement(
-      this.runtime,
-      this.watch,
-      sessions,
-      rooms,
-      occupancy,
-      media,
-      journal,
-      settings,
-      ids,
-    );
+    const enforcement = new Enforcement(this.runtime, this.watch, sessions, media, mediaReset, ids);
     this.roomSweep = new RoomSweep(
       this.runtime,
       this.watch,

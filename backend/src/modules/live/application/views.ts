@@ -170,6 +170,16 @@ export interface ClaimResult {
   readonly session: LiveSessionView;
 }
 
+export interface KickParticipantResult {
+  /** True when the target was connected and has been removed; false when they were not in the room. */
+  readonly removed: boolean;
+}
+
+export interface ResetRoomResult {
+  /** True when this call moved the room to a new generation; false when a concurrent reset or the end already did. */
+  readonly reset: boolean;
+}
+
 /**
  * The only thing that carries a media credential. Never logged, never in an
  * event, frame or audit entry. `expiresInSeconds` and `expiresAt` bound only

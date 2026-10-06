@@ -1,0 +1,8 @@
+{
+  "type": "live.session.media_reset",
+  "eventId": "live.session.media_reset:session-1:3",
+  "occurredAt": "2026-09-24T10:00:00.000Z",
+  "communityId": "community-1",
+  "sessionId": "session-1",
+  "version": 1
+}

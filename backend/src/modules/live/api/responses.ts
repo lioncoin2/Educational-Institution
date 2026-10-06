@@ -3,9 +3,11 @@ import type {
   HandView,
   HandsPage,
   JoinTicket,
+  KickParticipantResult,
   LiveSessionView,
   MediaOutcome,
   ModerationResult,
+  ResetRoomResult,
   SpeakerRequestView,
 } from '../application/views';
 
@@ -185,4 +187,16 @@ export function toJoinTicketResponse(ticket: JoinTicket): JoinTicketResponse {
       screenAudio: ticket.media.screenAudio,
     },
   };
+}
+
+/** A participant removed by a moderator; `removed: false` when they were not in the room. */
+export function toParticipantRemovedResponse(result: KickParticipantResult): {
+  readonly removed: boolean;
+} {
+  return { removed: result.removed };
+}
+
+/** A media-room reset; `reset: false` when a concurrent reset or the end already moved it. */
+export function toRoomResetResponse(result: ResetRoomResult): { readonly reset: boolean } {
+  return { reset: result.reset };
 }

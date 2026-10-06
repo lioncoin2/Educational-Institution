@@ -15,6 +15,8 @@ export type { LiveParticipantRole } from './participant-role';
 export {
   LiveEvents,
   type LiveEvent,
+  type LiveMediaReset,
+  type LiveParticipantRemoved,
   type LiveSessionEnded,
   type LiveSessionStarted,
   type LiveSpeakerFact,

@@ -306,6 +306,9 @@ describe('route authorization', () => {
       'POST /live/sessions/:sessionId/screen-share (LiveController.claimScreenShare)': moderate,
       'DELETE /live/sessions/:sessionId/screen-share (LiveController.stopScreenShare)':
         'authenticated',
+      'POST /live/sessions/:sessionId/participants/:userId/remove (LiveController.removeParticipant)':
+        moderate,
+      'POST /live/sessions/:sessionId/reset (LiveController.reset)': moderate,
     });
   });
 

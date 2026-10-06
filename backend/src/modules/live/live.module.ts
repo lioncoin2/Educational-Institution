@@ -11,11 +11,13 @@ import { EndLiveSessionUseCase } from './application/end-live-session.use-case';
 import { GetCurrentLiveSessionUseCase } from './application/get-current-live-session.use-case';
 import { GetLiveSessionUseCase } from './application/get-live-session.use-case';
 import { JoinLiveSessionUseCase } from './application/join-live-session.use-case';
+import { KickParticipantUseCase } from './application/kick-participant.use-case';
 import { ListHandsUseCase } from './application/list-hands.use-case';
 import { LiveAccess } from './application/live-access';
 import { LiveJournal } from './application/live-journal';
 import { LiveMedia } from './application/live-media';
 import { LiveMediaReadiness } from './application/live-media-readiness';
+import { LiveMediaReset } from './application/live-media-reset';
 import { LivePresenceService } from './application/live-presence.service';
 import { LiveReconciler } from './application/live-reconciler';
 import { LiveSessionLifecycle } from './application/live-session-lifecycle';
@@ -31,6 +33,7 @@ import { ModerateSpeakerUseCase } from './application/moderate-speaker.use-case'
 import { PresenterUseCase } from './application/presenter.use-case';
 import { ProtectLiveSessions } from './application/protect-live-sessions';
 import { RaiseHandUseCase } from './application/raise-hand.use-case';
+import { ResetRoomUseCase } from './application/reset-room.use-case';
 import { RoomOccupancy } from './application/room-occupancy';
 import { LiveSessionViews } from './application/session-views';
 import { StartLiveSessionUseCase } from './application/start-live-session.use-case';
@@ -227,6 +230,8 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
     // and by Start (P7.1).
     LiveMediaReadiness,
     RoomOccupancy,
+    // The epoch bump + room swap the reconciler and the moderator reset share (Q64, ADR 0026).
+    LiveMediaReset,
     LiveSessionViews,
     LiveSessionLifecycle,
     StartLiveSessionUseCase,
@@ -239,6 +244,10 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
     ModerateSpeakerUseCase,
     ListHandsUseCase,
     PresenterUseCase,
+    // Q64: a moderator removes a participant (an administrative disconnect) or
+    // resets the media room (the shared epoch bump, commanded).
+    KickParticipantUseCase,
+    ResetRoomUseCase,
     // Brings the media provider in line with the record (live.md §11): a boot
     // pass, then three unref'd timers on the periods of live-limits.ts.
     LiveReconciler,

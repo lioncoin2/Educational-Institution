@@ -1280,13 +1280,18 @@ describe('live API', () => {
         (Reflect.getMetadata(ROUTE_ARGS_METADATA, LiveController, handler) ?? {}) as object,
       ).map((key) => Number(key.split(':')[0]));
     const bodies: readonly number[] = [RouteParamtypes.BODY, RouteParamtypes.RAW_BODY];
-    expect(handlers).toHaveLength(13);
+    // 13 P6 routes + the 2 Q64 participant-control routes (remove, reset).
+    expect(handlers).toHaveLength(15);
     expect(
       handlers.filter((handler) => parameters(handler).some((type) => bodies.includes(type))),
     ).toEqual([]);
     // Not vacuous: the handlers' parameters are declared there.
     expect(parameters('join')).toContain(RouteParamtypes.PARAM);
     expect(parameters('hands')).toContain(RouteParamtypes.QUERY);
+    // The Q64 routes take their target and reason from the path and query, never a body.
+    expect(parameters('removeParticipant')).toContain(RouteParamtypes.PARAM);
+    expect(parameters('removeParticipant')).toContain(RouteParamtypes.QUERY);
+    expect(parameters('reset')).toContain(RouteParamtypes.PARAM);
   });
 
   it('never logs a join ticket, or any other token — in a log line, an audit entry or an event', () => {

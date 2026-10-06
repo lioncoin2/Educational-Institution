@@ -22,11 +22,13 @@ import { EndLiveSessionUseCase } from '../application/end-live-session.use-case'
 import { GetCurrentLiveSessionUseCase } from '../application/get-current-live-session.use-case';
 import { GetLiveSessionUseCase } from '../application/get-live-session.use-case';
 import { JoinLiveSessionUseCase } from '../application/join-live-session.use-case';
+import { KickParticipantUseCase } from '../application/kick-participant.use-case';
 import { ListHandsUseCase } from '../application/list-hands.use-case';
 import { LowerHandUseCase } from '../application/lower-hand.use-case';
 import { ModerateSpeakerUseCase } from '../application/moderate-speaker.use-case';
 import { PresenterUseCase } from '../application/presenter.use-case';
 import { RaiseHandUseCase } from '../application/raise-hand.use-case';
+import { ResetRoomUseCase } from '../application/reset-room.use-case';
 import { StartLiveSessionUseCase } from '../application/start-live-session.use-case';
 import { HandsQuery } from './dto/live.dto';
 import {
@@ -35,7 +37,9 @@ import {
   toJoinTicketResponse,
   toLiveSessionResponse,
   toModerationResponse,
+  toParticipantRemovedResponse,
   toRequestResponse,
+  toRoomResetResponse,
 } from './responses';
 
 /**
@@ -74,6 +78,8 @@ export class LiveController {
     private readonly listHands: ListHandsUseCase,
     private readonly moderate: ModerateSpeakerUseCase,
     private readonly presenter: PresenterUseCase,
+    private readonly kickParticipant: KickParticipantUseCase,
+    private readonly resetRoom: ResetRoomUseCase,
   ) {}
 
   /**
@@ -255,5 +261,53 @@ export class LiveController {
     @RequestMetadata() meta: CallMetadata,
   ) {
     return toLiveSessionResponse(unwrap(await this.presenter.stop({ principal, sessionId, meta })));
+  }
+
+  /**
+   * A moderator removes a participant from the session's media room (Q64): an
+   * administrative disconnect, never a ban — `{ removed: false }` when they
+   * were not connected. `reason` is an optional code; the removed person is
+   * told, and may re-join at once. The `:userId` names the target only; who may
+   * remove is the server's own `live.moderate` + Communities decision.
+   */
+  @Post('sessions/:sessionId/participants/:userId/remove')
+  @RequirePermission(Permissions.live.moderate)
+  @HttpCode(HttpStatus.OK)
+  async removeParticipant(
+    @CurrentPrincipal() principal: Principal,
+    @Param('sessionId') sessionId: string,
+    @Param('userId') userId: string,
+    @Query('reason') reason: string | undefined,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toParticipantRemovedResponse(
+      unwrap(
+        await this.kickParticipant.execute({
+          principal,
+          sessionId,
+          targetUserId: userId,
+          reason,
+          meta,
+        }),
+      ),
+    );
+  }
+
+  /**
+   * A moderator resets the session's media room (Q64): the room generation
+   * moves on and the current participants re-join. `{ reset: false }` when a
+   * concurrent reset or the end already moved it.
+   */
+  @Post('sessions/:sessionId/reset')
+  @RequirePermission(Permissions.live.moderate)
+  @HttpCode(HttpStatus.OK)
+  async reset(
+    @CurrentPrincipal() principal: Principal,
+    @Param('sessionId') sessionId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toRoomResetResponse(
+      unwrap(await this.resetRoom.execute({ principal, sessionId, meta })),
+    );
   }
 }

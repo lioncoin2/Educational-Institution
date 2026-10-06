@@ -63,6 +63,16 @@ export const LiveRefusals = {
     'live.target_is_host',
     'Only the host acts on the host’s own hand or screen share.',
   ),
+  targetNotInSession: failure(
+    'not_found',
+    'live.target_not_in_session',
+    'That person is not a participant in this session.',
+  ),
+  reasonInvalid: failure(
+    'validation',
+    'live.reason_invalid',
+    'The reason code must match ^[a-z][a-z0-9_.]{0,63}$.',
+  ),
   presenterNotPermitted: failure(
     'forbidden',
     'live.presenter_not_permitted',
@@ -143,6 +153,13 @@ export const LiveRefusals = {
  * domain's, shared with the media identity rule (`domain/live-ids.ts`).
  */
 export { isLiveId } from '../domain/live-ids';
+
+/** A moderation reason — a short code, never free text (the `live_moderation_actions` CHECK, §10). */
+const REASON_CODE = /^[a-z][a-z0-9_.]{0,63}$/u;
+
+export function isReasonCode(value: string): boolean {
+  return REASON_CODE.test(value);
+}
 
 /**
  * A media provider failure as a request's answer (P7.2, Q-B): an outage —
