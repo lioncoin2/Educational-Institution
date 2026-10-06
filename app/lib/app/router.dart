@@ -16,6 +16,7 @@ import '../features/home/home_screen.dart';
 import '../features/learning_path/learning_path_screen.dart';
 import '../features/learning_path/program_levels_screen.dart';
 import '../features/lesson/lesson_screen.dart';
+import '../features/live/live_session_screen.dart';
 import '../features/messaging/conversation_screen.dart';
 import '../features/messaging/conversations_screen.dart';
 import '../features/notifications/notification_settings_screen.dart';
@@ -112,6 +113,14 @@ GoRouter buildRouter() {
                 name: 'community-invitations',
                 parentNavigatorKey: _rootNavigatorKey,
                 builder: (context, state) => CommunityInvitationsScreen(
+                  communityId: state.pathParameters['communityId']!,
+                ),
+              ),
+              GoRoute(
+                path: 'live',
+                name: 'community-live',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => LiveSessionScreen(
                   communityId: state.pathParameters['communityId']!,
                 ),
               ),

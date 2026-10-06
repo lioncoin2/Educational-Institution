@@ -6,6 +6,7 @@ import '../models/data_origin.dart';
 import '../models/feed.dart';
 import '../models/institution.dart';
 import '../models/learning.dart';
+import '../models/live.dart';
 import '../models/messaging.dart';
 import '../models/notifications.dart';
 import '../models/progress.dart';
@@ -286,6 +287,20 @@ abstract interface class CommunityRepository {
   /// Hands the community to [userId]. The answer is the community as the
   /// VIEWER now stands in it, not as the new owner does.
   Future<Community> transferOwnership(String communityId, String userId);
+}
+
+/// Live sessions — a community's live audio room, read-only
+/// (`/live/communities/:id/sessions/current`).
+///
+/// The non-media foundation: it answers whether a community has a session
+/// running now and who hosts it. Joining and media are a separate seam
+/// (lib/data/media/live_media_seams.dart), Unavailable in this build — never
+/// this repository's concern. A refusal throws [LiveException] with the
+/// server's code; what the viewer may do is the server's `me`, never worked
+/// out here.
+abstract interface class LiveRepository {
+  /// The community's running session, or null when none is live now.
+  Future<LiveSession?> currentSession(String communityId);
 }
 
 /// Notifications — the signed-in person's own inbox, preferences and push

@@ -180,7 +180,9 @@ class _Details extends StatelessWidget {
             ],
           ),
         ],
-        if (community.canOpenChat || community.canViewMembers) ...[
+        if (community.canOpenChat ||
+            community.canViewMembers ||
+            me.takesPart(CommunityParticipation.liveJoin)) ...[
           const SizedBox(height: Insets.xxl),
           if (community.canOpenChat) _OpenChatButton(communityId: community.id),
           if (community.canOpenChat && community.canViewMembers)
@@ -192,6 +194,18 @@ class _Details extends StatelessWidget {
               icon: const Icon(Icons.people_alt_outlined),
               label: const Text(CommunityCopy.viewMembers),
             ),
+          // The live-session screen, when the server says the viewer may take
+          // part in live here. Navigation only — the screen owns loading the
+          // session; this never touches live transport or media.
+          if (me.takesPart(CommunityParticipation.liveJoin)) ...[
+            if (community.canOpenChat || community.canViewMembers)
+              const SizedBox(height: Insets.md),
+            OutlinedButton.icon(
+              onPressed: () => context.push(Routes.communityLive(community.id)),
+              icon: const Icon(Icons.podcasts_outlined),
+              label: const Text(CommunityCopy.viewLive),
+            ),
+          ],
         ],
         _Management(community: community, writing: writing),
       ],

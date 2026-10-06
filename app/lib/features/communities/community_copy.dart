@@ -41,6 +41,7 @@ abstract final class CommunityCopy {
 
   static const openChat = 'فتح محادثة المجتمع';
   static const viewMembers = 'عرض الأعضاء';
+  static const viewLive = 'الجلسة المباشرة';
 
   /// The viewer was in it, and no longer is.
   static const removed = 'لم تعد عضوًا في هذا المجتمع.';

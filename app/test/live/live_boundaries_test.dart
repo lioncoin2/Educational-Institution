@@ -16,6 +16,21 @@ import 'package:flutter_test/flutter_test.dart';
 ///   - no screen or widget reaches a transport — HTTP, the API client, the
 ///     WebSocket library or the realtime transport — whatever feature it
 ///     belongs to: screens depend on repositories and controllers only.
+///
+/// And the non-media Live foundation that now exists (the shape asserted on
+/// the source, as communities are):
+///
+///   live screen / state → LiveRepository → HTTP (the server) / the demo mock
+///   live screen         → LiveMediaClient → Unavailable in this build
+///
+///   - no live screen, widget or state reaches HTTP, the socket, the API
+///     client or a repository implementation — the contracts and providers
+///     only;
+///   - what the viewer may do is the server's answer — nothing in live reads
+///     an account's permissions or roles;
+///   - only the provider wiring decides which LiveRepository runs;
+///   - the live wire models are plain Dart; the real repository never reads
+///     the demo's data; the media client stays an abstraction with no LiveKit.
 void main() {
   final sources = {
     for (final file
@@ -36,6 +51,12 @@ void main() {
     r'\b(livekit_client|livekit_components|flutter_webrtc|dart_webrtc)\b',
   );
 
+  /// Every file of the live feature, and the live data layer beside it.
+  final live = [
+    for (final path in sources.keys)
+      if (path.startsWith('lib/features/live/')) path,
+  ];
+
   test('reads the source tree (so the checks below are not vacuous)', () {
     expect(sources.length, greaterThan(50));
     // The transport the UI must not reach is really there to be reached.
@@ -47,6 +68,21 @@ void main() {
       sources.keys.where((path) => path.startsWith('lib/features/')),
       isNotEmpty,
     );
+    // The live foundation's files are present, so the live-specific checks
+    // below have something to check.
+    for (final path in [
+      'lib/data/models/live.dart',
+      'lib/data/media/live_media_seams.dart',
+      'lib/data/repositories/http/http_live_repository.dart',
+      'lib/data/repositories/mock/mock_live_repository.dart',
+      'lib/features/live/state/live_session_controller.dart',
+      'lib/features/live/live_session_screen.dart',
+      'lib/features/live/widgets/live_states.dart',
+      'lib/features/live/live_copy.dart',
+    ]) {
+      expect(sources.keys, contains(path));
+    }
+    expect(live.length, greaterThanOrEqualTo(4));
   });
 
   test('declares no LiveKit or WebRTC dependency', () {
@@ -84,4 +120,83 @@ void main() {
     ];
     expect(offenders, isEmpty);
   });
+
+  // ── The non-media Live foundation ──────────────────────────────────────────
+
+  test('keeps live screens, widgets AND state away from every transport', () {
+    final offenders = [
+      for (final path in live)
+        for (final uri in imports[path]!)
+          if (uri.startsWith('package:http') ||
+              uri.startsWith('package:web_socket') ||
+              uri == 'dart:io' ||
+              uri == 'dart:html' ||
+              uri.endsWith('api_client.dart') ||
+              uri.endsWith('websocket_realtime_client.dart') ||
+              uri.contains('/repositories/http/') ||
+              uri.contains('/repositories/mock/'))
+            '$path → $uri',
+    ];
+    expect(offenders, isEmpty);
+  });
+
+  test(
+    'never lets the live feature read an account’s permissions or roles',
+    () {
+      final offenders = [
+        for (final path in live)
+          if (RegExp(r'\.permissions\b|\.roles\b|\.can\(')
+              .hasMatch(sources[path]!))
+            path,
+      ];
+      expect(offenders, isEmpty);
+    },
+  );
+
+  test('lets only the provider wiring choose a live implementation', () {
+    final constructing = [
+      for (final MapEntry(key: path, value: text) in sources.entries)
+        if (RegExp(r'\b(Http|Mock)LiveRepository\(').hasMatch(text) &&
+            !path.endsWith('_live_repository.dart'))
+          path,
+    ];
+    expect(constructing, ['lib/providers/app_providers.dart']);
+  });
+
+  test('keeps the live wire models plain Dart', () {
+    // Only the provenance enum beside them, which imports nothing itself.
+    expect(imports['lib/data/models/live.dart'], ['data_origin.dart']);
+    expect(imports['lib/data/models/data_origin.dart'], isEmpty);
+  });
+
+  test('never lets the real live repository read the demo’s invented data', () {
+    expect(
+      imports['lib/data/repositories/http/http_live_repository.dart']!.where(
+        (uri) => uri.contains('mock'),
+      ),
+      isEmpty,
+    );
+  });
+
+  test(
+    'keeps the live media client a pure seam — no transport, no media SDK',
+    () {
+      final seam = imports['lib/data/media/live_media_seams.dart']!;
+      // A seam: an interface and an Unavailable default, importing nothing of
+      // the kind it stands in for.
+      expect(
+        seam.where(
+          (uri) =>
+              uri.startsWith('package:http') ||
+              uri.startsWith('package:web_socket') ||
+              uri.endsWith('api_client.dart') ||
+              media.hasMatch(uri),
+        ),
+        isEmpty,
+      );
+      // Bound once, to its Unavailable default, in the provider wiring only.
+      final binding = sources['lib/providers/app_providers.dart']!;
+      expect(binding.contains('UnavailableLiveMediaClient'), isTrue);
+    },
+  );
 }

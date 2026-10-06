@@ -9,6 +9,7 @@ import '../app/backend_config.dart';
 import '../app/invite_link.dart';
 import '../data/api/api_client.dart';
 import '../data/api/token_store.dart';
+import '../data/media/live_media_seams.dart';
 import '../data/media/media_seams.dart';
 import '../data/models/auth.dart';
 
@@ -29,11 +30,13 @@ import '../data/repositories/academic/academic_profile_repositories.dart';
 import '../data/repositories/http/http_academic_repository.dart';
 import '../data/repositories/http/http_auth_repository.dart';
 import '../data/repositories/http/http_community_repository.dart';
+import '../data/repositories/http/http_live_repository.dart';
 import '../data/repositories/http/http_messaging_repository.dart';
 import '../data/repositories/http/http_notifications_repository.dart';
 import '../data/repositories/mock/mock_academic_repository.dart';
 import '../data/repositories/mock/mock_auth_repository.dart';
 import '../data/repositories/mock/mock_community_repository.dart';
+import '../data/repositories/mock/mock_live_repository.dart';
 import '../data/repositories/mock/mock_messaging_repository.dart';
 import '../data/repositories/mock/mock_notifications_repository.dart';
 import '../data/repositories/mock/mock_repositories.dart';
@@ -182,6 +185,17 @@ final inviteLinkBuilderProvider = Provider<InviteLinkBuilder?>(
   (ref) => kIsWeb ? inviteLinkFor : null,
 );
 
+// ── Live ─────────────────────────────────────────────────────────────────────
+// A community's live session, read-only (the state in features/live reads
+// this). Media participation is the separate seam below
+// (liveMediaClientProvider), Unavailable in this build.
+
+final liveRepositoryProvider = Provider<LiveRepository>(
+  (ref) => ref.watch(backendModeProvider)
+      ? HttpLiveRepository(ref.watch(apiClientProvider))
+      : MockLiveRepository(),
+);
+
 // ── Realtime ───────────────────────────────────────────────────────────────
 
 /// The live connection: a WebSocket to the backend when one is configured,
@@ -259,6 +273,13 @@ final voiceRecorderProvider = Provider<VoiceRecorder>(
 );
 final voicePlayerProvider = Provider<VoicePlayer>(
   (ref) => const UnavailableVoicePlayer(),
+);
+
+/// Live-session media (audio), unbound in this milestone: the non-media
+/// foundation shows the session; joining arrives later behind this seam (see
+/// live_media_seams.dart). Until then the live screen says audio is unavailable.
+final liveMediaClientProvider = Provider<LiveMediaClient>(
+  (ref) => const UnavailableLiveMediaClient(),
 );
 
 /// Academic reads may now be answered by the server, and a refusal (sign in,
