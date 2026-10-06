@@ -282,16 +282,27 @@ explicitly requested. (`docs/p8/*`, `docs/p8-load-capacity-plan.md`.)
 
 ## NEXT (exact step)
 
-The **P9 Attendance backend** is complete and architecture-boundary-hardened: the RecordSnapshot write
-and view paths, `AttendanceAccess`, `LIVE_PRESENCE`, the Postgres + in-memory repositories, the API with
-full error-coverage E2E, and the `attendance-boundaries` guards — all committed, all gates green, and
-**no boundary violation found** in the shipped module.
+The **P9 Attendance functional surface is complete** — backend and the full Flutter surface — all
+committed on this branch (HEAD `ee66d95`), all gates green:
 
-The remaining P9 item is the **Flutter `AttendanceRepository`** (attendance.md §17): HTTP + mock
-implementations, bound only in `app_providers.dart`, with no media/LiveKit (the `LiveMediaClient`
-seam stays Unavailable, per P7b). It is **deferred** and not to be started without an explicit request
-(the standing Flutter exclusion stands). Also deferred: the EXPLAIN-at-scale read benchmark
-(§21/§22, measure before production use), P10 notifications (Q67), and the ADR 0023 Option-B
-write-up. **No new implementation beyond an explicitly requested focused slice.**
+- **Backend:** RecordSnapshot write + VIEW (community list / one snapshot / participants),
+  `AttendanceAccess` (Option B), `LIVE_PRESENCE`, Postgres + in-memory repositories, the API with full
+  error-coverage E2E, and the `attendance-boundaries` guards — no boundary violation found.
+- **Flutter (attendance.md §17):** the Live non-media foundation (`417e210`), the Attendance **record**
+  foundation (`639ee5c`), and the Attendance **viewing** foundation (`ee66d95`) — the repository
+  (`record`, `snapshots`, `snapshot`, `participants`), the wire models, two paginated controllers + a
+  detail-header provider, the record / snapshots-list / snapshot-detail screens, the
+  `attendanceRecord`/`attendanceView`-gated community doorways, opaque-cursor pagination, and the
+  Flutter `attendance_boundaries_test` guards.
+
+**Intentionally deferred, non-blocking** (do not start without an explicit request): the Flutter
+connection-filter UI and session-scoped (`liveSessionId`) viewing UI; the "view history" shortcut from
+the Record screen; the EXPLAIN-at-scale / 1M-entry read benchmark (§21/§22, measure before production
+use); P10 notifications (Q67); the ADR 0023 Option-B write-up; P7b real LiveKit media binding (the
+`LiveMediaClient` seam stays Unavailable).
+
+**The next engineering task is to be determined from the current repository state** — it is **not** the
+old "Flutter `AttendanceRepository`" task, which has landed. **No new implementation beyond an
+explicitly requested focused slice.**
 
 > Reminder: everything in this checkpoint is a current, reversible decision.

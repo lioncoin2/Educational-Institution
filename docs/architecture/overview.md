@@ -78,7 +78,11 @@ Depth of implementation varies deliberately:
 > [30,000 community members is not 30,000 live participants](communities-live-attendance.md#13-30000-members-is-not-30000-live-participants):
 > a live session has its own measured cap, and a self-hosted LiveKit room
 > must fit on one node. **Update (2026-09-23):** `communities` exists as of
-> P2 (the row above); `attendance` does not, and stays held.
+> P2 (the row above); `attendance` did not then, and stayed held.
+> **Update (2026-10-06):** the hold is lifted and `attendance` now exists — the
+> P9 backend (RecordSnapshot write + VIEW) and the Flutter Record + Viewing
+> foundations ([attendance.md §17](attendance.md#17-flutter-attendancerepository-p9-only))
+> have landed. Live status: [project-checkpoint.md](../project-checkpoint.md).
 
 The near-empty modules exist so that the boundary is decided before the
 code arrives, not after. An empty `contracts/index.ts` is a cheap commitment; a

@@ -2,6 +2,17 @@
 
 **State: APPROVED (2026-09-23) — implemented in phases.** [§25](#25-implementation-phases) records which phases have landed; what a phase has not delivered does not exist yet. Attendance is approved as designed but its implementation is **held** (Q40 ruling). [ADR 0022](decisions/0022-community-chat-delivery-check.md), accepted 2026-09-24, replaces the community chat's delivery shortcut. Wherever this document describes the "lag filter", every recipient page is now checked against Communities instead ([community-chat.md §20.2](community-chat.md#202-choices-made-during-implementation)).
 
+> **Current implementation status (2026-10-06): Attendance P9 has LANDED.** The hold is lifted and the
+> module is implemented — the backend RecordSnapshot **write** + **VIEW** surfaces and the Flutter
+> **Record** + **Viewing** foundations (attendance.md §17). This document's design-time planning
+> entries that still mark attendance `HELD` / "No" / *proposed* — the "is it ready to build?" row, the
+> module registry row (*"attendance (NEW, HELD)"*), the Flutter-app data-layer row, [§15.5](#155-attendance-p9-held)'s
+> heading, and the `attendance-boundaries` / attendance-Postgres spec markers *(proposed, P9)* — record
+> the plan as authored and are **superseded by the landed implementation**; they are kept as history,
+> not current state. **Deferred, non-blocking:** the connection-filter UI, the session-scoped viewing
+> UI and the view-history shortcut; EXPLAIN-at-scale; P10 notifications. The authoritative live status
+> is [project-checkpoint.md](../project-checkpoint.md).
+
 This is the hub of the design package for the brief's eight features:
 communities (the brief's "groups"), membership and invitation links, the
 community chat, live voice sessions, screen sharing, raise hand and speakers,
@@ -1324,6 +1335,10 @@ Not added: a moderator-initiated media-room reset (P12), a moderator "remove par
 LiveKit webhook route, any load-test or debug route.
 
 ### 15.5 Attendance (P9, HELD)
+
+> **LANDED (2026-10-06).** The "HELD" in this heading is the design-time label (the anchor and inbound
+> links are kept). These routes are implemented — backend write + VIEW and the Flutter §17 surface; see
+> the status note at the top of this document and [project-checkpoint.md](../project-checkpoint.md).
 
 | Route | Declared | Use-case authorization | Success | Refusals |
 | --- | --- | --- | --- | --- |

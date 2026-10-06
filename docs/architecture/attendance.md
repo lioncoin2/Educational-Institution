@@ -2,6 +2,19 @@
 
 **State: APPROVED as designed (2026-09-23) — implementation HELD** until the institution answers the attendance policy questions, especially [Q68](open-questions.md#q68--what-counts-as-present-in-a-snapshot) and [Q69](open-questions.md#q69--who-records-and-who-views-snapshots) (the user's Q40 ruling). Nothing here exists.
 
+> **Current implementation status (2026-10-06): LANDED.** The banner above and the `HELD` blockquote
+> below record the state at design time (2026-09-23); the hold has since been lifted (governance gates
+> met — Q40 via [ADR 0016](decisions/0016-communities-module.md), Q8/Q12/Q69 via
+> [ADR 0023](decisions/0023-attendance-authorization-and-policy.md), §13/ADR 0015 academic
+> reconciliation) and the module is **implemented**. Backend: RecordSnapshot write + VIEW,
+> `AttendanceAccess` (Option B), `LIVE_PRESENCE`, Postgres + in-memory repositories, the API + E2E, and
+> the `attendance-boundaries` guards. Flutter (§17): the Record and Viewing foundations (repository,
+> wire models, paginated controllers, screens, capability-gated doorways, boundary guards).
+> **Deferred, non-blocking:** the connection-filter UI, the session-scoped viewing UI and the
+> view-history shortcut; EXPLAIN-at-scale (§21/§22); P10 notifications (Q67). The design below is
+> unchanged and matches the implementation; the authoritative live status is
+> [project-checkpoint.md](../project-checkpoint.md).
+
 > **HELD.** Implementing this module is held, and nothing in this document
 > lifts the hold. Three things stand in the way, and all three must clear
 > before phase **P9** starts ([§23](#23-before-p9-can-start)):
