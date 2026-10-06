@@ -10,6 +10,8 @@ change is made by this record.**
 [0023](0023-attendance-authorization-and-policy.md) (its Q69b note) and
 [0020](0020-attendance-snapshots.md) (decision 9, "no notification" for P9); **preserves the T2/outbox
 gate** of [0021](0021-cross-cutting-rules-for-new-modules.md). Supersedes no earlier decision.
+**Superseded in part by [0025](0025-defer-persistent-live-session-start-notifications.md)** (the
+`live.session.started` persistence/channel row only — 2026-10-06). The rest stands.
 **Decided:** 2026-10-06, by the owner; **reversible** (this is the initial/default policy, not a
 permanent contract).
 **Date:** 2026-10-06
@@ -51,7 +53,7 @@ only through clean contracts and the existing architecture, at P10.
 | `communities.community.locked` / `.unlocked` | none | — | realtime-frame behaviour unchanged |
 | `communities.community.created` | none | — | the creator's own act |
 | `communities.invitation.created` / `.revoked` | none | — | link/admin fact; the token is shown once |
-| `live.session.started` | IN_APP / REALTIME to the applicable audience | the community's live audience | **PUSH is NOT default for the whole community**; push only via an explicit opt-in/preference; large-audience fan-out must not become default push spam |
+| `live.session.started` | IN_APP / REALTIME to the applicable audience | the community's live audience | **PUSH is NOT default for the whole community**; push only via an explicit opt-in/preference; large-audience fan-out must not become default push spam — **superseded in part by [0025](0025-defer-persistent-live-session-start-notifications.md): not implemented as a persistent notification; `LIVE_SESSION_STARTED` remains a realtime-only Live event (existing relay), and the IN_APP/REALTIME-via-notifications and push-opt-in intent recorded here is deferred, not built.** |
 | `live.speaker.requested` | IN_APP / REALTIME | moderators / applicable moderation recipients | push optional per preference |
 | `live.speaker.granted` | IN_APP / REALTIME + PUSH | the requesting user | |
 | `live.session.ended`, `live.speaker.declined` / `.revoked` / `.withdrawn` / `.expired`, `live.screen_share.started` / `.stopped` | none | — | realtime/in-session behaviour unchanged |
