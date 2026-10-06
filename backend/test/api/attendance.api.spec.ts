@@ -1,3 +1,7 @@
+import { RATE_LIMITER, type RateLimiter } from '../../src/shared';
+import { ATTENDANCE_SNAPSHOT_POLICY } from '../../src/modules/attendance/application/attendance-policy';
+import { RTC_PROVIDER } from '../../src/modules/live/domain/rtc-provider';
+import type { FakeRtcProvider } from '../../src/modules/live/infrastructure/fake-rtc-provider';
 import { startRealtimeApi, type Account, type RealtimeApi } from '../support/realtime-api';
 
 /**
@@ -15,6 +19,8 @@ describe('attendance API (recording snapshots)', () => {
   let outsider: Account; // not a member of the community at all
   let communityId: string;
   let sessionId: string;
+  let rtc: FakeRtcProvider; // the mock-mode media provider the observation reads
+  let limiter: RateLimiter; // the real in-memory limiter the use case charges
 
   beforeAll(async () => {
     r = await startRealtimeApi();
@@ -28,6 +34,12 @@ describe('attendance API (recording snapshots)', () => {
     });
     if (started.status !== 201) throw new Error(`start session: ${started.status} ${started.raw}`);
     sessionId = started.body.id as string;
+
+    // The same instances the running app wired: RTC_OBSERVER is the fake
+    // provider (useExisting RTC_PROVIDER) the observation reads, and the
+    // rate limiter is the global in-memory one the use case charges.
+    rtc = r.api.app.get<FakeRtcProvider>(RTC_PROVIDER, { strict: false });
+    limiter = r.api.app.get<RateLimiter>(RATE_LIMITER, { strict: false });
   }, 60_000);
 
   afterAll(async () => {
@@ -120,6 +132,54 @@ describe('attendance API (recording snapshots)', () => {
     const response = await record(member, sessionId, { clientRequestId: 'press_MEMBER01' });
     expect(response.status).toBe(403);
     expect(response.body.error).toMatchObject({ code: 'attendance.not_allowed' });
+  });
+
+  it('answers 503 observation_unavailable when the provider cannot be read — authorized, nothing stored', async () => {
+    // A press that reaches observation but the provider is unreadable. 503 with
+    // this code is returned only after the key is validated, the session
+    // described, the recorder authorized, the session found live and the rate
+    // charged — so the code itself proves the request reached observation.
+    await limiter.reset(host.id, ATTENDANCE_SNAPSHOT_POLICY);
+    rtc.setUnavailable(true); // every listParticipants throws RtcUnavailableError
+    const refused = await record(host, sessionId, { clientRequestId: 'press_UNAVAIL1' });
+    rtc.setUnavailable(false);
+
+    expect(refused.status).toBe(503);
+    expect(refused.body.error).toMatchObject({
+      kind: 'unavailable',
+      code: 'attendance.observation_unavailable',
+    });
+
+    // Nothing was stored: retrying the same key once the provider is back
+    // creates a fresh snapshot (201), not an idempotent replay (200) — a replay
+    // would mean the failed press had persisted. No audit or event is emitted on
+    // this path either; the use-case spec asserts that directly.
+    const retried = await record(host, sessionId, { clientRequestId: 'press_UNAVAIL1' });
+    expect(retried.status).toBe(201);
+  });
+
+  it('answers 429 too_many_snapshots with retryAfterSeconds — charged before the observation', async () => {
+    // Drive the real limiter (attendance.snapshot.user, limit 6) to its ceiling
+    // with valid presses from a clean window; the next press is refused. The
+    // rate is charged before the observation, so a 429 never reaches
+    // LIVE_PRESENCE — nothing else answers 429, so the status proves it.
+    await limiter.reset(host.id, ATTENDANCE_SNAPSHOT_POLICY);
+    for (let press = 0; press < 6; press += 1) {
+      const allowed = await record(host, sessionId, { clientRequestId: `press_LIMIT00${press}` });
+      expect(allowed.status).toBe(201);
+    }
+
+    const refused = await record(host, sessionId, { clientRequestId: 'press_LIMIT999' });
+    expect(refused.status).toBe(429);
+    expect(refused.body.error).toMatchObject({
+      kind: 'rate_limited',
+      code: 'attendance.too_many_snapshots',
+    });
+    expect(
+      (refused.body.error as { details: { retryAfterSeconds: number } }).details.retryAfterSeconds,
+    ).toBeGreaterThan(0);
+
+    await limiter.reset(host.id, ATTENDANCE_SNAPSHOT_POLICY); // leave the window clean
   });
 
   // Last: this ends the shared session, so no later case may rely on it running.
