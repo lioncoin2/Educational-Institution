@@ -36,7 +36,11 @@ export interface RtcCapabilities {
    * channel, which would let any listener broadcast to the whole room.
    */
   readonly canPublishData: boolean;
-  /** Always false until Q59 decides whether listeners may be hidden. */
+  /**
+   * Always false: there are no hidden listeners (Q59, ADR 0027). Kept as an
+   * enforced-false invariant and the drift-detection backstop (see
+   * `capabilityDrift`), never removed.
+   */
   readonly hidden: boolean;
 }
 

@@ -662,7 +662,7 @@ rows; never stored, never cached across requests.
 | `canPublishScreenAudio` | `false` | Q56 |
 | `canSubscribe` | `true` | everyone listens |
 | `canPublishData` | `false` | nothing uses the data channel; a listener must not broadcast |
-| `hidden` | `false` | the seam for [Q59](open-questions.md#q59--visibility-inside-a-live-session) |
+| `hidden` | `false` | no hidden listeners — enforced-false invariant ([Q59](open-questions.md#q59--visibility-inside-a-live-session), decided; ADR 0027) |
 
 No standing ever maps to the camera. The role shown is `moderator` >
 `speaker` > `listener` (`LiveParticipantRole`; the host is a moderator and
@@ -1056,7 +1056,7 @@ export interface RtcCapabilities {
   readonly canPublishScreenAudio: boolean; // implies canPublishScreen; false until Q56
   readonly canSubscribe: boolean;
   readonly canPublishData: boolean;        // always false
-  readonly hidden: boolean;                // always false until Q59
+  readonly hidden: boolean;                // always false — no hidden listeners (Q59, ADR 0027)
 }
 
 export interface RtcRoomSpec {
@@ -1687,7 +1687,7 @@ Application views, never domain objects (the intent of
 | Fact | LiveKit (media plane) | App WebSocket `/realtime` | HTTP |
 | --- | --- | --- | --- |
 | Audio, the screen track, speaking indicators | yes | — | — |
-| Joins, leaves, the in-room roster | yes (visible to all participants until Q59) | — (no "X joined" frame) | — |
+| Joins, leaves, the in-room roster | yes (visible to all participants — no hidden listeners, Q59/ADR 0027) | — (no "X joined" frame) | — |
 | A participant's own permission change after grant, revoke, yield or presenter change | yes (`ParticipantPermissionsUpdated`; disallowed tracks unpublished at once) | the affected user's `live.session.changed` | the view |
 | Disconnect reasons: `ROOM_DELETED` (end, reset), `PARTICIPANT_REMOVED` (ineligible), `DUPLICATE_IDENTITY` (a second device) | yes | — | the client refetches the view |
 | Token refresh | yes | — | — |
@@ -2029,7 +2029,7 @@ Live's rows:
 | Session id enumeration | uuid v4; 404 for non-members on every route; the coarse gate before any load; the hands page for moderators only | Timing differences, as in existing modules |
 | A room re-created after its end; name collisions | `auto_create=false` pinned and tested, and self-checked by the adapter through `/rtc/validate` at boot and every room sweep (§9); ensure-then-recheck; a required prefix per deployment; names from id and epoch | A misconfiguration during the 30 s between two probes; the probe's behaviour is pinned by the contract suite at the pinned server version, so a LiveKit upgrade re-runs it |
 | Presence surveillance through `LIVE_PRESENCE` | Allow-listed to attendance; ids and connection states only | Code review of the allow-list |
-| Minors' privacy in large rooms | The hands queue for moderators only; frames carry ids only; `hidden` carried in every set as the seam | The roster stays visible to all participants until Q59 |
+| Minors' privacy in large rooms | The hands queue for moderators only; frames carry ids only; `hidden` carried in every set as an enforced-false invariant (Q59/ADR 0027) | The roster is visible to all participants by decision — no hidden listeners (Q59) |
 | API secret exposure | Read only by platform config and the adapter; placeholders refused in production; the SDK confined by the P0 rule; errors scrubbed; a test asserts no JWT pattern in logs | None identified |
 
 ---

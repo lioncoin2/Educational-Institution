@@ -1493,7 +1493,7 @@ member count and themselves; listing members requires `community.members.view`
 only, never emails; `source` and `addedBy` are not exposed. Messaging refuses
 to list a community chat's participants (`messaging.members_hidden`), so the
 roster cannot leak through the chat. Live sessions are the exception: under
-Q59's PROVISIONAL default every participant sees the names of everyone in the
+Q59's decision — no hidden listeners (ADR 0027) — every participant sees the names of everyone in the
 room, so a member sees part of the roster by joining a session
 ([Q59](open-questions.md#q59--visibility-inside-a-live-session)).
 

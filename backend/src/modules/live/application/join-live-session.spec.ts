@@ -130,6 +130,31 @@ describe('joining a live session', () => {
     expect(h.rtc.capabilityChanges).toEqual([]);
   });
 
+  // Q59 (ADR 0027): no hidden listeners — every admitted participant's issued
+  // token carries hidden:false, whatever their role. Read off the grant the
+  // server actually hands the token issuer.
+  it('issues every admitted participant a token with hidden:false, whatever their role (Q59)', async () => {
+    const moderator = await h.delegate(communityId, owner, 'teacher-2', 'community.live.moderate');
+
+    await ticket(student); // a listener
+    expect(h.rtc.issued.at(-1)?.capabilities.hidden).toBe(false);
+
+    await ticket(moderator); // a moderator
+    expect(h.rtc.issued.at(-1)?.capabilities.hidden).toBe(false);
+
+    await ticket(owner); // the host
+    expect(h.rtc.issued.at(-1)?.capabilities.hidden).toBe(false);
+
+    // Non-vacuous: three distinct admitted identities were actually issued tokens,
+    // and not one of them was hidden.
+    expect(h.rtc.issued.map((grant) => grant.identity)).toEqual([
+      'student-1',
+      'teacher-2',
+      'teacher-1',
+    ]);
+    expect(h.rtc.issued.every((grant) => grant.capabilities.hidden === false)).toBe(true);
+  });
+
   describe('who may join', () => {
     it('refuses a non-member exactly as an unknown session', async () => {
       const outsider = h.person('student-9', ['STUDENT']);

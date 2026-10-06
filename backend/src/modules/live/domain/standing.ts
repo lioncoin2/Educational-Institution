@@ -32,7 +32,7 @@ export interface ParticipantStanding {
  *   screen audio       never (Q56)
  *   subscribing        always: everyone listens
  *   the data channel   never: nothing uses it, and a listener must not broadcast
- *   hidden             never, until Q59 decides otherwise
+ *   hidden             never: there are no hidden listeners (Q59, ADR 0027)
  *
  * No standing ever maps to the camera: the port has no source for it.
  */

@@ -275,9 +275,11 @@ Why these choices:
   labelled present.
 - **Hidden is kept.** `hidden` is a Live display grant for roster privacy. LiveKit
   stores a hidden participant like any other (SRV `pkg/service/roommanager.go:595`;
-  the hidden check at `:600` affects only the room's participant count). If
-  listeners are ever hidden ([Q59](open-questions.md#q59--visibility-inside-a-live-session)),
-  they are still connected members.
+  the hidden check at `:600` affects only the room's participant count). Q59
+  forbids hidden listeners, so `hidden` is always false
+  ([Q59](open-questions.md#q59--visibility-inside-a-live-session), ADR 0027); the
+  normalizer keeps one defensively all the same — were one ever observed, they
+  are still a connected member.
 - **Every role is treated the same**: host, moderators, speakers, listeners, and
   the recorder if connected. No role is stored.
 - **The rule is versioned.** Each snapshot stores `observation_rule =

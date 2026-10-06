@@ -2162,9 +2162,16 @@ default:
 - no "X joined" frames;
 - `hidden` travels in every permission set, always false, as the seam.
 
+> **Decided (2026-10-06, Q59; [ADR 0027](decisions/0027-no-hidden-live-listeners.md)).** No hidden
+> listeners: every admitted participant is visible in the roster. The PROVISIONAL default above is now
+> the final decision — `hidden` stays in the capability set as an enforced-false invariant and the
+> drift-detection backstop (`capabilityDrift` treats an observed `hidden` as a breach), never true. This
+> binds future LiveKit/media binding and the Flutter roster. No new role, flag, permission, field,
+> event, port, service, or API.
+
 **When answered.** Who sees hands is the moderator audience of
-`LIVE_AUDIENCE` (P6), used by the realtime relay (P7). Hidden listeners set
-`hidden` true in the permission set (P12).
+`LIVE_AUDIENCE` (P6), used by the realtime relay (P7). Hidden listeners were
+weighed for P12 and declined: `hidden` stays false (ADR 0027).
 
 ---
 

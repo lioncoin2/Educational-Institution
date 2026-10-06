@@ -884,7 +884,7 @@ export interface LivePresence { observe(liveSessionId: string): Promise<Presence
 // live/domain/rtc-provider.ts (internal; not cross-module)
 export interface RtcCapabilities {   // total; applied as LiveKit's FULL permission set every time
   readonly canPublishAudio: boolean; readonly canPublishScreen: boolean; readonly canPublishScreenAudio: boolean;
-  readonly canSubscribe: boolean; readonly canPublishData: boolean /* always false */; readonly hidden: boolean /* false until Q59 */;
+  readonly canSubscribe: boolean; readonly canPublishData: boolean /* always false */; readonly hidden: boolean /* always false — no hidden listeners (Q59, ADR 0027) */;
 }
 // RtcRoomProvider { ensureRoom(spec); endRoom(name) /* absent = success */; listRooms(names?) }
 // RtcTokenIssuer { issueAccessToken(grant) }                       // TTL 600 s → 120 s
@@ -1392,7 +1392,7 @@ measured.
 | live session ended | `live.session.ended` `{communityId, sessionId, reason}` | same as started; terminal for that id | same | `ROOM_DELETED` to everyone in the room | later | |
 | hand raised, withdrawn, declined; speaker granted, revoked, expired; screen share started, stopped | `live.session.changed` `{communityId, sessionId, stateVersion}` | `LIVE_AUDIENCE.moderators` (coalesced to ≤ 1 per 250 ms per session) ∪ the affected user (immediate). **Zero frames per listener** | 1 contract call over a small set | grant or revoke: the participant's permission update (`ParticipantPermissionsUpdated`); disallowed tracks unpublished at once | later | |
 | audio, screen track, speaking indicators, joins, leaves, mute | — | — | — | **LiveKit only** (transport noise) | — | |
-| in-room roster | — | — | — | LiveKit; visible to all participants until [Q59](open-questions.md#q59--visibility-inside-a-live-session) | — | |
+| in-room roster | — | — | — | LiveKit; visible to all participants — no hidden listeners ([Q59](open-questions.md#q59--visibility-inside-a-live-session), decided; ADR 0027) | — | |
 | join credential | — | — | — | — | — | HTTP `POST …/join` response only |
 | attendance snapshot recorded | — | — | — | — | later (Q67) | v1: no frame |
 | community chat message | existing `message.sent` | existing: `MESSAGE_RECIPIENTS` (projection + lag filter + `COMMUNITY_CHAT_READ_CEILING`) through `OnlineAudience` with `visibleSequence` | 30 queries per message per instance at 30,000 before P5 (`messaging-relay.ts:207-219` at `9670c47`); since P5 (G1), ≤ 1 + ⌈A/1000⌉ (≤ 11) through `onlineAudience` | — | existing: one row per reader (Q28; gate G4) | |
