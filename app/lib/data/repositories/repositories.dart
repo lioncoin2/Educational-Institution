@@ -322,6 +322,28 @@ abstract interface class AttendanceRepository {
     String liveSessionId, {
     required String clientRequestId,
   });
+
+  /// A community's snapshots, newest first, one keyset page at a time (§15.1).
+  /// [cursor] is the server's opaque token, passed back as received. The view
+  /// needs `community.attendance.view`; [liveSessionId] narrows to one session
+  /// (also the §11.3 host/recorder path) — the current UI omits it.
+  Future<SnapshotPage> snapshots(
+    String communityId, {
+    String? liveSessionId,
+    String? cursor,
+  });
+
+  /// One snapshot's header (counts only). `attendance.snapshot_not_found` when
+  /// unknown, invisible or not permitted — all alike.
+  Future<SnapshotView> snapshot(String snapshotId);
+
+  /// One snapshot's participants, keyset-paged on the account id (§15.1).
+  /// [connection] narrows to one state; the current UI omits it.
+  Future<SnapshotParticipantPage> participants(
+    String snapshotId, {
+    SnapshotConnection? connection,
+    String? cursor,
+  });
 }
 
 /// Notifications — the signed-in person's own inbox, preferences and push

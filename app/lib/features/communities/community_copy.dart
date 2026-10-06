@@ -43,6 +43,7 @@ abstract final class CommunityCopy {
   static const viewMembers = 'عرض الأعضاء';
   static const viewLive = 'الجلسة المباشرة';
   static const openAttendance = 'جمع حضور الجلسة';
+  static const viewAttendance = 'سجلّات الحضور';
 
   /// The viewer was in it, and no longer is.
   static const removed = 'لم تعد عضوًا في هذا المجتمع.';

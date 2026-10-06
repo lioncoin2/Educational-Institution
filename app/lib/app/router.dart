@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../core/widgets/layout/adaptive_nav_shell.dart';
 import '../features/announcements/announcements_screen.dart';
 import '../features/attendance/record_attendance_screen.dart';
+import '../features/attendance/snapshot_detail_screen.dart';
+import '../features/attendance/snapshots_screen.dart';
 import '../features/auth/sign_in_screen.dart';
 import '../features/certificates/certificate_detail_screen.dart';
 import '../features/certificates/certificates_screen.dart';
@@ -132,6 +134,27 @@ GoRouter buildRouter() {
                 builder: (context, state) => RecordAttendanceScreen(
                   communityId: state.pathParameters['communityId']!,
                 ),
+                routes: [
+                  GoRoute(
+                    path: 'snapshots',
+                    name: 'community-attendance-snapshots',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => AttendanceSnapshotsScreen(
+                      communityId: state.pathParameters['communityId']!,
+                    ),
+                    routes: [
+                      GoRoute(
+                        path: ':snapshotId',
+                        name: 'community-attendance-snapshot',
+                        parentNavigatorKey: _rootNavigatorKey,
+                        builder: (context, state) =>
+                            AttendanceSnapshotDetailScreen(
+                              snapshotId: state.pathParameters['snapshotId']!,
+                            ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),

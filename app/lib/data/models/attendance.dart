@@ -90,6 +90,95 @@ class SnapshotView implements Sourced {
   final DataOrigin origin;
 }
 
+/// How the media provider held a participant at the press (§6.2 I6) — the only
+/// vocabulary a snapshot speaks, never "present", "absent" or a verdict. A wire
+/// value this version does not know becomes [unknown].
+enum SnapshotConnection {
+  connected('CONNECTED'),
+  connecting('CONNECTING'),
+  unknown('UNKNOWN');
+
+  const SnapshotConnection(this.wire);
+
+  final String wire;
+
+  static SnapshotConnection fromWire(Object? value) =>
+      values.firstWhere((c) => c.wire == value, orElse: () => unknown);
+}
+
+/// One participant on a snapshot's entries page (§15.3): an account id, the
+/// name the server resolved at view time (null if unknown), and how the
+/// provider held them. Never an email; never a "present" field.
+class SnapshotParticipant implements Sourced {
+  const SnapshotParticipant({
+    required this.userId,
+    required this.connection,
+    this.displayName,
+    this.origin = DataOrigin.records,
+  });
+
+  /// Throws [FormatException] when it cannot be identified.
+  factory SnapshotParticipant.fromJson(
+    Map<String, Object?> json, {
+    DataOrigin origin = DataOrigin.records,
+  }) => SnapshotParticipant(
+    userId: _required(json, 'userId'),
+    displayName: _optional(json['displayName']),
+    connection: SnapshotConnection.fromWire(json['connection']),
+    origin: origin,
+  );
+
+  /// For telling rows apart — never shown in place of a name.
+  final String userId;
+  final String? displayName;
+  final SnapshotConnection connection;
+
+  @override
+  final DataOrigin origin;
+}
+
+/// A keyset page of a community's snapshots (§15.1), newest first. [nextCursor]
+/// is the server's opaque token, handed back as it came — never built or read.
+class SnapshotPage {
+  const SnapshotPage({required this.items, this.nextCursor});
+
+  factory SnapshotPage.fromJson(
+    Map<String, Object?> json, {
+    DataOrigin origin = DataOrigin.records,
+  }) => SnapshotPage(
+    items: _list(
+      json['items'],
+      (item) => SnapshotView.fromJson(item, origin: origin),
+    ),
+    nextCursor: _optional(json['nextCursor']),
+  );
+
+  final List<SnapshotView> items;
+
+  /// Opaque: handed back as it came, never built or read.
+  final String? nextCursor;
+}
+
+/// A keyset page of one snapshot's participants (§15.1), ascending by account
+/// id. [nextCursor] is opaque, as [SnapshotPage.nextCursor] is.
+class SnapshotParticipantPage {
+  const SnapshotParticipantPage({required this.items, this.nextCursor});
+
+  factory SnapshotParticipantPage.fromJson(
+    Map<String, Object?> json, {
+    DataOrigin origin = DataOrigin.records,
+  }) => SnapshotParticipantPage(
+    items: _list(
+      json['items'],
+      (item) => SnapshotParticipant.fromJson(item, origin: origin),
+    ),
+    nextCursor: _optional(json['nextCursor']),
+  );
+
+  final List<SnapshotParticipant> items;
+  final String? nextCursor;
+}
+
 /// A refusal from `/attendance`, with the server's stable code. Getters sort
 /// refusals by what they are, never by why the server decided them.
 class AttendanceException implements Exception {
@@ -105,6 +194,15 @@ class AttendanceException implements Exception {
   /// No such session — or, what the server answers alike, not the caller's to
   /// record for (§11.3: a 404 masks "no standing").
   bool get sessionNotFound => code == 'attendance.session_not_found';
+
+  /// No such community — or, alike, not the caller's to view (404, §11.3).
+  bool get communityNotFound => code == 'attendance.community_not_found';
+
+  /// No such snapshot — unknown, invisible or not permitted, all alike (404).
+  bool get snapshotNotFound => code == 'attendance.snapshot_not_found';
+
+  /// A page cursor the server could not decode (422).
+  bool get cursorInvalid => code == 'attendance.cursor_invalid';
 
   /// A member of the community whom no record basis permits (403).
   bool get notAllowed => code == 'attendance.not_allowed';
@@ -153,9 +251,29 @@ String _required(Map<String, Object?> json, String key) {
 
 int _int(Object? value) => value is num ? value.toInt() : 0;
 
+String? _optional(Object? value) =>
+    value is String && value.trim().isNotEmpty ? value : null;
+
 DateTime _instant(Map<String, Object?> json, String key) {
   final value = json[key];
   final parsed = value is String ? DateTime.tryParse(value) : null;
   if (parsed == null) throw FormatException('attendance: missing "$key"');
   return parsed;
+}
+
+/// Items that cannot be read are skipped, never fatal to the list.
+List<T> _list<T>(Object? value, T Function(Map<String, Object?> json) parse) {
+  if (value is! List) return const [];
+  final items = <T>[];
+  for (final item in value) {
+    if (item is! Map) continue;
+    try {
+      items.add(parse(item.cast<String, Object?>()));
+    } on FormatException {
+      continue;
+    } on TypeError {
+      continue;
+    }
+  }
+  return items;
 }

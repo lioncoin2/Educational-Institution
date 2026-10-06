@@ -74,6 +74,11 @@ void main() {
       'lib/features/attendance/record_attendance_screen.dart',
       'lib/features/attendance/widgets/attendance_states.dart',
       'lib/features/attendance/attendance_copy.dart',
+      'lib/features/attendance/state/attendance_snapshots_controller.dart',
+      'lib/features/attendance/state/attendance_snapshot_detail_controller.dart',
+      'lib/features/attendance/snapshots_screen.dart',
+      'lib/features/attendance/snapshot_detail_screen.dart',
+      'lib/features/attendance/widgets/snapshot_views.dart',
     ]) {
       expect(sources.keys, contains(path));
     }

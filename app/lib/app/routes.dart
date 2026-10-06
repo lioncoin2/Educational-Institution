@@ -48,6 +48,15 @@ abstract final class Routes {
   static String communityAttendance(String communityId) =>
       '${community(communityId)}/attendance';
 
+  static String communityAttendanceSnapshots(String communityId) =>
+      '${communityAttendance(communityId)}/snapshots';
+
+  static String communityAttendanceSnapshot(
+    String communityId,
+    String snapshotId,
+  ) =>
+      '${communityAttendanceSnapshots(communityId)}/${Uri.encodeComponent(snapshotId)}';
+
   static String certificate(String certificateId) =>
       '$certificates/$certificateId';
 }

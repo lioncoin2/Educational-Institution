@@ -30,6 +30,40 @@ class HttpAttendanceRepository implements AttendanceRepository {
     return SnapshotView.fromJson(json, origin: DataOrigin.records);
   });
 
+  @override
+  Future<SnapshotPage> snapshots(
+    String communityId, {
+    String? liveSessionId,
+    String? cursor,
+  }) => _call(() async {
+    final json = await _api.get(
+      '/attendance/communities/${Uri.encodeComponent(communityId)}/snapshots',
+      query: {'liveSessionId': ?liveSessionId, 'cursor': ?cursor},
+    );
+    return SnapshotPage.fromJson(json, origin: DataOrigin.records);
+  });
+
+  @override
+  Future<SnapshotView> snapshot(String snapshotId) => _call(() async {
+    final json = await _api.get(
+      '/attendance/snapshots/${Uri.encodeComponent(snapshotId)}',
+    );
+    return SnapshotView.fromJson(json, origin: DataOrigin.records);
+  });
+
+  @override
+  Future<SnapshotParticipantPage> participants(
+    String snapshotId, {
+    SnapshotConnection? connection,
+    String? cursor,
+  }) => _call(() async {
+    final json = await _api.get(
+      '/attendance/snapshots/${Uri.encodeComponent(snapshotId)}/participants',
+      query: {'connection': ?connection?.wire, 'cursor': ?cursor},
+    );
+    return SnapshotParticipantPage.fromJson(json, origin: DataOrigin.records);
+  });
+
   static const _unreadable = AttendanceException(
     'attendance.unreadable',
     'The server sent something this app cannot read.',

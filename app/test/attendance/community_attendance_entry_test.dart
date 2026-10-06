@@ -47,6 +47,11 @@ void main() {
   Finder attendanceEntry() =>
       find.widgetWithText(OutlinedButton, CommunityCopy.openAttendance);
 
+  // The viewing doorway (the snapshots history), matched by its button so the
+  // `attendanceView` capability pill never stands in for it.
+  Finder viewEntry() =>
+      find.widgetWithText(OutlinedButton, CommunityCopy.viewAttendance);
+
   testWidgets('shows the entry when the viewer holds the record capability', (
     tester,
   ) async {
@@ -83,6 +88,36 @@ void main() {
       // The screen rendered (so the absence below is real, not an error page).
       expect(find.text('مجتمع الاختبار'), findsWidgets);
       expect(attendanceEntry(), findsNothing);
+      expect(viewEntry(), findsNothing);
     },
   );
+
+  testWidgets(
+    'shows the viewing entry when the viewer holds the view capability',
+    (tester) async {
+      await pumpCommunity(
+        tester,
+        const CommunityMe(
+          standing: CommunityStanding.member,
+          capabilities: {CommunityCapability.attendanceView},
+        ),
+      );
+      expect(viewEntry(), findsOneWidget);
+      // View-only: no record doorway.
+      expect(attendanceEntry(), findsNothing);
+    },
+  );
+
+  testWidgets('hides the viewing entry without the view capability', (
+    tester,
+  ) async {
+    await pumpCommunity(
+      tester,
+      const CommunityMe(
+        standing: CommunityStanding.member,
+        capabilities: {CommunityCapability.attendanceRecord},
+      ),
+    );
+    expect(viewEntry(), findsNothing);
+  });
 }

@@ -54,6 +54,25 @@ class _FakeAttendance implements AttendanceRepository {
     String liveSessionId, {
     required String clientRequestId,
   }) => _answer();
+
+  // Viewing methods are not exercised by the record screen.
+  @override
+  Future<SnapshotPage> snapshots(
+    String communityId, {
+    String? liveSessionId,
+    String? cursor,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<SnapshotView> snapshot(String snapshotId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<SnapshotParticipantPage> participants(
+    String snapshotId, {
+    SnapshotConnection? connection,
+    String? cursor,
+  }) => throw UnimplementedError();
 }
 
 LiveSession _session({

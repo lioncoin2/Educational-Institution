@@ -4,18 +4,19 @@
 the authoritative docs it links) and continue without reconstructing history from chat logs.
 
 - **Branch:** `claude/quranic-education-app-prototype-gkzle8`
-- **HEAD:** the Flutter Attendance record-foundation commit on this branch (see `git log`),
-  `app: add Flutter Attendance record foundation`. Recent lineage: the Flutter Live non-media
-  foundation (`app: add Flutter Live non-media foundation`), the attendance module boundary-guards
-  commit (`test(attendance): add module boundary guards`), the P9 Attendance **backend** (RecordSnapshot
-  write + view paths, architecture-boundary-hardened), Academic Reconciliation (ADR 0015, Option A) and
-  the prior code commit `9d2925e`.
-- **Date:** 2026-10-06 (updated: P9 Attendance — Flutter Live foundation + Flutter Attendance RECORD
-  foundation — LANDED)
-- **Current focus:** **P9 Attendance** — backend (write + view + boundary hardening), the Flutter Live
-  non-media foundation, and the Flutter Attendance **record** foundation are complete; Flutter
-  attendance **viewing** (history / one snapshot / participants) and the EXPLAIN-at-scale check remain
-  deferred.
+- **HEAD:** the Flutter Attendance viewing-foundation commit on this branch (see `git log`),
+  `app: add Flutter Attendance viewing foundation`. Recent lineage: the Flutter Attendance record
+  foundation (`app: add Flutter Attendance record foundation`), the Flutter Live non-media foundation
+  (`app: add Flutter Live non-media foundation`), the attendance module boundary-guards commit
+  (`test(attendance): add module boundary guards`), the P9 Attendance **backend** (RecordSnapshot write +
+  view paths, architecture-boundary-hardened), Academic Reconciliation (ADR 0015, Option A) and the
+  prior code commit `9d2925e`.
+- **Date:** 2026-10-06 (updated: P9 Attendance — Flutter Attendance VIEWING foundation — LANDED; the
+  Flutter attendance surface, §17, is now complete)
+- **Current focus:** **P9 Attendance** — backend (write + view + boundary hardening) and the full
+  Flutter attendance surface (Live non-media foundation, the **record** foundation, and the **viewing**
+  foundation: community snapshot history, one snapshot's detail, its participants, load-more paging) are
+  complete. The EXPLAIN-at-scale check and P10 notifications remain deferred.
 - **Every decision below is CURRENT and REVERSIBLE** — a current institutional decision, not a
   permanent architectural lock. Future requirements may change it.
 
@@ -69,7 +70,7 @@ architecture directly, not throwaway versions.
 | P7b Flutter media binding (`livekit_client`)                                                                                                                                                     | **DEFERRED** (needs devices/CI + ADR)                                                                                                                                                                                                                                                                                                                                                                                        |
 | P8 Load/capacity harness (P8.0–P8.4 built, committed `9d2925e`)                                                                                                                                  | **DONE (infra)**; off-box ladder S1→R6 **DEFERRED** until real users                                                                                                                                                                                                                                                                                                                                                         |
 | **Academic reconciliation (§13 / ADR 0015)**                                                                                                                                                     | **LANDED** on the operational seed + tests (Option A, 2026-10-05); printed profile untouched; verified in-memory only                                                                                                                                                                                                                                                                                                        |
-| **P9 Attendance**                                                                                                                                                                                | **BACKEND LANDED + FLUTTER RECORD LANDED** — backend: RecordSnapshot write + VIEW (community list / one snapshot / participants), `AttendanceAccess`, `LIVE_PRESENCE`, Postgres + in-memory repositories, DI/boot wiring, the API, full error-coverage E2E, and the `attendance-boundaries` architecture guards. Flutter: the Live non-media foundation, and the Attendance **record** foundation (`AttendanceRepository.record`, `SnapshotView`, Http/Mock repos, the record controller + screen, the capability-gated community doorway, boundary guards). **DEFERRED:** Flutter attendance **viewing** (§17 list / one snapshot / participants), the EXPLAIN-at-scale check (§21/§22), P10 notifications (Q67), the ADR 0023 Option-B formal write-up |
+| **P9 Attendance**                                                                                                                                                                                | **BACKEND + FULL FLUTTER SURFACE LANDED** — backend: RecordSnapshot write + VIEW (community list / one snapshot / participants), `AttendanceAccess`, `LIVE_PRESENCE`, Postgres + in-memory repositories, DI/boot wiring, the API, full error-coverage E2E, and the `attendance-boundaries` architecture guards. Flutter (§17): the Live non-media foundation; the Attendance **record** foundation (`AttendanceRepository.record`, `SnapshotView`, Http/Mock repos, record controller + screen, capability-gated doorway); and the Attendance **viewing** foundation (`snapshots`/`snapshot`/`participants`, `SnapshotPage`/`SnapshotParticipant`/`SnapshotParticipantPage`/`SnapshotConnection`, two paginated controllers + a detail header provider, the snapshots-list and snapshot-detail screens with load-more, an `attendanceView`-gated doorway, boundary guards). **DEFERRED:** the connection-filter and session-scoped viewing UIs, the EXPLAIN-at-scale check (§21/§22), P10 notifications (Q67), the ADR 0023 Option-B formal write-up |
 | P10 Notifications translators · P11 Horizontal scale · P12 Policy-gated Live features                                                                                                            | future (P11 needs P8 evidence)                                                                                                                                                                                                                                                                                                                                                                                               |
 
 ---
@@ -196,7 +197,7 @@ gate `always`, no oversight) and the CHECK migration `drizzle/0014_community_att
 All backend work was verified on isolated/in-memory or ephemeral-Postgres harnesses only — no
 production/shared DB seeded or migrated.
 
-**Built and committed (the Flutter app — the Attendance RECORD foundation, attendance.md §17):**
+**Built and committed (the Flutter app — the Attendance RECORD + VIEWING foundations, attendance.md §17):**
 
 - **Prerequisite:** the Flutter Live non-media foundation (`LiveRepository.currentSession`,
   `LiveSession`/`LiveMe`, the live session screen), which the attendance screen consumes for
@@ -213,16 +214,34 @@ production/shared DB seeded or migrated.
   navigation-only, capability-gated community doorway. Non-vacuous `attendance_boundaries_test.dart`:
   no transport/LiveKit/media/Academic/`live_session_screen` reach, provider-only construction.
 
-**Deferred (not built, by decision):** Flutter attendance **viewing** — the list / one snapshot /
-participants screens and their pagination (attendance.md §17's other three repository methods); the
-EXPLAIN-at-scale / 1M-entry read benchmark (§21/§22 — measure before production use); P10 notifications
-translator (Q67); the formal ADR 0023 Option-B write-up (a documentation task; ADRs are immutable and
-superseded, never edited).
+Then the **VIEWING** foundation (the §17 read surface), consuming no Live and no realtime — snapshots
+are historical and the VIEW API is authoritative:
+
+- `AttendanceRepository.snapshots(communityId, {liveSessionId?, cursor?})`,
+  `snapshot(snapshotId)`, `participants(snapshotId, {connection?, cursor?})` on the same repository
+  (record unchanged), with Http (opaque cursor forwarded, no `limit` sent) and Mock (deterministic,
+  cached, paginated, honoring the filters) implementations.
+- Models reuse `SnapshotView`; added `SnapshotConnection` (defensive `unknown`), `SnapshotParticipant`,
+  `SnapshotPage`, `SnapshotParticipantPage`, and the view error classifiers.
+- Two stripped paginated controllers (community snapshots; one snapshot's participants — dedupe by id /
+  account id, load-more, refresh-to-page-1, no reconcile/write machinery) and a
+  `FutureProvider.autoDispose.family` snapshot-header provider.
+- `AttendanceSnapshotsScreen` (history list) and `AttendanceSnapshotDetailScreen` (header + participants)
+  with a "عرض المزيد" load-more footer; an `attendanceView`-gated, navigation-only community doorway;
+  routes `…/attendance/snapshots` and `…/attendance/snapshots/:snapshotId`. Copy shows connected /
+  connecting, a neutral fallback for an unresolved name, never present/absent/ratio or an account id.
+
+**Deferred (not built, by decision):** the attendance **connection-filter UI** and **session-scoped
+viewing UI** (the repository/API support both; the current UI exposes neither); the EXPLAIN-at-scale /
+1M-entry read benchmark (§21/§22 — measure before production use); P10 notifications translator (Q67);
+the formal ADR 0023 Option-B write-up (a documentation task; ADRs are immutable and superseded, never
+edited).
 
 Progress: Q35/Q36, تجويد الحروف=`dep-tajweed-letters`, Level retired, Q8/Q12/Q69 (ADR 0023), Tahajji §7
 uniform (`dep-tahajji`), non-core = dynamic owner data, seed reconciliation LANDED, Communities
 attendance-act enablement LANDED, **P9 Attendance backend (write + view + boundary hardening) LANDED**,
-**P9 Flutter Live non-media foundation + Attendance RECORD foundation LANDED** (viewing deferred).
+**P9 full Flutter attendance surface LANDED** — Live non-media foundation + Attendance RECORD + VIEWING
+foundations (§17); connection-filter and session-scoped viewing UIs deferred.
 
 ## Academic Reconciliation status: LANDED (operational seed + tests, Option A)
 

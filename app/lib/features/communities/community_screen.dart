@@ -184,7 +184,8 @@ class _Details extends StatelessWidget {
             community.canViewMembers ||
             me.takesPart(CommunityParticipation.liveJoin) ||
             me.has(CommunityCapability.attendanceRecord) ||
-            me.has(CommunityCapability.liveModerate)) ...[
+            me.has(CommunityCapability.liveModerate) ||
+            me.has(CommunityCapability.attendanceView)) ...[
           const SizedBox(height: Insets.xxl),
           if (community.canOpenChat) _OpenChatButton(communityId: community.id),
           if (community.canOpenChat && community.canViewMembers)
@@ -223,6 +224,24 @@ class _Details extends StatelessWidget {
                   context.push(Routes.communityAttendance(community.id)),
               icon: const Icon(Icons.fact_check_outlined),
               label: const Text(CommunityCopy.openAttendance),
+            ),
+          ],
+          // The attendance history (the community's snapshots), when the
+          // server says the viewer may see it. Navigation only — that screen
+          // consumes the attendance repository; this entry injects nothing.
+          if (me.has(CommunityCapability.attendanceView)) ...[
+            if (community.canOpenChat ||
+                community.canViewMembers ||
+                me.takesPart(CommunityParticipation.liveJoin) ||
+                me.has(CommunityCapability.attendanceRecord) ||
+                me.has(CommunityCapability.liveModerate))
+              const SizedBox(height: Insets.md),
+            OutlinedButton.icon(
+              onPressed: () => context.push(
+                Routes.communityAttendanceSnapshots(community.id),
+              ),
+              icon: const Icon(Icons.history_rounded),
+              label: const Text(CommunityCopy.viewAttendance),
             ),
           ],
         ],

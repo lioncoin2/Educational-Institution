@@ -1,4 +1,8 @@
-/// What the attendance record screen says, in one place (the live_copy.dart
+import 'package:flutter/material.dart';
+
+import '../../data/models/attendance.dart';
+
+/// What the attendance screens say, in one place (the live_copy.dart
 /// convention): the server speaks in stable codes, the person reads Arabic.
 ///
 /// Nothing here states a rule the server did not send, and no account id is
@@ -41,11 +45,41 @@ abstract final class AttendanceCopy {
 
   static const demoBanner = 'بيانات حضور تجريبية للعرض فقط.';
 
+  // ── Viewing: the community's snapshots list, and one snapshot's detail ──
+  static const snapshotsTitle = 'سجلّات الحضور';
+  static const snapshotsEmpty = 'لا توجد سجلّات حضور بعد';
+  static const snapshotsEmptyMessage =
+      'تظهر هنا سجلّات الحضور المجموعة في الجلسات المباشرة لهذا المجتمع.';
+  static const detailTitle = 'سجلّ الحضور';
+  static const participantsSection = 'المشاركون';
+  static const participantsEmpty = 'لا مشاركين في هذا السجل.';
+  static const loadMore = 'عرض المزيد';
+  static const loadMoreFailed = 'تعذّر التحميل — إعادة المحاولة';
+  static const viewingDemoBanner = 'سجلّات حضور تجريبية للعرض فقط.';
+
+  /// A participant the directory has no name for — never their id.
+  static const unknownName = 'مشارك';
+
+  /// A participant's connection as a word — never a count, never a verdict.
+  static String connectionState(SnapshotConnection connection) =>
+      switch (connection) {
+        SnapshotConnection.connected => 'متصل',
+        SnapshotConnection.connecting => 'قيد الاتصال',
+        SnapshotConnection.unknown => 'غير معروف',
+      };
+
+  static String date(BuildContext context, DateTime at) =>
+      MaterialLocalizations.of(context).formatMediumDate(at.toLocal());
+
   static String error(String? code) => switch (code) {
     'network.unreachable' => 'تعذّر الاتصال بالخادم. تحقّق من الاتصال.',
     'identity.authentication_required' => 'انتهت الجلسة. سجّل الدخول من جديد.',
     'attendance.session_not_found' ||
     'attendance.not_allowed' => 'جمع الحضور غير متاح لك هنا.',
+    'attendance.community_not_found' ||
+    'attendance.snapshot_not_found' => 'سجلّ الحضور غير متاح لك.',
+    'attendance.cursor_invalid' =>
+      'تعذّر متابعة القائمة. حدّثها وحاول مرة أخرى.',
     'attendance.session_not_live' => 'الجلسة المباشرة غير قائمة الآن.',
     'attendance.community_not_open' => 'هذا المجتمع غير مفتوح الآن.',
     'attendance.too_many_snapshots' => 'محاولات كثيرة متتابعة. حاول بعد قليل.',
