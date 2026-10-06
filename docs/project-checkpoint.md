@@ -4,19 +4,23 @@
 the authoritative docs it links) and continue without reconstructing history from chat logs.
 
 - **Branch:** `claude/quranic-education-app-prototype-gkzle8`
-- **HEAD:** the Flutter Attendance viewing-foundation commit on this branch (see `git log`),
-  `app: add Flutter Attendance viewing foundation`. Recent lineage: the Flutter Attendance record
-  foundation (`app: add Flutter Attendance record foundation`), the Flutter Live non-media foundation
-  (`app: add Flutter Live non-media foundation`), the attendance module boundary-guards commit
-  (`test(attendance): add module boundary guards`), the P9 Attendance **backend** (RecordSnapshot write +
-  view paths, architecture-boundary-hardened), Academic Reconciliation (ADR 0015, Option A) and the
-  prior code commit `9d2925e`.
-- **Date:** 2026-10-06 (updated: P9 Attendance — Flutter Attendance VIEWING foundation — LANDED; the
-  Flutter attendance surface, §17, is now complete)
-- **Current focus:** **P9 Attendance** — backend (write + view + boundary hardening) and the full
-  Flutter attendance surface (Live non-media foundation, the **record** foundation, and the **viewing**
-  foundation: community snapshot history, one snapshot's detail, its participants, load-more paging) are
-  complete. The EXPLAIN-at-scale check and P10 notifications remain deferred.
+- **HEAD:** `0d7a241` — `feat(notifications): attendance notification translator (P10)`. Recent P10
+  lineage: the attendance notification translator (`0d7a241`), ADR 0025 deferring a persistent
+  `live.session.started` (`e4e6c15`), the live speaker notification translator (`3d23274`), the
+  community notification translator (`43dd0b1`) and ADR 0024 recording the P10 notification policy
+  (`b3ca01c`). Before them: the Flutter Attendance viewing foundation (`ee66d95`), the record
+  foundation (`639ee5c`), the Flutter Live non-media foundation (`417e210`), the attendance module
+  boundary-guards commit, the P9 Attendance **backend** (RecordSnapshot write + view paths,
+  architecture-boundary-hardened), Academic Reconciliation (ADR 0015, Option A) and the prior code
+  commit `9d2925e`.
+- **Date:** 2026-10-06 (updated: **P10 Notifications translators — LANDED** for community, live-speaker
+  and attendance facts; `live.session.started` kept realtime-only by ADR 0025; docs reconciled)
+- **Current focus:** **P10 Notifications — implemented.** The notification engine (V1) now has
+  translators for community facts (`43dd0b1`), live speaker facts (`3d23274`) and attendance snapshots
+  (`0d7a241`), each importing only its source module's contracts; `live.session.started` remains
+  realtime-only (ADR 0025, `e4e6c15`). P9 Attendance (backend + the full Flutter attendance surface,
+  §17) is complete. The EXPLAIN-at-scale check, academic notifications and guaranteed delivery (outbox)
+  remain deferred.
 - **Every decision below is CURRENT and REVERSIBLE** — a current institutional decision, not a
   permanent architectural lock. Future requirements may change it.
 
@@ -70,8 +74,8 @@ architecture directly, not throwaway versions.
 | P7b Flutter media binding (`livekit_client`)                                                                                                                                                     | **DEFERRED** (needs devices/CI + ADR)                                                                                                                                                                                                                                                                                                                                                                                        |
 | P8 Load/capacity harness (P8.0–P8.4 built, committed `9d2925e`)                                                                                                                                  | **DONE (infra)**; off-box ladder S1→R6 **DEFERRED** until real users                                                                                                                                                                                                                                                                                                                                                         |
 | **Academic reconciliation (§13 / ADR 0015)**                                                                                                                                                     | **LANDED** on the operational seed + tests (Option A, 2026-10-05); printed profile untouched; verified in-memory only                                                                                                                                                                                                                                                                                                        |
-| **P9 Attendance**                                                                                                                                                                                | **BACKEND + FULL FLUTTER SURFACE LANDED** — backend: RecordSnapshot write + VIEW (community list / one snapshot / participants), `AttendanceAccess`, `LIVE_PRESENCE`, Postgres + in-memory repositories, DI/boot wiring, the API, full error-coverage E2E, and the `attendance-boundaries` architecture guards. Flutter (§17): the Live non-media foundation; the Attendance **record** foundation (`AttendanceRepository.record`, `SnapshotView`, Http/Mock repos, record controller + screen, capability-gated doorway); and the Attendance **viewing** foundation (`snapshots`/`snapshot`/`participants`, `SnapshotPage`/`SnapshotParticipant`/`SnapshotParticipantPage`/`SnapshotConnection`, two paginated controllers + a detail header provider, the snapshots-list and snapshot-detail screens with load-more, an `attendanceView`-gated doorway, boundary guards). **DEFERRED:** the connection-filter and session-scoped viewing UIs, the EXPLAIN-at-scale check (§21/§22), P10 notifications (Q67), the ADR 0023 Option-B formal write-up |
-| P10 Notifications translators · P11 Horizontal scale · P12 Policy-gated Live features                                                                                                            | **P10 policy DECIDED (ADR 0024 — answers Q67 and the P10 scope of Q28); implementation NOT started.** P11 needs P8 load evidence; P12 needs policy answers                                                                                                                                                                                                                                                                    |
+| **P9 Attendance**                                                                                                                                                                                | **BACKEND + FULL FLUTTER SURFACE LANDED** — backend: RecordSnapshot write + VIEW (community list / one snapshot / participants), `AttendanceAccess`, `LIVE_PRESENCE`, Postgres + in-memory repositories, DI/boot wiring, the API, full error-coverage E2E, and the `attendance-boundaries` architecture guards. Flutter (§17): the Live non-media foundation; the Attendance **record** foundation (`AttendanceRepository.record`, `SnapshotView`, Http/Mock repos, record controller + screen, capability-gated doorway); and the Attendance **viewing** foundation (`snapshots`/`snapshot`/`participants`, `SnapshotPage`/`SnapshotParticipant`/`SnapshotParticipantPage`/`SnapshotConnection`, two paginated controllers + a detail header provider, the snapshots-list and snapshot-detail screens with load-more, an `attendanceView`-gated doorway, boundary guards). **DEFERRED:** the connection-filter and session-scoped viewing UIs, the EXPLAIN-at-scale check (§21/§22), and the ADR 0023 Option-B formal write-up (P10 notifications have since landed — see the P10 row) |
+| P10 Notifications translators · P11 Horizontal scale · P12 Policy-gated Live features                                                                                                            | **P10 LANDED** — community (`43dd0b1`), live-speaker (`3d23274`) and attendance (`0d7a241`) notification translators, policy ADR 0024; `live.session.started` kept realtime-only (ADR 0025, `e4e6c15`). Academic notifications + guaranteed delivery (outbox) deferred. P11 needs P8 load evidence; P12 needs policy answers                                                                                                     |
 
 ---
 
@@ -233,9 +237,8 @@ are historical and the VIEW API is authoritative:
 
 **Deferred (not built, by decision):** the attendance **connection-filter UI** and **session-scoped
 viewing UI** (the repository/API support both; the current UI exposes neither); the EXPLAIN-at-scale /
-1M-entry read benchmark (§21/§22 — measure before production use); P10 notifications translator (Q67);
-the formal ADR 0023 Option-B write-up (a documentation task; ADRs are immutable and superseded, never
-edited).
+1M-entry read benchmark (§21/§22 — measure before production use); the formal ADR 0023 Option-B
+write-up (a documentation task; ADRs are immutable and superseded, never edited).
 
 Progress: Q35/Q36, تجويد الحروف=`dep-tajweed-letters`, Level retired, Q8/Q12/Q69 (ADR 0023), Tahajji §7
 uniform (`dep-tahajji`), non-core = dynamic owner data, seed reconciliation LANDED, Communities
@@ -276,14 +279,14 @@ explicitly requested. (`docs/p8/*`, `docs/p8-load-capacity-plan.md`.)
 - Voice/LiveKit mapping of educational groups (separate from the academic model).
 - Mastery / promotion / assessment / «نظام الضخ» operational rules.
 - Reviewer acceptance of the combined attendance-scoping design (Q69a, ADR 0023).
-- Attendance "Collect Attendance" notifications → **policy decided ([ADR 0024](architecture/decisions/0024-notification-policy-p10.md)); P10 implementation deferred** (was Q67, deferred by ADR 0023).
+- Attendance "Collect Attendance" notifications → **implemented in P10** (the notifications module's `AttendanceNotificationTranslator`, `0d7a241`; policy [ADR 0024](architecture/decisions/0024-notification-policy-p10.md)). Academic notifications remain a separate, deferred decision.
 - Concrete per-section/per-halaqa seed content beyond the firmly-decided renames/new sections — these
   are **dynamic owner data** managed at runtime, not architectural questions (do not re-open).
 
 ## NEXT (exact step)
 
 The **P9 Attendance functional surface is complete** — backend and the full Flutter surface — all
-committed on this branch (HEAD `ee66d95`), all gates green:
+committed on this branch (at `ee66d95`; the branch HEAD is now `0d7a241` after the P10 notification slices), all gates green:
 
 - **Backend:** RecordSnapshot write + VIEW (community list / one snapshot / participants),
   `AttendanceAccess` (Option B), `LIVE_PRESENCE`, Postgres + in-memory repositories, the API with full
@@ -295,11 +298,16 @@ committed on this branch (HEAD `ee66d95`), all gates green:
   `attendanceRecord`/`attendanceView`-gated community doorways, opaque-cursor pagination, and the
   Flutter `attendance_boundaries_test` guards.
 
-**P10 Notifications is now policy-unblocked:** the notification policy (Q67 and the P10 scope of Q28) is
-recorded in **[ADR 0024](architecture/decisions/0024-notification-policy-p10.md)**. P10 is **not yet
-implemented** — doing so (per-fact translators importing only the source module's contracts, plus the
-community/live/attendance notification vocabulary and catalog lines; no publisher, dispatcher, relay,
-push or outbox change) is a focused slice to be taken only on an explicit request.
+**P10 Notifications is implemented:** per-fact translators importing only each source module's
+contracts, plus the community/live/attendance notification vocabulary and catalog lines — community
+(`43dd0b1`), live speaker (`3d23274`) and attendance (`0d7a241`) — with no publisher, dispatcher,
+relay, push or outbox change. `live.session.started` is kept realtime-only
+(**[ADR 0025](architecture/decisions/0025-defer-persistent-live-session-start-notifications.md)**, `e4e6c15`);
+the policy is **[ADR 0024](architecture/decisions/0024-notification-policy-p10.md)**. (The full backend
+suite's only failures are the 3 pre-existing Academic-seed baseline failures — 9-vs-11 sections —
+**unrelated to P10**.) Remaining for a future, explicitly-requested slice: academic notifications, a
+persistent/broadcast `live.session.started` (ADR 0025 conditions), the per-type channel-default seam,
+and guaranteed delivery (outbox/T2).
 
 **Intentionally deferred, non-blocking** (do not start without an explicit request): the Flutter
 connection-filter UI and session-scoped (`liveSessionId`) viewing UI; the "view history" shortcut from

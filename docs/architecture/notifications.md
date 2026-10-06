@@ -1,7 +1,8 @@
 # Notifications
 
-**State: implemented (V1).** A persistent inbox per person, fed by
-messaging's facts, delivered live over the existing realtime connection and —
+**State: implemented (V1 + P10 translators).** A persistent inbox per person,
+fed by facts from messaging, communities, live and attendance, delivered live
+over the existing realtime connection and —
 through a provider port — to devices. Decisions are recorded in
 [ADR 0013](decisions/0013-notifications-v1.md), building on
 [ADR 0006](decisions/0006-event-architecture.md) (events),
@@ -88,10 +89,40 @@ from the catalog.
 | `MESSAGE_RECEIVED` | MESSAGES | **active** | `messaging.message.sent` |
 | `CONVERSATION_CREATED` | MESSAGES | **active** | `messaging.conversation.created` |
 | `ADDED_TO_CONVERSATION` | MESSAGES | **active** | `messaging.participant.added` |
+| `COMMUNITY_MEMBER_ADDED` | COMMUNITY | **active** | `communities.member.added` |
+| `COMMUNITY_MEMBER_REMOVED` | COMMUNITY | **active** | `communities.member.removed` (REMOVED only) |
+| `COMMUNITY_CAPABILITY_GRANTED` | COMMUNITY | **active** | `communities.capability.granted` |
+| `COMMUNITY_CAPABILITY_REVOKED` | COMMUNITY | **active** | `communities.capability.revoked` |
+| `COMMUNITY_OWNERSHIP_TRANSFERRED` | COMMUNITY | **active** | `communities.ownership.transferred` |
+| `LIVE_SPEAKER_REQUESTED` | LIVE | **active** | `live.speaker.requested` |
+| `LIVE_SPEAKER_GRANTED` | LIVE | **active** | `live.speaker.granted` |
+| `ATTENDANCE_SNAPSHOT_RECORDED` | ATTENDANCE | **active** | `attendance.snapshot.recorded` |
 | `ASSIGNMENT_CREATED`, `ASSIGNMENT_UPDATED` | ASSIGNMENTS | reserved | — |
 | `ANNOUNCEMENT_CREATED` | ANNOUNCEMENTS | reserved | — |
 | `CERTIFICATE_ISSUED` | CERTIFICATES | reserved | — |
 | `HALAQA_UPDATE` | HALAQAT | reserved | — |
+
+Active categories: `MESSAGES`, `COMMUNITY`, `LIVE`, `ATTENDANCE`. Each active
+type has a translator (one per source module, §5) that imports only the source
+module's `contracts/` and turns its fact into requests for the dispatcher:
+
+- **Community** facts are single-recipient — the affected member, grantee or new
+  owner, named in the event; `member.removed` notifies only an actual removal
+  (`reason: REMOVED`), not a self-initiated `LEFT`.
+- **Live** `speaker.requested` notifies the session's moderators
+  (`LIVE_AUDIENCE.moderators`, paged); `speaker.granted` notifies the requester.
+- **Attendance** `snapshot.recorded` notifies the holders of
+  `community.attendance.view` (`COMMUNITY_CAPABILITY_HOLDERS.list`, paged) — never
+  students or ordinary participants — with a **per-session** dedupe key
+  `attendance:snapshot:<liveSessionId>:user:<recipientUserId>`. A recipient gets
+  at most one notification per live session; repeated snapshots in the same
+  session are intentionally collapsed (the anti-spam rule of
+  [ADR 0024](decisions/0024-notification-policy-p10.md); the grouping is
+  deliberately session-coarse, with no time window and no update-in-place).
+- **`live.session.started` is intentionally NOT an active persistent
+  notification type.** [ADR 0025](decisions/0025-defer-persistent-live-session-start-notifications.md)
+  keeps it realtime-only — the existing realtime live relay delivers it to the
+  connected audience; the notification engine does not persist, store or push it.
 
 Reserved types are vocabulary only. **Nothing creates them**: the modules
 whose facts they would announce publish no such events yet, and the
@@ -109,9 +140,13 @@ generic notification.
 { "kind": "conversation", "conversationId": "…" }
 ```
 
-Kinds: `conversation` (used), and reserved `assignment`, `announcement`,
-`certificate`, `halaqa`, `live_room`, `profile` — each with exactly one
-identifier field (none for `profile`, which can only be the recipient's own).
+Kinds in use: `conversation` (messaging notifications), `community` (community
+notifications), and `live_room` (live-speaker **and** attendance notifications
+— the live session the fact concerns). Reserved: `assignment`, `announcement`,
+`certificate`, `halaqa`, and `profile` — each with exactly one identifier field
+(none for `profile`, which can only be the recipient's own). There is **no**
+`attendance_snapshot` kind: an attendance notification points at the `live_room`
+of its session.
 A target is an address, not a key:
 
 - The client maps it to a screen, and that screen asks the owning module's
@@ -278,9 +313,20 @@ Per person and category, three independent switches:
   greys the two out rather than hiding it.
 - Defaults: everything on (PROVISIONAL, Q28). No row means the defaults, so a
   new account costs nothing.
-- Only categories with an active type are offered (`MESSAGES` today) — a
-  switch for notifications that never arrive would be a lie. No matrix of
-  types × channels.
+- Only categories with an active type are offered (`MESSAGES`, `COMMUNITY`,
+  `LIVE`, `ATTENDANCE` today) — a switch for notifications that never arrive
+  would be a lie. No matrix of types × channels.
+- **Policy vs. mechanism.** [ADR 0024](decisions/0024-notification-policy-p10.md)
+  records a per-*event* channel **policy** (some community/attendance facts as
+  IN_APP + PUSH, the live-speaker facts with REALTIME). The engine's
+  **mechanism** is coarser: channels are derived from the per-**category**
+  preference above, whose default is all-on. So every active category is
+  delivered in-app, realtime and push by default, each overridable by the
+  person. The policy-level intent that matters — PUSH — is honored (push is on
+  by default for these facts), and `live.session.started` has no persistent
+  notification at all (ADR 0025), so there is no community-wide push. A finer
+  per-type/per-event channel default (to narrow, say, REALTIME on a given fact)
+  is **future work** — see §22.
 - The dispatcher reads preferences for a whole page of recipients in one
   query; the decisions for realtime and push travel in
   `notification.created`, so the deliverers never re-read them.
@@ -589,12 +635,19 @@ empty, error and retry, mark all, live insertion, settings), boundaries.
 
 ## 22. Limitations and deferred work
 
-- **Community, live and attendance notifications (P10).** The policy is decided
-  — [ADR 0024](decisions/0024-notification-policy-p10.md) (answers Q67 and the
-  P10 scope of Q28) — but **not implemented**: no translators, types, categories
-  or target kinds for these facts exist yet. Activating one is a translator
-  importing the source module's contracts plus a catalog line (§3), per that ADR.
-  Academic notification facts remain deferred to a separate decision.
+- **Community, live and attendance notifications (P10): implemented** — the
+  translators, types, categories and the `community` target kind now exist (§3),
+  per [ADR 0024](decisions/0024-notification-policy-p10.md). **Academic
+  notification facts remain deferred** to a separate decision (no academic type
+  is active).
+- **Persistent `live.session.started`.** Kept realtime-only by
+  [ADR 0025](decisions/0025-defer-persistent-live-session-start-notifications.md);
+  a persistent or broadcast notification for it is deferred (its conditions are
+  in that ADR).
+- **Per-type / per-event channel defaults.** Channels are derived from the
+  per-category preference (§10); a per-type default — to honor ADR 0024's
+  per-event channel column exactly — is future work. Today every active category
+  is all-on by default.
 - **Outbox.** In-process delivery is at most once (§6). The dedupe keys make
   the outbox a drop-in.
 - **A push provider** (Q24): the adapter, credentials and platform setup

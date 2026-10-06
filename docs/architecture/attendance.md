@@ -11,7 +11,7 @@
 > the `attendance-boundaries` guards. Flutter (§17): the Record and Viewing foundations (repository,
 > wire models, paginated controllers, screens, capability-gated doorways, boundary guards).
 > **Deferred, non-blocking:** the connection-filter UI, the session-scoped viewing UI and the
-> view-history shortcut; EXPLAIN-at-scale (§21/§22); P10 notifications (Q67). The design below is
+> view-history shortcut; EXPLAIN-at-scale (§21/§22). P10 attendance notifications are now implemented (the notifications module's `AttendanceNotificationTranslator`; §14). The design below is
 > unchanged and matches the implementation; the authoritative live status is
 > [project-checkpoint.md](../project-checkpoint.md).
 
@@ -106,7 +106,7 @@ replaces or must not disturb:
 
 | Owner | Verdict | Why |
 | --- | --- | --- |
-| **A new leaf module, `attendance`** | chosen | Brief §13 makes attendance "its own domain capability", and §7 says Live does not own attendance history. The brief's event `attendance.snapshot.recorded` names the module under `<module>.<aggregate>.<verb>` (`events.md:243`) |
+| **A new module, `attendance`** (a near-leaf) | chosen | Brief §13 makes attendance "its own domain capability", and §7 says Live does not own attendance history. The brief's event `attendance.snapshot.recorded` names the module under `<module>.<aggregate>.<verb>` (`events.md:243`). It is a near-leaf: the only module that may reach it is notifications, and only through `attendance/contracts` (§22) |
 | operations | rejected | Its charter is delivery-agnostic: it "must not know how a session is delivered" (`module-boundaries.md:146`). Its only contract is keyed on a halaqa and a schedule (`SessionRef`, `operations/contracts/index.ts:9-13`). Its `AttendanceRecord` is the held work (`academic-reconciliation.md:504`). It would add live and communities to a dependency list documented as academic and people only (`module-boundaries.md:144`), making operations a hub. And the event would be `operations.*` |
 | live | rejected | Live must not know attendance (brief §7; `module-boundaries.md:241-243`). It would need the view capability, a retention rule and a management audience it has no business with, and its persistence is in memory today |
 
@@ -763,7 +763,7 @@ export const SNAPSHOT_CONNECTIONS = ['CONNECTED', 'CONNECTING'] as const;
 | `occurredAt` | `recordedAt`; `correlationId` from the call metadata |
 | Published | Once per **created** snapshot, after commit and after the audit entry (`AttendanceJournal`, the order of `academic-journal.ts:11-39`). Never for a replay, a lost same-key race or a failure |
 | Durability | Class R: loss is tolerable, because the table is the truth. In-process only, not durable (ADR 0006); consumers must read the table and tolerate duplicates |
-| Consumers | **None built.** Candidates, each a separate decision reading `attendance/contracts` only: a notifications translator ([Q67](open-questions.md#q67--notifications-for-community-live-and-attendance-facts)), reporting, operations (Q70). Live, communities and messaging never subscribe |
+| Consumers | **The notifications translator** reads `attendance/contracts` only — `AttendanceNotificationTranslator` (P10), which notifies the holders of `community.attendance.view`. Further candidates, each a separate decision reading `attendance/contracts` only: reporting, operations (Q70). Live, communities and messaging never subscribe |
 | Channel | No realtime frame |
 
 **Attendance subscribes to nothing in v1.** A snapshot is taken on a press, and
@@ -780,23 +780,27 @@ participant id is audited. Failures are logged with ids and codes, and metered;
 they are not audited. Views are not audited in v1; if oversight is ever added
 (Q43), oversight-basis views are audited like Communities' own oversight reads.
 
-**Owner delivery** (brief §15) is **not implemented**. The path is fixed so a
-translator can be added later without changing any publisher:
+**Owner delivery** (brief §15) is **implemented** by the notifications module's
+`AttendanceNotificationTranslator` (P10), without any change to attendance's
+publisher:
 
 ```
  attendance.snapshot.recorded (ids, counts)
-   └─▶ notifications translator (P10, only after Q67 and Q28)
+   └─▶ AttendanceNotificationTranslator (P10, in the notifications module)
          ├─ recipients at delivery time: COMMUNITY_CAPABILITY_HOLDERS.list(communityId, 'community.attendance.view'), a page at a time
-         ├─ stores one notification per recipient; the existing relay and push deliver it
+         ├─ one notification per recipient per session (dedupe attendance:snapshot:<liveSessionId>:user:<userId>); the existing relay and push deliver it
          └─ opening it runs attendance's own view check: a notification never grants access
 ```
 
-Which facts deserve a notification and how loudly (every snapshot, a summary,
-or exceptions only) is Q67, with
+Which facts notify and how loudly is decided by
+[ADR 0024](decisions/0024-notification-policy-p10.md) and built in P10: every
+snapshot notifies, collapsed to one per recipient per live session (the
+per-session dedupe above — the anti-spam rule, no time window), with
 [Q28](open-questions.md#q28--what-deserves-a-notification-and-how-loudly) and
-[Q24](open-questions.md#q24--notifications-push-provider-lock-screen-previews-quiet-hours-mute).
-If delivery must be guaranteed, the transactional outbox comes first
-(trigger T2, ADR 0021). PROVISIONAL
+[Q24](open-questions.md#q24--notifications-push-provider-lock-screen-previews-quiet-hours-mute)
+leaving finer collapsing and push specifics for later. If delivery must be
+guaranteed, the transactional outbox comes first (trigger T2, ADR 0021).
+PROVISIONAL
 ([Q67](open-questions.md#q67--notifications-for-community-live-and-attendance-facts)):
 participants in the room are not told that a snapshot was taken.
 
