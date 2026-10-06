@@ -150,6 +150,30 @@ describe('notifications boundaries', () => {
     ).toBe(false);
   });
 
+  it('consumes attendance’s and communities’ public contracts — the attendance translator really is subscribed and resolves holders', () => {
+    const translatorEdges = edgesFrom(
+      output,
+      (source) =>
+        source === 'src/modules/notifications/application/attendance-notification.translator.ts',
+    ).map((edge) => edge.resolved);
+    // It reaches attendance's contracts (its event) and communities' contracts
+    // (COMMUNITY_CAPABILITY_HOLDERS), and nothing of either module's internals
+    // (the generic "contracts only" check above enforces the latter for every edge).
+    expect(
+      translatorEdges.some((path) => path.startsWith('src/modules/attendance/contracts/')),
+    ).toBe(true);
+    expect(
+      translatorEdges.some((path) => path.startsWith('src/modules/communities/contracts/')),
+    ).toBe(true);
+    expect(
+      translatorEdges.some((path) =>
+        /^src\/modules\/(attendance|communities)\/(domain|application|infrastructure|api)\//.test(
+          path,
+        ),
+      ),
+    ).toBe(false);
+  });
+
   it('keeps the notification domain and application free of push SDKs and every other vendor', () => {
     const logic = (source: string) =>
       /^src\/modules\/notifications\/(domain|application|contracts)\//.test(source);

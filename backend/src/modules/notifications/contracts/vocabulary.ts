@@ -28,6 +28,12 @@
  *                            moderators
  *   LIVE_SPEAKER_GRANTED     you were granted the floor to speak
  *
+ * Attendance facts (P10, active — the `ATTENDANCE` category), to the holders of
+ * `community.attendance.view` (never students or ordinary participants):
+ *
+ *   ATTENDANCE_SNAPSHOT_RECORDED   an attendance snapshot was taken in a live
+ *                                  session — at most one per recipient per session
+ *
  * Reserved — named so the vocabulary is stable, but NOTHING creates them:
  * the modules whose facts they would announce publish no such events yet,
  * and the dispatcher refuses a type that is not active (see the catalog in
@@ -52,6 +58,8 @@ export const NOTIFICATION_TYPES = [
   // Live facts (P10, active): speaker moderation and the floor grant.
   'LIVE_SPEAKER_REQUESTED',
   'LIVE_SPEAKER_GRANTED',
+  // Attendance facts (P10, active): a snapshot was recorded in a live session.
+  'ATTENDANCE_SNAPSHOT_RECORDED',
   'ASSIGNMENT_CREATED',
   'ASSIGNMENT_UPDATED',
   'ANNOUNCEMENT_CREATED',
@@ -71,6 +79,7 @@ export const NOTIFICATION_CATEGORIES = [
   'MESSAGES',
   'COMMUNITY',
   'LIVE',
+  'ATTENDANCE',
   'ASSIGNMENTS',
   'ANNOUNCEMENTS',
   'CERTIFICATES',

@@ -11,8 +11,11 @@ import { cruise, edgesFrom, reachableFrom, type CruiseOutput } from '../support/
  *     contracts, and no other module at all — not messaging, realtime,
  *     notifications, academic, operations or files; its module file wires
  *     exactly Identity, Communities and Live;
- *   - no other module reaches attendance's internals: it is a leaf, reached
- *     only by the composition root;
+ *   - no other module reaches attendance's internals; attendance is reached at
+ *     all only by the composition root and — for its public event contract
+ *     (`contracts/`) — by notifications, whose translator subscribes to
+ *     `attendance.snapshot.recorded`; notifications reaches no attendance
+ *     internal (P10, Q67);
  *   - the domain is pure (itself, its contracts and the shared kernel); the
  *     domain and application reach no vendor SDK or transport; `drizzle-orm`
  *     and `pg` live only in infrastructure;
@@ -38,6 +41,8 @@ const LIVEKIT_OR_SOCKET =
 const EXPRESS = /^node_modules\/(@types\/)?express\//;
 
 const ATTENDANCE = 'src/modules/attendance/';
+const ATTENDANCE_CONTRACTS = 'src/modules/attendance/contracts/';
+const NOTIFICATIONS = 'src/modules/notifications/';
 const MODULE_FILE = 'src/modules/attendance/attendance.module.ts';
 const SCHEMA = 'src/modules/attendance/infrastructure/schema.ts';
 
@@ -140,13 +145,39 @@ describe('attendance boundaries', () => {
     ]);
   });
 
-  it('is a leaf — reached only by the composition root, never by another module', () => {
-    const intrusions = edgesFrom(output, (source) => !source.startsWith(ATTENDANCE))
+  it('is reached only by the composition root and — for its event contract — by notifications', () => {
+    const external = edgesFrom(output, (source) => !source.startsWith(ATTENDANCE))
       .filter((edge) => edge.resolved.startsWith(ATTENDANCE))
-      .map((edge) => `${edge.source} -> ${edge.resolved}`)
       // Composition roots assemble the application; they are not modules.
-      .filter((edge) => !/^src\/(app\.module|main|cli\/)/.test(edge));
-    expect(intrusions).toEqual([]);
+      .filter((edge) => !/^src\/(app\.module|main|cli\/)/.test(edge.source));
+
+    // The one permitted external dependency: notifications, and ONLY on the
+    // public contracts surface — its translator subscribes to
+    // `attendance.snapshot.recorded` (P10, Q67). Any other module reaching
+    // attendance at all, or notifications reaching an attendance internal,
+    // appears here and fails the test.
+    const unexpected = external
+      .filter(
+        (edge) =>
+          !(
+            edge.source.startsWith(NOTIFICATIONS) && edge.resolved.startsWith(ATTENDANCE_CONTRACTS)
+          ),
+      )
+      .map((edge) => `${edge.source} -> ${edge.resolved}`);
+    expect(unexpected).toEqual([]);
+
+    // Non-vacuous: notifications really does consume the contract, and only the
+    // contracts surface — never the domain, application, infrastructure or api.
+    const fromNotifications = external
+      .filter((edge) => edge.source.startsWith(NOTIFICATIONS))
+      .map((edge) => edge.resolved);
+    expect(fromNotifications.length).toBeGreaterThan(0);
+    expect(fromNotifications.every((path) => path.startsWith(ATTENDANCE_CONTRACTS))).toBe(true);
+    expect(
+      fromNotifications.filter((path) =>
+        /^src\/modules\/attendance\/(domain|application|infrastructure|api)\//.test(path),
+      ),
+    ).toEqual([]);
   });
 
   it('checks the modules attendance must never reach — the list is derived from the tree', () => {

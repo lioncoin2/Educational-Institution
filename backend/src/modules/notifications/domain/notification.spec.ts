@@ -161,7 +161,7 @@ describe('parameters', () => {
 
 describe('the catalog', () => {
   it('offers preferences only for categories that have notifications today', () => {
-    expect(ACTIVE_CATEGORIES).toEqual(['MESSAGES', 'COMMUNITY', 'LIVE']);
+    expect(ACTIVE_CATEGORIES).toEqual(['MESSAGES', 'COMMUNITY', 'LIVE', 'ATTENDANCE']);
   });
 
   it('gives every type its own templates', () => {

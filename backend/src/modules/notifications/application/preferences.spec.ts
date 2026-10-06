@@ -25,6 +25,7 @@ describe('notification preferences', () => {
       { category: 'MESSAGES', inApp: true, realtime: true, push: true },
       { category: 'COMMUNITY', inApp: true, realtime: true, push: true },
       { category: 'LIVE', inApp: true, realtime: true, push: true },
+      { category: 'ATTENDANCE', inApp: true, realtime: true, push: true },
     ]);
   });
 
@@ -37,6 +38,7 @@ describe('notification preferences', () => {
       { category: 'MESSAGES', inApp: true, realtime: true, push: false },
       { category: 'COMMUNITY', inApp: true, realtime: true, push: true },
       { category: 'LIVE', inApp: true, realtime: true, push: true },
+      { category: 'ATTENDANCE', inApp: true, realtime: true, push: true },
     ]);
     expectOk(
       await h.updatePreferences.execute({ principal: ali, category: 'MESSAGES', realtime: false }),
@@ -45,6 +47,7 @@ describe('notification preferences', () => {
       { category: 'MESSAGES', inApp: true, realtime: false, push: false },
       { category: 'COMMUNITY', inApp: true, realtime: true, push: true },
       { category: 'LIVE', inApp: true, realtime: true, push: true },
+      { category: 'ATTENDANCE', inApp: true, realtime: true, push: true },
     ]);
   });
 
@@ -63,6 +66,7 @@ describe('notification preferences', () => {
       { category: 'MESSAGES', inApp: true, realtime: true, push: false },
       { category: 'COMMUNITY', inApp: true, realtime: true, push: true },
       { category: 'LIVE', inApp: true, realtime: true, push: true },
+      { category: 'ATTENDANCE', inApp: true, realtime: true, push: true },
     ]);
   });
 
@@ -74,6 +78,7 @@ describe('notification preferences', () => {
       { category: 'MESSAGES', inApp: true, realtime: true, push: true },
       { category: 'COMMUNITY', inApp: true, realtime: true, push: true },
       { category: 'LIVE', inApp: true, realtime: true, push: true },
+      { category: 'ATTENDANCE', inApp: true, realtime: true, push: true },
     ]);
   });
 

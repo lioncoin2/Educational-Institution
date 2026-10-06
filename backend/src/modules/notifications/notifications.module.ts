@@ -2,10 +2,12 @@ import { Module } from '@nestjs/common';
 
 import { APP_CONFIG, type AppConfig } from '../../platform/config/app-config';
 import { DATABASE, type Database } from '../../platform/database';
+import { CommunitiesModule } from '../communities/communities.module';
 import { IdentityModule } from '../identity/identity.module';
 import { LiveModule } from '../live/live.module';
 import { MessagingModule } from '../messaging/messaging.module';
 import { NotificationsController } from './api/notifications.controller';
+import { AttendanceNotificationTranslator } from './application/attendance-notification.translator';
 import { CommunityNotificationTranslator } from './application/community-notification.translator';
 import { RegisterDeviceUseCase, UnregisterDeviceUseCase } from './application/devices.use-cases';
 import {
@@ -50,7 +52,7 @@ import { LoggingPushProvider } from './infrastructure/logging-push-provider';
 /**
  * Notifications — a person's inbox, and delivery of what lands in it.
  *
- *   business event (messaging's, communities' or live's)
+ *   business event (messaging's, communities', live's or attendance's)
  *     → a NotificationTranslator         who, and what kind of notification
  *     → NotificationDispatcher           active account? wanted? new? → stored once
  *     → notifications.notification.created
@@ -59,14 +61,15 @@ import { LoggingPushProvider } from './infrastructure/logging-push-provider';
  *
  * It depends on identity's contracts (who is active, what an account is
  * called), messaging's (its events; who may read a conversation), communities'
- * (its events) and live's (its events; who moderates a session, through
- * `LIVE_AUDIENCE`). Nothing depends on it but realtime, through
- * `NOTIFICATION_READER`. The push provider is chosen here: in V1, a logging
- * adapter — no push SDK is installed (docs/architecture/notifications.md,
- * "Push").
+ * (its events; and who holds `community.attendance.view`, through
+ * `COMMUNITY_CAPABILITY_HOLDERS`), live's (its events; who moderates a session,
+ * through `LIVE_AUDIENCE`) and attendance's (its one event). Nothing depends on
+ * it but realtime, through `NOTIFICATION_READER`. The push provider is chosen
+ * here: in V1, a logging adapter — no push SDK is installed
+ * (docs/architecture/notifications.md, "Push").
  */
 @Module({
-  imports: [IdentityModule, MessagingModule, LiveModule],
+  imports: [IdentityModule, MessagingModule, LiveModule, CommunitiesModule],
   controllers: [NotificationsController],
   providers: [
     {
@@ -101,6 +104,7 @@ import { LoggingPushProvider } from './infrastructure/logging-push-provider';
     MessagingNotificationTranslator,
     CommunityNotificationTranslator,
     LiveNotificationTranslator,
+    AttendanceNotificationTranslator,
     PushDelivery,
     ListNotificationsUseCase,
     CountUnreadNotificationsUseCase,
