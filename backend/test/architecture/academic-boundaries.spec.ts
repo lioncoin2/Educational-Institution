@@ -23,6 +23,7 @@ const OTHER_SCHEMAS = [
   'src/modules/notifications/infrastructure/schema.ts',
   'src/modules/files/infrastructure/schema.ts',
   'src/modules/communities/infrastructure/schema.ts',
+  'src/modules/attendance/infrastructure/schema.ts',
 ];
 
 const ACADEMIC = 'src/modules/academic/';
@@ -87,7 +88,7 @@ describe('academic boundaries', () => {
     expect(intrusions).toEqual([]);
   });
 
-  it('never reads identity’s, messaging’s, notifications’, files’ or communities’ tables', () => {
+  it('never reads identity’s, messaging’s, notifications’, files’, communities’ or attendance’s tables', () => {
     expect(reaching(isAcademicCode, (path) => OTHER_SCHEMAS.includes(path))).toEqual([]);
     // Non-vacuous: academic's own adapters do reach a schema — their own.
     expect(reaching(isAcademicCode, (path) => path === ACADEMIC_SCHEMA)).toEqual([ACADEMIC_SCHEMA]);

@@ -233,6 +233,38 @@ describeWithPostgres('attendance snapshots in Postgres (attendance.md §7, §22)
     });
   });
 
+  describe('recordedOrHostedInSession (the §11.3 view fallback read)', () => {
+    // build() stamps hostUserId 'host-1' and recordedBy defaults to 'rec-1'.
+    it('is false on an empty session, true for the recorder and for the session host', async () => {
+      expect(await repo.recordedOrHostedInSession('s-1', 'rec-9')).toBe(false);
+      await repo.insert(build({ id: 'a', liveSessionId: 's-1', recordedBy: 'rec-9' }));
+      expect(await repo.recordedOrHostedInSession('s-1', 'rec-9')).toBe(true); // recorder
+      expect(await repo.recordedOrHostedInSession('s-1', 'host-1')).toBe(true); // session host
+      expect(await repo.recordedOrHostedInSession('s-1', 'stranger')).toBe(false); // neither
+    });
+
+    it('does not cross sessions, and stays true across several of the recorder’s snapshots', async () => {
+      await repo.insert(
+        build({
+          id: 'a',
+          liveSessionId: 's-1',
+          recordedBy: 'rec-9',
+          clientRequestId: 'req_AAAAAAAA',
+        }),
+      );
+      await repo.insert(
+        build({
+          id: 'b',
+          liveSessionId: 's-1',
+          recordedBy: 'rec-9',
+          clientRequestId: 'req_BBBBBBBB',
+        }),
+      );
+      expect(await repo.recordedOrHostedInSession('s-1', 'rec-9')).toBe(true);
+      expect(await repo.recordedOrHostedInSession('s-2', 'rec-9')).toBe(false); // other session
+    });
+  });
+
   describe('constraints and append-only', () => {
     const header = (over: Record<string, string> = {}) => {
       const v: Record<string, string> = {
