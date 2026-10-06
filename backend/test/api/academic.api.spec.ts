@@ -134,14 +134,16 @@ describe('academic API', () => {
   });
 
   describe('the structure', () => {
-    it('is the institution profile’s, seeded at boot — nine sections, 45 halaqat, in order', async () => {
+    it('is the institution profile’s, seeded at boot — eleven sections, 70 halaqat, in order', async () => {
       const sections = await catalogue();
       expect(sections.map((s) => [s.code, s.kind, s.status])).toEqual([
         ['dep-literacy', 'PROGRESSIVE', 'ACTIVE'],
         ['dep-letters', 'PROGRESSIVE', 'ACTIVE'],
         ['dep-tajweed-1', 'PROGRESSIVE', 'ACTIVE'],
+        ['dep-tajweed-letters', 'PROGRESSIVE', 'ACTIVE'],
         ['dep-tajweed-2', 'PROGRESSIVE', 'ACTIVE'],
         ['dep-tajweed-3', 'PROGRESSIVE', 'ACTIVE'],
+        ['dep-tahajji', 'PROGRESSIVE', 'ACTIVE'],
         ['sec-spelling', 'SPECIAL', 'ACTIVE'],
         ['sec-kids', 'SPECIAL', 'ACTIVE'],
         ['sec-languages', 'SPECIAL', 'ACTIVE'],
@@ -150,7 +152,7 @@ describe('academic API', () => {
       const counted = sections
         .flatMap((s) => s.programs)
         .reduce((sum, p) => sum + p.activeHalaqaCount, 0);
-      expect(counted).toBe(45);
+      expect(counted).toBe(70);
       expect(sections.find((s) => s.code === 'accompanying')?.programs.map((p) => p.name)).toEqual([
         'مدينة الحفاظ',
         'علوم النحو',
@@ -161,7 +163,7 @@ describe('academic API', () => {
 
     it('is readable by every role', async () => {
       for (const account of [r.owner, admin, supervisor, teacher, student]) {
-        expect(await catalogue(account)).toHaveLength(9);
+        expect(await catalogue(account)).toHaveLength(11);
       }
     });
 
@@ -180,6 +182,11 @@ describe('academic API', () => {
         'الحلقة 3',
         'الحلقة 4',
         'الحلقة 5',
+        'الحلقة 6',
+        'الحلقة 7',
+        'الحلقة 8',
+        'الحلقة 9',
+        'الحلقة 10',
       ]);
       const one = await halaqa('dep-literacy-h3');
       const detail = await call('GET', `/halaqat/${one.id}`, student);
