@@ -170,6 +170,9 @@ class FakeRepo implements AttendanceSnapshotRepository {
   findById(): never {
     throw new Error('unused');
   }
+  recordedOrHostedInSession(): never {
+    throw new Error('unused');
+  }
   listByCommunity(): never {
     throw new Error('unused');
   }

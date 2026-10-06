@@ -91,6 +91,29 @@ export class DrizzleAttendanceSnapshotRepository implements AttendanceSnapshotRe
   }
 
   /**
+   * Did `userId` host or record any snapshot of this session? A read-only
+   * existence check (§11.3): a prefix on `session_idx (live_session_id, …)`
+   * narrowed to `recorded_by = userId OR host_user_id = userId`, one row. It
+   * writes nothing and never touches Live.
+   */
+  async recordedOrHostedInSession(liveSessionId: string, userId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: attendanceSnapshots.id })
+      .from(attendanceSnapshots)
+      .where(
+        and(
+          eq(attendanceSnapshots.liveSessionId, liveSessionId),
+          or(
+            eq(attendanceSnapshots.recordedBy, userId),
+            eq(attendanceSnapshots.hostUserId, userId),
+          ),
+        ),
+      )
+      .limit(1);
+    return row !== undefined;
+  }
+
+  /**
    * Header then entries, in one transaction. `ON CONFLICT` targets **only** the
    * idempotency columns, so a concurrent same-key press that loses yields no row
    * and returns `duplicate`; any other violation (a primary-key collision, a

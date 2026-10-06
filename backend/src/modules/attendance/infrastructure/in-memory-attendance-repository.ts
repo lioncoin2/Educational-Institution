@@ -57,6 +57,18 @@ export class InMemoryAttendanceSnapshotRepository implements AttendanceSnapshotR
     return Promise.resolve(snapshot === undefined ? null : headerOf(snapshot));
   }
 
+  recordedOrHostedInSession(liveSessionId: string, userId: string): Promise<boolean> {
+    for (const snapshot of this.byId.values()) {
+      if (
+        snapshot.liveSessionId === liveSessionId &&
+        (snapshot.recordedBy === userId || snapshot.hostUserId === userId)
+      ) {
+        return Promise.resolve(true);
+      }
+    }
+    return Promise.resolve(false);
+  }
+
   insert(snapshot: AttendanceSnapshot): Promise<SnapshotInsertOutcome> {
     const key = this.keyString({
       liveSessionId: snapshot.liveSessionId,

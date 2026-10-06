@@ -8,6 +8,9 @@ import { LiveModule } from '../live/live.module';
 import { AttendanceController } from './api/attendance.controller';
 import { AttendanceAccess } from './application/attendance-access';
 import { AttendanceJournal } from './application/attendance-journal';
+import { GetAttendanceSnapshotUseCase } from './application/get-attendance-snapshot.use-case';
+import { ListCommunitySnapshotsUseCase } from './application/list-community-snapshots.use-case';
+import { ListSnapshotEntriesUseCase } from './application/list-snapshot-entries.use-case';
 import { RecordAttendanceSnapshotUseCase } from './application/record-attendance-snapshot.use-case';
 import { ATTENDANCE_SNAPSHOT_REPOSITORY } from './domain/ports';
 import { DrizzleAttendanceSnapshotRepository } from './infrastructure/drizzle-attendance-repository';
@@ -55,12 +58,15 @@ describe('the Attendance module', () => {
     expect(controllers()).toEqual([AttendanceController]);
   });
 
-  it('provides the authorization gate, the journal and the record use case', () => {
+  it('provides the authorization gate, the journal and the record and view use cases', () => {
     expect(providers()).toEqual(
       expect.arrayContaining([
         AttendanceAccess,
         AttendanceJournal,
         RecordAttendanceSnapshotUseCase,
+        ListCommunitySnapshotsUseCase,
+        GetAttendanceSnapshotUseCase,
+        ListSnapshotEntriesUseCase,
       ]),
     );
   });

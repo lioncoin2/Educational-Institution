@@ -43,6 +43,16 @@ export interface AttendanceSnapshotRepository {
   /** One snapshot's header by id (§15.1), or null when there is none. */
   findById(id: string): Promise<AttendanceSnapshotHeader | null>;
 
+  /**
+   * Whether `userId` hosted or recorded any snapshot of `liveSessionId` — a
+   * read-only existence check on attendance's own rows (the prefix read on the
+   * idempotency index for `recordedBy`, and the session's `hostUserId`). It is
+   * the view fallback of attendance.md §11.3: a host or recorder of a session
+   * may view its snapshots even without `community.attendance.view`. Never
+   * touches Live.
+   */
+  recordedOrHostedInSession(liveSessionId: string, userId: string): Promise<boolean>;
+
   /** A community's snapshots, newest first, keyset-paged — headers only (§7, §15.1). */
   listByCommunity(
     query: CommunitySnapshotQuery,

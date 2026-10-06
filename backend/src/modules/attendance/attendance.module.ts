@@ -8,6 +8,9 @@ import { LiveModule } from '../live/live.module';
 import { AttendanceController } from './api/attendance.controller';
 import { AttendanceAccess } from './application/attendance-access';
 import { AttendanceJournal } from './application/attendance-journal';
+import { GetAttendanceSnapshotUseCase } from './application/get-attendance-snapshot.use-case';
+import { ListCommunitySnapshotsUseCase } from './application/list-community-snapshots.use-case';
+import { ListSnapshotEntriesUseCase } from './application/list-snapshot-entries.use-case';
 import { RecordAttendanceSnapshotUseCase } from './application/record-attendance-snapshot.use-case';
 import { ATTENDANCE_SNAPSHOT_REPOSITORY, type AttendanceSnapshotRepository } from './domain/ports';
 import { DrizzleAttendanceSnapshotRepository } from './infrastructure/drizzle-attendance-repository';
@@ -41,10 +44,11 @@ export function attendanceSnapshotRepositoryFor(
  * `forwardRef`. The clock, id generator, rate limiter, audit log and event
  * publisher are global (platform).
  *
- * The API slice adds one authenticated route — `AttendanceController`,
- * `POST /attendance/live-sessions/:liveSessionId/snapshots` — which only
- * transports input to `RecordAttendanceSnapshotUseCase` and formats its result;
- * it decides no access. List/entries routes are a later slice.
+ * `AttendanceController` carries the record route (`POST …/snapshots`) and the
+ * three read routes — the community list, one snapshot, and its participants —
+ * each `@Authenticated()` and backed by one use case (record, list-community,
+ * get, list-entries). Controllers only transport input and format output; the
+ * decision is always community standing through `AttendanceAccess`.
  */
 @Module({
   imports: [IdentityModule, CommunitiesModule, LiveModule],
@@ -58,6 +62,9 @@ export function attendanceSnapshotRepositoryFor(
       useFactory: attendanceSnapshotRepositoryFor,
     },
     RecordAttendanceSnapshotUseCase,
+    ListCommunitySnapshotsUseCase,
+    GetAttendanceSnapshotUseCase,
+    ListSnapshotEntriesUseCase,
   ],
 })
 export class AttendanceModule {}

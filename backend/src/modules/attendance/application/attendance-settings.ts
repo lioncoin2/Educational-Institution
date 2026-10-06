@@ -14,6 +14,12 @@ export const AttendanceRefusals = {
   communityNotFound: failure('not_found', 'attendance.community_not_found', 'No such community.'),
   /** 404 — the single-snapshot path: a member without the view act is told this, never 403. */
   snapshotNotFound: failure('not_found', 'attendance.snapshot_not_found', 'No such snapshot.'),
+  /** 422 — a page cursor that does not decode (attendance.md §15.2). */
+  cursorInvalid: failure(
+    'validation',
+    'attendance.cursor_invalid',
+    'That page cursor is not valid.',
+  ),
   /** 403 — a member of the community who holds no act in the fallback order. */
   notAllowed: failure('forbidden', 'attendance.not_allowed', 'You may not do this here.'),
   /** 412 — the community is locked and the act is not permitted while locked. */

@@ -189,4 +189,51 @@ describe('InMemoryAttendanceSnapshotRepository', () => {
     );
     expect(connected.items.map((e) => e.userId)).toEqual(['u-2', 'u-3']);
   });
+
+  describe('recordedOrHostedInSession (the §11.3 view fallback read)', () => {
+    // build() stamps hostUserId 'host-1' and recordedBy defaults to 'rec-1'.
+    it('is false against an empty store', async () => {
+      expect(await repo.recordedOrHostedInSession('s-1', 'rec-1')).toBe(false);
+    });
+
+    it('is true for the recorder of a snapshot in the session', async () => {
+      await repo.insert(build({ id: 'a', liveSessionId: 's-1', recordedBy: 'rec-9' }));
+      expect(await repo.recordedOrHostedInSession('s-1', 'rec-9')).toBe(true);
+    });
+
+    it('is true for the session host, even if they recorded nothing themselves', async () => {
+      await repo.insert(build({ id: 'a', liveSessionId: 's-1', recordedBy: 'rec-9' }));
+      expect(await repo.recordedOrHostedInSession('s-1', 'host-1')).toBe(true);
+    });
+
+    it('is false for a user who neither recorded nor hosted the session', async () => {
+      await repo.insert(build({ id: 'a', liveSessionId: 's-1', recordedBy: 'rec-9' }));
+      expect(await repo.recordedOrHostedInSession('s-1', 'stranger')).toBe(false);
+    });
+
+    it('is false for the same user in a different session — no cross-session false positive', async () => {
+      await repo.insert(build({ id: 'a', liveSessionId: 's-1', recordedBy: 'rec-9' }));
+      expect(await repo.recordedOrHostedInSession('s-2', 'rec-9')).toBe(false);
+    });
+
+    it('stays true across several snapshots of the same session by the same recorder', async () => {
+      await repo.insert(
+        build({
+          id: 'a',
+          liveSessionId: 's-1',
+          recordedBy: 'rec-9',
+          clientRequestId: 'req_AAAAAAAA',
+        }),
+      );
+      await repo.insert(
+        build({
+          id: 'b',
+          liveSessionId: 's-1',
+          recordedBy: 'rec-9',
+          clientRequestId: 'req_BBBBBBBB',
+        }),
+      );
+      expect(await repo.recordedOrHostedInSession('s-1', 'rec-9')).toBe(true);
+    });
+  });
 });
