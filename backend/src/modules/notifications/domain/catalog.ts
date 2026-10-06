@@ -37,6 +37,8 @@ export const NOTIFICATION_CATALOG: Readonly<Record<NotificationType, Notificatio
       active: true,
       targetKind: 'community',
     },
+    LIVE_SPEAKER_REQUESTED: { category: 'LIVE', active: true, targetKind: 'live_room' },
+    LIVE_SPEAKER_GRANTED: { category: 'LIVE', active: true, targetKind: 'live_room' },
     ASSIGNMENT_CREATED: { category: 'ASSIGNMENTS', active: false, targetKind: 'assignment' },
     ASSIGNMENT_UPDATED: { category: 'ASSIGNMENTS', active: false, targetKind: 'assignment' },
     ANNOUNCEMENT_CREATED: { category: 'ANNOUNCEMENTS', active: false, targetKind: 'announcement' },

@@ -21,6 +21,13 @@
  *   COMMUNITY_CAPABILITY_REVOKED      a community capability of yours was taken
  *   COMMUNITY_OWNERSHIP_TRANSFERRED   a community was handed to you
  *
+ * Live facts (P10, active — the `LIVE` category), each pointing at the live
+ * room it concerns:
+ *
+ *   LIVE_SPEAKER_REQUESTED   a participant raised their hand — to the session's
+ *                            moderators
+ *   LIVE_SPEAKER_GRANTED     you were granted the floor to speak
+ *
  * Reserved — named so the vocabulary is stable, but NOTHING creates them:
  * the modules whose facts they would announce publish no such events yet,
  * and the dispatcher refuses a type that is not active (see the catalog in
@@ -42,6 +49,9 @@ export const NOTIFICATION_TYPES = [
   'COMMUNITY_CAPABILITY_GRANTED',
   'COMMUNITY_CAPABILITY_REVOKED',
   'COMMUNITY_OWNERSHIP_TRANSFERRED',
+  // Live facts (P10, active): speaker moderation and the floor grant.
+  'LIVE_SPEAKER_REQUESTED',
+  'LIVE_SPEAKER_GRANTED',
   'ASSIGNMENT_CREATED',
   'ASSIGNMENT_UPDATED',
   'ANNOUNCEMENT_CREATED',
@@ -60,6 +70,7 @@ export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 export const NOTIFICATION_CATEGORIES = [
   'MESSAGES',
   'COMMUNITY',
+  'LIVE',
   'ASSIGNMENTS',
   'ANNOUNCEMENTS',
   'CERTIFICATES',

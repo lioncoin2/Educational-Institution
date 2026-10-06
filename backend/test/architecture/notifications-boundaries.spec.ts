@@ -131,6 +131,25 @@ describe('notifications boundaries', () => {
     ).toBe(false);
   });
 
+  it('consumes live’s event contract and LIVE_AUDIENCE — the live translator really is subscribed to it', () => {
+    const translatorEdges = edgesFrom(
+      output,
+      (source) =>
+        source === 'src/modules/notifications/application/live-notification.translator.ts',
+    ).map((edge) => edge.resolved);
+    // It reaches live's contracts (its events + LIVE_AUDIENCE) and nothing of
+    // live's internals (the generic "contracts only" check above enforces the
+    // latter for every edge).
+    expect(translatorEdges.some((path) => path.startsWith('src/modules/live/contracts/'))).toBe(
+      true,
+    );
+    expect(
+      translatorEdges.some((path) =>
+        /^src\/modules\/live\/(domain|application|infrastructure|api)\//.test(path),
+      ),
+    ).toBe(false);
+  });
+
   it('keeps the notification domain and application free of push SDKs and every other vendor', () => {
     const logic = (source: string) =>
       /^src\/modules\/notifications\/(domain|application|contracts)\//.test(source);

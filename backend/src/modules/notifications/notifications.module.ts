@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/app-config';
 import { DATABASE, type Database } from '../../platform/database';
 import { IdentityModule } from '../identity/identity.module';
+import { LiveModule } from '../live/live.module';
 import { MessagingModule } from '../messaging/messaging.module';
 import { NotificationsController } from './api/notifications.controller';
 import { CommunityNotificationTranslator } from './application/community-notification.translator';
@@ -13,6 +14,7 @@ import {
   MarkAllNotificationsReadUseCase,
   MarkNotificationReadUseCase,
 } from './application/inbox.use-cases';
+import { LiveNotificationTranslator } from './application/live-notification.translator';
 import { MessagingNotificationTranslator } from './application/messaging-notification.translator';
 import { NotificationDispatcher } from './application/notification-dispatcher';
 import { NotificationReaderService } from './application/notification-reader.service';
@@ -48,7 +50,7 @@ import { LoggingPushProvider } from './infrastructure/logging-push-provider';
 /**
  * Notifications — a person's inbox, and delivery of what lands in it.
  *
- *   business event (messaging's or communities')
+ *   business event (messaging's, communities' or live's)
  *     → a NotificationTranslator         who, and what kind of notification
  *     → NotificationDispatcher           active account? wanted? new? → stored once
  *     → notifications.notification.created
@@ -56,14 +58,15 @@ import { LoggingPushProvider } from './infrastructure/logging-push-provider';
  *         → PushDelivery: to the recipient's devices, through PUSH_PROVIDER
  *
  * It depends on identity's contracts (who is active, what an account is
- * called), messaging's (its events; who may read a conversation) and
- * communities' (its events). Nothing depends on it but realtime, through
+ * called), messaging's (its events; who may read a conversation), communities'
+ * (its events) and live's (its events; who moderates a session, through
+ * `LIVE_AUDIENCE`). Nothing depends on it but realtime, through
  * `NOTIFICATION_READER`. The push provider is chosen here: in V1, a logging
  * adapter — no push SDK is installed (docs/architecture/notifications.md,
  * "Push").
  */
 @Module({
-  imports: [IdentityModule, MessagingModule],
+  imports: [IdentityModule, MessagingModule, LiveModule],
   controllers: [NotificationsController],
   providers: [
     {
@@ -97,6 +100,7 @@ import { LoggingPushProvider } from './infrastructure/logging-push-provider';
     NotificationDispatcher,
     MessagingNotificationTranslator,
     CommunityNotificationTranslator,
+    LiveNotificationTranslator,
     PushDelivery,
     ListNotificationsUseCase,
     CountUnreadNotificationsUseCase,
