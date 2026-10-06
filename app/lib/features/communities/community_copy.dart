@@ -42,6 +42,7 @@ abstract final class CommunityCopy {
   static const openChat = 'فتح محادثة المجتمع';
   static const viewMembers = 'عرض الأعضاء';
   static const viewLive = 'الجلسة المباشرة';
+  static const openAttendance = 'جمع حضور الجلسة';
 
   /// The viewer was in it, and no longer is.
   static const removed = 'لم تعد عضوًا في هذا المجتمع.';
@@ -108,6 +109,8 @@ abstract final class CommunityCopy {
         CommunityCapability.chatPost => 'النشر في المحادثة',
         CommunityCapability.liveStart => 'بدء جلسة مباشرة',
         CommunityCapability.liveModerate => 'إدارة الجلسات المباشرة',
+        CommunityCapability.attendanceRecord => 'جمع الحضور',
+        CommunityCapability.attendanceView => 'عرض سجلّات الحضور',
         CommunityCapability.unknown => 'صلاحية',
       };
 

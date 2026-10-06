@@ -45,6 +45,9 @@ abstract final class Routes {
   static String communityLive(String communityId) =>
       '${community(communityId)}/live';
 
+  static String communityAttendance(String communityId) =>
+      '${community(communityId)}/attendance';
+
   static String certificate(String certificateId) =>
       '$certificates/$certificateId';
 }

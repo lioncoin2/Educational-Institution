@@ -182,7 +182,9 @@ class _Details extends StatelessWidget {
         ],
         if (community.canOpenChat ||
             community.canViewMembers ||
-            me.takesPart(CommunityParticipation.liveJoin)) ...[
+            me.takesPart(CommunityParticipation.liveJoin) ||
+            me.has(CommunityCapability.attendanceRecord) ||
+            me.has(CommunityCapability.liveModerate)) ...[
           const SizedBox(height: Insets.xxl),
           if (community.canOpenChat) _OpenChatButton(communityId: community.id),
           if (community.canOpenChat && community.canViewMembers)
@@ -204,6 +206,23 @@ class _Details extends StatelessWidget {
               onPressed: () => context.push(Routes.communityLive(community.id)),
               icon: const Icon(Icons.podcasts_outlined),
               label: const Text(CommunityCopy.viewLive),
+            ),
+          ],
+          // The attendance record screen, when the server says the viewer may
+          // record here (the record capability or a session moderator's).
+          // Navigation only — that screen consumes the live session and the
+          // attendance repository; this entry injects neither.
+          if (me.has(CommunityCapability.attendanceRecord) ||
+              me.has(CommunityCapability.liveModerate)) ...[
+            if (community.canOpenChat ||
+                community.canViewMembers ||
+                me.takesPart(CommunityParticipation.liveJoin))
+              const SizedBox(height: Insets.md),
+            OutlinedButton.icon(
+              onPressed: () =>
+                  context.push(Routes.communityAttendance(community.id)),
+              icon: const Icon(Icons.fact_check_outlined),
+              label: const Text(CommunityCopy.openAttendance),
             ),
           ],
         ],

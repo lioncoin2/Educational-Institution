@@ -57,7 +57,8 @@ void main() {
 
       final owned = await repo.community(MockCommunityRepository.ownedId);
       expect(owned.me.standing, CommunityStanding.owner);
-      expect(owned.me.capabilities, hasLength(7));
+      // Every capability, including the two P9 attendance acts.
+      expect(owned.me.capabilities, hasLength(9));
 
       final delegated = await repo.community(
         MockCommunityRepository.delegatedId,

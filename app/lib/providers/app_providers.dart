@@ -28,12 +28,14 @@ import '../data/repositories/academic/academic_catalog_repository.dart';
 import '../data/repositories/academic/academic_learning_repository.dart';
 import '../data/repositories/academic/academic_profile_repositories.dart';
 import '../data/repositories/http/http_academic_repository.dart';
+import '../data/repositories/http/http_attendance_repository.dart';
 import '../data/repositories/http/http_auth_repository.dart';
 import '../data/repositories/http/http_community_repository.dart';
 import '../data/repositories/http/http_live_repository.dart';
 import '../data/repositories/http/http_messaging_repository.dart';
 import '../data/repositories/http/http_notifications_repository.dart';
 import '../data/repositories/mock/mock_academic_repository.dart';
+import '../data/repositories/mock/mock_attendance_repository.dart';
 import '../data/repositories/mock/mock_auth_repository.dart';
 import '../data/repositories/mock/mock_community_repository.dart';
 import '../data/repositories/mock/mock_live_repository.dart';
@@ -194,6 +196,17 @@ final liveRepositoryProvider = Provider<LiveRepository>(
   (ref) => ref.watch(backendModeProvider)
       ? HttpLiveRepository(ref.watch(apiClientProvider))
       : MockLiveRepository(),
+);
+
+// ── Attendance ───────────────────────────────────────────────────────────────
+// Recording a live session's attendance snapshot (the record state in
+// features/attendance reads this). Record-only in this foundation
+// (attendance.md §17); viewing past snapshots is a later slice.
+
+final attendanceRepositoryProvider = Provider<AttendanceRepository>(
+  (ref) => ref.watch(backendModeProvider)
+      ? HttpAttendanceRepository(ref.watch(apiClientProvider))
+      : MockAttendanceRepository(),
 );
 
 // ── Realtime ───────────────────────────────────────────────────────────────

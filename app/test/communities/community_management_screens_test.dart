@@ -757,7 +757,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text(CommunityCopy.granted), findsOneWidget);
-      expect(find.text(CommunityCopy.notGranted), findsNWidgets(6));
+      expect(find.text(CommunityCopy.notGranted), findsNWidgets(8));
       expect(
         button(tester, CommunityCopy.grantChosen).onPressed,
         isNull, // nothing chosen yet
@@ -795,7 +795,7 @@ void main() {
       await open_(tester, '/communities/$owned/members');
       await openCapabilities(tester, teacherName);
       expect(find.text(CommunityCopy.grantedDormant), findsOneWidget);
-      expect(find.text(CommunityCopy.notGranted), findsNWidgets(6));
+      expect(find.text(CommunityCopy.notGranted), findsNWidgets(8));
       expect(find.textContaining('grant-'), findsNothing);
     });
 

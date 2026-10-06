@@ -1,4 +1,5 @@
 import '../models/academic.dart';
+import '../models/attendance.dart';
 import '../models/auth.dart';
 import '../models/certificate.dart';
 import '../models/communities.dart';
@@ -301,6 +302,26 @@ abstract interface class CommunityRepository {
 abstract interface class LiveRepository {
   /// The community's running session, or null when none is live now.
   Future<LiveSession?> currentSession(String communityId);
+}
+
+/// Attendance — recording a live session's attendance snapshot
+/// (`/attendance`).
+///
+/// Record-only in this foundation (attendance.md §17): one press takes a
+/// server-side observation of who Live holds connected now and returns the
+/// stored header (counts only). Viewing past snapshots and their participants
+/// is a later slice. A refusal throws [AttendanceException] with the server's
+/// code; the recorder, the community and whom to count are the server's to
+/// know — the caller sends only its idempotency key.
+abstract interface class AttendanceRepository {
+  /// Records a snapshot of [liveSessionId]. [clientRequestId] is generated
+  /// once per press and resent verbatim on every retry, so the server stores
+  /// exactly one snapshot however many times the network fails (§8); a 201
+  /// (new) and a 200 (replay) return the same [SnapshotView].
+  Future<SnapshotView> record(
+    String liveSessionId, {
+    required String clientRequestId,
+  });
 }
 
 /// Notifications — the signed-in person's own inbox, preferences and push

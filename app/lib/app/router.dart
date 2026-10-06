@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/widgets/layout/adaptive_nav_shell.dart';
 import '../features/announcements/announcements_screen.dart';
+import '../features/attendance/record_attendance_screen.dart';
 import '../features/auth/sign_in_screen.dart';
 import '../features/certificates/certificate_detail_screen.dart';
 import '../features/certificates/certificates_screen.dart';
@@ -121,6 +122,14 @@ GoRouter buildRouter() {
                 name: 'community-live',
                 parentNavigatorKey: _rootNavigatorKey,
                 builder: (context, state) => LiveSessionScreen(
+                  communityId: state.pathParameters['communityId']!,
+                ),
+              ),
+              GoRoute(
+                path: 'attendance',
+                name: 'community-attendance',
+                parentNavigatorKey: _rootNavigatorKey,
+                builder: (context, state) => RecordAttendanceScreen(
                   communityId: state.pathParameters['communityId']!,
                 ),
               ),
