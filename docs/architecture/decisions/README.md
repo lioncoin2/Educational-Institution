@@ -44,7 +44,8 @@ recorded only in the ADR that makes them, as the package note below says.
 | [0020](0020-attendance-snapshots.md) | Attendance snapshots are observations owned by a new attendance module (implementation held) | Accepted (implementation held); superseded in part by [0023](0023-attendance-authorization-and-policy.md) |
 | [0021](0021-cross-cutting-rules-for-new-modules.md) | Cross-cutting rules for the new modules: events in contracts, journals, durability classes, the realtime transport matrix, protocol v1 growth, `FailureKind 'unavailable'`, executable guards | Accepted; superseded in part by [0022](0022-community-chat-delivery-check.md) |
 | [0022](0022-community-chat-delivery-check.md) | Community chat: every recipient page is checked against Communities, and a divergence rebuilds the projection (replaces 0018's delivery shortcut) | Accepted |
-| [0023](0023-attendance-authorization-and-policy.md) | Attendance authorization uses academic relationship AND community standing (supersedes 0020's decision 8); records Q8/Q12/Q69; notifications deferred to P10/Q67 | Accepted |
+| [0023](0023-attendance-authorization-and-policy.md) | Attendance authorization uses academic relationship AND community standing (supersedes 0020's decision 8); records Q8/Q12/Q69; notifications deferred to P10/Q67 (policy now recorded in [0024](0024-notification-policy-p10.md)) | Accepted |
+| [0024](0024-notification-policy-p10.md) | Notification policy for P10: the initial, reversible set of community/live/attendance facts that notify and on which channels (answers Q67 and the P10 scope of Q28); academic deferred; delivery stays best-effort (T2/outbox gate of 0021 preserved) | Accepted |
 
 > **`Proposed`** (added 2026-09-23): a design under review, with nothing
 > implemented. It becomes `Accepted` when the user accepts it (dated in the

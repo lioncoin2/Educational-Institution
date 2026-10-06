@@ -71,7 +71,7 @@ architecture directly, not throwaway versions.
 | P8 Load/capacity harness (P8.0–P8.4 built, committed `9d2925e`)                                                                                                                                  | **DONE (infra)**; off-box ladder S1→R6 **DEFERRED** until real users                                                                                                                                                                                                                                                                                                                                                         |
 | **Academic reconciliation (§13 / ADR 0015)**                                                                                                                                                     | **LANDED** on the operational seed + tests (Option A, 2026-10-05); printed profile untouched; verified in-memory only                                                                                                                                                                                                                                                                                                        |
 | **P9 Attendance**                                                                                                                                                                                | **BACKEND + FULL FLUTTER SURFACE LANDED** — backend: RecordSnapshot write + VIEW (community list / one snapshot / participants), `AttendanceAccess`, `LIVE_PRESENCE`, Postgres + in-memory repositories, DI/boot wiring, the API, full error-coverage E2E, and the `attendance-boundaries` architecture guards. Flutter (§17): the Live non-media foundation; the Attendance **record** foundation (`AttendanceRepository.record`, `SnapshotView`, Http/Mock repos, record controller + screen, capability-gated doorway); and the Attendance **viewing** foundation (`snapshots`/`snapshot`/`participants`, `SnapshotPage`/`SnapshotParticipant`/`SnapshotParticipantPage`/`SnapshotConnection`, two paginated controllers + a detail header provider, the snapshots-list and snapshot-detail screens with load-more, an `attendanceView`-gated doorway, boundary guards). **DEFERRED:** the connection-filter and session-scoped viewing UIs, the EXPLAIN-at-scale check (§21/§22), P10 notifications (Q67), the ADR 0023 Option-B formal write-up |
-| P10 Notifications translators · P11 Horizontal scale · P12 Policy-gated Live features                                                                                                            | future (P11 needs P8 evidence)                                                                                                                                                                                                                                                                                                                                                                                               |
+| P10 Notifications translators · P11 Horizontal scale · P12 Policy-gated Live features                                                                                                            | **P10 policy DECIDED (ADR 0024 — answers Q67 and the P10 scope of Q28); implementation NOT started.** P11 needs P8 load evidence; P12 needs policy answers                                                                                                                                                                                                                                                                    |
 
 ---
 
@@ -276,7 +276,7 @@ explicitly requested. (`docs/p8/*`, `docs/p8-load-capacity-plan.md`.)
 - Voice/LiveKit mapping of educational groups (separate from the academic model).
 - Mastery / promotion / assessment / «نظام الضخ» operational rules.
 - Reviewer acceptance of the combined attendance-scoping design (Q69a, ADR 0023).
-- Attendance "Collect Attendance" notifications → P10 / Q67 (deferred, ADR 0023).
+- Attendance "Collect Attendance" notifications → **policy decided ([ADR 0024](architecture/decisions/0024-notification-policy-p10.md)); P10 implementation deferred** (was Q67, deferred by ADR 0023).
 - Concrete per-section/per-halaqa seed content beyond the firmly-decided renames/new sections — these
   are **dynamic owner data** managed at runtime, not architectural questions (do not re-open).
 
@@ -295,14 +295,20 @@ committed on this branch (HEAD `ee66d95`), all gates green:
   `attendanceRecord`/`attendanceView`-gated community doorways, opaque-cursor pagination, and the
   Flutter `attendance_boundaries_test` guards.
 
+**P10 Notifications is now policy-unblocked:** the notification policy (Q67 and the P10 scope of Q28) is
+recorded in **[ADR 0024](architecture/decisions/0024-notification-policy-p10.md)**. P10 is **not yet
+implemented** — doing so (per-fact translators importing only the source module's contracts, plus the
+community/live/attendance notification vocabulary and catalog lines; no publisher, dispatcher, relay,
+push or outbox change) is a focused slice to be taken only on an explicit request.
+
 **Intentionally deferred, non-blocking** (do not start without an explicit request): the Flutter
 connection-filter UI and session-scoped (`liveSessionId`) viewing UI; the "view history" shortcut from
 the Record screen; the EXPLAIN-at-scale / 1M-entry read benchmark (§21/§22, measure before production
-use); P10 notifications (Q67); the ADR 0023 Option-B write-up; P7b real LiveKit media binding (the
-`LiveMediaClient` seam stays Unavailable).
+use); **academic** notification facts (a separate policy decision) and **guaranteed delivery**
+(outbox/T2); the ADR 0023 Option-B write-up; P7b real LiveKit media binding (the `LiveMediaClient` seam
+stays Unavailable). P11 (horizontal scale) still needs P8 load evidence; P12 (policy-gated live
+features) still needs policy answers.
 
-**The next engineering task is to be determined from the current repository state** — it is **not** the
-old "Flutter `AttendanceRepository`" task, which has landed. **No new implementation beyond an
-explicitly requested focused slice.**
+**No new implementation beyond an explicitly requested focused slice.**
 
 > Reminder: everything in this checkpoint is a current, reversible decision.

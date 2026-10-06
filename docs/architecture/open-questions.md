@@ -742,6 +742,15 @@ the switch, `MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS` (default 250). G1
 
 ## Q28 — What deserves a notification, and how loudly?
 
+**Answered in part (2026-10-06, [ADR 0024](decisions/0024-notification-policy-p10.md)).** The P10 scope
+is decided: which **community, live and attendance** facts notify and on which channels (ADR 0024), and
+the messaging defaults are unchanged. This part is no longer a P10 blocker. **Still open / explicitly
+deferred** (not resolved by ADR 0024): the per-role **push defaults** in general, **collapsing**
+specifics beyond the attendance anti-spam rule, **large-channel** (e.g. 2,000-member) behaviour,
+**priority / always-deliver** power and who may wield it, and the **future categories** — assignments,
+announcements, certificates, halaqat and whether **parents** receive a child's. Those remain this
+question's to settle.
+
 **Question.**
 
 - **Defaults.** Every channel is on for messages today. Should a channel's
@@ -2420,6 +2429,17 @@ that line widens, and messaging's relay checks `messaging.read` per frame
 ---
 
 ## Q67 — Notifications for community, live and attendance facts
+
+**Answered (2026-10-06, [ADR 0024](decisions/0024-notification-policy-p10.md)); no longer a P10
+blocker.** The initial, reversible notification policy is recorded canonically in ADR 0024 (the full
+per-fact table). In brief: community membership / grant / ownership facts → in-app + push to the
+affected person; `live.session.started` → in-app / realtime (push opt-in only — no community-wide push
+spam), a hand accepted → in-app / realtime + push; `attendance.snapshot.recorded` → in-app + push to
+`community.attendance.view` holders, with students **not** notified by default and repeated presses
+collapsed. Delivery stays best-effort (no guarantee; the T2/outbox gate of ADR 0021 is preserved).
+**Still deferred:** academic notification facts (a separate decision) and guaranteed delivery. The
+“Built instead / When answered” notes below describe the prior PROVISIONAL state and are kept as
+history; ADR 0020 decision 9 ("no notification") still stood for P9.
 
 **Note (2026-10-05, owner Q69b; [ADR 0023](decisions/0023-attendance-authorization-and-policy.md)).**
 The owner wants an attendance "Collect Attendance" action to **notify the teacher, the owner and

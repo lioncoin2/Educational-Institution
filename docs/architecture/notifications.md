@@ -589,6 +589,12 @@ empty, error and retry, mark all, live insertion, settings), boundaries.
 
 ## 22. Limitations and deferred work
 
+- **Community, live and attendance notifications (P10).** The policy is decided
+  — [ADR 0024](decisions/0024-notification-policy-p10.md) (answers Q67 and the
+  P10 scope of Q28) — but **not implemented**: no translators, types, categories
+  or target kinds for these facts exist yet. Activating one is a translator
+  importing the source module's contracts plus a catalog line (§3), per that ADR.
+  Academic notification facts remain deferred to a separate decision.
 - **Outbox.** In-process delivery is at most once (§6). The dedupe keys make
   the outbox a drop-in.
 - **A push provider** (Q24): the adapter, credentials and platform setup
