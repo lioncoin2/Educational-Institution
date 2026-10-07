@@ -1,6 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+// LiveSessionEndReason is the model enum now (the realtime parser converged
+// onto it); the frame types still come from realtime_frames.
+import 'package:quran_institution_app/data/models/live.dart';
 import 'package:quran_institution_app/data/models/messaging.dart';
 import 'package:quran_institution_app/data/realtime/realtime_frames.dart';
 

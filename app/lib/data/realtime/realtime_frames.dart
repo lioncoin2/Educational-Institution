@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../models/live.dart';
 import '../models/messaging.dart';
 import '../models/notifications.dart';
 
@@ -578,23 +579,11 @@ final class LiveSessionStartedEvent extends LiveEvent {
       );
 }
 
-/// Why a live session ended. A reason a newer server adds is [unknown] — the
-/// session is over regardless.
-enum LiveSessionEndReason {
-  moderator('moderator'),
-  idle('idle'),
-  communityClosed('community_closed'),
-  unknown('unknown');
-
-  const LiveSessionEndReason(this.wire);
-
-  final String wire;
-
-  static LiveSessionEndReason fromWire(String value) =>
-      values.firstWhere((r) => r.wire == value, orElse: () => unknown);
-}
-
-/// That live session is over — terminal for its id.
+/// That live session is over — terminal for its id. [reason] is the
+/// authoritative model enum ([LiveSessionEndReason], lib/data/models/live.dart):
+/// the parser depends on the data model, never the reverse. A reason a newer
+/// server adds is [LiveSessionEndReason.unknown]; a frame with no reason at all
+/// is dropped (below).
 final class LiveSessionEndedEvent extends LiveEvent {
   const LiveSessionEndedEvent({
     required super.eventId,
