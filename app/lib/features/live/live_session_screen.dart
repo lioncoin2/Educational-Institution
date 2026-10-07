@@ -13,6 +13,7 @@ import '../../data/models/live.dart';
 import '../../providers/app_providers.dart';
 import 'live_copy.dart';
 import 'state/live_session_controller.dart';
+import 'widgets/live_moderation_actions.dart';
 import 'widgets/live_states.dart';
 
 /// A community's live session, read-only: whether one is running now, who
@@ -74,10 +75,15 @@ class _SessionView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // The server's state is the truth: a session no longer live shows the
+    // ended card and no acting controls — never a stale "live" view.
+    if (!session.isLive) return _EndedView(session: session);
+
     // Media is a separate seam; reading it here keeps it out of session
     // loading. Unavailable in this build — the UI says so, never pretends.
     final mediaAvailable = ref.watch(liveMediaClientProvider).isAvailable;
     final me = session.me;
+    final moderation = session.moderation;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -111,6 +117,21 @@ class _SessionView extends ConsumerWidget {
               ] else if (me.canModerate) ...[
                 const SizedBox(height: Insets.sm),
                 Text(LiveCopy.youModerate, style: context.text.bodySmall),
+              ],
+              if (me.presenting) ...[
+                const SizedBox(height: Insets.sm),
+                Text(LiveCopy.youPresent, style: context.text.bodySmall),
+              ],
+              // A moderator's pending-hand count (the server's figure); never
+              // the queue itself, which is the media/floor flow.
+              if (moderation != null) ...[
+                const SizedBox(height: Insets.sm),
+                Text(
+                  LiveCopy.pendingHands(moderation.pendingHands),
+                  style: context.text.bodySmall?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
               ],
             ],
           ),
@@ -150,6 +171,62 @@ class _SessionView extends ConsumerWidget {
               ],
             ),
           ),
+        // The viewer's own controls, each shown only as the server's `me`
+        // allows. A command never mutates this view; the realtime
+        // reconciliation (Slice 4) brings the authoritative session after.
+        LiveModerationActions(session: session),
+      ],
+    );
+  }
+}
+
+/// A session the server no longer reports as live — ended or closed. It carries
+/// no acting controls: the moderator's tools belong to a running session only.
+class _EndedView extends StatelessWidget {
+  const _EndedView({required this.session});
+
+  final LiveSession session;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (session.origin.isMock) ...[
+          const MockBanner(message: LiveCopy.demoBanner),
+          const SizedBox(height: Insets.lg),
+        ],
+        AppCard(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.podcasts_outlined,
+                size: 20,
+                color: context.colors.onSurfaceVariant,
+              ),
+              const SizedBox(width: Insets.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      LiveCopy.sessionEnded,
+                      style: context.text.titleMedium,
+                    ),
+                    const SizedBox(height: Insets.xs),
+                    Text(
+                      LiveCopy.sessionEndedMessage,
+                      style: context.text.bodySmall?.copyWith(
+                        color: context.colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
