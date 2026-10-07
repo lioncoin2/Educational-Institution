@@ -4,23 +4,29 @@
 the authoritative docs it links) and continue without reconstructing history from chat logs.
 
 - **Branch:** `claude/quranic-education-app-prototype-gkzle8`
-- **HEAD:** `0d7a241` — `feat(notifications): attendance notification translator (P10)`. Recent P10
-  lineage: the attendance notification translator (`0d7a241`), ADR 0025 deferring a persistent
+- **HEAD:** `7313815` — `feat(messaging): community message moderation (Q51/Q23)`. Recent **P12**
+  lineage (policy-gated live features + community moderation, all on this branch): Q51/Q23 community
+  message moderation (`7313815`, ADR 0029), Q56 screen sharing / two presenters (`20e80cb`, ADR 0028),
+  Q59 no hidden listeners (`34826e3`, ADR 0027) and Q64 kick / room reset (`370acda`, ADR 0026); the
+  engineering-governance commit (`45dcd1d`, `docs/ENGINEERING_RULES.md`) precedes all four. Before P12,
+  the P10 lineage: the attendance notification translator (`0d7a241`), ADR 0025 deferring a persistent
   `live.session.started` (`e4e6c15`), the live speaker notification translator (`3d23274`), the
-  community notification translator (`43dd0b1`) and ADR 0024 recording the P10 notification policy
-  (`b3ca01c`). Before them: the Flutter Attendance viewing foundation (`ee66d95`), the record
-  foundation (`639ee5c`), the Flutter Live non-media foundation (`417e210`), the attendance module
-  boundary-guards commit, the P9 Attendance **backend** (RecordSnapshot write + view paths,
+  community notification translator (`43dd0b1`) and ADR 0024 (`b3ca01c`). Before them: the Flutter
+  Attendance viewing foundation (`ee66d95`), the record foundation (`639ee5c`), the Flutter Live
+  non-media foundation (`417e210`), the P9 Attendance **backend** (RecordSnapshot write + view paths,
   architecture-boundary-hardened), Academic Reconciliation (ADR 0015, Option A) and the prior code
   commit `9d2925e`.
-- **Date:** 2026-10-06 (updated: **P10 Notifications translators — LANDED** for community, live-speaker
-  and attendance facts; `live.session.started` kept realtime-only by ADR 0025; docs reconciled)
-- **Current focus:** **P10 Notifications — implemented.** The notification engine (V1) now has
-  translators for community facts (`43dd0b1`), live speaker facts (`3d23274`) and attendance snapshots
-  (`0d7a241`), each importing only its source module's contracts; `live.session.started` remains
-  realtime-only (ADR 0025, `e4e6c15`). P9 Attendance (backend + the full Flutter attendance surface,
-  §17) is complete. The EXPLAIN-at-scale check, academic notifications and guaranteed delivery (outbox)
-  remain deferred.
+- **Date:** 2026-10-07 (updated: **P12 Policy-gated Live features — COMPLETE** across four slices
+  (Q64/Q59/Q56/Q51-Q23; ADRs 0026–0029), with the living docs and this checkpoint reconciled. Earlier:
+  P10 Notifications translators landed; `live.session.started` kept realtime-only by ADR 0025)
+- **Current focus:** **P12 Policy-gated Live features — complete.** Four owner-approved slices shipped on
+  this branch, each with its ADR, tests and verification gates green: Q64 kick / room reset (ADR 0026),
+  Q59 no hidden listeners (ADR 0027), Q56 screen sharing up to two concurrent presenters with delegated
+  student access (ADR 0028), and Q51/Q23 community message moderation (ADR 0029). The P12 policy
+  questions are **answered** (recorded in `open-questions.md` and the ADRs). P10 Notifications
+  (translators) and P9 Attendance (backend + the full Flutter attendance surface, §17) remain complete.
+  The EXPLAIN-at-scale check, academic notifications, guaranteed delivery (outbox) and P7b media binding
+  remain deferred; P11 (horizontal scale) remains blocked on P8 load evidence.
 - **Every decision below is CURRENT and REVERSIBLE** — a current institutional decision, not a
   permanent architectural lock. Future requirements may change it.
 
@@ -75,7 +81,7 @@ architecture directly, not throwaway versions.
 | P8 Load/capacity harness (P8.0–P8.4 built, committed `9d2925e`)                                                                                                                                  | **DONE (infra)**; off-box ladder S1→R6 **DEFERRED** until real users                                                                                                                                                                                                                                                                                                                                                         |
 | **Academic reconciliation (§13 / ADR 0015)**                                                                                                                                                     | **LANDED** on the operational seed + tests (Option A, 2026-10-05); printed profile untouched; verified in-memory only                                                                                                                                                                                                                                                                                                        |
 | **P9 Attendance**                                                                                                                                                                                | **BACKEND + FULL FLUTTER SURFACE LANDED** — backend: RecordSnapshot write + VIEW (community list / one snapshot / participants), `AttendanceAccess`, `LIVE_PRESENCE`, Postgres + in-memory repositories, DI/boot wiring, the API, full error-coverage E2E, and the `attendance-boundaries` architecture guards. Flutter (§17): the Live non-media foundation; the Attendance **record** foundation (`AttendanceRepository.record`, `SnapshotView`, Http/Mock repos, record controller + screen, capability-gated doorway); and the Attendance **viewing** foundation (`snapshots`/`snapshot`/`participants`, `SnapshotPage`/`SnapshotParticipant`/`SnapshotParticipantPage`/`SnapshotConnection`, two paginated controllers + a detail header provider, the snapshots-list and snapshot-detail screens with load-more, an `attendanceView`-gated doorway, boundary guards). **DEFERRED:** the connection-filter and session-scoped viewing UIs, the EXPLAIN-at-scale check (§21/§22), and the ADR 0023 Option-B formal write-up (P10 notifications have since landed — see the P10 row) |
-| P10 Notifications translators · P11 Horizontal scale · P12 Policy-gated Live features                                                                                                            | **P10 LANDED** — community (`43dd0b1`), live-speaker (`3d23274`) and attendance (`0d7a241`) notification translators, policy ADR 0024; `live.session.started` kept realtime-only (ADR 0025, `e4e6c15`). Academic notifications + guaranteed delivery (outbox) deferred. P11 needs P8 load evidence; P12 needs policy answers                                                                                                     |
+| P10 Notifications translators · P11 Horizontal scale · P12 Policy-gated Live features                                                                                                            | **P10 LANDED** — community (`43dd0b1`), live-speaker (`3d23274`) and attendance (`0d7a241`) notification translators, policy ADR 0024; `live.session.started` kept realtime-only (ADR 0025, `e4e6c15`). Academic notifications + guaranteed delivery (outbox) deferred. **P12 COMPLETE** — Q64 kick/room reset (`370acda`, ADR 0026), Q59 no hidden listeners (`34826e3`, ADR 0027), Q56 two presenters + delegated student share (`20e80cb`, ADR 0028), Q51/Q23 community message moderation (`7313815`, ADR 0029); policy answered, gates green (see the P12 status section). **P11 BLOCKED** — still needs P8 load evidence                                                                                                     |
 
 ---
 
@@ -274,6 +280,43 @@ explicitly requested. (`docs/p8/*`, `docs/p8-load-capacity-plan.md`.)
 
 ---
 
+## P12 Policy-gated Live features status: COMPLETE
+
+All four owner-approved P12 slices are implemented, tested and verified on this branch; the P12 policy
+questions are **answered** (recorded in `open-questions.md` and the ADRs below). The final
+reconciliation audit found **no code, architecture, security, migration, API, realtime or test
+blocker** — only documentation drift, reconciled in this change.
+
+- **Q64 — Kick / Room Reset** (`370acda`, [ADR 0026](architecture/decisions/0026-live-participant-control-and-media-reset.md)):
+  a session moderator or the host — authority via `community.live.moderate` / `community.live.host`,
+  **no new permission** — may kick a participant (disconnect + inform the removed person alone + audit;
+  **no ban, re-entry allowed**) and reset the media room. The reason is optional and audit-only (never
+  on the wire). Neither kick nor reset closes a presenter grant.
+- **Q59 — No Hidden Listeners** (`34826e3`, [ADR 0027](architecture/decisions/0027-no-hidden-live-listeners.md)):
+  every admitted participant is visible in the roster; `hidden` is an enforced-`false` invariant and a
+  drift backstop (`capabilityDrift` treats any observed `hidden` as a breach). No hidden/spectator role.
+- **Q56 — Screen Sharing** (`20e80cb`, [ADR 0028](architecture/decisions/0028-screen-sharing-two-presenters-and-delegated-student-access.md)):
+  up to **two** concurrent presenters (`MAX_CONCURRENT_PRESENTERS = 2`, counted by a DB compare-and-set
+  under the session lock — never a LiveKit count); owner/moderator/teacher present by right, a student
+  only under an explicit, session-scoped delegated grant that survives kick/reset and ends at session
+  end; the delegated student gets neither the microphone nor `live.speak`; screen audio stays off; no
+  new role or permission platform.
+- **Q51/Q23 — Community Message Moderation** (`7313815`, [ADR 0029](architecture/decisions/0029-community-message-moderation.md)):
+  a holder of the new delegable Community capability `community.messages.moderate` (owner implicitly, or
+  a delegated moderator/teacher) soft-deletes a community-chat message (a tombstone); the original is
+  reviewable for exactly 7 days through a separate audited operation and then purged by retention.
+  Moderation is **not** chat read — reading stays `community.chat.read` / membership; students cannot
+  delete others' messages; scope is community CHANNEL conversations only. Migration `0017` adds the
+  capability to the grant CHECK and the `messages.deleted_by` column.
+
+Verification (whole branch at HEAD `7313815`): **3714 passed / 0 failed / 371 skipped**; typecheck,
+lint, format and dependency-cruiser clean; all four ADRs present and immutable. Nothing pushed or
+merged — the branch is ahead of origin. **Deferred, not part of P12:** screen audio, a
+persistent/broadcast `live.session.started` (ADR 0025 conditions), and the non-live roadmap items
+below. **Blocked:** P11 (horizontal scale) still needs P8 load evidence.
+
+---
+
 ## Deferred / open questions (do not guess)
 
 - Voice/LiveKit mapping of educational groups (separate from the academic model).
@@ -314,8 +357,9 @@ connection-filter UI and session-scoped (`liveSessionId`) viewing UI; the "view 
 the Record screen; the EXPLAIN-at-scale / 1M-entry read benchmark (§21/§22, measure before production
 use); **academic** notification facts (a separate policy decision) and **guaranteed delivery**
 (outbox/T2); the ADR 0023 Option-B write-up; P7b real LiveKit media binding (the `LiveMediaClient` seam
-stays Unavailable). P11 (horizontal scale) still needs P8 load evidence; P12 (policy-gated live
-features) still needs policy answers.
+stays Unavailable). P11 (horizontal scale) still needs P8 load evidence; **P12 (policy-gated live
+features) is complete** — Q64/Q59/Q56/Q51-Q23 shipped with ADRs 0026–0029 (see the "P12 Policy-gated
+Live features status" section above), docs and this checkpoint reconciled.
 
 **No new implementation beyond an explicitly requested focused slice.**
 

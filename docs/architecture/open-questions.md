@@ -2354,6 +2354,16 @@ question.
 
 **When answered.** A use case on those seams, plus a re-entry rule (P12).
 
+**Decided (2026-10-07, Q64; [ADR 0026](decisions/0026-live-participant-control-and-media-reset.md), P12).**
+Built. A session moderator or the host — authority `community.live.moderate` / `community.live.host`
+through `LiveAccess`, **no new permission** and no institution/owner override — may **kick** a
+participant and **reset** the media room. A kick is a disconnect + an audited record + a realtime notice
+to the removed person alone; it is **not a ban** (no denylist; re-entry at once). The reason is optional,
+code-validated, and audit-only (never on the wire). A room reset bumps the media epoch and swaps the
+room; **neither kick nor reset closes a presenter grant** (Q56). Routes
+`POST …/sessions/:id/participants/:userId/remove` (optional `?reason`) and `POST …/sessions/:id/reset`.
+The "design only / seams only" text above is the superseded P6 state, kept as history.
+
 ---
 
 ## Q65 — Media hosting and operations

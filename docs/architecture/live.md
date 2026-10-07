@@ -545,7 +545,7 @@ The existing design has the right skeleton, and none of it is thrown away:
 | **P8** | Load profiles 1, 2, 3 and 5 (§21) | the target topology | hardware |
 | **P9** | `LIVE_PRESENCE` for attendance (HELD) | P6 | Q40, Q69 |
 | **P11** | A reconciler lease | evidence that one API instance is not enough | P8 |
-| **P12** | A moderator-initiated media-room reset; kick and re-entry; delegated or audio screen share; hidden listeners; webhook accelerators | policy answers | Q64, Q56, Q59 |
+| **P12** | **Built (ADR 0026–0028):** moderator kick + re-entry and media-room reset (Q64); up to two presenters incl. delegated student share (Q56); no hidden listeners — `hidden` enforced false (Q59). **Still deferred:** screen *audio* share (Q56); webhook accelerators | **answered** | Q64, Q56, Q59 |
 
 ---
 
@@ -1414,8 +1414,8 @@ person's set ran meanwhile, the breach is corrected but not counted. The
 cost is a brief reconnect for everyone in the room (measured in §21). The
 automatic reset is PROVISIONAL under
 [Q63](open-questions.md#q63--losing-standing-during-a-running-session), whose
-decisions it enforces; a reset or kick that a moderator chooses stays with
-Q64 (P12).
+decisions it enforces; a reset or kick that a moderator chooses is the Q64
+operation, built in P12 (§15.1; ADR 0026).
 
 ### 11.5 After a restart or a LiveKit outage
 
@@ -1631,10 +1631,11 @@ composed by the client through `GET /live/communities/:id/sessions/current`.
 `not_connected` — the person is not in the room, and the next `/join` carries
 it; `pending` — LiveKit was unreachable, and the sweep converges it (Q5).
 
-Not added: a moderator media-room reset (P12), a moderator "remove
-participant" route (Q64), any LiveKit webhook route, any load-test or debug
-route. The public route list is unchanged; `authorization.spec.ts`'s
-controller list is updated in P1 and P6.
+Added in P12 (Q64, ADR 0026): a moderator media-room reset
+(`POST /live/sessions/:sessionId/reset`) and a moderator "remove participant" /
+kick route (`POST /live/sessions/:sessionId/participants/:userId/remove`, optional
+`?reason`). Not added: any LiveKit webhook route, any load-test or debug route.
+`authorization.spec.ts`'s controller list is updated as routes land (P1, P6, P12).
 
 ### 15.2 Refusal codes
 
@@ -1670,7 +1671,7 @@ Application views, never domain objects (the intent of
 
 - **`LiveSessionView`** `{id, communityId, state, stateVersion, hostUserId,
   startedAt, endedAt, endReason, participantCap, speakerCount,
-  presenterUserId, me: {role, isHost, canJoin, canRaiseHand, canModerate,
+  presenterUserIds, me: {role, isHost, canJoin, canRaiseHand, canModerate,
   canEnd, canPresent, presenting, hand: {requestId, state} | null},
   moderation: {pendingHands, violations, lastViolationAt} | null}`. The `me`
   flags are computed on the server (the `Conversation.canPost` precedent) and
@@ -1920,7 +1921,7 @@ Nothing is stored on join, audited or published: a join is transport noise.
   │                     │ 4 updateCapabilities(room, T, {audio: by right, screen: true, screenAudio: false, data: false, hidden: false})
   │                     │─────────────────────────────────────────────────────────────────────────────────▶│                        │
   │                     │ 5 audit + publish live.screen_share.started → live.session.changed (moderators)  │                        │
-  │ 6 201 LiveSessionView {presenterUserId: T, me.presenting}                     │                       │                        │
+  │ 6 201 LiveSessionView {presenterUserIds: [T], me.presenting}                     │                       │                        │
   │◀────────────────────│                              │                          │                       │                        │
   │ 7 LiveMediaClient.setScreenShareEnabled(true): SCREEN_SHARE track published    │                       │                        │
   │═══════════════════════════════════════════════════════════════════════════════════════════════════════▶│ 8 subscribers receive  │
@@ -2106,7 +2107,7 @@ is PROVISIONAL.
 | [Q61](open-questions.md#q61--ending-abandoned-live-sessions) | abandoned sessions | `idle` after 900 s observed empty |
 | [Q62](open-questions.md#q62--floor-rules-beyond-first-come-first-served) | invitations to speak, yield, timeouts | hand only; yield allowed; no timeouts |
 | [Q63](open-questions.md#q63--losing-standing-during-a-running-session) | losing standing mid-session | event path, ≤ 60 s by the sweep; a media reset at a second violation (§11.4) |
-| [Q64](open-questions.md#q64--removing-a-participant-from-a-session) | kick, re-entry, media reset | seams only; the automatic reset at a second violation is Q63's (§11.4); a moderator's reset or kick waits (P12) |
+| [Q64](open-questions.md#q64--removing-a-participant-from-a-session) | kick, re-entry, media reset | **built (P12, ADR 0026):** a moderator kick (disconnect + re-entry, no ban) and a moderator media reset; the automatic reset at a second violation is Q63's (§11.4) |
 | [Q65](open-questions.md#q65--media-hosting-and-operations) | hosting, TURN, load-test safety | self-hosted, `auto_create=false`; TURN before the first class |
 | [Q66](open-questions.md#q66--realtime-without-messagingread) | frames without `messaging.read` | the gate stays; a coupling test |
 | [Q67](open-questions.md#q67--notifications-for-community-live-and-attendance-facts) | notifying session starts, grants | none; events published for later |
@@ -2116,11 +2117,12 @@ is PROVISIONAL.
 
 ## 24. Deferred
 
-- **P12, policy-gated:** a media-room reset that a moderator chooses (the
+- **P12 — built (ADR 0026–0028):** a moderator-initiated media-room reset (the
   same mechanism as the reconciler's automatic reset in P6, §11.4, behind a
-  route); a moderator kick and re-entry rules (Q64);
-  delegated or audio screen share (Q56); hidden listeners (Q59); webhook
-  accelerators with a signature check.
+  route) and a moderator kick with re-entry (Q64); delegated student screen
+  share, up to two presenters (Q56). **Decided, not built by design:** hidden
+  listeners — there are none; `hidden` is enforced false (Q59, ADR 0027). **Still
+  deferred:** screen *audio* share (Q56); webhook accelerators with a signature check.
 - **Not in this design:** recording, transcription and breakout rooms
   (realtime.md `:610`); scheduled sessions (Q12); a large-event broadcast (Q58);
   notifications for live facts (Q67); a waitlist or overflow (Q57).

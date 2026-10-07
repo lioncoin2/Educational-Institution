@@ -903,7 +903,7 @@ Owned by Communities, closed, in `communities/contracts/capabilities.ts`:
 | `community.live.remain` | derived (P6): the ceiling and basis of `community.live.join`, gated by `runningLiveContinues` | — | Live (reconciler, through `permittedAmong`) |
 | `community.live.raise_hand` | participation | — | Live |
 | `community.attendance.record`, `community.attendance.view` | capability; **active since 2026-10-05** (the P9 Attendance prerequisite — CHECK migration `0014_community_attendance_acts`) | `group.attendance.*` | Attendance ([attendance.md](attendance.md)) |
-| `community.messages.moderate` | **reserved** until Q51/Q23 | `group.messages.moderate` | — |
+| `community.messages.moderate` | capability; **active since 2026-10-07** (Q51/Q23, P12 — CHECK migration `0017_community_messages_moderate`; ceiling `communities.moderate`, never `messaging.manage`; gate `always`) | `group.messages.moderate` | Messaging ([messaging.md](messaging.md), [community-chat.md §21](community-chat.md)) |
 
 Participation acts are satisfied only by ACTIVE membership, never by a grant.
 Screen share and the speaker grant are per-session Live state and are never
@@ -1518,9 +1518,11 @@ export const COMMUNITY_RESOURCE = 'communities.community';
 
 export const COMMUNITY_CAPABILITIES = ['community.members.view', 'community.members.invite',
   'community.members.remove', 'community.lock', 'community.chat.post',
-  'community.live.start', 'community.live.moderate'] as const;
-// Reserved and added in P9 with a CHECK migration: 'community.attendance.record', 'community.attendance.view'.
-// Reserved until Q51/Q23: 'community.messages.moderate'.
+  'community.messages.moderate', 'community.live.start', 'community.live.moderate',
+  'community.attendance.record', 'community.attendance.view'] as const;
+// All active. Added with CHECK migrations after this snippet was first written:
+// 'community.attendance.record'/'community.attendance.view' (P9, 2026-10-05, migration 0014);
+// 'community.messages.moderate' (Q51/Q23, P12, 2026-10-07, migration 0017).
 export type CommunityCapability = (typeof COMMUNITY_CAPABILITIES)[number];
 
 export const COMMUNITY_PARTICIPATION = ['community.view', 'community.chat.read',
@@ -2441,8 +2443,9 @@ Every PROVISIONAL default above is one of these. Full text in
 - **Sub-delegation, time-boxed grants, approval before joining, link
   previews**: each a policy answer first (Q44, Q45, Q48).
 - **Halaqa link and SYNC membership** (Q50), after Q36 and the reconciliation.
-- **`community.messages.moderate`** (Q51/Q23): one constant, one act-rules row,
-  one CHECK change.
+- **`community.messages.moderate`** (Q51/Q23): **landed in P12 (2026-10-07, [ADR 0029](decisions/0029-community-message-moderation.md))**
+  — the one constant, one act-rules row and one CHECK change (migration `0017`), exactly as scoped;
+  Messaging consumes it via `COMMUNITY_AUTHORIZATION` for community-chat message moderation.
 - **A member limit** (Q20): a nullable column in the same conditional `UPDATE`.
 - **The outbox and a Redis rate limiter** (P11), on ADR 0021's triggers.
 - **What the app still does not do.** P5 deferred the app's management acts

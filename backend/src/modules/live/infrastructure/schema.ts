@@ -43,9 +43,10 @@ import { SPEAKER_REQUEST_STATES, type SpeakerRequestState } from '../domain/spea
  *   live_speaker_requests_decided_at_consistent decided exactly when no longer pending
  *   live_speaker_requests_decided_by_consistent a person decides, except pending and expired (R3)
  *   live_speaker_requests_granted_at_set        a granted request says since when
- *   live_presenter_grants_one_open_per_session  at most one open presenter grant (P1) — a
- *                                               backstop: a claim reads the slot under the
- *                                               session's lock first
+ *   live_presenter_grants_one_open_per_user     at most one open presenter grant per person (Q56) —
+ *                                               a backstop: the ≤ MAX_CONCURRENT_PRESENTERS (2) cap is
+ *                                               counted under the session's lock, which this index
+ *                                               cannot express
  *   live_presenter_grants_end_consistent        closed exactly when it says why
  *   live_presenter_grants_ended_by_needs_end    nobody has closed an open grant
  *   live_moderation_actions_reason_code_shape   a reason is a code, never free text

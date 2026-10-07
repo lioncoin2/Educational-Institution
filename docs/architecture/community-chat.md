@@ -247,7 +247,7 @@ the type.
 | Audit by messaging | creation, and each participant change | none. Communities audits each membership act once |
 | Creator | a person | the label `system:messaging-community-chat` in `created_by`. It authorizes nothing and never reaches the wire |
 | System notices ("X joined", "a live session started") | none: the `system` message kind was dropped (`0011-messaging-v1.md:54-57`) | none. The chat is written by people only (PROVISIONAL, [Q53](open-questions.md#q53--system-notices-in-a-community-chat)) |
-| Message moderation | removal by `messaging.manage` exists; deletion is Q23 | not in v1. `community.messages.moderate` is reserved until Q51 and [Q23](open-questions.md#q23--moderation-deletion-and-review) |
+| Message moderation | removal by `messaging.manage` exists; message deletion/review is Q51/Q23 | **built in P12 (§21, [ADR 0029](decisions/0029-community-message-moderation.md)):** a `community.messages.moderate` holder soft-deletes a message (tombstone), reviewable for exactly 7 days then purged; reading stays `community.chat.read` / membership |
 
 Conversations whose `community_id` is NULL behave exactly as today.
 
@@ -1190,7 +1190,7 @@ act rule when a question is answered.
 | Question | What it decides here | Provisional default |
 | --- | --- | --- |
 | [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules) | Whether P2, and so P4, may start | The §13 gate applies; P2, and so P4, waits for the §13 step (Q35/Q36 and ADR 0015) or the user's ruling on Q40 |
-| [Q51](open-questions.md#q51--the-community-chat-who-may-post) | One chat per community; who posts | At most one chat, stored as `CHANNEL`; `chat.post` = the owner or a grant, refused while LOCKED; no message moderation in v1 |
+| [Q51](open-questions.md#q51--the-community-chat-who-may-post) | One chat per community; who posts; who moderates | At most one chat, stored as `CHANNEL`; `chat.post` = the owner or a grant, refused while LOCKED. Message moderation **built in P12** (§21, ADR 0029) — `community.messages.moderate` |
 | [Q52](open-questions.md#q52--community-chat-history-for-newcomers-and-returners) | History for joiners and returners | `COMMUNITY_HISTORY = 'FULL'`; a rejoin starts a new window and watermark |
 | [Q53](open-questions.md#q53--system-notices-in-a-community-chat) | System notices in the chat | None; the chat is written by people only |
 | [Q46](open-questions.md#q46--what-does-locked-mean-and-who-may-lock) | What LOCKED does to the chat | Reading continues; posting stops |
@@ -1202,7 +1202,7 @@ act rule when a question is answered.
 | [Q20](open-questions.md#q20--messaging-limits), [Q26](open-questions.md#q26--realtime-limits) (existing) | Community size; operational bounds | No member limit; messaging's caps do not apply; posting closed above `communityChatMaxServedMembers` (250) until G1–G4 hold (§11.2); engineering bounds from profile 4 |
 | [Q22](open-questions.md#q22--who-may-see-who-is-in-a-conversation) (existing) | Who sees the roster | Messaging never lists it (`members_hidden`) |
 | [Q27](open-questions.md#q27--how-long-are-notifications-kept), [Q28](open-questions.md#q28--what-deserves-a-notification-and-how-loudly) (existing) | Notification cost per post | Today's behaviour; gate G4 |
-| [Q3](open-questions.md#q3--what-is-the-retention-policy-for-files-messages-audit-entries-and-session-history), [Q23](open-questions.md#q23--moderation-deletion-and-review) (existing) | Retention; moderation of messages | Nothing deleted; `community.messages.moderate` reserved |
+| [Q3](open-questions.md#q3--what-is-the-retention-policy-for-files-messages-audit-entries-and-session-history), [Q23](open-questions.md#q23--moderation-deletion-and-review) (existing) | Retention; moderation of messages | Message moderation + a 7-day review/retention window **built in P12** (§21, ADR 0029); general file/message retention (Q3) still open |
 
 ---
 
@@ -1216,8 +1216,8 @@ Deliberately later:
   head once instead of once per page. Since
   [ADR 0022](decisions/0022-community-chat-delivery-check.md), every page is
   checked whatever the lag, so this would save only the head read.
-- **`community.messages.moderate`** (P12, after Q51 and Q23). Messaging will
-  ask one more permit; no new projection is needed.
+- **`community.messages.moderate`** — **landed in P12 (§21, [ADR 0029](decisions/0029-community-message-moderation.md))**:
+  messaging asks the one permit (`CommunityChats.mayModerate`), and no new projection was needed — as planned.
 - **Sequence allocation without the row lock**, if Q51 lets many people post.
 - **The broker and the outbox** (P11), only when their triggers hold (ADR 0021).
 
