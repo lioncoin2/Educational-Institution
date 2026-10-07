@@ -174,4 +174,184 @@ void main() {
       expect(ServerFrame.parse(text), isNull, reason: text);
     }
   });
+
+  group('live frames', () {
+    // The five live frames exactly as the backend builds them
+    // (backend/test/fixtures/realtime-frames/live/). Each builder returns a
+    // fresh map, so a test may mutate its own copy.
+    Map<String, Object?> started() => {
+      'type': 'live.session.started',
+      'version': 1,
+      'eventId': 'live.session.started:session-1',
+      'occurredAt': '2026-09-24T10:00:00.000Z',
+      'communityId': 'community-1',
+      'sessionId': 'session-1',
+    };
+    Map<String, Object?> ended(String reason) => {
+      'type': 'live.session.ended',
+      'version': 1,
+      'eventId': 'live.session.ended:session-1',
+      'occurredAt': '2026-09-24T10:00:00.000Z',
+      'communityId': 'community-1',
+      'sessionId': 'session-1',
+      'reason': reason,
+    };
+    Map<String, Object?> changed({Object? stateVersion = 7}) => {
+      'type': 'live.session.changed',
+      'version': 1,
+      'eventId': 'live.session.changed:session-1:7',
+      'occurredAt': '2026-09-24T10:00:00.000Z',
+      'communityId': 'community-1',
+      'sessionId': 'session-1',
+      'stateVersion': stateVersion,
+    };
+    Map<String, Object?> removed() => {
+      'type': 'live.participant.removed',
+      'version': 1,
+      'eventId': 'live.participant.removed:session-1:1790244000000',
+      'occurredAt': '2026-09-24T10:00:00.000Z',
+      'communityId': 'community-1',
+      'sessionId': 'session-1',
+    };
+    Map<String, Object?> mediaReset() => {
+      'type': 'live.session.media_reset',
+      'version': 1,
+      'eventId': 'live.session.media_reset:session-1:3',
+      'occurredAt': '2026-09-24T10:00:00.000Z',
+      'communityId': 'community-1',
+      'sessionId': 'session-1',
+    };
+
+    test('reads each of the five live frames with its session identity', () {
+      expect(
+        parse(started()),
+        isA<LiveSessionStartedEvent>()
+            .having(
+              (e) => e.eventId,
+              'eventId',
+              'live.session.started:session-1',
+            )
+            .having((e) => e.communityId, 'communityId', 'community-1')
+            .having((e) => e.sessionId, 'sessionId', 'session-1'),
+      );
+      expect(
+        parse(ended('moderator')),
+        isA<LiveSessionEndedEvent>()
+            .having((e) => e.reason, 'reason', LiveSessionEndReason.moderator)
+            .having((e) => e.sessionId, 'sessionId', 'session-1'),
+      );
+      expect(
+        parse(changed()),
+        isA<LiveSessionChangedEvent>()
+            .having((e) => e.stateVersion, 'stateVersion', 7)
+            .having((e) => e.sessionId, 'sessionId', 'session-1'),
+      );
+      expect(
+        parse(removed()),
+        isA<LiveParticipantRemovedEvent>()
+            .having((e) => e.communityId, 'communityId', 'community-1')
+            .having((e) => e.sessionId, 'sessionId', 'session-1'),
+      );
+      expect(
+        parse(mediaReset()),
+        isA<LiveSessionMediaResetEvent>().having(
+          (e) => e.sessionId,
+          'sessionId',
+          'session-1',
+        ),
+      );
+    });
+
+    test('every live frame is a LiveEvent carrying eventId and occurredAt', () {
+      for (final json in [
+        started(),
+        ended('idle'),
+        changed(),
+        removed(),
+        mediaReset(),
+      ]) {
+        final event = parse(json);
+        expect(event, isA<LiveEvent>(), reason: json['type']! as String);
+        final live = event! as LiveEvent;
+        expect(live.eventId, isNotEmpty);
+        expect(live.occurredAt, DateTime.parse('2026-09-24T10:00:00.000Z'));
+      }
+    });
+
+    test('maps each end reason, and anything else to unknown', () {
+      LiveSessionEndReason reasonOf(String wire) =>
+          (parse(ended(wire))! as LiveSessionEndedEvent).reason;
+      expect(reasonOf('moderator'), LiveSessionEndReason.moderator);
+      expect(reasonOf('idle'), LiveSessionEndReason.idle);
+      expect(
+        reasonOf('community_closed'),
+        LiveSessionEndReason.communityClosed,
+      );
+      expect(
+        reasonOf('a_reason_a_newer_server_adds'),
+        LiveSessionEndReason.unknown,
+      );
+    });
+
+    test('participant.removed fabricates no participant id — session identity only', () {
+      // The server sends this frame to the removed person alone, so the wire
+      // carries no user id and the event exposes none. A stray id on the
+      // wire is ignored, never surfaced.
+      final event = parse(removed())! as LiveParticipantRemovedEvent;
+      expect(event.communityId, 'community-1');
+      expect(event.sessionId, 'session-1');
+      expect(
+        parse(removed()..['userId'] = 'u-1'),
+        isA<LiveParticipantRemovedEvent>(),
+      );
+    });
+
+    test('parses stateVersion exactly and never filters by it', () {
+      // The parser carries the version; it does not compare or drop. A low
+      // version parses identically to a high one — reconciliation is a later
+      // slice's concern, not the parser's.
+      int versionOf(Object? v) =>
+          (parse(changed(stateVersion: v))! as LiveSessionChangedEvent)
+              .stateVersion;
+      expect(versionOf(7), 7);
+      expect(versionOf(1), 1);
+      expect(versionOf(999), 999);
+    });
+
+    test('drops malformed, wrong-version, missing, wrong-type, unknown', () {
+      for (final text in [
+        jsonEncode(started()..['version'] = 2), // wrong protocol version
+        jsonEncode(started()..remove('sessionId')), // missing required field
+        jsonEncode(started()..remove('eventId')), // missing eventId
+        jsonEncode(changed(stateVersion: 'seven')), // wrong field type
+        jsonEncode(ended('moderator')..remove('reason')), // missing reason
+        jsonEncode(started()..['occurredAt'] = 'not-a-date'), // bad instant
+        jsonEncode(started()..['type'] = 'live.session.paused'), // unknown type
+      ]) {
+        expect(ServerFrame.parse(text), isNull, reason: text);
+      }
+    });
+  });
+
+  test('still parses the existing non-live frames unchanged (regression)', () {
+    expect(
+      parse(messageSentJson(clientMessageId: 'k')),
+      isA<MessageSentEvent>(),
+    );
+    expect(
+      parse({
+        'type': 'community.locked',
+        'version': 1,
+        'eventId': 'community.locked:community-1:2',
+        'occurredAt': '2026-09-24T10:00:00.000Z',
+        'communityId': 'community-1',
+        'lifecycleVersion': 2,
+      }),
+      isA<CommunityLockedEvent>().having(
+        (e) => e.lifecycleVersion,
+        'lifecycleVersion',
+        2,
+      ),
+    );
+  });
 }

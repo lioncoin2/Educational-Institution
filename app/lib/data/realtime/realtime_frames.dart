@@ -76,6 +76,15 @@ sealed class ServerFrame {
         'community.access.changed' => CommunityAccessChangedEvent._fromJson(
           json,
         ),
+        'live.session.started' => LiveSessionStartedEvent._fromJson(json),
+        'live.session.ended' => LiveSessionEndedEvent._fromJson(json),
+        'live.session.changed' => LiveSessionChangedEvent._fromJson(json),
+        'live.participant.removed' => LiveParticipantRemovedEvent._fromJson(
+          json,
+        ),
+        'live.session.media_reset' => LiveSessionMediaResetEvent._fromJson(
+          json,
+        ),
         _ => null,
       };
     } on FormatException {
@@ -528,5 +537,145 @@ final class CommunityAccessChangedEvent extends CommunityEvent {
         eventId: json['eventId']! as String,
         occurredAt: DateTime.parse(json['occurredAt']! as String),
         communityId: json['communityId']! as String,
+      );
+}
+
+/// Something that happened in one community's live session. Like a community
+/// frame, a live frame is a HINT the server addresses to the audience that
+/// should hear it (no subscription asks for it): it carries ids, a version
+/// and — where the fact needs one — a reason or a state version, and grants
+/// nothing. What the session is now is read again over HTTP; this layer only
+/// turns the wire into a typed fact. Reconciling against a session read, and
+/// any media, belong to later slices, never here
+/// (backend/test/fixtures/realtime-frames/live/ holds their exact shape).
+sealed class LiveEvent extends RealtimeEvent {
+  const LiveEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required this.communityId,
+    required this.sessionId,
+  });
+
+  final String communityId;
+  final String sessionId;
+}
+
+/// A live session started in the community — there is a session to look at.
+final class LiveSessionStartedEvent extends LiveEvent {
+  const LiveSessionStartedEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.communityId,
+    required super.sessionId,
+  });
+
+  factory LiveSessionStartedEvent._fromJson(Map<String, Object?> json) =>
+      LiveSessionStartedEvent(
+        eventId: json['eventId']! as String,
+        occurredAt: DateTime.parse(json['occurredAt']! as String),
+        communityId: json['communityId']! as String,
+        sessionId: json['sessionId']! as String,
+      );
+}
+
+/// Why a live session ended. A reason a newer server adds is [unknown] — the
+/// session is over regardless.
+enum LiveSessionEndReason {
+  moderator('moderator'),
+  idle('idle'),
+  communityClosed('community_closed'),
+  unknown('unknown');
+
+  const LiveSessionEndReason(this.wire);
+
+  final String wire;
+
+  static LiveSessionEndReason fromWire(String value) =>
+      values.firstWhere((r) => r.wire == value, orElse: () => unknown);
+}
+
+/// That live session is over — terminal for its id.
+final class LiveSessionEndedEvent extends LiveEvent {
+  const LiveSessionEndedEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.communityId,
+    required super.sessionId,
+    required this.reason,
+  });
+
+  factory LiveSessionEndedEvent._fromJson(Map<String, Object?> json) =>
+      LiveSessionEndedEvent(
+        eventId: json['eventId']! as String,
+        occurredAt: DateTime.parse(json['occurredAt']! as String),
+        communityId: json['communityId']! as String,
+        sessionId: json['sessionId']! as String,
+        reason: LiveSessionEndReason.fromWire(json['reason']! as String),
+      );
+
+  final LiveSessionEndReason reason;
+}
+
+/// The session changed as of [stateVersion] — a hand, the floor or the screen.
+/// The version is parsed and carried so a later slice can compare it with the
+/// session read's; this layer does NOT compare versions or drop stale state.
+final class LiveSessionChangedEvent extends LiveEvent {
+  const LiveSessionChangedEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.communityId,
+    required super.sessionId,
+    required this.stateVersion,
+  });
+
+  factory LiveSessionChangedEvent._fromJson(Map<String, Object?> json) =>
+      LiveSessionChangedEvent(
+        eventId: json['eventId']! as String,
+        occurredAt: DateTime.parse(json['occurredAt']! as String),
+        communityId: json['communityId']! as String,
+        sessionId: json['sessionId']! as String,
+        stateVersion: json['stateVersion']! as int,
+      );
+
+  final int stateVersion;
+}
+
+/// A moderator removed the viewer from the session's media room. The server
+/// sends this to the removed person alone, so it names no participant — the
+/// participant is the viewer. Not a ban; they may re-join over HTTP.
+final class LiveParticipantRemovedEvent extends LiveEvent {
+  const LiveParticipantRemovedEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.communityId,
+    required super.sessionId,
+  });
+
+  factory LiveParticipantRemovedEvent._fromJson(Map<String, Object?> json) =>
+      LiveParticipantRemovedEvent(
+        eventId: json['eventId']! as String,
+        occurredAt: DateTime.parse(json['occurredAt']! as String),
+        communityId: json['communityId']! as String,
+        sessionId: json['sessionId']! as String,
+      );
+}
+
+/// The session's media room reset — the current participants re-join. The
+/// room epoch is a naming detail and is not on the wire. This slice parses the
+/// fact only; re-joining is media (a later phase), never here.
+final class LiveSessionMediaResetEvent extends LiveEvent {
+  const LiveSessionMediaResetEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.communityId,
+    required super.sessionId,
+  });
+
+  factory LiveSessionMediaResetEvent._fromJson(Map<String, Object?> json) =>
+      LiveSessionMediaResetEvent(
+        eventId: json['eventId']! as String,
+        occurredAt: DateTime.parse(json['occurredAt']! as String),
+        communityId: json['communityId']! as String,
+        sessionId: json['sessionId']! as String,
       );
 }
