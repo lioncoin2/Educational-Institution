@@ -1,6 +1,7 @@
 import '../../api/api_client.dart';
 import '../../models/data_origin.dart';
 import '../../models/live.dart';
+import '../../models/live_media.dart';
 import '../repositories.dart';
 
 /// [LiveRepository] against the real backend (`/live`).
@@ -127,6 +128,16 @@ class HttpLiveRepository implements LiveRepository {
         );
         return LiveSession.fromJson(json, origin: DataOrigin.records);
       });
+
+  // ── Media ──────────────────────────────────────────────────────────────
+
+  @override
+  Future<LiveMediaGrant> join(String sessionId) => _call(() async {
+    final json = await _api.post(
+      '/live/sessions/${Uri.encodeComponent(sessionId)}/join',
+    );
+    return LiveMediaGrant.fromJson(json);
+  });
 
   static const _unreadable = LiveException(
     'live.unreadable',

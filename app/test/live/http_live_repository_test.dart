@@ -809,4 +809,97 @@ void main() {
       );
     });
   });
+
+  group('HttpLiveRepository.join (media credential)', () {
+    Map<String, Object?> ticket() => {
+      'sessionId': 's-1',
+      'token': 'eyJ.header.signature',
+      'url': 'wss://live.example.org',
+      'expiresInSeconds': 120,
+      'expiresAt': '2026-01-01T00:02:00.000Z',
+      'role': 'speaker',
+      'media': {'microphone': true, 'screen': false, 'screenAudio': false},
+    };
+
+    test('POSTs …/join, encodes the id, sends the bearer, no body, parses the grant', () async {
+      final (client, seen) = recording(200, ticket());
+      final repo = HttpLiveRepository(await api(client));
+
+      final grant = await repo.join('s/1');
+      expect(grant.sessionId, 's-1');
+      expect(grant.token, 'eyJ.header.signature');
+      expect(grant.url, 'wss://live.example.org');
+      expect(grant.role, LiveParticipantRole.speaker);
+      expect(grant.microphone, isTrue);
+      expect(seen.single.method, 'POST');
+      expect(seen.single.url.path, '/live/sessions/s%2F1/join');
+      expect(seen.single.headers['authorization'], 'Bearer a1');
+      expect(seen.single.contentLength ?? 0, 0); // no request body
+    });
+
+    test(
+      'an unreadable ticket (no token) is live.unreadable, not a raw throw',
+      () async {
+        final bad = ticket()..remove('token');
+        final repo = HttpLiveRepository(await api(serving(200, bad)));
+        await expectLater(
+          repo.join('s-1'),
+          throwsA(
+            isA<LiveException>().having(
+              (e) => e.code,
+              'code',
+              'live.unreadable',
+            ),
+          ),
+        );
+      },
+    );
+
+    // /join shares the one _call mapping, so the refusal ladder is uniform.
+    test(
+      'maps the refusal ladder (401/403/404/412/429/503) to LiveException',
+      () async {
+        Future<void> expectCode(int status, String code) async {
+          final repo = HttpLiveRepository(
+            await api(
+              serving(status, {
+                'error': {'code': code, 'message': 'x'},
+              }),
+            ),
+          );
+          await expectLater(
+            repo.join('s-1'),
+            throwsA(isA<LiveException>().having((e) => e.code, 'code', code)),
+          );
+        }
+
+        await expectCode(401, 'identity.authentication_required');
+        await expectCode(403, 'live.not_a_moderator');
+        await expectCode(404, 'live.session_not_found');
+        await expectCode(412, 'live.session_not_live');
+        await expectCode(429, 'live.too_many_joins');
+        await expectCode(503, 'live.media_unavailable');
+      },
+    );
+
+    test('503 live.media_unavailable surfaces as isUnavailable', () async {
+      final repo = HttpLiveRepository(
+        await api(
+          serving(503, {
+            'error': {'code': 'live.media_unavailable', 'message': 'down'},
+          }),
+        ),
+      );
+      await expectLater(
+        repo.join('s-1'),
+        throwsA(
+          isA<LiveException>().having(
+            (e) => e.code,
+            'code',
+            'live.media_unavailable',
+          ),
+        ),
+      );
+    });
+  });
 }

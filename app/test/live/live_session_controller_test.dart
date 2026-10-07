@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quran_institution_app/data/models/data_origin.dart';
 import 'package:quran_institution_app/data/models/live.dart';
+import 'package:quran_institution_app/data/models/live_media.dart';
 import 'package:quran_institution_app/data/realtime/realtime_client.dart';
 import 'package:quran_institution_app/data/realtime/realtime_frames.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_live_repository.dart';
@@ -79,6 +80,9 @@ class _FakeLive implements LiveRepository {
   @override
   Future<LiveSession> revokePresenter(String sessionId, String userId) =>
       throw UnimplementedError();
+
+  @override
+  Future<LiveMediaGrant> join(String sessionId) => throw UnimplementedError();
 }
 
 LiveSession _session({

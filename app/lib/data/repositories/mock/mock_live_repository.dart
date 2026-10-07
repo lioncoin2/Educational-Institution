@@ -1,6 +1,7 @@
 import '../../../app/app_config.dart';
 import '../../models/data_origin.dart';
 import '../../models/live.dart';
+import '../../models/live_media.dart';
 import '../repositories.dart';
 
 /// In-memory stand-in for `/live`, for the demo build and widget tests.
@@ -164,6 +165,28 @@ class MockLiveRepository implements LiveRepository {
   @override
   Future<LiveSession> revokePresenter(String sessionId, String userId) =>
       _presenting(sessionId, const []);
+
+  // ── Media ──────────────────────────────────────────────────────────────
+
+  @override
+  Future<LiveMediaGrant> join(String sessionId) async {
+    await Future<void>.delayed(latency);
+    final now = clock();
+    // A deterministic, deliberately UNUSABLE credential: never JWT-shaped, a
+    // `.invalid` host — nothing a real media client would accept. The demo
+    // never carries live audio (media is Unavailable in every build).
+    return LiveMediaGrant(
+      sessionId: sessionId,
+      token: 'mock-join-not-a-real-token',
+      url: 'wss://live.mock.invalid',
+      expiresInSeconds: 120,
+      expiresAt: now.add(const Duration(seconds: 120)),
+      role: LiveParticipantRole.listener,
+      microphone: false,
+      screen: false,
+      screenAudio: false,
+    );
+  }
 
   /// A running demo session with the given presenters — the shape a presenter
   /// command answers with.

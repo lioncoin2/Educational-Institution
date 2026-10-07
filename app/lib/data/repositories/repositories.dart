@@ -8,6 +8,7 @@ import '../models/feed.dart';
 import '../models/institution.dart';
 import '../models/learning.dart';
 import '../models/live.dart';
+import '../models/live_media.dart';
 import '../models/messaging.dart';
 import '../models/notifications.dart';
 import '../models/progress.dart';
@@ -363,6 +364,18 @@ abstract interface class LiveRepository {
   /// A moderator revokes [userId]'s screen-share grant (Q56, `DELETE
   /// …/screen-share/:userId`); nothing open for them succeeds too.
   Future<LiveSession> revokePresenter(String sessionId, String userId);
+
+  // ── Media ──────────────────────────────────────────────────────────────
+
+  /// Asks the server for a media credential to join the session's room (`POST
+  /// …/join`) — the only call that returns a token. The server decides the
+  /// identity and what may be published and encodes them; this is transport,
+  /// safe to call again (it is the way back in after a disconnect). A refusal
+  /// — 403 forbidden, 404 gone, 412 not live, 429 too many joins, 503 media
+  /// unavailable — throws [LiveException] with the server's code. The returned
+  /// [LiveMediaGrant] is ephemeral and carries the credential; only the media
+  /// client ever consumes it.
+  Future<LiveMediaGrant> join(String sessionId);
 }
 
 /// Attendance — recording a live session's attendance snapshot

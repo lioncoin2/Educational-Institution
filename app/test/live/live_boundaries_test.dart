@@ -199,4 +199,28 @@ void main() {
       expect(binding.contains('UnavailableLiveMediaClient'), isTrue);
     },
   );
+
+  test(
+    'keeps the media vocabulary plain Dart — no transport, no media SDK',
+    () {
+      // LiveMediaGrant/State/DisconnectReason: data the seam works in. Plain
+      // Dart, provider-neutral — the credential never arrives over a transport
+      // these types know, and no SDK type crosses into them.
+      final model = imports['lib/data/models/live_media.dart']!;
+      expect(
+        model.where(
+          (uri) =>
+              uri.startsWith('package:http') ||
+              uri.startsWith('package:web_socket') ||
+              uri == 'dart:io' ||
+              uri == 'dart:html' ||
+              uri.endsWith('api_client.dart') ||
+              uri.endsWith('websocket_realtime_client.dart') ||
+              uri.contains('/repositories/') ||
+              media.hasMatch(uri),
+        ),
+        isEmpty,
+      );
+    },
+  );
 }

@@ -9,6 +9,7 @@ import 'package:quran_institution_app/data/models/attendance.dart';
 import 'package:quran_institution_app/data/models/communities.dart';
 import 'package:quran_institution_app/data/models/data_origin.dart';
 import 'package:quran_institution_app/data/models/live.dart';
+import 'package:quran_institution_app/data/models/live_media.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_community_repository.dart';
 import 'package:quran_institution_app/data/repositories/repositories.dart';
 import 'package:quran_institution_app/features/attendance/attendance_copy.dart';
@@ -67,6 +68,9 @@ class _FakeLive implements LiveRepository {
   @override
   Future<LiveSession> revokePresenter(String sessionId, String userId) =>
       throw UnimplementedError();
+
+  @override
+  Future<LiveMediaGrant> join(String sessionId) => throw UnimplementedError();
 }
 
 /// A community that answers any id with a fixed `me`, so the screen's capability

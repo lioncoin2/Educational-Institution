@@ -7,6 +7,7 @@ import 'package:quran_institution_app/core/widgets/foundations/mock_ribbon.dart'
 import 'package:quran_institution_app/data/media/live_media_seams.dart';
 import 'package:quran_institution_app/data/models/data_origin.dart';
 import 'package:quran_institution_app/data/models/live.dart';
+import 'package:quran_institution_app/data/models/live_media.dart';
 import 'package:quran_institution_app/data/repositories/repositories.dart';
 import 'package:quran_institution_app/features/live/live_copy.dart';
 import 'package:quran_institution_app/features/live/live_session_screen.dart';
@@ -80,6 +81,9 @@ class _FakeLive implements LiveRepository {
     String? cursor,
     int? limit,
   }) => throw UnimplementedError();
+
+  @override
+  Future<LiveMediaGrant> join(String sessionId) => throw UnimplementedError();
 }
 
 LiveSession _session({

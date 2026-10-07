@@ -126,5 +126,20 @@ void main() {
         );
       },
     );
+
+    test(
+      'join answers a deterministic, deliberately unusable credential',
+      () async {
+        final grant = await repo().join('sess-42');
+        expect(grant.sessionId, 'sess-42');
+        expect(grant.role, LiveParticipantRole.listener);
+        // Never a usable/production-looking credential.
+        expect(grant.token, isNot(contains('.'))); // not JWT-shaped (a.b.c)
+        expect(grant.url, contains('.invalid'));
+        // And the credential never leaks through toString.
+        expect(grant.toString(), isNot(contains(grant.token)));
+        expect(grant.toString(), contains('<redacted>'));
+      },
+    );
   });
 }

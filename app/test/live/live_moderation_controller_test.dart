@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quran_institution_app/data/models/data_origin.dart';
 import 'package:quran_institution_app/data/models/live.dart';
+import 'package:quran_institution_app/data/models/live_media.dart';
 import 'package:quran_institution_app/data/repositories/repositories.dart';
 import 'package:quran_institution_app/features/live/state/live_moderation_controller.dart';
 import 'package:quran_institution_app/providers/app_providers.dart';
@@ -98,6 +99,9 @@ class _RecordingLive implements LiveRepository {
     String? cursor,
     int? limit,
   }) => throw UnimplementedError();
+
+  @override
+  Future<LiveMediaGrant> join(String sessionId) => throw UnimplementedError();
 }
 
 void main() {
