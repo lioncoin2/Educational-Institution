@@ -39,4 +39,70 @@ class MockLiveRepository implements LiveRepository {
       origin: DataOrigin.mock,
     );
   }
+
+  @override
+  Future<LiveSession> getSession(String sessionId) async {
+    await Future<void>.delayed(latency);
+    return LiveSession(
+      id: sessionId,
+      communityId: 'mock-community-live',
+      state: LiveSessionState.live,
+      hostUserId: 'mock-teacher',
+      startedAt: clock().subtract(const Duration(minutes: 12)),
+      speakerCount: 1,
+      me: const LiveMe(role: LiveParticipantRole.listener),
+      origin: DataOrigin.mock,
+    );
+  }
+
+  @override
+  Future<LiveHandsPage> hands(
+    String sessionId, {
+    LiveHandsFilter? state,
+    String? cursor,
+    int? limit,
+  }) async {
+    await Future<void>.delayed(latency);
+    // One page, then nothing: a deterministic, finite demo queue.
+    if (cursor != null) {
+      return const LiveHandsPage(
+        items: [],
+        nextCursor: null,
+        origin: DataOrigin.mock,
+      );
+    }
+    if (state == LiveHandsFilter.granted) {
+      return LiveHandsPage(
+        items: [
+          LiveHand(
+            id: 'mock-hand-granted',
+            sessionId: sessionId,
+            userId: 'mock-student-a',
+            state: SpeakerRequestState.granted,
+            requestedAt: clock().subtract(const Duration(minutes: 5)),
+            grantedAt: clock().subtract(const Duration(minutes: 4)),
+            decidedAt: clock().subtract(const Duration(minutes: 4)),
+            displayName: 'طالب (تجريبي)',
+            media: LiveObservedMedia.connected,
+          ),
+        ],
+        nextCursor: null,
+        origin: DataOrigin.mock,
+      );
+    }
+    return LiveHandsPage(
+      items: [
+        LiveHand(
+          id: 'mock-hand-1',
+          sessionId: sessionId,
+          userId: 'mock-student-b',
+          state: SpeakerRequestState.pending,
+          requestedAt: clock().subtract(const Duration(minutes: 2)),
+          displayName: 'طالبة (تجريبي)',
+        ),
+      ],
+      nextCursor: null,
+      origin: DataOrigin.mock,
+    );
+  }
 }

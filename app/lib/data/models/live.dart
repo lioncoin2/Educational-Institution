@@ -273,6 +273,124 @@ class LiveModeration {
   final DateTime? lastViolationAt;
 }
 
+/// A speaker's connection as last observed, shown beside a granted hand — a
+/// display hint, never truth. A value a newer server adds is `unknown`.
+enum LiveObservedMedia {
+  connected('connected'),
+  notConnected('not_connected'),
+  unknown('unknown');
+
+  const LiveObservedMedia(this.wire);
+
+  final String wire;
+
+  static LiveObservedMedia fromWire(Object? value) =>
+      values.firstWhere((m) => m.wire == value, orElse: () => unknown);
+}
+
+/// Which hands the moderators' page asks for: the queue (`pending`) or who
+/// holds the floor (`granted`). A query filter only — distinct from a hand's
+/// own lifecycle `SpeakerRequestState`, which has more values.
+enum LiveHandsFilter {
+  pending('pending'),
+  granted('granted');
+
+  const LiveHandsFilter(this.wire);
+
+  final String wire;
+}
+
+/// One hand on the moderators' page — a speaker request with its owner's name
+/// from the directory and, for a granted hand, their last-observed connection.
+/// Identity and timestamps are the server's; the name is a display value.
+class LiveHand {
+  const LiveHand({
+    required this.id,
+    required this.sessionId,
+    required this.userId,
+    required this.state,
+    required this.requestedAt,
+    this.grantedAt,
+    this.decidedAt,
+    this.displayName,
+    this.media,
+  });
+
+  /// Throws [FormatException] when it cannot be identified, placed or dated.
+  /// Everything else is read defensively (the live model convention).
+  factory LiveHand.fromJson(Map<String, Object?> json) => LiveHand(
+    id: _required(json, 'id'),
+    sessionId: _required(json, 'sessionId'),
+    userId: _required(json, 'userId'),
+    state: SpeakerRequestState.fromWire(json['state']),
+    requestedAt: _instant(json, 'requestedAt'),
+    grantedAt: _instantOrNull(json, 'grantedAt'),
+    decidedAt: _instantOrNull(json, 'decidedAt'),
+    displayName: json['displayName'] is String
+        ? json['displayName']! as String
+        : null,
+    media: json['media'] == null
+        ? null
+        : LiveObservedMedia.fromWire(json['media']),
+  );
+
+  final String id;
+  final String sessionId;
+  final String userId;
+  final SpeakerRequestState state;
+  final DateTime requestedAt;
+
+  /// When the floor was given; null while pending or if passed over.
+  final DateTime? grantedAt;
+
+  /// When a moderator decided it; null while pending.
+  final DateTime? decidedAt;
+
+  /// The owner's display name as the directory resolved it; null if absent.
+  final String? displayName;
+
+  /// A granted hand's last-observed connection; null when the server sends none.
+  final LiveObservedMedia? media;
+}
+
+/// A keyset page of the moderators' hands (`{items, nextCursor}`). `nextCursor`
+/// is opaque — pass it back for the next page; null on the last.
+class LiveHandsPage implements Sourced {
+  const LiveHandsPage({
+    required this.items,
+    required this.nextCursor,
+    this.origin = DataOrigin.records,
+  });
+
+  factory LiveHandsPage.fromJson(
+    Map<String, Object?> json, {
+    DataOrigin origin = DataOrigin.records,
+  }) {
+    final items = json['items'];
+    return LiveHandsPage(
+      items: items is List
+          ? [
+              for (final item in items)
+                if (item is Map)
+                  LiveHand.fromJson(item.cast<String, Object?>()),
+            ]
+          : const [],
+      nextCursor: json['nextCursor'] is String
+          ? json['nextCursor']! as String
+          : null,
+      origin: origin,
+    );
+  }
+
+  final List<LiveHand> items;
+
+  /// Opaque; null on the last page.
+  final String? nextCursor;
+
+  @override
+  final DataOrigin origin;
+}
+
 /// A refusal from `/live`, with the server's stable code. Getters sort refusals
 /// by what they are, never by why the server decided them.
 class LiveException implements Exception {

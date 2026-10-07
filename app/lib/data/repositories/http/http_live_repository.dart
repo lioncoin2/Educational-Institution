@@ -28,6 +28,32 @@ class HttpLiveRepository implements LiveRepository {
     );
   });
 
+  @override
+  Future<LiveSession> getSession(String sessionId) => _call(() async {
+    final json = await _api.get(
+      '/live/sessions/${Uri.encodeComponent(sessionId)}',
+    );
+    return LiveSession.fromJson(json, origin: DataOrigin.records);
+  });
+
+  @override
+  Future<LiveHandsPage> hands(
+    String sessionId, {
+    LiveHandsFilter? state,
+    String? cursor,
+    int? limit,
+  }) => _call(() async {
+    final json = await _api.get(
+      '/live/sessions/${Uri.encodeComponent(sessionId)}/hands',
+      query: {
+        'state': ?state?.wire,
+        'cursor': ?cursor,
+        'limit': ?limit?.toString(),
+      },
+    );
+    return LiveHandsPage.fromJson(json, origin: DataOrigin.records);
+  });
+
   static const _unreadable = LiveException(
     'live.unreadable',
     'The server sent something this app cannot read.',
