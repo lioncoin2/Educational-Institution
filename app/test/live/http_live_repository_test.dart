@@ -12,6 +12,36 @@ import 'package:quran_institution_app/data/repositories/http/http_live_repositor
 /// [HttpLiveRepository] against a scripted server: the exact current-session
 /// route, `{session: null}` read as "none running", and every refusal or
 /// unreadable body mapped to [LiveException] rather than thrown raw.
+
+/// A minimal-but-valid LiveSessionResponse body, for commands that return the
+/// session (end, the presenter ops).
+Map<String, Object?> sessionBody({
+  String id = 's-1',
+  String state = 'live',
+  int stateVersion = 4,
+  List<String> presenterUserIds = const [],
+}) => {
+  'id': id,
+  'communityId': 'c-1',
+  'state': state,
+  'stateVersion': stateVersion,
+  'hostUserId': 'u-host',
+  'startedAt': '2026-01-01T00:00:00.000Z',
+  'endedAt': state == 'ended' ? '2026-01-01T01:00:00.000Z' : null,
+  'endReason': state == 'ended' ? 'moderator' : null,
+  'participantCap': 300,
+  'speakerCount': 1,
+  'presenterUserIds': presenterUserIds,
+  'me': {
+    'role': 'moderator',
+    'isHost': true,
+    'canModerate': true,
+    'canEnd': true,
+    'canPresent': true,
+  },
+  'moderation': {'pendingHands': 0, 'violations': 0, 'lastViolationAt': null},
+};
+
 void main() {
   final base = Uri.parse('https://api.example.org/');
 
@@ -483,6 +513,297 @@ void main() {
             (e) => e.isUnavailable,
             'isUnavailable',
             isTrue,
+          ),
+        ),
+      );
+    });
+  });
+
+  // ── Moderator commands ────────────────────────────────────────────────
+  // Records the one request each command makes, so method/path/query/bearer
+  // can be asserted exactly.
+  (http.Client, List<http.BaseRequest>) recording(int status, Object body) {
+    final seen = <http.BaseRequest>[];
+    final client = MockClient((request) async {
+      seen.add(request);
+      return http.Response(
+        jsonEncode(body),
+        status,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    return (client, seen);
+  }
+
+  group('HttpLiveRepository.endSession', () {
+    test(
+      'POSTs …/end, encodes the id, sends the bearer, decodes the session',
+      () async {
+        final (client, seen) = recording(200, sessionBody(state: 'ended'));
+        final repo = HttpLiveRepository(await api(client));
+
+        final session = await repo.endSession('s/1');
+        expect(session.id, 's-1');
+        expect(session.state, LiveSessionState.ended);
+        expect(session.origin, DataOrigin.records);
+        expect(seen.single.method, 'POST');
+        expect(seen.single.url.path, '/live/sessions/s%2F1/end');
+        expect(seen.single.headers['authorization'], 'Bearer a1');
+      },
+    );
+
+    test('maps a refusal to LiveException with the server’s code', () async {
+      final repo = HttpLiveRepository(
+        await api(
+          serving(403, {
+            'error': {'code': 'live.not_a_moderator', 'message': 'no'},
+          }),
+        ),
+      );
+      await expectLater(
+        repo.endSession('s-1'),
+        throwsA(
+          isA<LiveException>().having(
+            (e) => e.isForbidden,
+            'isForbidden',
+            isTrue,
+          ),
+        ),
+      );
+    });
+  });
+
+  group('HttpLiveRepository.removeParticipant', () {
+    test(
+      'POSTs …/participants/:userId/remove with the reason, decodes removed',
+      () async {
+        final (client, seen) = recording(200, {'removed': true});
+        final repo = HttpLiveRepository(await api(client));
+
+        final removed = await repo.removeParticipant(
+          's/1',
+          'u/2',
+          reason: 'disruptive',
+        );
+        expect(removed, isTrue);
+        expect(seen.single.method, 'POST');
+        expect(
+          seen.single.url.path,
+          '/live/sessions/s%2F1/participants/u%2F2/remove',
+        );
+        expect(seen.single.url.queryParameters['reason'], 'disruptive');
+      },
+    );
+
+    test(
+      'omits the reason query when none is given; removed:false decodes false',
+      () async {
+        final (client, seen) = recording(200, {'removed': false});
+        final repo = HttpLiveRepository(await api(client));
+
+        final removed = await repo.removeParticipant('s-1', 'u-2');
+        expect(removed, isFalse);
+        expect(seen.single.url.queryParameters.containsKey('reason'), isFalse);
+      },
+    );
+
+    test(
+      'surfaces 412 session_not_live and 422 reason_invalid by code',
+      () async {
+        Future<void> expectCode(int status, String code) async {
+          final repo = HttpLiveRepository(
+            await api(
+              serving(status, {
+                'error': {'code': code, 'message': 'x'},
+              }),
+            ),
+          );
+          await expectLater(
+            repo.removeParticipant('s-1', 'u-2', reason: 'BAD'),
+            throwsA(isA<LiveException>().having((e) => e.code, 'code', code)),
+          );
+        }
+
+        await expectCode(412, 'live.session_not_live');
+        await expectCode(422, 'live.reason_invalid');
+        await expectCode(404, 'live.target_not_in_session');
+      },
+    );
+  });
+
+  group('HttpLiveRepository.resetRoom', () {
+    test('POSTs …/reset and decodes reset', () async {
+      final (client, seen) = recording(200, {'reset': true});
+      final repo = HttpLiveRepository(await api(client));
+
+      expect(await repo.resetRoom('s-1'), isTrue);
+      expect(seen.single.method, 'POST');
+      expect(seen.single.url.path, '/live/sessions/s-1/reset');
+    });
+
+    test('reset:false decodes false', () async {
+      final repo = HttpLiveRepository(
+        await api(serving(200, {'reset': false})),
+      );
+      expect(await repo.resetRoom('s-1'), isFalse);
+    });
+
+    test('a not-found session surfaces isGone', () async {
+      final repo = HttpLiveRepository(
+        await api(
+          serving(404, {
+            'error': {'code': 'live.session_not_found', 'message': 'no'},
+          }),
+        ),
+      );
+      await expectLater(
+        repo.resetRoom('s-1'),
+        throwsA(isA<LiveException>().having((e) => e.isGone, 'isGone', isTrue)),
+      );
+    });
+  });
+
+  group('HttpLiveRepository.claimPresenter', () {
+    test('POSTs …/screen-share and decodes the session', () async {
+      final (client, seen) = recording(
+        201,
+        sessionBody(presenterUserIds: ['u-host']),
+      );
+      final repo = HttpLiveRepository(await api(client));
+
+      final session = await repo.claimPresenter('s/1');
+      expect(session.presenterUserIds, ['u-host']);
+      expect(session.origin, DataOrigin.records);
+      expect(seen.single.method, 'POST');
+      expect(seen.single.url.path, '/live/sessions/s%2F1/screen-share');
+    });
+
+    // The full refusal ladder is uniform (one _call wrapper); proven here.
+    test('surfaces 403/404/409/412/503 by their codes', () async {
+      Future<void> expectCode(int status, String code) async {
+        final repo = HttpLiveRepository(
+          await api(
+            serving(status, {
+              'error': {'code': code, 'message': 'x'},
+            }),
+          ),
+        );
+        await expectLater(
+          repo.claimPresenter('s-1'),
+          throwsA(isA<LiveException>().having((e) => e.code, 'code', code)),
+        );
+      }
+
+      await expectCode(403, 'live.presenter_not_permitted');
+      await expectCode(404, 'live.session_not_found');
+      await expectCode(409, 'live.presenter_slots_full');
+      await expectCode(412, 'live.session_not_live');
+      await expectCode(503, 'live.media_unavailable');
+    });
+
+    test(
+      'the slots-full conflict surfaces live.presenter_slots_full',
+      () async {
+        final repo = HttpLiveRepository(
+          await api(
+            serving(409, {
+              'error': {'code': 'live.presenter_slots_full', 'message': 'full'},
+            }),
+          ),
+        );
+        await expectLater(
+          repo.claimPresenter('s-1'),
+          throwsA(
+            isA<LiveException>().having(
+              (e) => e.code,
+              'code',
+              'live.presenter_slots_full',
+            ),
+          ),
+        );
+      },
+    );
+  });
+
+  group('HttpLiveRepository.stopPresenter', () {
+    test('DELETEs …/screen-share and decodes the session', () async {
+      final (client, seen) = recording(200, sessionBody());
+      final repo = HttpLiveRepository(await api(client));
+
+      final session = await repo.stopPresenter('s/1');
+      expect(session.id, 's-1');
+      expect(seen.single.method, 'DELETE');
+      expect(seen.single.url.path, '/live/sessions/s%2F1/screen-share');
+    });
+  });
+
+  group('HttpLiveRepository.grantPresenter', () {
+    test(
+      'POSTs …/screen-share/:userId/grant and decodes the session',
+      () async {
+        final (client, seen) = recording(
+          201,
+          sessionBody(presenterUserIds: ['u-2']),
+        );
+        final repo = HttpLiveRepository(await api(client));
+
+        final session = await repo.grantPresenter('s/1', 'u/2');
+        expect(session.presenterUserIds, ['u-2']);
+        expect(seen.single.method, 'POST');
+        expect(
+          seen.single.url.path,
+          '/live/sessions/s%2F1/screen-share/u%2F2/grant',
+        );
+      },
+    );
+
+    test('a target not in the session surfaces isGone (404)', () async {
+      final repo = HttpLiveRepository(
+        await api(
+          serving(404, {
+            'error': {'code': 'live.target_not_in_session', 'message': 'no'},
+          }),
+        ),
+      );
+      await expectLater(
+        repo.grantPresenter('s-1', 'u-2'),
+        throwsA(
+          isA<LiveException>().having(
+            (e) => e.code,
+            'code',
+            'live.target_not_in_session',
+          ),
+        ),
+      );
+    });
+  });
+
+  group('HttpLiveRepository.revokePresenter', () {
+    test('DELETEs …/screen-share/:userId and decodes the session', () async {
+      final (client, seen) = recording(200, sessionBody());
+      final repo = HttpLiveRepository(await api(client));
+
+      final session = await repo.revokePresenter('s/1', 'u/2');
+      expect(session.id, 's-1');
+      expect(seen.single.method, 'DELETE');
+      expect(seen.single.url.path, '/live/sessions/s%2F1/screen-share/u%2F2');
+    });
+
+    test('only-host-may-revoke-host surfaces the server’s code', () async {
+      final repo = HttpLiveRepository(
+        await api(
+          serving(403, {
+            'error': {'code': 'live.target_is_host', 'message': 'no'},
+          }),
+        ),
+      );
+      await expectLater(
+        repo.revokePresenter('s-1', 'u-host'),
+        throwsA(
+          isA<LiveException>().having(
+            (e) => e.code,
+            'code',
+            'live.target_is_host',
           ),
         ),
       );

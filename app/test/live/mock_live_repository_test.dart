@@ -81,4 +81,50 @@ void main() {
       expect(await repo().currentSession('some-quiet-community'), isNull);
     });
   });
+
+  group('MockLiveRepository moderator commands', () {
+    test(
+      'endSession answers an ended, mock-flagged session for the id',
+      () async {
+        final session = await repo().endSession('sess-42');
+        expect(session.id, 'sess-42');
+        expect(session.state, LiveSessionState.ended);
+        expect(session.isLive, isFalse);
+        expect(session.endedAt, isNotNull);
+        expect(session.endReason, LiveSessionEndReason.moderator);
+        expect(session.origin, DataOrigin.mock);
+      },
+    );
+
+    test('removeParticipant and resetRoom answer the demo booleans', () async {
+      expect(await repo().removeParticipant('sess-42', 'u-1'), isTrue);
+      expect(
+        await repo().removeParticipant('sess-42', 'u-1', reason: 'disruptive'),
+        isTrue,
+      );
+      expect(await repo().resetRoom('sess-42'), isTrue);
+    });
+
+    test(
+      'claim/grant add a presenter; stop/revoke clear it — all live, mock',
+      () async {
+        final claimed = await repo().claimPresenter('sess-42');
+        expect(claimed.presenterUserIds, ['mock-teacher']);
+        expect(claimed.isLive, isTrue);
+        expect(claimed.origin, DataOrigin.mock);
+
+        final granted = await repo().grantPresenter('sess-42', 'u-7');
+        expect(granted.presenterUserIds, ['u-7']);
+
+        expect(
+          (await repo().stopPresenter('sess-42')).presenterUserIds,
+          isEmpty,
+        );
+        expect(
+          (await repo().revokePresenter('sess-42', 'u-7')).presenterUserIds,
+          isEmpty,
+        );
+      },
+    );
+  });
 }

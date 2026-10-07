@@ -40,7 +40,8 @@ class _FakeLive implements LiveRepository {
     return onGet(sessionId);
   }
 
-  // The hand queue is not exercised by the controller.
+  // The hand queue and the moderator commands are not exercised by the
+  // session controller (Slice 4 consumes realtime; commands are Slice 5).
   @override
   Future<LiveHandsPage> hands(
     String sessionId, {
@@ -48,6 +49,36 @@ class _FakeLive implements LiveRepository {
     String? cursor,
     int? limit,
   }) => throw UnimplementedError();
+
+  @override
+  Future<LiveSession> endSession(String sessionId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<bool> removeParticipant(
+    String sessionId,
+    String userId, {
+    String? reason,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<bool> resetRoom(String sessionId) => throw UnimplementedError();
+
+  @override
+  Future<LiveSession> claimPresenter(String sessionId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<LiveSession> stopPresenter(String sessionId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<LiveSession> grantPresenter(String sessionId, String userId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<LiveSession> revokePresenter(String sessionId, String userId) =>
+      throw UnimplementedError();
 }
 
 LiveSession _session({

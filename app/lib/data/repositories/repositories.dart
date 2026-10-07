@@ -317,6 +317,52 @@ abstract interface class LiveRepository {
     String? cursor,
     int? limit,
   });
+
+  // ── Moderator commands ─────────────────────────────────────────────────
+  // Each command goes to the server, which is the sole authority; the app
+  // never recomputes who may act. Nothing here mutates local state: after a
+  // command the server emits its realtime fact and the session read is the
+  // truth (the live controller reconciles). These return the server's own
+  // answer, never an optimistic guess. A refusal throws [LiveException] with
+  // the server's code (403 forbidden, 404 gone, 409 conflict, 412
+  // precondition, 503 unavailable). Speaking/hand moderation (grant, revoke,
+  // decline, raise, lower) is the media/floor flow and is NOT here.
+
+  /// Ends the session — any of its moderators (`POST …/end`). Returns the
+  /// session as the server now sees it; ending an ended session succeeds too.
+  Future<LiveSession> endSession(String sessionId);
+
+  /// Removes [userId] from the session's media room (Q64, `POST
+  /// …/participants/:userId/remove`): an administrative disconnect, never a
+  /// ban — they may re-join at once. [reason] is an optional short code the
+  /// server validates. `true` when they were connected and removed, `false`
+  /// when they were not in the room.
+  Future<bool> removeParticipant(
+    String sessionId,
+    String userId, {
+    String? reason,
+  });
+
+  /// Resets the session's media room (Q64, `POST …/reset`). `true` when this
+  /// call moved the room to a new generation, `false` when a concurrent reset
+  /// or the end already did.
+  Future<bool> resetRoom(String sessionId);
+
+  /// The caller claims a screen-share (presenter) slot for themselves (Q56,
+  /// `POST …/screen-share`). 409 `live.presenter_slots_full` at the cap.
+  Future<LiveSession> claimPresenter(String sessionId);
+
+  /// The caller stops their OWN screen share (Q56, `DELETE …/screen-share`);
+  /// nothing open succeeds too. No permit needed — it reduces own privilege.
+  Future<LiveSession> stopPresenter(String sessionId);
+
+  /// A moderator grants [userId] a delegated screen-share slot (Q56, `POST
+  /// …/screen-share/:userId/grant`). The grant does not imply `live.speak`.
+  Future<LiveSession> grantPresenter(String sessionId, String userId);
+
+  /// A moderator revokes [userId]'s screen-share grant (Q56, `DELETE
+  /// …/screen-share/:userId`); nothing open for them succeeds too.
+  Future<LiveSession> revokePresenter(String sessionId, String userId);
 }
 
 /// Attendance — recording a live session's attendance snapshot

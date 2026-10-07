@@ -22,7 +22,8 @@ class _FakeLive implements LiveRepository {
   Future<LiveSession?> currentSession(String communityId) =>
       _answer(communityId);
 
-  // Session-by-id and the moderators' hand queue are not exercised here.
+  // Session-by-id, the hand queue and the moderator commands are not
+  // exercised here.
   @override
   Future<LiveSession> getSession(String sessionId) =>
       throw UnimplementedError();
@@ -34,6 +35,36 @@ class _FakeLive implements LiveRepository {
     String? cursor,
     int? limit,
   }) => throw UnimplementedError();
+
+  @override
+  Future<LiveSession> endSession(String sessionId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<bool> removeParticipant(
+    String sessionId,
+    String userId, {
+    String? reason,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<bool> resetRoom(String sessionId) => throw UnimplementedError();
+
+  @override
+  Future<LiveSession> claimPresenter(String sessionId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<LiveSession> stopPresenter(String sessionId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<LiveSession> grantPresenter(String sessionId, String userId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<LiveSession> revokePresenter(String sessionId, String userId) =>
+      throw UnimplementedError();
 }
 
 LiveSession _session({
