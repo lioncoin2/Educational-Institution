@@ -35,7 +35,18 @@ import 'dart:async';
 // web, ungated. Not an application dependency.
 // ignore: depend_on_referenced_packages
 import 'package:connectivity_plus/connectivity_plus.dart';
+// connectivity_plus's official web implementation entry point (the plugin's
+// declared web `fileName`). `flutter test --platform chrome` does not run
+// Flutter's generated web plugin registrant, so we invoke the SAME registration
+// it would — installing the real web impl, not a fake. src import + the SDK web
+// package, exactly as the generated registrant imports them.
+// ignore: implementation_imports, depend_on_referenced_packages
+import 'package:connectivity_plus/src/connectivity_plus_web.dart';
 import 'package:flutter_test/flutter_test.dart';
+// package:flutter_web_plugins is the Flutter SDK's web plugin registry; used to
+// invoke connectivity_plus's web registerWith, as the generated registrant does.
+// ignore: depend_on_referenced_packages
+import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 // package:flutter_webrtc is a transitive dependency (via livekit_client);
 // imported here solely for a TEST-ONLY WebRTC readiness probe that calls the
 // same public createPeerConnection the SDK engine uses. Not an app dependency.
@@ -80,6 +91,16 @@ void main() {
   // has not yet been initialized" and never opens the signalling WebSocket. This
   // is the standard flutter_test initializer; no custom binding is introduced.
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  // Register connectivity_plus's official web implementation. `flutter test
+  // --platform chrome` does not run Flutter's generated web plugin registrant,
+  // so ConnectivityPlatform.instance stays the unimplemented default and
+  // Connectivity().checkConnectivity() hangs — which livekit_client awaits
+  // (ungated on web) in Utils.getNetworkType, before signalling. This is the
+  // exact call the generated registrant makes (it installs the real web impl,
+  // DartHtmlConnectivityPlugin, via navigator.onLine — not a fake). The
+  // production web app is unaffected: it runs the generated registrant normally.
+  ConnectivityPlusWebPlugin.registerWith(webPluginRegistrar);
 
   test('Flutter → /join → LiveKit room connects, publishes per grant, disconnects', () async {
     if (_baseUrl.isEmpty || _accessToken.isEmpty || _sessionId.isEmpty) {
