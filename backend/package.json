@@ -19,6 +19,7 @@
     "load:preflight": "ts-node test/load/cli/preflight.ts",
     "load:run": "ts-node test/load/cli/run.ts",
     "load:mp": "ts-node test/load/cli/mp-run.ts",
+    "e2e:provision": "ts-node test/e2e/provision-live-session.ts",
     "db:generate": "drizzle-kit generate",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run arch:graph && npm test",
     "db:migrate": "drizzle-kit migrate",
