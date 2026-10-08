@@ -77,7 +77,11 @@ jobs:
       LIVE_MEDIA_PROVIDER: livekit
       LIVE_ROOM_NAME_PREFIX: live-ci-e2e-
       LIVEKIT_VERSION: "1.13.7"
-      LIVEKIT_URL: ws://localhost:7880
+      # IPv4 literal (not ws://localhost): headless Chrome may resolve "localhost"
+      # to IPv6 ::1, but LiveKit binds signalling on IPv4 only (livekit.yaml
+      # bind_addresses). The join ticket carries this URL to the browser; an IPv4
+      # literal guarantees the signalling WebSocket hits LiveKit's bound address.
+      LIVEKIT_URL: ws://127.0.0.1:7880
       LIVEKIT_API_KEY: ci_e2e_key
       POSTGRES_USER: institution
       POSTGRES_DB: institution
