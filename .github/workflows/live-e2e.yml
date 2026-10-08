@@ -1,0 +1,281 @@
+# Real Flutter Web → LiveKit end-to-end, on a disposable GitHub-hosted runner.
+#
+# This is the integration-boundary test the unit suites cannot be: a real
+# Chrome, compiled Flutter Web, joining a REAL LiveKit room served by the pinned
+# LiveKit 1.13.7, behind a real backend in real-media mode — the whole chain
+# `HttpLiveRepository.join → LiveKitLiveMediaClient.connect → a LiveKit Room`.
+# It is kept apart from `ci.yml` on purpose: it starts Docker infrastructure,
+# needs a browser, is slow, and depends on LiveKit, so a failure here must not
+# be confused with a unit-test failure there (and vice-versa).
+#
+# Everything runs on the ephemeral runner and is torn down with it. Nothing
+# touches, or connects to, the production server, backend or LiveKit; no service
+# is exposed to the internet; the only published ports are on 127.0.0.1.
+#
+# Topology (all on one GitHub-hosted Ubuntu runner):
+#
+#   runner ── Chrome (headless, fake media devices)
+#          ── Flutter 3.47.5  ── flutter test --platform chrome
+#          └─ Docker Compose (infra/compose.yaml + infra/compose.data.yaml)
+#                ├─ db        Postgres 16            (127.0.0.1:5432, CI-only)
+#                ├─ redis     Redis 7
+#                ├─ livekit   LiveKit v1.13.7        (host net: 7880/7881/7882)
+#                └─ api       the backend            (127.0.0.1:3000)
+#
+# The backend runs the repository's DEVELOPMENT contract (NODE_ENV=development,
+# ws://localhost:7880, no TURN), with one change the E2E forces: a real shared
+# Postgres instead of in-memory, because the owner is created by the
+# `bootstrap-owner` CLI — a SEPARATE process — and an in-memory store is not
+# shared across processes. Every secret below is generated fresh on the runner
+# and thrown away with it; none is a production secret and none is committed.
+name: Live E2E (real LiveKit)
+
+on:
+  # Manual, always available — the primary way to run this heavy job on demand.
+  workflow_dispatch:
+  # On pull requests, but only when something in the live/media/infra/E2E path
+  # changes: the job is expensive, so it runs where a real-media regression can
+  # actually originate, not on every PR.
+  pull_request:
+    paths:
+      - "app/lib/data/media/**"
+      - "app/lib/features/live/**"
+      - "app/integration_test/**"
+      - "app/pubspec.yaml"
+      - "app/pubspec.lock"
+      - "backend/src/modules/live/**"
+      - "backend/src/platform/config/livekit-config.ts"
+      - "backend/test/e2e/**"
+      - "infra/**"
+      - ".github/workflows/live-e2e.yml"
+
+# Nothing here writes to the repository.
+permissions:
+  contents: read
+
+# A newer run on the same ref supersedes an in-flight one.
+concurrency:
+  group: live-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Flutter Web → LiveKit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Non-secret configuration, shared by every step. Secrets are NOT here (they
+    # would live in the YAML); they are generated at run time into $GITHUB_ENV.
+    # COMPOSE_FILE points every `docker compose` call at the same merged stack —
+    # the committed compose files plus the CI-only Postgres-port override that a
+    # later step writes to the runner's temp dir.
+    env:
+      COMPOSE_FILE: infra/compose.yaml:infra/compose.data.yaml:${{ runner.temp }}/compose.ci-e2e.yaml
+      NODE_ENV: development
+      LOG_LEVEL: info
+      CORS_ORIGINS: ""
+      LIVE_MEDIA_PROVIDER: livekit
+      LIVE_ROOM_NAME_PREFIX: live-ci-e2e-
+      LIVEKIT_VERSION: "1.13.7"
+      LIVEKIT_URL: ws://localhost:7880
+      LIVEKIT_NODE_IP: 127.0.0.1
+      LIVEKIT_API_KEY: ci_e2e_key
+      POSTGRES_USER: institution
+      POSTGRES_DB: institution
+      E2E_OWNER_EMAIL: owner@e2e.test
+      E2E_BASE_URL: http://127.0.0.1:3000
+      E2E_OUTPUT_FILE: ${{ runner.temp }}/e2e-provision.json
+      E2E_DEFINES_FILE: ${{ runner.temp }}/e2e-defines.json
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22 — the backend's version (matches ci.yml); runs npm ci, the
+      # migration, the provisioning fixture and the credential generation.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # Flutter pinned exactly, as ci.yml and deploy-pages.yml do — never latest.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.5
+          cache: true
+
+      # A stable Chrome from an established action (no hand-maintained archive).
+      - id: chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Install app dependencies
+        working-directory: app
+        run: flutter pub get
+
+      # Fresh, throwaway secrets for this run only. Each is masked in the log the
+      # moment it exists, then written to $GITHUB_ENV (which does not echo the
+      # value). The LiveKit secret is 48 random bytes as base64url — >=32 bytes,
+      # URL-safe, and distinct from JWT/STORAGE, as the backend requires.
+      - name: Generate ephemeral credentials
+        run: |
+          gen() { node -e 'process.stdout.write(require("crypto").randomBytes(48).toString("base64url"))'; }
+          for name in JWT_SECRET STORAGE_SIGNING_SECRET LIVEKIT_API_SECRET \
+                      POSTGRES_PASSWORD REDIS_PASSWORD E2E_OWNER_PASSWORD; do
+            value="$(gen)"
+            echo "::add-mask::$value"
+            printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
+            export "$name=$value"
+          done
+          # The API reaches the data tier by service name on the private network.
+          printf 'DATABASE_URL=postgresql://%s:%s@db:5432/%s\n' \
+            "$POSTGRES_USER" "$POSTGRES_PASSWORD" "$POSTGRES_DB" >> "$GITHUB_ENV"
+          printf 'REDIS_URL=redis://:%s@redis:6379\n' "$REDIS_PASSWORD" >> "$GITHUB_ENV"
+
+      # CI-only, ephemeral: publish Postgres on loopback so the migration can run
+      # from the checkout. The API image never migrates (backend/Dockerfile) and
+      # compose.data.yaml deliberately gives db no host port; this override adds
+      # one, on 127.0.0.1 only, and lives in the runner's temp dir — it is not a
+      # deployment file and is never committed. Compose layers it via COMPOSE_FILE.
+      - name: Write the CI-only Postgres-port override
+        run: |
+          cat > "${{ runner.temp }}/compose.ci-e2e.yaml" <<'YAML'
+          # CI-ONLY, EPHEMERAL — generated by .github/workflows/live-e2e.yml.
+          # Exposes the ephemeral Postgres on loopback for the from-checkout
+          # migration. Not for any deployment.
+          services:
+            db:
+              ports:
+                - "127.0.0.1:5432:5432"
+          YAML
+
+      # Static check that the merged stack (committed files + override + the
+      # generated environment) renders before anything starts.
+      - name: Validate the merged Compose stack
+        run: docker compose config --quiet
+
+      # Data tier and media server FIRST, waited to healthy on their existing
+      # healthchecks (pg_isready / redis PING / LiveKit GET / == OK). Bringing
+      # LiveKit up before the API means the API's boot-time media-readiness probe
+      # finds a provider that is already reachable. --wait-timeout bounds it and
+      # makes a stuck start a failure, not a hang.
+      - name: Start Postgres, Redis and LiveKit
+        run: docker compose up -d --wait --wait-timeout 180 db redis livekit
+
+      # Apply the committed migrations from the checkout against the loopback
+      # port (drizzle-kit reads DATABASE_URL). This runs EXISTING migrations; it
+      # adds none.
+      - name: Apply database migrations
+        working-directory: backend
+        run: DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:5432/${POSTGRES_DB}" npm run db:migrate
+
+      # Now the API, waited to healthy. Its /health/ready is process-up only; the
+      # media provider is gated inside Start, which is why LiveKit is already up
+      # and why provisioning (below) retries.
+      - name: Start the backend
+        run: docker compose up -d --wait --wait-timeout 180 api
+
+      # The first OWNER, via the existing CLI, run INSIDE the api container so it
+      # shares that container's DATABASE_URL (the same Postgres the API uses) and
+      # its already-built runtime. The password is piped on stdin (never an
+      # argument, never the environment of the CLI) and is masked besides.
+      - name: Bootstrap the owner account
+        run: printf '%s\n' "$E2E_OWNER_PASSWORD" | docker compose exec -T api node dist/cli/bootstrap-owner.js --email "$E2E_OWNER_EMAIL" --name "E2E Owner"
+
+      # Provision ACCESS_TOKEN + SESSION_ID through the existing fixture
+      # (login → create community → start live session). Bounded retry: Start
+      # gates on a cached media-readiness report that may still say "warming up"
+      # for a few seconds after boot, so up to 8 attempts with a short backoff —
+      # explicit, bounded, and a hard failure if it never succeeds. The token is
+      # written to E2E_OUTPUT_FILE (mode 0600) and never printed.
+      - name: Provision a live session
+        working-directory: backend
+        run: |
+          attempts=8
+          for i in $(seq 1 "$attempts"); do
+            if npm run --silent e2e:provision; then
+              echo "provisioned on attempt $i"
+              exit 0
+            fi
+            if [ "$i" -eq "$attempts" ]; then
+              echo "::error::provisioning failed after $attempts attempts"
+              exit 1
+            fi
+            echo "attempt $i failed; media provider may still be warming up — retrying in 8s"
+            sleep 8
+          done
+
+      # Turn the fixture output into a Flutter --dart-define-from-file JSON. The
+      # token therefore reaches the compiler through a 0600 file, never a
+      # command-line argument — and the harness, which reads the same
+      # String.fromEnvironment keys, is untouched. The token is masked in case
+      # anything downstream echoes it.
+      - name: Build the dart-define file
+        run: |
+          node -e '
+            const fs = require("fs");
+            const out = JSON.parse(fs.readFileSync(process.env.E2E_OUTPUT_FILE, "utf8"));
+            if (!out.accessToken || !out.sessionId) {
+              throw new Error("fixture output missing accessToken/sessionId");
+            }
+            console.log("::add-mask::" + out.accessToken);
+            const defines = {
+              LIVEKIT_E2E_BASE_URL: process.env.E2E_BASE_URL,
+              LIVEKIT_E2E_ACCESS_TOKEN: out.accessToken,
+              LIVEKIT_E2E_SESSION_ID: out.sessionId,
+            };
+            fs.writeFileSync(process.env.E2E_DEFINES_FILE, JSON.stringify(defines), { mode: 0o600 });
+            process.stderr.write("dart-define file written for session " + out.sessionId + "\n");
+          '
+
+      # The real E2E, exactly the command the harness documents, plus the browser
+      # flags that let headless Chrome satisfy getUserMedia without a device or a
+      # prompt (the grant may enable the microphone). Defines come from the file
+      # so no secret is on the command line. --disable-web-security relaxes the
+      # same-origin policy in THIS disposable, isolated headless Chrome ONLY —
+      # the test page's random-port loopback origin differs from the API's, and
+      # the backend's CORS stays an exact allow-list (off here). flutter_tools
+      # already launches this Chrome with a fresh throwaway --user-data-dir, so
+      # the flag is honoured and contained; production CORS is untouched.
+      - name: Flutter Web → LiveKit E2E
+        working-directory: app
+        env:
+          CHROME_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          flutter test integration_test/livekit_web_e2e_test.dart \
+            --platform chrome \
+            --dart-define-from-file="$E2E_DEFINES_FILE" \
+            --web-browser-flag=--disable-web-security \
+            --web-browser-flag=--use-fake-ui-for-media-stream \
+            --web-browser-flag=--use-fake-device-for-media-stream \
+            --web-browser-flag=--autoplay-policy=no-user-gesture-required
+
+      # Diagnostics on failure, secrets excluded: status, the two health
+      # endpoints (non-secret), and bounded log tails. The env, the fixture
+      # output file and the dart-define file are never printed.
+      - name: Diagnostics
+        if: failure()
+        run: |
+          echo "== docker compose ps =="
+          docker compose ps || true
+          echo "== GET /health/ready =="
+          curl -fsS http://127.0.0.1:3000/health/ready || true; echo
+          echo "== GET http://127.0.0.1:7880/ (LiveKit health) =="
+          curl -fsS http://127.0.0.1:7880/ || true; echo
+          echo "== api logs (tail) =="
+          docker compose logs --no-color --tail 150 api || true
+          echo "== livekit logs (tail) =="
+          docker compose logs --no-color --tail 80 livekit || true
+          echo "== db logs (tail) =="
+          docker compose logs --no-color --tail 40 db || true
+
+      # Always tear the ephemeral stack down, volumes included, even on failure.
+      - name: Tear down the ephemeral stack
+        if: always()
+        run: docker compose down -v --remove-orphans || true
