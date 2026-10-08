@@ -30,6 +30,11 @@ library;
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+// package:flutter_webrtc is a transitive dependency (via livekit_client);
+// imported here solely for a TEST-ONLY WebRTC readiness probe that calls the
+// same public createPeerConnection the SDK engine uses. Not an app dependency.
+// ignore: depend_on_referenced_packages
+import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:http/http.dart' as http;
 // package:logging is livekit_client's logging backend (a transitive dependency);
 // imported here solely for TEST-ONLY diagnostics, to read the SDK's own
@@ -161,6 +166,33 @@ void main() {
     // BEFORE connect (accessing `.instance` would itself throw "Binding has not
     // yet been initialized" otherwise — the exact prior failure).
     expect(TestWidgetsFlutterBinding.instance, isNotNull);
+
+    // WebRTC readiness probe (diagnostic only; supported public API). On web the
+    // SDK performs NO explicit WebRTC init: LiveKitClient.initialize() is a
+    // no-op on web, WebRTC.initialize() throws UnimplementedError('not supported
+    // on web'), and the web WebRTC class exposes NO public "initialized" state.
+    // So we exercise the same public call the engine makes before signalling —
+    // rtc.createPeerConnection — bounded, to record whether the browser WebRTC
+    // layer is usable BEFORE Room.connect. The probe PC is closed immediately
+    // and does not touch the real connect that follows.
+    String webrtcProbe;
+    try {
+      final pc = await rtc
+          .createPeerConnection(<String, dynamic>{})
+          .timeout(const Duration(seconds: 10));
+      webrtcProbe = 'usable (createPeerConnection returned)';
+      await pc.close();
+    } on TimeoutException {
+      webrtcProbe = 'HANG (createPeerConnection still pending after 10s)';
+    } catch (e) {
+      webrtcProbe = 'error (${e.runtimeType}: ${_redactDiagnostics('$e')})';
+    }
+    final webrtcLine =
+        'LKWEBRTC Flutter binding: initialized | public WebRTC state API: '
+        'none on web | createPeerConnection probe: $webrtcProbe';
+    diagLog.add(webrtcLine);
+    // ignore: avoid_print
+    print(webrtcLine);
 
     // Phase markers distinguish a failure BEFORE, INSIDE, or AFTER connect; the
     // finally flushes the SDK trace so the connect phase is captured even when
