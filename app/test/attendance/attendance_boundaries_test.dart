@@ -85,24 +85,19 @@ void main() {
     expect(feature.length, greaterThanOrEqualTo(4));
   });
 
-  test(
-    'declares no LiveKit or WebRTC dependency, and imports none under lib/',
-    () {
-      for (final file in ['pubspec.yaml', 'pubspec.lock']) {
-        expect(
-          media.hasMatch(File(file).readAsStringSync()),
-          isFalse,
-          reason: file,
-        );
-      }
-      final offenders = [
-        for (final MapEntry(key: path, value: uris) in imports.entries)
+  test('imports no LiveKit or WebRTC package under lib/ (outside the media adapter)', () {
+    // The SDK is a declared dependency now (ADR 0030); the invariant that
+    // matters is that attendance — and every file but the LiveKit media
+    // adapter (lib/data/media/livekit/) — imports none of it.
+    bool isAdapter(String path) => path.startsWith('lib/data/media/livekit/');
+    final offenders = [
+      for (final MapEntry(key: path, value: uris) in imports.entries)
+        if (!isAdapter(path))
           for (final uri in uris)
             if (media.hasMatch(uri)) '$path → $uri',
-      ];
-      expect(offenders, isEmpty);
-    },
-  );
+    ];
+    expect(offenders, isEmpty);
+  });
 
   test('keeps the attendance feature away from every transport', () {
     final offenders = [

@@ -18,6 +18,10 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.6.0
   web_socket: ^1.0.1
+  # Live media provider (ADR 0030, P7b). Pinned EXACTLY — a bump is a deliberate
+  # ADR change. Consumed ONLY by the future lib/data/media/livekit/ adapter; no
+  # other Dart file may import it (test/live/live_boundaries_test.dart enforces).
+  livekit_client: 2.13.0
 
 dev_dependencies:
   flutter_test:

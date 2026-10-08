@@ -85,20 +85,63 @@ void main() {
     expect(live.length, greaterThanOrEqualTo(4));
   });
 
-  test('declares no LiveKit or WebRTC dependency', () {
-    for (final file in ['pubspec.yaml', 'pubspec.lock']) {
-      final text = File(file).readAsStringSync();
-      expect(media.hasMatch(text), isFalse, reason: file);
-    }
+  test('pins livekit_client as an exact dependency (P7b, ADR 0030)', () {
+    // The live media provider is a DECLARED dependency now (livekit_client →
+    // flutter_webrtc). It is pinned EXACTLY — no caret — so a version bump is a
+    // deliberate ADR change, never a float. The SDK is allowed to EXIST in the
+    // lockfile; what stays forbidden is importing it anywhere but the adapter.
+    final pubspec = File('pubspec.yaml').readAsStringSync();
+    final pin = RegExp(
+      r'^\s*livekit_client:\s*(\S+)\s*$',
+      multiLine: true,
+    ).firstMatch(pubspec);
+    expect(
+      pin,
+      isNotNull,
+      reason: 'livekit_client must be a declared dependency',
+    );
+    expect(pin!.group(1), '2.13.0', reason: 'exact pin (no caret)');
   });
 
-  test('imports no LiveKit or WebRTC package anywhere under lib/', () {
+  test('imports no LiveKit or WebRTC package under lib/, except the media adapter', () {
+    // livekit_client / flutter_webrtc / dart_webrtc may be imported ONLY by the
+    // LiveKit media adapter (lib/data/media/livekit/ — ADR 0030); nowhere else.
+    bool isAdapter(String path) => path.startsWith('lib/data/media/livekit/');
+    final offenders = [
+      for (final MapEntry(key: path, value: uris) in imports.entries)
+        if (!isAdapter(path))
+          for (final uri in uris)
+            if (media.hasMatch(uri)) '$path → $uri',
+    ];
+    expect(offenders, isEmpty);
+  });
+
+  test('the LiveKit SDK boundary is real and uses only the high-level client', () {
+    // Non-vacuous: the adapter directory DOES import the SDK (so the allowlist
+    // above is exercised, not dead), and nothing anywhere imports the low-level
+    // WebRTC packages directly — the adapter speaks package:livekit_client only.
+    final adapterImports = [
+      for (final MapEntry(key: path, value: uris) in imports.entries)
+        if (path.startsWith('lib/data/media/livekit/'))
+          for (final uri in uris) uri,
+    ];
+    expect(
+      adapterImports.where((u) => u.startsWith('package:livekit_client/')),
+      isNotEmpty,
+      reason: 'the LiveKit adapter must import the SDK — the boundary is real',
+    );
+    final rawWebrtc = RegExp(r'\b(flutter_webrtc|dart_webrtc)\b');
     final offenders = [
       for (final MapEntry(key: path, value: uris) in imports.entries)
         for (final uri in uris)
-          if (media.hasMatch(uri)) '$path → $uri',
+          if (uri.startsWith('package:') && rawWebrtc.hasMatch(uri))
+            '$path → $uri',
     ];
-    expect(offenders, isEmpty);
+    expect(
+      offenders,
+      isEmpty,
+      reason: 'use package:livekit_client, not raw WebRTC',
+    );
   });
 
   test('keeps every screen and widget away from every transport', () {
