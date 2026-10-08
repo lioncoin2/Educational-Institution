@@ -264,7 +264,7 @@ jobs:
             echo "exec \"$CHROME_BIN\" \"\$@\" --disable-web-security --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --autoplay-policy=no-user-gesture-required"
           } > "$wrapper"
           chmod +x "$wrapper"
-          CHROME_EXECUTABLE="$wrapper" flutter test integration_test/livekit_web_e2e_test.dart \
+          CHROME_EXECUTABLE="$wrapper" flutter test test/e2e/livekit_web_e2e_test.dart \
             --platform chrome \
             --dart-define-from-file="$E2E_DEFINES_FILE"
 

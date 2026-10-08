@@ -8,13 +8,14 @@
 //     → LiveKit Server 1.13.7 → a real Room connection
 //     → adapter reports LiveMediaConnected
 //
-// It is NOT part of the normal suite (`flutter test` scans test/, not
-// integration_test/) and it does NOT activate LiveKit as the app provider —
-// it wires LiveKitLiveMediaClient directly, test-only.
+// It lives under test/ (not integration_test/, which `flutter test --platform
+// chrome` refuses) but is excluded from the normal VM `flutter test` run by
+// @TestOn('browser'); it does NOT activate LiveKit as the app provider — it
+// wires LiveKitLiveMediaClient directly, test-only.
 //
 // RUN (web only; needs Chrome and a reachable backend in real LiveKit mode):
 //
-//   flutter test integration_test/livekit_web_e2e_test.dart --platform chrome \
+//   flutter test test/e2e/livekit_web_e2e_test.dart --platform chrome \
 //     --dart-define=LIVEKIT_E2E_BASE_URL=http://127.0.0.1:3000 \
 //     --dart-define=LIVEKIT_E2E_ACCESS_TOKEN=<backend session access token> \
 //     --dart-define=LIVEKIT_E2E_SESSION_ID=<an active live session id>
