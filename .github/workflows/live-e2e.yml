@@ -243,27 +243,30 @@ jobs:
             process.stderr.write("dart-define file written for session " + out.sessionId + "\n");
           '
 
-      # The real E2E, exactly the command the harness documents, plus the browser
-      # flags that let headless Chrome satisfy getUserMedia without a device or a
-      # prompt (the grant may enable the microphone). Defines come from the file
-      # so no secret is on the command line. --disable-web-security relaxes the
+      # The real E2E. flutter test (3.47.5) exposes no --web-browser-flag, so the
+      # Chrome flags are delivered through a CI-only wrapper that forwards
+      # flutter's own args and appends ours. --disable-web-security relaxes the
       # same-origin policy in THIS disposable, isolated headless Chrome ONLY —
       # the test page's random-port loopback origin differs from the API's, and
-      # the backend's CORS stays an exact allow-list (off here). flutter_tools
-      # already launches this Chrome with a fresh throwaway --user-data-dir, so
-      # the flag is honoured and contained; production CORS is untouched.
+      # the backend's CORS stays an exact allow-list (off here); flutter_tools
+      # passes a fresh throwaway --user-data-dir, so the relaxation is honoured
+      # and contained. The fake-media flags let headless Chrome satisfy
+      # getUserMedia without a device. Production CORS is untouched; defines come
+      # from a file, so no secret is on the command line.
       - name: Flutter Web → LiveKit E2E
         working-directory: app
         env:
-          CHROME_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
         run: |
-          flutter test integration_test/livekit_web_e2e_test.dart \
+          wrapper="$RUNNER_TEMP/chrome-e2e"
+          {
+            echo '#!/usr/bin/env bash'
+            echo "exec \"$CHROME_BIN\" \"\$@\" --disable-web-security --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --autoplay-policy=no-user-gesture-required"
+          } > "$wrapper"
+          chmod +x "$wrapper"
+          CHROME_EXECUTABLE="$wrapper" flutter test integration_test/livekit_web_e2e_test.dart \
             --platform chrome \
-            --dart-define-from-file="$E2E_DEFINES_FILE" \
-            --web-browser-flag=--disable-web-security \
-            --web-browser-flag=--use-fake-ui-for-media-stream \
-            --web-browser-flag=--use-fake-device-for-media-stream \
-            --web-browser-flag=--autoplay-policy=no-user-gesture-required
+            --dart-define-from-file="$E2E_DEFINES_FILE"
 
       # Diagnostics on failure, secrets excluded: status, the two health
       # endpoints (non-secret), and bounded log tails. The env, the fixture
