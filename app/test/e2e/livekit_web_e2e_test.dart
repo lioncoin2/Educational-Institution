@@ -64,6 +64,12 @@ String _redactDiagnostics(String input) => input
     );
 
 void main() {
+  // The browser E2E needs a live Flutter binding before livekit_client touches
+  // Flutter state during Room.connect — without it the SDK aborts with "Binding
+  // has not yet been initialized" and never opens the signalling WebSocket. This
+  // is the standard flutter_test initializer; no custom binding is introduced.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('Flutter → /join → LiveKit room connects, publishes per grant, disconnects', () async {
     if (_baseUrl.isEmpty || _accessToken.isEmpty || _sessionId.isEmpty) {
       markTestSkipped(
@@ -130,6 +136,11 @@ void main() {
       }
     });
     addTearDown(sub.cancel);
+
+    // Proof of the fix: the Flutter binding the LiveKit SDK relies on is live
+    // BEFORE connect (accessing `.instance` would itself throw "Binding has not
+    // yet been initialized" otherwise — the exact prior failure).
+    expect(TestWidgetsFlutterBinding.instance, isNotNull);
 
     await client.connect(grant);
     final result = await settled.future.timeout(const Duration(seconds: 20));
