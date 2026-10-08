@@ -31,6 +31,11 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+// package:logging is livekit_client's logging backend (a transitive dependency);
+// imported here solely for TEST-ONLY diagnostics, to read the SDK's own
+// signalling logs. Not an application dependency.
+// ignore: depend_on_referenced_packages
+import 'package:logging/logging.dart';
 import 'package:quran_institution_app/data/api/api_client.dart';
 import 'package:quran_institution_app/data/api/token_store.dart';
 import 'package:quran_institution_app/data/media/livekit/livekit_live_media_client.dart';
@@ -41,6 +46,23 @@ const _baseUrl = String.fromEnvironment('LIVEKIT_E2E_BASE_URL');
 const _accessToken = String.fromEnvironment('LIVEKIT_E2E_ACCESS_TOKEN');
 const _sessionId = String.fromEnvironment('LIVEKIT_E2E_SESSION_ID');
 
+/// Redacts credentials before any diagnostic line is printed: any JWT (three
+/// base64url segments — the LiveKit/access token is one) and any
+/// access_token/token/secret/authorization value. The signalling URL's scheme,
+/// host and path are preserved; its token is not.
+String _redactDiagnostics(String input) => input
+    .replaceAll(
+      RegExp(r'[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}'),
+      '<jwt-redacted>',
+    )
+    .replaceAllMapped(
+      RegExp(
+        r'(access_token|token|secret|authorization)=[^&\s"]+',
+        caseSensitive: false,
+      ),
+      (m) => '${m[1]}=<redacted>',
+    );
+
 void main() {
   test('Flutter → /join → LiveKit room connects, publishes per grant, disconnects', () async {
     if (_baseUrl.isEmpty || _accessToken.isEmpty || _sessionId.isEmpty) {
@@ -50,6 +72,25 @@ void main() {
       );
       return;
     }
+
+    // TEST-ONLY DIAGNOSTICS (observability; changes no connection parameter and
+    // no test behavior). livekit_client logs through package:logging; routing
+    // its root stream to the test output surfaces the exact signalling URL the
+    // SDK dials and every WebSocket/engine event and error — so CI can see what
+    // Chrome does with the socket before it would reach LiveKit. Every line is
+    // redacted, so no token or credential is ever printed.
+    Logger.root.level = Level.ALL;
+    final diagnostics = Logger.root.onRecord.listen((record) {
+      final error = record.error == null
+          ? ''
+          : ' | error=${_redactDiagnostics('${record.error}')}';
+      // ignore: avoid_print
+      print(
+        'LKDIAG ${record.level.name} ${record.loggerName}: '
+        '${_redactDiagnostics(record.message)}$error',
+      );
+    });
+    addTearDown(diagnostics.cancel);
 
     // An authenticated client against the real backend. The access token is the
     // backend session token supplied at run time; the store redacts it, and it
