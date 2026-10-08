@@ -29,6 +29,12 @@ library;
 
 import 'dart:async';
 
+// package:connectivity_plus is a transitive dependency (via livekit_client);
+// imported here solely to confirm the suspected pre-signalling hang: the SDK's
+// Utils.buildUri → getNetworkType awaits Connectivity().checkConnectivity() on
+// web, ungated. Not an application dependency.
+// ignore: depend_on_referenced_packages
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 // package:flutter_webrtc is a transitive dependency (via livekit_client);
 // imported here solely for a TEST-ONLY WebRTC readiness probe that calls the
@@ -193,6 +199,27 @@ void main() {
     diagLog.add(webrtcLine);
     // ignore: avoid_print
     print(webrtcLine);
+
+    // CONFIRMATION probe (diagnostic only): call the exact public API the SDK's
+    // Utils.buildUri → getNetworkType awaits on web (Connectivity 7.3.2), with a
+    // strict 10s bound, immediately before client.connect. This does not touch
+    // Room.connect. Distinguishes usable / TIMEOUT (hang) / ERROR.
+    String connectivityProbe;
+    try {
+      final result = await Connectivity().checkConnectivity().timeout(
+        const Duration(seconds: 10),
+      );
+      connectivityProbe = 'usable ($result)';
+    } on TimeoutException {
+      connectivityProbe = 'TIMEOUT';
+    } catch (e) {
+      connectivityProbe = 'ERROR ${e.runtimeType}: ${_redactDiagnostics('$e')}';
+    }
+    final connectivityLine =
+        'LKCONNECTIVITY checkConnectivity: $connectivityProbe';
+    diagLog.add(connectivityLine);
+    // ignore: avoid_print
+    print(connectivityLine);
 
     // Phase markers distinguish a failure BEFORE, INSIDE, or AFTER connect; the
     // finally flushes the SDK trace so the connect phase is captured even when
