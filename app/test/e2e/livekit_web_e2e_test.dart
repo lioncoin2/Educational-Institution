@@ -86,17 +86,37 @@ void main() {
     // Chrome does with the socket before it would reach LiveKit. Every line is
     // redacted, so no token or credential is ever printed.
     Logger.root.level = Level.ALL;
+    final diagLog = <String>[];
     final diagnostics = Logger.root.onRecord.listen((record) {
       final error = record.error == null
           ? ''
           : ' | error=${_redactDiagnostics('${record.error}')}';
+      final line =
+          'LKDIAG ${record.level.name} ${record.loggerName}: '
+          '${_redactDiagnostics(record.message)}$error';
+      diagLog.add(line);
       // ignore: avoid_print
-      print(
-        'LKDIAG ${record.level.name} ${record.loggerName}: '
-        '${_redactDiagnostics(record.message)}$error',
-      );
+      print(line);
     });
     addTearDown(diagnostics.cancel);
+
+    // Re-emit the buffered SDK records as one contiguous block. The immediate
+    // prints above can be dropped by the browser console → test-runner bridge
+    // when the connect await fails mid-flight (the prior run captured only the
+    // teardown logs); flushing the buffer at settled points — around the connect
+    // boundary and on teardown — reliably surfaces the full connect-phase trace.
+    void flushDiag(String marker) {
+      // ignore: avoid_print
+      print('LKFLUSH[$marker] ${diagLog.length} records:');
+      for (final line in diagLog) {
+        // ignore: avoid_print
+        print(line);
+      }
+      // ignore: avoid_print
+      print('LKFLUSH[$marker] end');
+    }
+
+    addTearDown(() => flushDiag('teardown'));
 
     // An authenticated client against the real backend. The access token is the
     // backend session token supplied at run time; the store redacts it, and it
@@ -142,7 +162,26 @@ void main() {
     // yet been initialized" otherwise — the exact prior failure).
     expect(TestWidgetsFlutterBinding.instance, isNotNull);
 
-    await client.connect(grant);
+    // Phase markers distinguish a failure BEFORE, INSIDE, or AFTER connect; the
+    // finally flushes the SDK trace so the connect phase is captured even when
+    // the await fails. Behavior is unchanged — the same single connect call,
+    // and the same error is rethrown.
+    // ignore: avoid_print
+    print('LKPHASE before client.connect');
+    try {
+      await client.connect(grant);
+      // ignore: avoid_print
+      print('LKPHASE after client.connect returned');
+    } catch (error) {
+      // ignore: avoid_print
+      print(
+        'LKPHASE client.connect threw ${error.runtimeType}: '
+        '${_redactDiagnostics('$error')}',
+      );
+      rethrow;
+    } finally {
+      flushDiag('after-connect');
+    }
     final result = await settled.future.timeout(const Duration(seconds: 20));
     // The critical assertion: a REAL room connection, not a 200 from /join.
     expect(
