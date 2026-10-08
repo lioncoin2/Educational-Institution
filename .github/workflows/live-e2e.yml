@@ -78,7 +78,6 @@ jobs:
       LIVE_ROOM_NAME_PREFIX: live-ci-e2e-
       LIVEKIT_VERSION: "1.13.7"
       LIVEKIT_URL: ws://localhost:7880
-      LIVEKIT_NODE_IP: 127.0.0.1
       LIVEKIT_API_KEY: ci_e2e_key
       POSTGRES_USER: institution
       POSTGRES_DB: institution
@@ -147,6 +146,24 @@ jobs:
             "$POSTGRES_USER" "$POSTGRES_PASSWORD" "$POSTGRES_DB" >> "$GITHUB_ENV"
           printf 'REDIS_URL=redis://:%s@redis:6379\n' "$REDIS_PASSWORD" >> "$GITHUB_ENV"
 
+      # The media (ICE) address LiveKit advertises MUST be reachable by the
+      # browser. The dev default 127.0.0.1 is a loopback candidate the headless
+      # Chrome ICE agent cannot pair against (there is no TURN fallback here), so
+      # the room connection times out. Advertise the runner's own routable IPv4
+      # instead — resolved here, BEFORE the LiveKit container starts. CI-only:
+      # livekit.yaml, the compose files and every env file are untouched
+      # (production already advertises its real public IP). Prints the chosen IP
+      # only; never a secret. Fails loudly if no non-loopback IPv4 exists.
+      - name: Resolve the LiveKit advertised IP (runner's routable IPv4)
+        run: |
+          ip4="$(ip -4 -o addr show scope global up | awk '{print $4}' | cut -d/ -f1 | grep -vE '^127\.' | head -n1)"
+          if [ -z "$ip4" ]; then
+            echo "::error::no non-loopback IPv4 found on the runner for LIVEKIT_NODE_IP"
+            exit 1
+          fi
+          echo "LIVEKIT_NODE_IP=$ip4" >> "$GITHUB_ENV"
+          echo "selected LIVEKIT_NODE_IP=$ip4"
+
       # CI-only, ephemeral: publish Postgres on loopback so the migration can run
       # from the checkout. The API image never migrates (backend/Dockerfile) and
       # compose.data.yaml deliberately gives db no host port; this override adds
@@ -175,7 +192,11 @@ jobs:
       # finds a provider that is already reachable. --wait-timeout bounds it and
       # makes a stuck start a failure, not a hang.
       - name: Start Postgres, Redis and LiveKit
-        run: docker compose up -d --wait --wait-timeout 180 db redis livekit
+        run: |
+          docker compose up -d --wait --wait-timeout 180 db redis livekit
+          # Confirm the advertised media IP actually reached LiveKit's startup
+          # configuration (non-secret; the nodeIP must not be loopback).
+          docker compose logs --no-color livekit | grep -o '"nodeIP":"[^"]*"' | head -n1 || true
 
       # Apply the committed migrations from the checkout against the loopback
       # port (drizzle-kit reads DATABASE_URL). This runs EXISTING migrations; it
