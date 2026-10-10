@@ -16,9 +16,11 @@ earlier ADR stays `Accepted`, marked "superseded in part by NNNN". It gains
 only that status line and a note at each replaced decision pointing to its
 successor; its text is otherwise left as decided. The first such pair is
 0018 → 0022. 0021 → 0022 is the second: 0021's decision 7 counted the lag
-filter's `statesOf` in a community-chat page's cost. Earlier partial
-supersessions (0016–0021 over 0003, 0005, 0006, 0009, 0011 and 0012) are
-recorded only in the ADR that makes them, as the package note below says.
+filter's `statesOf` in a community-chat page's cost. Since then: 0020 → 0023
+(its decision 8), 0024 → 0025, and 0019 → 0028 (0019's provisional presenter
+design). Earlier partial supersessions (0016–0021 over 0003, 0005, 0006, 0009,
+0011 and 0012) are recorded only in the ADR that makes them, as the package note
+below says.
 
 | # | Decision | Status |
 | --- | --- | --- |
@@ -40,13 +42,19 @@ recorded only in the ADR that makes them, as the package note below says.
 | [0016](0016-communities-module.md) | Communities: a new module owns communities, membership, invitation links and lifecycle | Accepted |
 | [0017](0017-community-scoped-authorization.md) | Community-scoped authorization: identity ceilings AND community standing; delegated capabilities; host-only moderation retired | Accepted |
 | [0018](0018-community-chat-projection.md) | Community chat: messaging keeps a named, versioned projection of community membership | Accepted; superseded in part by [0022](0022-community-chat-delivery-check.md) |
-| [0019](0019-community-scoped-live-sessions.md) | Community-scoped live sessions: Postgres truth, level-triggered LiveKit convergence, a presenter slot, narrow RTC ports | Accepted |
+| [0019](0019-community-scoped-live-sessions.md) | Community-scoped live sessions: Postgres truth, level-triggered LiveKit convergence, a presenter slot, narrow RTC ports | Accepted; superseded in part by [0028](0028-screen-sharing-two-presenters-and-delegated-student-access.md) |
 | [0020](0020-attendance-snapshots.md) | Attendance snapshots are observations owned by a new attendance module (implementation held) | Accepted (implementation held); superseded in part by [0023](0023-attendance-authorization-and-policy.md) |
 | [0021](0021-cross-cutting-rules-for-new-modules.md) | Cross-cutting rules for the new modules: events in contracts, journals, durability classes, the realtime transport matrix, protocol v1 growth, `FailureKind 'unavailable'`, executable guards | Accepted; superseded in part by [0022](0022-community-chat-delivery-check.md) |
 | [0022](0022-community-chat-delivery-check.md) | Community chat: every recipient page is checked against Communities, and a divergence rebuilds the projection (replaces 0018's delivery shortcut) | Accepted |
 | [0023](0023-attendance-authorization-and-policy.md) | Attendance authorization uses academic relationship AND community standing (supersedes 0020's decision 8); records Q8/Q12/Q69; notifications deferred to P10/Q67 (policy now recorded in [0024](0024-notification-policy-p10.md)) | Accepted |
 | [0024](0024-notification-policy-p10.md) | Notification policy for P10: the initial, reversible set of community/live/attendance facts that notify and on which channels (answers Q67 and the P10 scope of Q28); academic deferred; delivery stays best-effort (T2/outbox gate of 0021 preserved) | Accepted; superseded in part by [0025](0025-defer-persistent-live-session-start-notifications.md) |
 | [0025](0025-defer-persistent-live-session-start-notifications.md) | Defer persistent live-session-start notifications: `LIVE_SESSION_STARTED` stays a realtime-only Live event (existing relay); no persistent notification, dispatcher, outbox, broadcast model, or channel-default logic is built (supersedes in part 0024's `live.session.started` persistence/channel row) | Accepted |
+| [0026](0026-live-participant-control-and-media-reset.md) | Moderator-commanded live participant control: a kick that is not a ban, and a shared media reset (Q64); over the existing RTC ports and epoch mechanism, no new capability | Accepted |
+| [0027](0027-no-hidden-live-listeners.md) | No hidden live listeners: every admitted participant is visible in the roster (Q59); `hidden` is an enforced-`false` invariant, no spectator/observer role | Accepted |
+| [0028](0028-screen-sharing-two-presenters-and-delegated-student-access.md) | Screen sharing: up to two concurrent presenters, counted under the session lock, with session-scoped delegated student access (Q56); supersedes in part 0019's provisional presenter cap and self-claim-only rule | Accepted |
+| [0029](0029-community-message-moderation.md) | Community message moderation: delete to a tombstone, a 7-day audited review, then retention; authority is the delegable `community.messages.moderate` under `communities.moderate`, never identity's `messaging.manage` (Q51/Q23) | Accepted |
+| [0030](0030-flutter-livekit-media-client.md) | Flutter LiveKit media client (P7b): the app's RTC adapter behind the `LiveMediaClient` seam, `livekit_client` pinned and adapter-confined | Accepted |
+| [0031](0031-architecture-navigation-index.md) | A generated, code-derived architecture index, a root `CLAUDE.md` entry point, and a project-wide Flutter layering test; freshness enforced in CI, no new dependency | Accepted |
 
 > **`Proposed`** (added 2026-09-23): a design under review, with nothing
 > implemented. It becomes `Accepted` when the user accepts it (dated in the

@@ -7,11 +7,11 @@ that actually does the work — **what it must not know**.
 A module is a unit of ownership, not a folder. If two modules need the same
 table, one of them is wrong.
 
-**Implementation state** is marked on every module. Of the thirteen business
-modules, eight are implemented (identity, live, files, messaging, realtime,
-notifications, academic, communities); the other five are deliberately
-empty: contracts and a Nest module, no implementation. Deciding the boundary
-before the code arrives is cheap; retrofitting one is not.
+**Implementation state** is marked on every module. Of the fourteen business
+modules, nine are implemented (identity, live, files, messaging, realtime,
+notifications, academic, communities, attendance); the other five are
+deliberately empty: contracts and a Nest module, no implementation. Deciding the
+boundary before the code arrives is cheap; retrofitting one is not.
 
 > **Landed (P2, P3):** the `communities` module
 > ([communities.md](communities.md),
@@ -22,16 +22,17 @@ before the code arrives is cheap; retrofitting one is not.
 > type, and is used for Tahajji's «مجموعة» in
 > [Q36](open-questions.md#q36--tahajji-دورة-التهجي-وإعداد-المعلمات-مدينة-التهجي-and-the-40-groups).
 >
-> **Proposed change:** see [attendance.md](attendance.md) (design only,
-> [ADR 0020](decisions/0020-attendance-snapshots.md) Accepted): a new
-> `attendance` module owning attendance snapshots taken during a live
-> session. Its implementation is **held**.
->
-> The attendance module does not exist. The
+> **Landed (P9, 2026-10):** the `attendance` module
+> ([attendance.md](attendance.md),
+> [ADR 0020](decisions/0020-attendance-snapshots.md) Accepted,
+> [ADR 0023](decisions/0023-attendance-authorization-and-policy.md)) owns
+> attendance snapshots taken during a community's live session — an immutable,
+> append-only observation of who the media provider held, and the read surface
+> over it. It has its own section below. The
 > [Q40](open-questions.md#q40--governance-which-gates-apply-to-the-new-modules)
-> ruling holds its implementation until the attendance questions are
-> answered (Q68, Q69 and the related Q70–Q72). The sections below describe
-> the modules that exist today.
+> hold ([ADR 0016](decisions/0016-communities-module.md)) and the attendance
+> policy questions (Q8/Q12/Q69, [ADR 0023](decisions/0023-attendance-authorization-and-policy.md))
+> are resolved; the sections below describe the modules that exist today.
 
 ---
 
@@ -424,6 +425,58 @@ tables touched only by its own adapters.
 >
 > **Landed in P6 (2026-09-27)**, as the section above now describes, except
 > `LIVE_PRESENCE`, which stays with P9 (held).
+
+---
+
+## attendance
+
+**State:** implemented — P9 ([attendance.md](attendance.md),
+[ADR 0020](decisions/0020-attendance-snapshots.md) Accepted,
+[ADR 0023](decisions/0023-attendance-authorization-and-policy.md)). Backend: the
+snapshot write and the read surface, `AttendanceAccess`, Postgres and in-memory
+repositories, the API with full error-coverage E2E, and
+`attendance-boundaries.spec.ts`. Flutter: the record and viewing foundations
+([attendance.md §17](attendance.md#17-flutter-attendancerepository-p9-only)).
+
+**Responsibility.** An immutable, append-only record of who the media provider
+held during a community's live session: a snapshot taken on command during a
+broadcast, and the read surface over the snapshots. It *observes*; it decides no
+one "present" by any threshold, duration or percentage
+([attendance.md §12](attendance.md#12-no-threshold-duration-or-percentage)).
+
+**Owned entities.** `Snapshot` (immutable, append-only) and its participant
+entries, in attendance's own tables, written only by attendance's adapters.
+
+**Use cases.** Record a snapshot of the current live session (idempotent on a
+client request id); list a community's snapshots; read one snapshot; list a
+snapshot's participants — the reads keyset-paginated, names resolved at view time
+through `ACCOUNT_DIRECTORY`. One use case per act, one journal — no
+`AttendanceService`.
+
+**Public contract** (`attendance/contracts/`): the event name and payload type
+(`attendance.snapshot.recorded`) and the vocabulary. `AttendanceModule` exports
+**nothing**: attendance's facts travel as its one event and its read API; no
+module calls into it synchronously.
+
+**Events.** Publishes `attendance.snapshot.recorded` (once per created snapshot,
+after the audit entry) — ids, one timestamp and two counts only, never a
+participant id or name. Subscribes to nothing; notifications' P10 translator
+subscribes to this event, through contracts only.
+
+**Depends on.** `live/contracts` (`LIVE_SESSIONS`, and `LIVE_PRESENCE` — which
+only attendance may import), `communities/contracts` (`COMMUNITY_AUTHORIZATION`,
+through `AttendanceAccess`), `identity/contracts` (`ACCOUNT_DIRECTORY`, the
+route-access declarations), `shared`, `platform`. `AttendanceModule` imports
+`IdentityModule`, `CommunitiesModule` and `LiveModule` only.
+
+**Must not know.** LiveKit and the RTC provider above live's `LIVE_PRESENCE`
+observation; live's and communities' internals and rules (it asks); operations,
+academic, realtime, notifications and messaging — a vocabulary firewall that
+keeps halaqa ids and the rest out; `COMMUNITY_MEMBERSHIP` and
+`COMMUNITY_CAPABILITY_HOLDERS` (it asks only `COMMUNITY_AUTHORIZATION`, and a
+snapshot never enumerates members); the reserved permission strings
+`attendance.read` / `attendance.manage`; and every other module's tables.
+`attendance-boundaries.spec.ts` asserts each, non-vacuously.
 
 ---
 

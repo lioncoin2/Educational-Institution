@@ -16,6 +16,8 @@
     "test:livekit": "jest --config test/livekit/jest.config.js",
     "test:arch": "jest --testPathPattern=test/architecture",
     "arch:graph": "depcruise src --config .dependency-cruiser.cjs",
+    "arch:index": "ts-node test/tooling/architecture-index.ts --write",
+    "arch:index:check": "ts-node test/tooling/architecture-index.ts --check",
     "load:preflight": "ts-node test/load/cli/preflight.ts",
     "load:run": "ts-node test/load/cli/run.ts",
     "load:mp": "ts-node test/load/cli/mp-run.ts",
