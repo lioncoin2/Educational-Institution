@@ -23,39 +23,28 @@
 // Credentials come ONLY from --dart-define at run time — never hardcoded,
 // never committed, never printed. With any of them unset the test SKIPS, so
 // the harness is safe to keep in the tree. The grant and its token are never
-// logged or put in failure output.
+// logged; the SDK diagnostics below are redacted before printing.
 @TestOn('browser')
 library;
 
 import 'dart:async';
 
-// package:connectivity_plus is a transitive dependency (via livekit_client);
-// imported here solely to confirm the suspected pre-signalling hang: the SDK's
-// Utils.buildUri → getNetworkType awaits Connectivity().checkConnectivity() on
-// web, ungated. Not an application dependency.
-// ignore: depend_on_referenced_packages
-import 'package:connectivity_plus/connectivity_plus.dart';
 // connectivity_plus's official web implementation entry point (the plugin's
-// declared web `fileName`). `flutter test --platform chrome` does not run
-// Flutter's generated web plugin registrant, so we invoke the SAME registration
-// it would — installing the real web impl, not a fake. src import + the SDK web
-// package, exactly as the generated registrant imports them.
+// declared web `fileName`). `flutter test --platform chrome` does NOT run
+// Flutter's generated web plugin registrant, so without this the SDK's
+// Utils.getNetworkType → Connectivity().checkConnectivity() hangs before
+// signalling. We invoke the SAME registration the generated registrant would,
+// installing the real web impl (DartHtmlConnectivityPlugin) — not a fake. The
+// production web app is unaffected: it runs the generated registrant normally.
 // ignore: implementation_imports, depend_on_referenced_packages
 import 'package:connectivity_plus/src/connectivity_plus_web.dart';
 import 'package:flutter_test/flutter_test.dart';
-// package:flutter_web_plugins is the Flutter SDK's web plugin registry; used to
-// invoke connectivity_plus's web registerWith, as the generated registrant does.
+// Flutter SDK web plugin registry, used to invoke the web registerWith above.
 // ignore: depend_on_referenced_packages
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
-// package:flutter_webrtc is a transitive dependency (via livekit_client);
-// imported here solely for a TEST-ONLY WebRTC readiness probe that calls the
-// same public createPeerConnection the SDK engine uses. Not an app dependency.
-// ignore: depend_on_referenced_packages
-import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:http/http.dart' as http;
-// package:logging is livekit_client's logging backend (a transitive dependency);
-// imported here solely for TEST-ONLY diagnostics, to read the SDK's own
-// signalling logs. Not an application dependency.
+// livekit_client's logging backend (transitive). Its records are the permanent
+// failure diagnostic for the connect/signalling/media phases; redacted on print.
 // ignore: depend_on_referenced_packages
 import 'package:logging/logging.dart';
 import 'package:quran_institution_app/data/api/api_client.dart';
@@ -70,7 +59,7 @@ const _sessionId = String.fromEnvironment('LIVEKIT_E2E_SESSION_ID');
 
 /// Redacts credentials before any diagnostic line is printed: any JWT (three
 /// base64url segments — the LiveKit/access token is one) and any
-/// access_token/token/secret/authorization value. The signalling URL's scheme,
+/// access_token/token/secret/authorization value. A signalling URL's scheme,
 /// host and path are preserved; its token is not.
 String _redactDiagnostics(String input) => input
     .replaceAll(
@@ -88,18 +77,16 @@ String _redactDiagnostics(String input) => input
 void main() {
   // The browser E2E needs a live Flutter binding before livekit_client touches
   // Flutter state during Room.connect — without it the SDK aborts with "Binding
-  // has not yet been initialized" and never opens the signalling WebSocket. This
-  // is the standard flutter_test initializer; no custom binding is introduced.
+  // has not yet been initialized". The standard flutter_test initializer;
+  // required here, and introduces no custom binding.
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  // Register connectivity_plus's official web implementation. `flutter test
-  // --platform chrome` does not run Flutter's generated web plugin registrant,
-  // so ConnectivityPlatform.instance stays the unimplemented default and
-  // Connectivity().checkConnectivity() hangs — which livekit_client awaits
-  // (ungated on web) in Utils.getNetworkType, before signalling. This is the
-  // exact call the generated registrant makes (it installs the real web impl,
-  // DartHtmlConnectivityPlugin, via navigator.onLine — not a fake). The
-  // production web app is unaffected: it runs the generated registrant normally.
+  // Register connectivity_plus's official web implementation, because
+  // `flutter test --platform chrome` does not run Flutter's generated web plugin
+  // registrant. Required: livekit_client awaits Connectivity().checkConnectivity()
+  // (ungated on web) in Utils.getNetworkType before signalling, and without the
+  // real web impl that call hangs. Installs DartHtmlConnectivityPlugin — not a
+  // fake. See the import note above.
   ConnectivityPlusWebPlugin.registerWith(webPluginRegistrar);
 
   test('Flutter → /join → LiveKit room connects, publishes per grant, disconnects', () async {
@@ -111,12 +98,13 @@ void main() {
       return;
     }
 
-    // TEST-ONLY DIAGNOSTICS (observability; changes no connection parameter and
-    // no test behavior). livekit_client logs through package:logging; routing
-    // its root stream to the test output surfaces the exact signalling URL the
-    // SDK dials and every WebSocket/engine event and error — so CI can see what
-    // Chrome does with the socket before it would reach LiveKit. Every line is
-    // redacted, so no token or credential is ever printed.
+    // Permanent failure diagnostic: capture livekit_client's own logs (the
+    // signalling URL, SignalConnected, join response, SDP/ICE, any Connect Error,
+    // disconnect reason) so a future connection / signalling / room-join / media /
+    // unexpected-disconnect failure is actionable from CI. Every line is redacted
+    // — no token is ever printed. Records are buffered and re-emitted on teardown
+    // so even a hang (where mid-test prints can be dropped by the browser console
+    // → test-runner bridge) still surfaces the full trace.
     Logger.root.level = Level.ALL;
     final diagLog = <String>[];
     final diagnostics = Logger.root.onRecord.listen((record) {
@@ -131,24 +119,14 @@ void main() {
       print(line);
     });
     addTearDown(diagnostics.cancel);
-
-    // Re-emit the buffered SDK records as one contiguous block. The immediate
-    // prints above can be dropped by the browser console → test-runner bridge
-    // when the connect await fails mid-flight (the prior run captured only the
-    // teardown logs); flushing the buffer at settled points — around the connect
-    // boundary and on teardown — reliably surfaces the full connect-phase trace.
-    void flushDiag(String marker) {
+    addTearDown(() {
       // ignore: avoid_print
-      print('LKFLUSH[$marker] ${diagLog.length} records:');
+      print('LKDIAG flush (${diagLog.length} records):');
       for (final line in diagLog) {
         // ignore: avoid_print
         print(line);
       }
-      // ignore: avoid_print
-      print('LKFLUSH[$marker] end');
-    }
-
-    addTearDown(() => flushDiag('teardown'));
+    });
 
     // An authenticated client against the real backend. The access token is the
     // backend session token supplied at run time; the store redacts it, and it
@@ -189,79 +167,7 @@ void main() {
     });
     addTearDown(sub.cancel);
 
-    // Proof of the fix: the Flutter binding the LiveKit SDK relies on is live
-    // BEFORE connect (accessing `.instance` would itself throw "Binding has not
-    // yet been initialized" otherwise — the exact prior failure).
-    expect(TestWidgetsFlutterBinding.instance, isNotNull);
-
-    // WebRTC readiness probe (diagnostic only; supported public API). On web the
-    // SDK performs NO explicit WebRTC init: LiveKitClient.initialize() is a
-    // no-op on web, WebRTC.initialize() throws UnimplementedError('not supported
-    // on web'), and the web WebRTC class exposes NO public "initialized" state.
-    // So we exercise the same public call the engine makes before signalling —
-    // rtc.createPeerConnection — bounded, to record whether the browser WebRTC
-    // layer is usable BEFORE Room.connect. The probe PC is closed immediately
-    // and does not touch the real connect that follows.
-    String webrtcProbe;
-    try {
-      final pc = await rtc
-          .createPeerConnection(<String, dynamic>{})
-          .timeout(const Duration(seconds: 10));
-      webrtcProbe = 'usable (createPeerConnection returned)';
-      await pc.close();
-    } on TimeoutException {
-      webrtcProbe = 'HANG (createPeerConnection still pending after 10s)';
-    } catch (e) {
-      webrtcProbe = 'error (${e.runtimeType}: ${_redactDiagnostics('$e')})';
-    }
-    final webrtcLine =
-        'LKWEBRTC Flutter binding: initialized | public WebRTC state API: '
-        'none on web | createPeerConnection probe: $webrtcProbe';
-    diagLog.add(webrtcLine);
-    // ignore: avoid_print
-    print(webrtcLine);
-
-    // CONFIRMATION probe (diagnostic only): call the exact public API the SDK's
-    // Utils.buildUri → getNetworkType awaits on web (Connectivity 7.3.2), with a
-    // strict 10s bound, immediately before client.connect. This does not touch
-    // Room.connect. Distinguishes usable / TIMEOUT (hang) / ERROR.
-    String connectivityProbe;
-    try {
-      final result = await Connectivity().checkConnectivity().timeout(
-        const Duration(seconds: 10),
-      );
-      connectivityProbe = 'usable ($result)';
-    } on TimeoutException {
-      connectivityProbe = 'TIMEOUT';
-    } catch (e) {
-      connectivityProbe = 'ERROR ${e.runtimeType}: ${_redactDiagnostics('$e')}';
-    }
-    final connectivityLine =
-        'LKCONNECTIVITY checkConnectivity: $connectivityProbe';
-    diagLog.add(connectivityLine);
-    // ignore: avoid_print
-    print(connectivityLine);
-
-    // Phase markers distinguish a failure BEFORE, INSIDE, or AFTER connect; the
-    // finally flushes the SDK trace so the connect phase is captured even when
-    // the await fails. Behavior is unchanged — the same single connect call,
-    // and the same error is rethrown.
-    // ignore: avoid_print
-    print('LKPHASE before client.connect');
-    try {
-      await client.connect(grant);
-      // ignore: avoid_print
-      print('LKPHASE after client.connect returned');
-    } catch (error) {
-      // ignore: avoid_print
-      print(
-        'LKPHASE client.connect threw ${error.runtimeType}: '
-        '${_redactDiagnostics('$error')}',
-      );
-      rethrow;
-    } finally {
-      flushDiag('after-connect');
-    }
+    await client.connect(grant);
     final result = await settled.future.timeout(const Duration(seconds: 20));
     // The critical assertion: a REAL room connection, not a 200 from /join.
     expect(
