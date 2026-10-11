@@ -74,6 +74,21 @@ String _redactDiagnostics(String input) => input
       (m) => '${m[1]}=<redacted>',
     );
 
+/// Polls [condition] until it holds or the bounded [timeout] elapses — for a
+/// genuinely asynchronous server → SDK → adapter capability update. Bounded, so
+/// it fails loudly rather than hanging if the update never arrives.
+Future<void> _until(
+  bool Function() condition, {
+  required String reason,
+  Duration timeout = const Duration(seconds: 20),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) fail(reason);
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  }
+}
+
 void main() {
   // The browser E2E needs a live Flutter binding before livekit_client touches
   // Flutter state during Room.connect — without it the SDK aborts with "Binding
@@ -176,18 +191,41 @@ void main() {
       reason: 'the LiveKit room did not reach connected',
     );
 
-    // 3. Publish controls, each gated by the grant (no backend authz here).
+    // 3. Publish controls, gated by the LIVE server authorization.
     if (grant.microphone) {
       await client.setMicrophoneEnabled(true);
       await client.setMicrophoneEnabled(false);
     }
+    // Authorization starts at the join grant: connect() seeds it from the
+    // ticket and the adapter emits the SDK's live participant permission.
+    expect(client.screenAuthorized, grant.screen);
     if (!grant.screen) {
-      // The contract: with no screen grant, the adapter refuses — proven even
-      // without a browser screen source.
+      // Unauthorized at join → the adapter refuses locally, SDK untouched —
+      // proven even without a browser screen source.
       await expectLater(
         client.setScreenShareEnabled(true),
         throwsA(isA<LiveMediaException>()),
       );
+
+      // Sprint 9 — live capability sync against the REAL server + SDK: a
+      // presenter grant received AFTER joining authorizes screen sharing with
+      // NO reconnect, and a revoke withdraws it. The authorization flip is
+      // observed through the adapter's live participant permission — never by
+      // publishing a screen track (headless Chrome has no screen-capture
+      // source; real capture stays a documented manual check).
+      await repository.claimPresenter(_sessionId);
+      await _until(
+        () => client.screenAuthorized,
+        reason: 'a presenter grant did not reach the client as a live capability',
+      );
+      expect(client.screenAuthorized, isTrue);
+
+      await repository.stopPresenter(_sessionId);
+      await _until(
+        () => !client.screenAuthorized,
+        reason: 'a presenter revoke did not reach the client as a live capability',
+      );
+      expect(client.screenAuthorized, isFalse);
     }
 
     // 4. Explicit local disconnect → idle (never a remote kick/duplicate).

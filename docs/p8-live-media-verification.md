@@ -64,20 +64,58 @@ claim is made that the harness cannot support.
   (headless Chrome provides a fake mic via `--use-fake-device-for-media-stream`
   but no `getDisplayMedia` source). Verified instead by the browser-manual steps
   below. No automated test asserts a published screen track.
-- **Mid-session presenter grant (D3, not fixed).** `LiveKitLiveMediaClient`
-  caches the join grant's `screen` flag in `_screenAllowed`; a participant
-  granted the presenter slot **after** joining media is refused locally
-  (`screen_not_permitted`) even though the backend has already pushed
-  `canPublishScreen` to LiveKit (`updateCapabilities`). A fresh `/join`
-  reauthorises. Left unfixed here on purpose: the client-side refusal is the
-  deterministic, SDK-free assertion the real-E2E relies on (the E2E host's grant
-  has `screen:false`). **Next step:** refresh the connected client's publish
-  capabilities when presenter authority changes — e.g. a seam method to update
-  the grant's capability flags without a disruptive reconnect — then drop the
-  stale cache. Tracked against ADR 0030's open decisions.
+- **Mid-session presenter grant (D3) — RESOLVED in Sprint 9.** The adapter no
+  longer trusts only the join ticket: it listens to the SDK's
+  `ParticipantPermissionsUpdatedEvent` for the local participant and relays the
+  live `canPublishScreen` as a `LiveKitCapabilities` signal, so `_screenAllowed`
+  tracks the server's live authorization. A presenter granted the slot **after**
+  joining can now share with no reconnect; a revoke re-blocks it and stops any
+  active capture. The client-side pre-check (deterministic, SDK-free) is kept —
+  it now reflects the LIVE capability, not the stale join flag. See the Sprint 9
+  section below.
 - **Live track mute (path 2).** The UI shows command-confirmed publish state,
   not the SDK's live track state; an externally-driven mute is not reflected.
   Resolved by the future roster/speaking slice (ADR 0030).
+
+## Sprint 9 — live capability synchronization (the D3 fix)
+
+**Root cause.** `LiveKitLiveMediaClient._screenAllowed` was set once, from the
+join grant's `screen` flag, and never updated. The backend, on a presenter
+grant/revoke, pushes new publish capabilities to LiveKit (`updateCapabilities`
+→ `updateParticipant`) WITHOUT reissuing the Flutter grant, so a participant
+granted presenter after joining stayed locally blocked.
+
+**Fix (adapter + client; no reconnect, no backend change, no seam change).**
+- `SdkLiveKitRoomPort` subscribes to the SDK `ParticipantPermissionsUpdatedEvent`
+  for the LOCAL participant and emits a `LiveKitCapabilities(canPublishScreen)`
+  signal (plus an initial one on connect). `canPublishScreen` comes from
+  `screenPublishAllowed`, the backend's own rule — can-publish AND (no explicit
+  sources ⇒ all, or the screen source `3` is listed).
+- `LiveKitLiveMediaClient` updates `_screenAllowed` from that signal and, on a
+  genuine allowed→denied transition, stops any active capture (best-effort,
+  server-driven). A grant NEVER auto-starts capture (explicit intent only); the
+  authorization (`screenAuthorized`) stays distinct from the capture state.
+
+**Verification.**
+
+| Scenario | Kind | Ran? | Evidence |
+|---|---|---|---|
+| The capability RULE (empty⇒all, screen listed, canPublish gate) | unit | yes | `livekit_room_port_test` — `screenPublishAllowed` |
+| A `LiveKitCapabilities` signal surfaces on the port stream | unit | yes | `livekit_room_port_test` |
+| Grant while connected → authorized, no reconnect; start then allowed | unit (fake port) | yes | `livekit_live_media_client_test` |
+| A grant never auto-starts capture | unit | yes | same |
+| Revoke → active capture stopped + re-blocked | unit | yes | same |
+| Duplicate / no-change / out-of-order updates idempotent (one stop) | unit | yes | same |
+| Server/SDK refusal despite authorization → surfaced, token not leaked | unit | yes | same |
+| Authorization dropped on disconnect; new grant resets it (session change) | unit | yes | same |
+| Microphone unaffected by capability changes | unit | yes | same |
+| **Real grant→revoke over LiveKit** (claim presenter → `screenAuthorized` true → stop → false), no reconnect | **real-E2E** | yes (dispatched) | `livekit_web_e2e_test` extension; observed via the live participant permission, NO screen capture |
+
+**Real vs mocked.** Every unit row uses deterministic fakes (no SDK). The last
+row is the ONLY real-media proof: it drives a real backend presenter
+grant/revoke and watches the real SDK permission reach the client — but it does
+NOT publish a screen track (headless Chrome has no screen source), so real
+screen CAPTURE remains the manual check B1 below.
 
 ## Manual verification (NOT executed in CI)
 

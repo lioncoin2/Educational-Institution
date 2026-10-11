@@ -21,6 +21,7 @@ class _FakePort implements LiveKitRoomPort {
   bool disposed = false;
   Object? failConnect;
   Object? failDisconnect;
+  Object? failScreen;
 
   void emit(LiveKitRoomSignal signal) => _signals.add(signal);
 
@@ -41,7 +42,10 @@ class _FakePort implements LiveKitRoomPort {
   Future<void> setScreenShareEnabled(
     bool enabled, {
     bool captureScreenAudio = false,
-  }) async => screen.add((enabled: enabled, audio: captureScreenAudio));
+  }) async {
+    screen.add((enabled: enabled, audio: captureScreenAudio));
+    if (failScreen != null) throw failScreen!;
+  }
 
   @override
   Future<void> disconnect() async {
@@ -247,6 +251,127 @@ void main() {
       await connected(screen: false);
       await client.setScreenShareEnabled(false);
       expect(port.screen.single, (enabled: false, audio: false));
+    });
+  });
+
+  // D3 — live capability synchronization: a presenter grant/revoke that reaches
+  // a CONNECTED client as the SDK's ParticipantPermissionsUpdatedEvent (relayed
+  // here as LiveKitCapabilities) updates the authorization without a reconnect.
+  // These are deterministic fakes — they prove the client's logic, NOT real
+  // LiveKit interoperability (the real path is the Live E2E).
+  group('live capability sync (D3)', () {
+    test('a grant received while connected authorizes screen sharing — no reconnect', () async {
+      await connected(screen: false); // joined unauthorized
+      expect(client.screenAuthorized, isFalse);
+      await expectLater(
+        client.setScreenShareEnabled(true),
+        throwsA(
+          isA<LiveMediaException>().having(
+            (e) => e.code,
+            'code',
+            'screen_not_permitted',
+          ),
+        ),
+      );
+
+      port.emit(const LiveKitCapabilities(canPublishScreen: true));
+      expect(client.screenAuthorized, isTrue);
+      await client.setScreenShareEnabled(true); // now authorized → forwarded
+      expect(port.screen.single, (enabled: true, audio: false));
+      expect(port.connects, hasLength(1)); // never reconnected
+    });
+
+    test('a grant never auto-starts capture — only the authority changes', () async {
+      await connected(screen: false);
+      port.emit(const LiveKitCapabilities(canPublishScreen: true));
+      expect(client.screenAuthorized, isTrue);
+      expect(port.screen, isEmpty); // capture still needs explicit user intent
+    });
+
+    test('a revoke stops active capture and re-blocks sharing', () async {
+      await connected(screen: true);
+      await client.setScreenShareEnabled(true);
+      expect(port.screen, [(enabled: true, audio: false)]);
+
+      port.emit(const LiveKitCapabilities(canPublishScreen: false)); // revoked
+      await pumpEventQueue(); // the best-effort stop runs on a microtask
+      expect(client.screenAuthorized, isFalse);
+      // The server authority signal — not the UI — stopped the capture.
+      expect(port.screen.last, (enabled: false, audio: false));
+      await expectLater(
+        client.setScreenShareEnabled(true),
+        throwsA(
+          isA<LiveMediaException>().having(
+            (e) => e.code,
+            'code',
+            'screen_not_permitted',
+          ),
+        ),
+      );
+    });
+
+    test('duplicate and no-change updates are idempotent — exactly one stop', () async {
+      await connected(screen: true);
+      await client.setScreenShareEnabled(true);
+      port.screen.clear();
+
+      port.emit(const LiveKitCapabilities(canPublishScreen: true)); // no change
+      port.emit(const LiveKitCapabilities(canPublishScreen: false)); // revoke
+      port.emit(const LiveKitCapabilities(canPublishScreen: false)); // duplicate
+      await pumpEventQueue();
+      expect(port.screen, [(enabled: false, audio: false)]); // one stop only
+      expect(client.screenAuthorized, isFalse);
+    });
+
+    test('out-of-order updates settle on the latest value', () async {
+      await connected(screen: false);
+      port.emit(const LiveKitCapabilities(canPublishScreen: true));
+      port.emit(const LiveKitCapabilities(canPublishScreen: false));
+      port.emit(const LiveKitCapabilities(canPublishScreen: true)); // latest wins
+      await pumpEventQueue();
+      expect(client.screenAuthorized, isTrue);
+      await client.setScreenShareEnabled(true);
+      expect(port.screen.last, (enabled: true, audio: false));
+    });
+
+    test('a server/SDK refusal despite authorization is surfaced, not faked', () async {
+      await connected(screen: false);
+      port.emit(const LiveKitCapabilities(canPublishScreen: true));
+      // Authorized locally, but the SDK/server refuses the actual publish.
+      port.failScreen = Exception('capture refused for token=super-secret');
+      LiveMediaException? thrown;
+      try {
+        await client.setScreenShareEnabled(true);
+      } on LiveMediaException catch (e) {
+        thrown = e;
+      }
+      expect(thrown, isNotNull); // never a pretended success
+      expect(thrown.toString(), isNot(contains('super-secret'))); // no leak
+    });
+
+    test('authorization is dropped on disconnect', () async {
+      await connected(screen: true);
+      expect(client.screenAuthorized, isTrue);
+      await client.disconnect();
+      expect(client.screenAuthorized, isFalse);
+    });
+
+    test('a fresh connect with a new grant resets authority (session change)', () async {
+      await connected(screen: true);
+      expect(client.screenAuthorized, isTrue);
+      await client.disconnect();
+      // A new session / reconnect brings a NEW grant; a stale "true" never
+      // carries over.
+      await client.connect(_grant(screen: false));
+      expect(client.screenAuthorized, isFalse);
+    });
+
+    test('the microphone is unaffected by capability changes', () async {
+      await connected(screen: false);
+      port.emit(const LiveKitCapabilities(canPublishScreen: true));
+      await client.setMicrophoneEnabled(true);
+      await client.setMicrophoneEnabled(false);
+      expect(port.microphone, [true, false]);
     });
   });
 

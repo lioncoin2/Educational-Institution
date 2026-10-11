@@ -58,6 +58,18 @@ final class LiveKitDisconnected extends LiveKitRoomSignal {
   final LiveMediaDisconnectReason reason;
 }
 
+/// The LOCAL participant's server-authorized publish capability changed while
+/// connected — the SDK's `ParticipantPermissionsUpdatedEvent` for this
+/// participant, reduced to the one capability the app acts on. It is the
+/// authoritative signal that a presenter grant/revoke has reached this client
+/// WITHOUT a reconnect; it never starts or stops capture by itself — only the
+/// client decides what to do with the new authority.
+final class LiveKitCapabilities extends LiveKitRoomSignal {
+  const LiveKitCapabilities({required this.canPublishScreen});
+
+  final bool canPublishScreen;
+}
+
 /// Translates a LiveKit `DisconnectReason` into the app's own reason. Only the
 /// three meaningful cases map across; everything else — `unknown`,
 /// `serverShutdown`, `stateMismatch`, `joinFailure`, `disconnected`,
@@ -77,6 +89,39 @@ LiveMediaDisconnectReason liveKitDisconnectReason(DisconnectReason? reason) =>
         LiveMediaDisconnectReason.participantRemoved,
       _ => LiveMediaDisconnectReason.other,
     };
+
+/// Whether a participant's server-authorized permissions allow publishing a
+/// screen-share track — the SAME rule the backend applies
+/// (`backend/.../livekit-rtc-provider.ts`): can-publish AND (no explicit
+/// sources means every source is allowed, or the screen source is listed).
+/// [sourceValues] are the wire values of `ParticipantPermissions.
+/// canPublishSources`; [_protoTrackSourceScreenShare] is the LiveKit proto
+/// `TrackSource.SCREEN_SHARE` value (livekit_models.proto), matched by value so
+/// no proto type crosses the seam. Pure and SDK-free, so it is unit-tested
+/// directly.
+bool screenPublishAllowed({
+  required bool canPublish,
+  required List<int> sourceValues,
+}) =>
+    canPublish &&
+    (sourceValues.isEmpty ||
+        sourceValues.contains(_protoTrackSourceScreenShare));
+
+/// LiveKit proto `TrackSource.SCREEN_SHARE` wire value (livekit_models.proto).
+/// The backend emits this exact source when a participant may share a screen.
+const int _protoTrackSourceScreenShare = 3;
+
+/// Reduces the SDK's [ParticipantPermissions] to the one capability the app
+/// acts on, via the shared [screenPublishAllowed] rule.
+LiveKitCapabilities _capabilitiesOf(ParticipantPermissions permissions) =>
+    LiveKitCapabilities(
+      canPublishScreen: screenPublishAllowed(
+        canPublish: permissions.canPublish,
+        sourceValues: [
+          for (final source in permissions.canPublishSources) source.value,
+        ],
+      ),
+    );
 
 /// One connected LiveKit room reduced to the operations the port performs on
 /// it: the publish commands and the three teardown steps it owns (dispose the
@@ -249,6 +294,14 @@ Future<LiveKitLiveRoom> _openSdkRoom(
       // Our own leave is not a remote failure.
       if (event.reason == DisconnectReason.clientInitiated) return;
       emit(LiveKitDisconnected(liveKitDisconnectReason(event.reason)));
+    })
+    ..on<ParticipantPermissionsUpdatedEvent>((event) {
+      // Only THIS client's own server-authorized capability drives publishing;
+      // a remote participant's permission change is not ours to act on. The
+      // backend pushes a presenter grant/revoke as an updateParticipant, which
+      // the SDK delivers here — live, with no reconnect.
+      if (event.participant is! LocalParticipant) return;
+      emit(_capabilitiesOf(event.permissions));
     });
   try {
     await room.connect(url, token);
@@ -260,6 +313,11 @@ Future<LiveKitLiveRoom> _openSdkRoom(
     ).catchError((_) {});
     rethrow;
   }
+  // Emit the authorization the server granted at join, so the client starts
+  // from the SDK's live permission (not only the join ticket); later changes
+  // arrive through the event above.
+  final local = room.localParticipant;
+  if (local != null) emit(_capabilitiesOf(local.permissions));
   return _SdkLiveRoom(room, listener);
 }
 

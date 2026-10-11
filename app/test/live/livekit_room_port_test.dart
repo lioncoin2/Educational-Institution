@@ -295,4 +295,60 @@ void main() {
       },
     );
   });
+
+  group('screenPublishAllowed (mirrors the backend rule)', () {
+    // Proto TrackSource wire values: microphone = 2, screen_share = 3.
+    test('can-publish AND (no explicit sources ⇒ all, or screen is listed)', () {
+      expect(
+        screenPublishAllowed(canPublish: false, sourceValues: const []),
+        isFalse,
+        reason: 'cannot publish anything',
+      );
+      expect(
+        screenPublishAllowed(canPublish: false, sourceValues: const [3]),
+        isFalse,
+        reason: 'canPublish=false overrides a listed source',
+      );
+      expect(
+        screenPublishAllowed(canPublish: true, sourceValues: const []),
+        isTrue,
+        reason: 'empty explicit sources means every source is allowed',
+      );
+      expect(
+        screenPublishAllowed(canPublish: true, sourceValues: const [2]),
+        isFalse,
+        reason: 'microphone-only grant does not allow screen',
+      );
+      expect(
+        screenPublishAllowed(canPublish: true, sourceValues: const [2, 3]),
+        isTrue,
+      );
+      expect(
+        screenPublishAllowed(canPublish: true, sourceValues: const [3]),
+        isTrue,
+      );
+    });
+  });
+
+  group('SdkLiveKitRoomPort capability signal', () {
+    test('a capability signal from the room surfaces on the port stream', () async {
+      late void Function(LiveKitRoomSignal) emit;
+      final port = SdkLiveKitRoomPort(
+        openRoom: (url, token, e) async {
+          emit = e;
+          return _FakeLiveRoom();
+        },
+      );
+      final events = <LiveKitRoomSignal>[];
+      port.signals.listen(events.add);
+
+      await port.connect('wss://x', 'tok');
+      emit(const LiveKitCapabilities(canPublishScreen: true));
+      await pumpEventQueue();
+
+      expect(events.single, isA<LiveKitCapabilities>());
+      expect((events.single as LiveKitCapabilities).canPublishScreen, isTrue);
+      await port.dispose();
+    });
+  });
 }

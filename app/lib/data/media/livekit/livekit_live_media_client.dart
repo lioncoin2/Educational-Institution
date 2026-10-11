@@ -42,6 +42,14 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
   @override
   Stream<LiveMediaState> get states => _states.stream;
 
+  /// The latest server-authorized screen-share capability — the SDK's live
+  /// participant permission, updated as the backend grants or revokes a
+  /// presenter slot (never merely the join ticket). Distinct from whether a
+  /// screen track is actually publishing; not part of the [LiveMediaClient]
+  /// seam, this is exposed on the real adapter so the E2E can observe a live
+  /// grant/revoke transition without triggering a capture.
+  bool get screenAuthorized => _screenAllowed;
+
   @override
   Future<void> connect(LiveMediaGrant grant) async {
     // Reject an obviously unusable grant before touching the SDK.
@@ -102,6 +110,9 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
       // appears here (the port holds it), so nothing sensitive is dropped.
     } finally {
       // The viewer's own leave returns to idle; the controller also owns this.
+      // Drop the cached authorization too, so a stale grant can never outlive
+      // the connection it belonged to.
+      _screenAllowed = false;
       _set(const LiveMediaIdle());
     }
   }
@@ -123,6 +134,30 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
         _set(const LiveMediaReconnecting());
       case LiveKitDisconnected(:final reason):
         _set(LiveMediaDisconnected(reason));
+      case LiveKitCapabilities(:final canPublishScreen):
+        // The server's live authorization — the only thing that un-blocks (or
+        // re-blocks) screen sharing mid-session. A grant NEVER starts capture
+        // (that needs explicit user intent); a revoke DOES stop any active
+        // capture, driven by this server signal rather than the UI. Idempotent:
+        // a repeated or no-change update only re-sets the flag, and only a
+        // genuine allowed→denied transition stops capture, once.
+        final wasAllowed = _screenAllowed;
+        _screenAllowed = canPublishScreen;
+        if (wasAllowed && !canPublishScreen) {
+          unawaited(_stopScreenShareQuietly());
+        }
+    }
+  }
+
+  /// Stops any screen capture best-effort when screen authority is lost. A
+  /// teardown error is swallowed (the track may already be gone server-side,
+  /// and losing authority is not a user-actionable error); the token never
+  /// appears here (the port holds it).
+  Future<void> _stopScreenShareQuietly() async {
+    try {
+      await _port.setScreenShareEnabled(false, captureScreenAudio: false);
+    } on Object {
+      // Nothing to surface.
     }
   }
 

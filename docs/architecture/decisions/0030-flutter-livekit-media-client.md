@@ -263,6 +263,15 @@ Resolved since this ADR was accepted:
   microphone or uncontrollable connection is stranded and no later controller
   diverges from a lingering `connected`. Background audio is intentionally not
   kept — there is no UI surface for it. (`docs/p8-live-media-verification.md`.)
+- **Live screen-capability sync (P9 / Sprint 9).** The adapter no longer trusts
+  only the join ticket's `screen` flag: it listens to the SDK's
+  `ParticipantPermissionsUpdatedEvent` for the local participant and relays the
+  live `canPublishScreen` (the backend's own rule — can-publish AND the screen
+  source listed/empty) as a `LiveKitCapabilities` signal. So a participant
+  granted the presenter slot AFTER joining can screen-share with NO reconnect,
+  and a revoke re-blocks it and stops any active capture. Authorization stays
+  distinct from the capture/publication state, and a grant never auto-starts
+  capture. (`docs/p8-live-media-verification.md`.)
 
 Genuinely unresolved:
 
@@ -273,12 +282,6 @@ Genuinely unresolved:
 - The future participant-roster/speaking contract — which would also let the UI
   reflect an SDK-driven track mute (server or device), not only the
   command-confirmed publish state it shows today.
-- Refreshing a connected client's publish capabilities when presenter authority
-  changes mid-session: the adapter caches the join grant's `screen` flag, so a
-  presenter granted AFTER joining media is refused locally even though the
-  backend has already pushed `canPublishScreen` to LiveKit
-  (`updateCapabilities`). A fresh `/join` reauthorises; a non-disruptive refresh
-  is the follow-up (`docs/p8-live-media-verification.md`).
 
 The LiveKit provider choice, the `livekit_client` version, the media
 architecture, and the Slice A/B contracts are **decided** and are not reopened
