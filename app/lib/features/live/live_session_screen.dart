@@ -7,22 +7,23 @@ import '../../core/widgets/foundations/app_card.dart';
 import '../../core/widgets/foundations/async_view.dart';
 import '../../core/widgets/foundations/empty_state.dart';
 import '../../core/widgets/foundations/mock_ribbon.dart';
-import '../../core/widgets/foundations/section_header.dart';
 import '../../core/widgets/layout/app_screen.dart';
 import '../../data/models/live.dart';
-import '../../providers/app_providers.dart';
 import 'live_copy.dart';
 import 'state/live_session_controller.dart';
+import 'widgets/live_media_panel.dart';
 import 'widgets/live_moderation_actions.dart';
 import 'widgets/live_roster.dart';
 import 'widgets/live_states.dart';
 
-/// A community's live session, read-only: whether one is running now, who
-/// hosts it, and how many hold the floor — every fact the server's, never
-/// worked out here. The media area states plainly that live audio is not
-/// available in this build; joining is a later milestone behind its own seam
-/// (lib/data/media/live_media_seams.dart), so this screen never implies that
-/// voice works.
+/// A community's live session: whether one is running now, who hosts it, and
+/// how many hold the floor — every fact the server's, never worked out here —
+/// together with the viewer's own media participation (joining the audio, the
+/// microphone, and a presenter's screen-share capture) behind the media seam
+/// (lib/data/media/live_media_seams.dart). Media is transport only; a build
+/// with no provider bound shows it as unavailable. Authority — who may join or
+/// present — stays the server's `me`, and the media connection is never
+/// attendance or a second source of session truth.
 class LiveSessionScreen extends ConsumerWidget {
   const LiveSessionScreen({super.key, required this.communityId});
 
@@ -69,20 +70,17 @@ class LiveSessionScreen extends ConsumerWidget {
   }
 }
 
-class _SessionView extends ConsumerWidget {
+class _SessionView extends StatelessWidget {
   const _SessionView({required this.session});
 
   final LiveSession session;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     // The server's state is the truth: a session no longer live shows the
     // ended card and no acting controls — never a stale "live" view.
     if (!session.isLive) return _EndedView(session: session);
 
-    // Media is a separate seam; reading it here keeps it out of session
-    // loading. Unavailable in this build — the UI says so, never pretends.
-    final mediaAvailable = ref.watch(liveMediaClientProvider).isAvailable;
     final me = session.me;
     final moderation = session.moderation;
     return Column(
@@ -137,41 +135,12 @@ class _SessionView extends ConsumerWidget {
             ],
           ),
         ),
-        const SizedBox(height: Insets.xxl),
-        const SectionHeader(title: LiveCopy.audioSection),
-        const SizedBox(height: Insets.md),
-        if (!mediaAvailable)
-          AppCard(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.volume_off_rounded,
-                  size: 18,
-                  color: context.colors.onSurfaceVariant,
-                ),
-                const SizedBox(width: Insets.sm),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        LiveCopy.audioUnavailable,
-                        style: context.text.bodyMedium,
-                      ),
-                      const SizedBox(height: Insets.xs),
-                      Text(
-                        LiveCopy.audioUnavailableMessage,
-                        style: context.text.bodySmall?.copyWith(
-                          color: context.colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+        // The viewer's own place in the session audio — joining, the
+        // microphone and (for a presenter) the screen-share capture, behind
+        // the media seam. Unavailable in a build with no provider bound; the
+        // panel says so. Media is transport only, never authority, attendance,
+        // or a second source of session truth.
+        LiveMediaPanel(session: session),
         // The viewer's own controls, each shown only as the server's `me`
         // allows. A command never mutates this view; the realtime
         // reconciliation (Slice 4) brings the authoritative session after.

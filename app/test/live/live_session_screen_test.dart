@@ -14,6 +14,8 @@ import 'package:quran_institution_app/features/live/live_session_screen.dart';
 import 'package:quran_institution_app/features/live/widgets/live_states.dart';
 import 'package:quran_institution_app/providers/app_providers.dart';
 
+import 'fake_live_media_client.dart';
+
 /// A repository the screen drives: it answers the current session, records
 /// every moderator command it is asked to run, and can hold a command in
 /// flight or make it fail — so command UX (progress, no duplicate, error,
@@ -122,6 +124,7 @@ LiveSession _session({
   DataOrigin origin = DataOrigin.records,
   LiveSessionState state = LiveSessionState.live,
   bool isHost = false,
+  bool canJoin = false,
   bool canModerate = false,
   bool canEnd = false,
   bool canPresent = false,
@@ -142,6 +145,7 @@ LiveSession _session({
         ? LiveParticipantRole.moderator
         : LiveParticipantRole.listener,
     isHost: isHost,
+    canJoin: canJoin,
     canModerate: canModerate,
     canEnd: canEnd,
     canPresent: canPresent,
@@ -666,6 +670,28 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(LiveCopy.rosterError), findsOneWidget);
       expect(find.text(LiveCopy.retry), findsOneWidget);
+    });
+  });
+
+  group('media panel wiring (Sprint 7)', () {
+    testWidgets('a bound provider + canJoin shows the explicit join action', (
+      tester,
+    ) async {
+      final client = FakeLiveMediaClient();
+      addTearDown(client.dispose);
+      await pump(tester, fake(_session(canJoin: true)), media: client);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('live-audio-join')), findsOneWidget);
+      expect(find.text(LiveCopy.audioUnavailable), findsNothing);
+    });
+
+    testWidgets('no provider bound still says audio is unavailable in build', (
+      tester,
+    ) async {
+      await pump(tester, fake(_session(canJoin: true)));
+      await tester.pumpAndSettle();
+      expect(find.text(LiveCopy.audioUnavailable), findsOneWidget);
+      expect(find.byKey(const Key('live-audio-join')), findsNothing);
     });
   });
 }

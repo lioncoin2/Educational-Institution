@@ -25,6 +25,11 @@ class FakeLiveMediaClient implements LiveMediaClient {
   /// When set, the next command method throws this and clears it.
   Object? failNext;
 
+  /// When set, each command records itself then AWAITS this before completing
+  /// (and before any [failNext]) — so a widget test can observe the in-flight
+  /// (pending) control and assert a duplicate command is blocked.
+  Completer<void>? hold;
+
   /// Drives the state and notifies [states].
   void emit(LiveMediaState state) {
     _state = state;
@@ -43,19 +48,19 @@ class FakeLiveMediaClient implements LiveMediaClient {
   @override
   Future<void> connect(LiveMediaGrant grant) async {
     connects.add(grant);
-    _maybeFail();
+    await _gate();
   }
 
   @override
   Future<void> setMicrophoneEnabled(bool enabled) async {
     microphoneCommands.add(enabled);
-    _maybeFail();
+    await _gate();
   }
 
   @override
   Future<void> setScreenShareEnabled(bool enabled) async {
     screenShareCommands.add(enabled);
-    _maybeFail();
+    await _gate();
   }
 
   @override
@@ -63,7 +68,10 @@ class FakeLiveMediaClient implements LiveMediaClient {
     disconnects += 1;
   }
 
-  void _maybeFail() {
+  /// Hold (if asked) then fail (if asked): the command is already recorded.
+  Future<void> _gate() async {
+    final held = hold;
+    if (held != null) await held.future;
     final error = failNext;
     if (error != null) {
       failNext = null;

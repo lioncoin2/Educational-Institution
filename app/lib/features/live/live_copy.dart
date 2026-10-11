@@ -123,12 +123,65 @@ abstract final class LiveCopy {
     _ => 'تعذّر تنفيذ الإجراء.',
   };
 
-  /// The media (audio) area. Said plainly so the screen never implies that
-  /// joining or voice works in this build.
+  /// The media (audio) area. In a build with no media provider bound it says
+  /// plainly that audio is unavailable; when one is bound it carries the
+  /// participation controls below.
   static const audioSection = 'الصوت المباشر';
   static const audioUnavailable = 'الصوت المباشر غير متاح في هذا الإصدار بعد.';
   static const audioUnavailableMessage =
       'عرض الجلسة متاح الآن؛ الانضمام الصوتي سيُضاف لاحقًا.';
+
+  // ── Live media participation (Sprint 7) ───────────────────────────────
+  // Joining the session's audio room, the microphone, and the screen-share
+  // capture — the media TRANSPORT (the seam's), never authority. Who may join
+  // or present is the server's `me`, never worked out here; joining is
+  // EXPLICIT (the person asks), and nothing opens the microphone on its own.
+
+  /// Join the audio — shown only when the server's `me.canJoin` allows it.
+  static const audioJoin = 'الانضمام إلى الصوت';
+
+  /// The server does not admit this viewer to the audio now.
+  static const audioJoinUnavailable = 'الانضمام إلى الصوت غير متاح لك الآن.';
+  static const audioIdlePrompt = 'انضم إلى صوت الجلسة للاستماع والمشاركة.';
+  static const audioJoining = 'جارٍ الانضمام إلى الصوت…';
+  static const audioConnectedTitle = 'أنت متصل بصوت الجلسة';
+
+  /// Joining is not speaking: the microphone stays closed until asked for.
+  static const audioConnectedHint =
+      'شغّل الميكروفون عندما تريد التحدث؛ الانضمام وحده لا يفتحه.';
+
+  /// A transient drop the SDK is recovering — not a reason to act.
+  static const audioReconnecting = 'انقطع الاتصال مؤقتًا، وتجري إعادته…';
+  static const audioLeave = 'مغادرة الصوت';
+  static const audioRejoin = 'إعادة الانضمام';
+
+  /// Terminal media states — the connection is no longer carrying audio.
+  static const audioFailed = 'تعذّر الاتصال بصوت الجلسة.';
+  static const audioDisconnected = 'انقطع الاتصال بصوت الجلسة.';
+  static const audioEvicted =
+      'تم الاتصال بهذا الحساب من جهاز آخر، فانتهى الاتصال هنا.';
+  static const audioRemoved = 'أزالك أحد المشرفين من صوت الجلسة.';
+
+  /// The microphone control — on/off is the LAST state the SDK confirmed, not
+  /// a live speaking indicator. The backend token is the real ceiling; a
+  /// publish it forbids surfaces as [micError], recoverably.
+  static const micEnable = 'تشغيل الميكروفون';
+  static const micDisable = 'كتم الميكروفون';
+  static const micOnStatus = 'الميكروفون مُشغَّل';
+  static const micOffStatus = 'الميكروفون مكتوم';
+  static const micError =
+      'تعذّر تشغيل الميكروفون. تحقّق من إذن الوصول إليه ثم أعد المحاولة.';
+
+  /// The screen-share CAPTURE control — shown only to a current presenter
+  /// (`me.presenting`, the server's authority). Starting it opens the browser
+  /// picker; "on" means the SDK published the track (never merely that a slot
+  /// was granted). A cancel, an unsupported browser or a refused grant all
+  /// surface as [screenShareError], recoverably.
+  static const screenShareStart = 'بدء مشاركة الشاشة';
+  static const screenShareStop = 'إيقاف مشاركة الشاشة';
+  static const screenShareOnStatus = 'مشاركة الشاشة مُفعّلة';
+  static const screenShareError =
+      'تعذّرت مشاركة الشاشة. قد لا يدعمها المتصفّح أو أنها غير متاحة الآن.';
 
   static const demoBanner = 'جلسة مباشرة تجريبية للعرض فقط.';
 
