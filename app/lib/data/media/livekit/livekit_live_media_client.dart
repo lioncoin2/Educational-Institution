@@ -91,9 +91,19 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
 
   @override
   Future<void> disconnect() async {
-    await _port.disconnect();
-    // The viewer's own leave returns to idle; the controller also owns this.
-    _set(const LiveMediaIdle());
+    // A leave is best-effort and ALWAYS safe (the seam contract): the room is
+    // being discarded, so a teardown error from the port is not something the
+    // viewer can act on — it must neither surface nor strand the media state.
+    try {
+      await _port.disconnect();
+    } on Object {
+      // Swallow: the viewer has left; a failed teardown changes nothing, and a
+      // leave that threw would reach the UI as an error. The token never
+      // appears here (the port holds it), so nothing sensitive is dropped.
+    } finally {
+      // The viewer's own leave returns to idle; the controller also owns this.
+      _set(const LiveMediaIdle());
+    }
   }
 
   /// Releases the subscription, the port and the state stream. Not part of the

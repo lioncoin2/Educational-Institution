@@ -20,6 +20,7 @@ class _FakePort implements LiveKitRoomPort {
   final List<({bool enabled, bool audio})> screen = [];
   bool disposed = false;
   Object? failConnect;
+  Object? failDisconnect;
 
   void emit(LiveKitRoomSignal signal) => _signals.add(signal);
 
@@ -43,7 +44,10 @@ class _FakePort implements LiveKitRoomPort {
   }) async => screen.add((enabled: enabled, audio: captureScreenAudio));
 
   @override
-  Future<void> disconnect() async => disconnects += 1;
+  Future<void> disconnect() async {
+    disconnects += 1;
+    if (failDisconnect != null) throw failDisconnect!;
+  }
 
   @override
   Future<void> dispose() async {
@@ -161,6 +165,29 @@ void main() {
       await client.disconnect();
       await client.disconnect();
       expect(port.disconnects, 2);
+      expect(client.state, const LiveMediaIdle());
+    });
+
+    test('is best-effort: a port teardown error neither throws nor strands state', () async {
+      await connected();
+      port.failDisconnect = Exception('teardown boom');
+      // The seam contract says disconnect is always safe to call; a failed room
+      // teardown must not surface to the caller (the controller does not catch)
+      // and must still land on idle. `expectLater(..., completes)` fails if it throws.
+      await expectLater(client.disconnect(), completes);
+      expect(port.disconnects, 1);
+      expect(client.state, const LiveMediaIdle());
+    });
+
+    test('stays best-effort even for a non-Exception Error from the port', () async {
+      await connected();
+      // The port now rethrows the FIRST teardown failure once every resource
+      // has had its cleanup attempt, and that first failure may be an Error (a
+      // programming bug in teardown), not just an Exception. The client's leave
+      // must stay safe for any throw and still land on idle.
+      port.failDisconnect = StateError('teardown bug');
+      await expectLater(client.disconnect(), completes);
+      expect(port.disconnects, 1);
       expect(client.state, const LiveMediaIdle());
     });
   });
