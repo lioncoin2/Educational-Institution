@@ -25,6 +25,7 @@ class _ScriptedParticipants implements AttendanceRepository {
   final List<Object> _answers;
   int _call = 0;
   final List<String?> cursors = [];
+  final List<SnapshotConnection?> connections = [];
 
   @override
   Future<SnapshotParticipantPage> participants(
@@ -33,6 +34,7 @@ class _ScriptedParticipants implements AttendanceRepository {
     String? cursor,
   }) async {
     cursors.add(cursor);
+    connections.add(connection);
     final answer = _answers[_call++];
     if (answer is AttendanceException) throw answer;
     return answer as SnapshotParticipantPage;
@@ -57,16 +59,24 @@ class _ScriptedParticipants implements AttendanceRepository {
 }
 
 void main() {
-  final provider = attendanceParticipantsProvider('s-1');
+  const allFilter = (snapshotId: 's-1', connection: null);
+  final provider = attendanceParticipantsProvider(allFilter);
 
-  ProviderContainer containerWith(AttendanceRepository repo) {
+  ProviderContainer containerWith(
+    AttendanceRepository repo, {
+    AttendanceParticipantsQuery query = allFilter,
+  }) {
     final container = ProviderContainer(
       overrides: [
         attendanceRepositoryProvider.overrideWithValue(repo),
         sessionUserProvider.overrideWith((ref) async => null),
       ],
     );
-    final sub = container.listen(provider, (_, _) {}, onError: (_, _) {});
+    final sub = container.listen(
+      attendanceParticipantsProvider(query),
+      (_, _) {},
+      onError: (_, _) {},
+    );
     addTearDown(sub.close);
     addTearDown(container.dispose);
     return container;
@@ -123,5 +133,24 @@ void main() {
     await container.read(provider.notifier).refresh();
     final state = container.read(provider).value!;
     expect(state.items.map((p) => p.userId), ['u-9']);
+  });
+
+  test('forwards the connection filter to the repository, build and loadMore', () async {
+    const connectedFilter = (
+      snapshotId: 's-1',
+      connection: SnapshotConnection.connected,
+    );
+    final repo = _ScriptedParticipants([
+      _page(['u-1'], next: 'p2'),
+      _page(['u-2']),
+    ]);
+    final container = containerWith(repo, query: connectedFilter);
+    final filtered = attendanceParticipantsProvider(connectedFilter);
+    await container.read(filtered.future);
+    await container.read(filtered.notifier).loadMore();
+    expect(repo.connections, [
+      SnapshotConnection.connected,
+      SnapshotConnection.connected,
+    ]);
   });
 }

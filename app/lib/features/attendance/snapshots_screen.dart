@@ -21,16 +21,29 @@ import 'widgets/snapshot_views.dart';
 /// and a denied deep link reads as "not available to you". Historical — it
 /// never touches Live, so snapshots stay readable after a session ends.
 class AttendanceSnapshotsScreen extends ConsumerWidget {
-  const AttendanceSnapshotsScreen({super.key, required this.communityId});
+  const AttendanceSnapshotsScreen({
+    super.key,
+    required this.communityId,
+    this.liveSessionId,
+  });
 
   final String communityId;
 
+  /// When set, only this live session's snapshots (the §11.3 host/recorder
+  /// path); otherwise the whole community's history.
+  final String? liveSessionId;
+
+  AttendanceSnapshotsQuery get _query =>
+      (communityId: communityId, liveSessionId: liveSessionId);
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final provider = attendanceSnapshotsProvider(communityId);
+    final provider = attendanceSnapshotsProvider(_query);
     final value = ref.watch(provider);
     return AppScreen(
-      title: AttendanceCopy.snapshotsTitle,
+      title: liveSessionId == null
+          ? AttendanceCopy.snapshotsTitle
+          : AttendanceCopy.sessionSnapshotsTitle,
       actions: [
         IconButton(
           tooltip: AttendanceCopy.refresh,
@@ -61,13 +74,17 @@ class AttendanceSnapshotsScreen extends ConsumerWidget {
     AttendanceSnapshotsState state,
   ) {
     if (state.items.isEmpty) {
-      return const [
+      return [
         SliverGutter(
           top: Insets.lg,
           child: EmptyState(
             icon: Icons.fact_check_outlined,
-            title: AttendanceCopy.snapshotsEmpty,
-            message: AttendanceCopy.snapshotsEmptyMessage,
+            title: liveSessionId == null
+                ? AttendanceCopy.snapshotsEmpty
+                : AttendanceCopy.sessionSnapshotsEmpty,
+            message: liveSessionId == null
+                ? AttendanceCopy.snapshotsEmptyMessage
+                : AttendanceCopy.sessionSnapshotsEmptyMessage,
           ),
         ),
       ];
@@ -114,7 +131,7 @@ class AttendanceSnapshotsScreen extends ConsumerWidget {
   }
 
   AttendanceSnapshotsController _notifier(WidgetRef ref) =>
-      ref.read(attendanceSnapshotsProvider(communityId).notifier);
+      ref.read(attendanceSnapshotsProvider(_query).notifier);
 }
 
 class _Skeleton extends StatelessWidget {

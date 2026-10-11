@@ -50,12 +50,25 @@ abstract final class AttendanceCopy {
   static const snapshotsEmpty = 'لا توجد سجلّات حضور بعد';
   static const snapshotsEmptyMessage =
       'تظهر هنا سجلّات الحضور المجموعة في الجلسات المباشرة لهذا المجتمع.';
+
+  // Viewing one session's snapshots (the §11.3 host/recorder path) and the
+  // shortcut to it from the record screen.
+  static const sessionSnapshotsTitle = 'سجلّات هذه الجلسة';
+  static const sessionSnapshotsEmpty = 'لا توجد سجلّات حضور لهذه الجلسة بعد';
+  static const sessionSnapshotsEmptyMessage =
+      'تظهر هنا سجلّات الحضور المجموعة في هذه الجلسة المباشرة.';
+  static const viewSessionSnapshots = 'عرض سجلّات حضور هذه الجلسة';
   static const detailTitle = 'سجلّ الحضور';
   static const participantsSection = 'المشاركون';
   static const participantsEmpty = 'لا مشاركين في هذا السجل.';
   static const loadMore = 'عرض المزيد';
   static const loadMoreFailed = 'تعذّر التحميل — إعادة المحاولة';
   static const viewingDemoBanner = 'سجلّات حضور تجريبية للعرض فقط.';
+
+  // Filtering the participants by connection — the API narrows the list; the
+  // words stay connection words (متصل / قيد الاتصال), never a presence verdict.
+  static const connectionFilterTooltip = 'تصفية حسب الاتصال';
+  static const filterAll = 'الكل';
 
   /// A participant the directory has no name for — never their id.
   static const unknownName = 'مشارك';

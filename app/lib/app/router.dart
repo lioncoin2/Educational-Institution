@@ -141,6 +141,7 @@ GoRouter buildRouter() {
                     parentNavigatorKey: _rootNavigatorKey,
                     builder: (context, state) => AttendanceSnapshotsScreen(
                       communityId: state.pathParameters['communityId']!,
+                      liveSessionId: state.uri.queryParameters['session'],
                     ),
                     routes: [
                       GoRoute(

@@ -31,6 +31,7 @@ class _ScriptedSnapshots implements AttendanceRepository {
   final List<Object> _answers; // SnapshotPage to return, or exception to throw
   int _call = 0;
   final List<String?> cursors = [];
+  final List<String?> liveSessionIds = [];
 
   @override
   Future<SnapshotPage> snapshots(
@@ -39,6 +40,7 @@ class _ScriptedSnapshots implements AttendanceRepository {
     String? cursor,
   }) async {
     cursors.add(cursor);
+    liveSessionIds.add(liveSessionId);
     final answer = _answers[_call++];
     if (answer is AttendanceException) throw answer;
     return answer as SnapshotPage;
@@ -63,16 +65,24 @@ class _ScriptedSnapshots implements AttendanceRepository {
 }
 
 void main() {
-  final provider = attendanceSnapshotsProvider('c-1');
+  const communityQuery = (communityId: 'c-1', liveSessionId: null);
+  final provider = attendanceSnapshotsProvider(communityQuery);
 
-  ProviderContainer containerWith(AttendanceRepository repo) {
+  ProviderContainer containerWith(
+    AttendanceRepository repo, {
+    AttendanceSnapshotsQuery query = communityQuery,
+  }) {
     final container = ProviderContainer(
       overrides: [
         attendanceRepositoryProvider.overrideWithValue(repo),
         sessionUserProvider.overrideWith((ref) async => null),
       ],
     );
-    final sub = container.listen(provider, (_, _) {}, onError: (_, _) {});
+    final sub = container.listen(
+      attendanceSnapshotsProvider(query),
+      (_, _) {},
+      onError: (_, _) {},
+    );
     addTearDown(sub.close);
     addTearDown(container.dispose);
     return container;
@@ -144,5 +154,18 @@ void main() {
       throwsA(isA<AttendanceException>()),
     );
     expect(container.read(provider).hasError, isTrue);
+  });
+
+  test('forwards liveSessionId to the repository, build and loadMore', () async {
+    const sessionQuery = (communityId: 'c-1', liveSessionId: 's-7');
+    final repo = _ScriptedSnapshots([
+      _page(['a'], next: 'c2'),
+      _page(['b']),
+    ]);
+    final container = containerWith(repo, query: sessionQuery);
+    final scoped = attendanceSnapshotsProvider(sessionQuery);
+    await container.read(scoped.future);
+    await container.read(scoped.notifier).loadMore();
+    expect(repo.liveSessionIds, ['s-7', 's-7']);
   });
 }

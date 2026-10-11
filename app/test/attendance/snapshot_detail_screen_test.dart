@@ -40,6 +40,8 @@ class _DetailRepo implements AttendanceRepository {
   final Future<SnapshotParticipantPage> Function(String? cursor)
   participantsAnswer;
 
+  final List<SnapshotConnection?> connections = [];
+
   @override
   Future<SnapshotView> snapshot(String snapshotId) => header();
 
@@ -48,7 +50,10 @@ class _DetailRepo implements AttendanceRepository {
     String snapshotId, {
     SnapshotConnection? connection,
     String? cursor,
-  }) => participantsAnswer(cursor);
+  }) {
+    connections.add(connection);
+    return participantsAnswer(cursor);
+  }
 
   @override
   Future<SnapshotView> record(
@@ -177,5 +182,32 @@ void main() {
       find.text(AttendanceCopy.error('attendance.snapshot_not_found')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('filtering by connection re-queries with that connection', (
+    tester,
+  ) async {
+    // The visible row is "connecting", so the menu's "connected" label is the
+    // only "متصل" on screen and can be tapped unambiguously.
+    final repo = _DetailRepo(
+      header: () async => _snap(),
+      participantsAnswer: (_) async => SnapshotParticipantPage(
+        items: [_p('u-1', SnapshotConnection.connecting)],
+      ),
+    );
+    await pump(tester, repo);
+    await tester.pumpAndSettle();
+    expect(repo.connections, [null]); // default: every participant
+
+    await tester.tap(
+      find.byTooltip(AttendanceCopy.connectionFilterTooltip),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.text(AttendanceCopy.connectionState(SnapshotConnection.connected)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(repo.connections.last, SnapshotConnection.connected);
   });
 }

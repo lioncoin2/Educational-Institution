@@ -6,13 +6,25 @@ import '../../../providers/app_providers.dart';
 /// One snapshot's header (counts only), by its id — a single read (§15.1).
 /// Refreshed by invalidating; autoDispose so it is released when the detail
 /// screen is left. Reads never touch Live, so an ended session's snapshot
-/// stays readable.
+/// stays readable. The header is the snapshot's own recorded counts and is not
+/// narrowed by the participant filter below.
 final attendanceSnapshotProvider = FutureProvider.autoDispose
     .family<SnapshotView, String>(
       (ref, snapshotId) =>
           ref.watch(attendanceRepositoryProvider).snapshot(snapshotId),
       retry: (_, _) => null,
     );
+
+/// Which snapshot's participants to read, and through which connection filter.
+/// A record so each (snapshot, filter) pair is its own keyset-paged view: a
+/// `null` connection is every participant, a set one narrows to that state
+/// (`AttendanceRepository.participants`, §15.1/§17). Records compare by value,
+/// so Riverpod caches one controller per pair and switching the filter reads a
+/// fresh first page rather than mutating the current one.
+typedef AttendanceParticipantsQuery = ({
+  String snapshotId,
+  SnapshotConnection? connection,
+});
 
 /// The pages of a snapshot's participants loaded so far, and where it stands.
 class AttendanceParticipantsState {
@@ -47,20 +59,20 @@ class AttendanceParticipantsState {
 /// One snapshot's participants, one server page at a time (§15.1), keyset on
 /// the account id. Immutable and non-realtime like the snapshots list: first
 /// page on build, [loadMore] appends (deduped by account id), [refresh]
-/// reloads. The UI shows every participant; the connection filter the API
-/// supports is not exposed here yet. The cursor is the server's, opaque.
+/// reloads. The [AttendanceParticipantsQuery.connection] filter is forwarded to
+/// the server, which decides membership; the cursor is the server's, opaque.
 class AttendanceParticipantsController
     extends AsyncNotifier<AttendanceParticipantsState> {
-  AttendanceParticipantsController(this.snapshotId);
+  AttendanceParticipantsController(this.query);
 
-  final String snapshotId;
+  final AttendanceParticipantsQuery query;
 
   @override
   Future<AttendanceParticipantsState> build() async {
     ref.watch(sessionUserProvider.select((session) => session.value?.id));
     final page = await ref
         .read(attendanceRepositoryProvider)
-        .participants(snapshotId);
+        .participants(query.snapshotId, connection: query.connection);
     return AttendanceParticipantsState(
       items: page.items,
       nextCursor: page.nextCursor,
@@ -83,7 +95,11 @@ class AttendanceParticipantsController
     try {
       final page = await ref
           .read(attendanceRepositoryProvider)
-          .participants(snapshotId, cursor: current.nextCursor);
+          .participants(
+            query.snapshotId,
+            connection: query.connection,
+            cursor: current.nextCursor,
+          );
       if (!ref.mounted) return;
       final now = state.value ?? current;
       final seen = {for (final p in now.items) p.userId};
@@ -115,5 +131,5 @@ final attendanceParticipantsProvider = AsyncNotifierProvider.autoDispose
     .family<
       AttendanceParticipantsController,
       AttendanceParticipantsState,
-      String
+      AttendanceParticipantsQuery
     >(AttendanceParticipantsController.new, retry: (_, _) => null);

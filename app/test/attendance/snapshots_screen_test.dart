@@ -33,13 +33,17 @@ class _ViewRepo implements AttendanceRepository {
   _ViewRepo(this._snapshots);
 
   final Future<SnapshotPage> Function(String? cursor) _snapshots;
+  final List<String?> liveSessionIds = [];
 
   @override
   Future<SnapshotPage> snapshots(
     String communityId, {
     String? liveSessionId,
     String? cursor,
-  }) => _snapshots(cursor);
+  }) {
+    liveSessionIds.add(liveSessionId);
+    return _snapshots(cursor);
+  }
 
   @override
   Future<SnapshotView> record(
@@ -60,15 +64,22 @@ class _ViewRepo implements AttendanceRepository {
 }
 
 void main() {
-  Future<void> pump(WidgetTester tester, _ViewRepo repo) async {
+  Future<void> pump(
+    WidgetTester tester,
+    _ViewRepo repo, {
+    String? liveSessionId,
+  }) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           attendanceRepositoryProvider.overrideWithValue(repo),
           sessionUserProvider.overrideWith((ref) async => null),
         ],
-        child: const MaterialApp(
-          home: AttendanceSnapshotsScreen(communityId: 'c-1'),
+        child: MaterialApp(
+          home: AttendanceSnapshotsScreen(
+            communityId: 'c-1',
+            liveSessionId: liveSessionId,
+          ),
         ),
       ),
     );
@@ -180,5 +191,16 @@ void main() {
     await tester.tap(find.byType(SnapshotTile).first);
     await tester.pumpAndSettle();
     expect(find.text('DETAIL snap-7'), findsOneWidget);
+  });
+
+  testWidgets('session-scoped: forwards liveSessionId and titles the session', (
+    tester,
+  ) async {
+    final repo = _ViewRepo((_) async => SnapshotPage(items: [_snap('a')]));
+    await pump(tester, repo, liveSessionId: 's-1');
+    await tester.pumpAndSettle();
+    expect(repo.liveSessionIds, contains('s-1'));
+    expect(find.text(AttendanceCopy.sessionSnapshotsTitle), findsOneWidget);
+    expect(find.text(AttendanceCopy.snapshotsTitle), findsNothing);
   });
 }

@@ -3,6 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/models/attendance.dart';
 import '../../../providers/app_providers.dart';
 
+/// Which community's snapshots to read, and optionally narrowed to one live
+/// session. A record so each (community, session) pair is its own keyset-paged
+/// view (records compare by value, so Riverpod caches one controller per pair).
+/// A `null` [liveSessionId] is the whole community's history
+/// (`community.attendance.view`); a set one is the §11.3 host/recorder path —
+/// the snapshots of one session the caller hosted or recorded in — which the
+/// server authorizes separately. The client never widens scope: `communityId`
+/// is always sent, and the server decides what is visible.
+typedef AttendanceSnapshotsQuery = ({String communityId, String? liveSessionId});
+
 /// The pages of a community's snapshots loaded so far, and where loading stands.
 class AttendanceSnapshotsState {
   const AttendanceSnapshotsState({
@@ -33,7 +43,8 @@ class AttendanceSnapshotsState {
   );
 }
 
-/// A community's attendance snapshots, one server page at a time (§15.1).
+/// A community's attendance snapshots, one server page at a time (§15.1),
+/// optionally narrowed to one live session (§11.3).
 ///
 /// Snapshots are immutable and carry no realtime, so this is deliberately
 /// simpler than the roster: load the first page on build, append later pages
@@ -44,9 +55,9 @@ class AttendanceSnapshotsState {
 /// snapshots stay readable (§10/§15.1).
 class AttendanceSnapshotsController
     extends AsyncNotifier<AttendanceSnapshotsState> {
-  AttendanceSnapshotsController(this.communityId);
+  AttendanceSnapshotsController(this.query);
 
-  final String communityId;
+  final AttendanceSnapshotsQuery query;
 
   @override
   Future<AttendanceSnapshotsState> build() async {
@@ -54,7 +65,7 @@ class AttendanceSnapshotsController
     ref.watch(sessionUserProvider.select((session) => session.value?.id));
     final page = await ref
         .read(attendanceRepositoryProvider)
-        .snapshots(communityId);
+        .snapshots(query.communityId, liveSessionId: query.liveSessionId);
     return AttendanceSnapshotsState(
       items: page.items,
       nextCursor: page.nextCursor,
@@ -77,7 +88,11 @@ class AttendanceSnapshotsController
     try {
       final page = await ref
           .read(attendanceRepositoryProvider)
-          .snapshots(communityId, cursor: current.nextCursor);
+          .snapshots(
+            query.communityId,
+            liveSessionId: query.liveSessionId,
+            cursor: current.nextCursor,
+          );
       if (!ref.mounted) return;
       final now = state.value ?? current;
       final seen = {for (final s in now.items) s.id};
@@ -106,7 +121,8 @@ class AttendanceSnapshotsController
 }
 
 final attendanceSnapshotsProvider = AsyncNotifierProvider.autoDispose
-    .family<AttendanceSnapshotsController, AttendanceSnapshotsState, String>(
-      AttendanceSnapshotsController.new,
-      retry: (_, _) => null,
-    );
+    .family<
+      AttendanceSnapshotsController,
+      AttendanceSnapshotsState,
+      AttendanceSnapshotsQuery
+    >(AttendanceSnapshotsController.new, retry: (_, _) => null);

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:quran_institution_app/core/widgets/foundations/async_view.dart';
 import 'package:quran_institution_app/core/widgets/foundations/mock_ribbon.dart';
 import 'package:quran_institution_app/data/models/attendance.dart';
@@ -161,6 +162,10 @@ const _recorderMe = CommunityMe(
   capabilities: {CommunityCapability.attendanceRecord},
 );
 const _plainMe = CommunityMe(standing: CommunityStanding.member);
+const _viewerMe = CommunityMe(
+  standing: CommunityStanding.member,
+  capabilities: {CommunityCapability.attendanceView},
+);
 
 void main() {
   Future<void> pump(
@@ -302,5 +307,78 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byType(MockBanner), findsOneWidget);
+  });
+
+  testWidgets('offers the view-history shortcut to a session moderator', (
+    tester,
+  ) async {
+    await pump(tester, live: (_) async => _session(canModerate: true));
+    await tester.pumpAndSettle();
+    expect(find.text(AttendanceCopy.viewSessionSnapshots), findsOneWidget);
+  });
+
+  testWidgets('offers the view-history shortcut to a viewer', (tester) async {
+    await pump(tester, live: (_) async => _session(), communityMe: _viewerMe);
+    await tester.pumpAndSettle();
+    expect(find.text(AttendanceCopy.viewSessionSnapshots), findsOneWidget);
+  });
+
+  testWidgets('hides the view-history shortcut from a plain member', (
+    tester,
+  ) async {
+    await pump(tester, live: (_) async => _session());
+    await tester.pumpAndSettle();
+    expect(find.text(AttendanceCopy.viewSessionSnapshots), findsNothing);
+  });
+
+  testWidgets('hides the view-history shortcut from a record-only holder', (
+    tester,
+  ) async {
+    await pump(tester, live: (_) async => _session(), communityMe: _recorderMe);
+    await tester.pumpAndSettle();
+    expect(find.text(AttendanceCopy.recordButton), findsOneWidget);
+    expect(find.text(AttendanceCopy.viewSessionSnapshots), findsNothing);
+  });
+
+  testWidgets('the shortcut opens this session’s snapshots', (tester) async {
+    final router = GoRouter(
+      initialLocation: '/communities/c-1/attendance',
+      routes: [
+        GoRoute(
+          path: '/communities/:cid/attendance',
+          builder: (context, state) =>
+              RecordAttendanceScreen(communityId: state.pathParameters['cid']!),
+          routes: [
+            GoRoute(
+              path: 'snapshots',
+              builder: (context, state) => Scaffold(
+                body: Text('SNAPSHOTS ${state.uri.queryParameters['session']}'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          liveRepositoryProvider.overrideWithValue(
+            _FakeLive((_) async => _session(canModerate: true)),
+          ),
+          communityRepositoryProvider.overrideWithValue(
+            _CommunityAnswering(_plainMe),
+          ),
+          attendanceRepositoryProvider.overrideWithValue(
+            _FakeAttendance(() async => _snapshot()),
+          ),
+          sessionUserProvider.overrideWith((ref) async => null),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(AttendanceCopy.viewSessionSnapshots));
+    await tester.pumpAndSettle();
+    expect(find.text('SNAPSHOTS s-1'), findsOneWidget);
   });
 }

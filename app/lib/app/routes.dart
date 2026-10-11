@@ -48,8 +48,15 @@ abstract final class Routes {
   static String communityAttendance(String communityId) =>
       '${community(communityId)}/attendance';
 
-  static String communityAttendanceSnapshots(String communityId) =>
-      '${communityAttendance(communityId)}/snapshots';
+  static String communityAttendanceSnapshots(
+    String communityId, {
+    String? liveSessionId,
+  }) {
+    final base = '${communityAttendance(communityId)}/snapshots';
+    return liveSessionId == null
+        ? base
+        : '$base?session=${Uri.encodeComponent(liveSessionId)}';
+  }
 
   static String communityAttendanceSnapshot(
     String communityId,

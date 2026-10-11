@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../app/routes.dart';
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/foundations/app_card.dart';
@@ -51,6 +53,19 @@ class RecordAttendanceScreen extends ConsumerWidget {
             false,
       ),
     );
+    // Whether the community grants this viewer the attendance VIEW — for the
+    // "view this session's attendance" shortcut. A session moderator is also
+    // offered it, through the live session's own `canModerate` below (the
+    // §11.3 host/recorder path, which the server authorizes per request).
+    final allowedByView = ref.watch(
+      communityProvider(communityId).select(
+        (state) =>
+            state.value?.community?.me.has(
+              CommunityCapability.attendanceView,
+            ) ??
+            false,
+      ),
+    );
 
     return AppScreen(
       title: AttendanceCopy.title,
@@ -81,6 +96,7 @@ class RecordAttendanceScreen extends ConsumerWidget {
                 communityId: communityId,
                 session: session,
                 allowedByCapability: allowedByCapability,
+                allowedByView: allowedByView,
               );
             },
           ),
@@ -113,15 +129,21 @@ class _RecordPanel extends ConsumerWidget {
     required this.communityId,
     required this.session,
     required this.allowedByCapability,
+    required this.allowedByView,
   });
 
   final String communityId;
   final LiveSession session;
   final bool allowedByCapability;
+  final bool allowedByView;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mayRecord = allowedByCapability || session.me.canModerate;
+    // The session's host/moderator, or anyone the community grants the view,
+    // may open this session's history (§11.3). The server re-decides on the
+    // list request; a denied deep link reads as "not available".
+    final mayViewHistory = session.me.canModerate || allowedByView;
     final recordState = ref.watch(recordAttendanceProvider(communityId));
 
     return Column(
@@ -162,6 +184,19 @@ class _RecordPanel extends ConsumerWidget {
                 .read(recordAttendanceProvider(communityId).notifier)
                 .record(session.id),
           ),
+        if (mayViewHistory) ...[
+          const SizedBox(height: Insets.lg),
+          OutlinedButton.icon(
+            onPressed: () => context.push(
+              Routes.communityAttendanceSnapshots(
+                communityId,
+                liveSessionId: session.id,
+              ),
+            ),
+            icon: const Icon(Icons.history_rounded),
+            label: const Text(AttendanceCopy.viewSessionSnapshots),
+          ),
+        ],
       ],
     );
   }
