@@ -28,6 +28,16 @@ class _FakeLive implements LiveRepository {
   Object? commandError;
   Completer<void>? hold;
 
+  /// The roster read is independent of the command machinery above: it records
+  /// how it was queried and answers a fixed page (empty by default).
+  final List<String> handsCalls = [];
+  LiveHandsPage handsResult = const LiveHandsPage(
+    items: [],
+    nextCursor: null,
+    origin: DataOrigin.records,
+  );
+  Object? handsError;
+
   Future<T> _run<T>(String label, T result) async {
     calls.add(label);
     if (hold != null) await hold!.future;
@@ -80,11 +90,33 @@ class _FakeLive implements LiveRepository {
     LiveHandsFilter? state,
     String? cursor,
     int? limit,
-  }) => throw UnimplementedError();
+  }) async {
+    handsCalls.add('hands:$sessionId:${state?.wire}:$cursor');
+    if (handsError != null) throw handsError!;
+    return handsResult;
+  }
 
   @override
   Future<LiveMediaGrant> join(String sessionId) => throw UnimplementedError();
 }
+
+/// One hand on the roster, for the moderator-roster tests.
+LiveHand _hand({
+  required String id,
+  required String userId,
+  SpeakerRequestState state = SpeakerRequestState.pending,
+  String? displayName,
+  LiveObservedMedia? media,
+}) => LiveHand(
+  id: id,
+  sessionId: 's-1',
+  userId: userId,
+  state: state,
+  requestedAt: DateTime.utc(2026),
+  grantedAt: state == SpeakerRequestState.granted ? DateTime.utc(2026) : null,
+  displayName: displayName,
+  media: media,
+);
 
 LiveSession _session({
   DataOrigin origin = DataOrigin.records,
@@ -95,6 +127,7 @@ LiveSession _session({
   bool canPresent = false,
   bool presenting = false,
   LiveModeration? moderation,
+  List<String> presenterUserIds = const [],
 }) => LiveSession(
   id: 's-1',
   communityId: 'c-1',
@@ -103,6 +136,7 @@ LiveSession _session({
   startedAt: DateTime.utc(2026),
   speakerCount: 2,
   moderation: moderation,
+  presenterUserIds: presenterUserIds,
   me: LiveMe(
     role: canModerate || isHost
         ? LiveParticipantRole.moderator
@@ -432,6 +466,206 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+  });
+
+  group('moderator roster (Q56/Q64)', () {
+    testWidgets('a plain listener sees no roster', (tester) async {
+      await pump(tester, fake(_session()));
+      await tester.pumpAndSettle();
+      expect(find.text(LiveCopy.rosterSection), findsNothing);
+    });
+
+    testWidgets('a moderator with no hands sees the roster and its empty state', (
+      tester,
+    ) async {
+      await pump(tester, fake(_session(canModerate: true)));
+      await tester.pumpAndSettle();
+      expect(find.text(LiveCopy.rosterSection), findsOneWidget);
+      expect(find.text(LiveCopy.rosterEmpty), findsOneWidget);
+    });
+
+    testWidgets('lists each hand by name, with a neutral fallback for none', (
+      tester,
+    ) async {
+      final repo = fake(_session(canModerate: true))
+        ..handsResult = LiveHandsPage(
+          items: [
+            _hand(id: 'h1', userId: 'u-1', displayName: 'سارة'),
+            _hand(id: 'h2', userId: 'u-2'),
+          ],
+          nextCursor: null,
+        );
+      await pump(tester, repo);
+      await tester.pumpAndSettle();
+      expect(find.text('سارة'), findsOneWidget);
+      expect(find.text(LiveCopy.participantFallback), findsOneWidget);
+    });
+
+    testWidgets('remove: confirms, then removes that participant by id', (
+      tester,
+    ) async {
+      final repo = fake(_session(canModerate: true))
+        ..handsResult = LiveHandsPage(
+          items: [_hand(id: 'h1', userId: 'u-1', displayName: 'سارة')],
+          nextCursor: null,
+        );
+      await pump(tester, repo);
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.byKey(const Key('live-remove-u-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('live-remove-u-1')));
+      await tester.pumpAndSettle();
+      // Nothing is sent until an explicit yes.
+      expect(find.text(LiveCopy.removeParticipantQuestion), findsOneWidget);
+      expect(repo.calls, isEmpty);
+
+      await tester.tap(find.text(LiveCopy.removeParticipantConfirm));
+      await tester.pumpAndSettle();
+      expect(repo.calls, ['removeParticipant:s-1:u-1']);
+      expect(find.text(LiveCopy.removeParticipantDone), findsOneWidget);
+    });
+
+    testWidgets('grant presenter: a non-presenter row grants, by id', (
+      tester,
+    ) async {
+      final repo = fake(_session(canModerate: true))
+        ..handsResult = LiveHandsPage(
+          items: [_hand(id: 'h1', userId: 'u-1')],
+          nextCursor: null,
+        );
+      await pump(tester, repo);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('live-grant-presenter-u-1')), findsOneWidget);
+      expect(find.byKey(const Key('live-revoke-presenter-u-1')), findsNothing);
+
+      await tester.ensureVisible(
+        find.byKey(const Key('live-grant-presenter-u-1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('live-grant-presenter-u-1')));
+      await tester.pumpAndSettle();
+      expect(repo.calls, ['grantPresenter:s-1:u-1']);
+      expect(find.text(LiveCopy.grantPresenterDone), findsOneWidget);
+    });
+
+    testWidgets('revoke presenter: a current presenter row revokes, by id', (
+      tester,
+    ) async {
+      final repo =
+          fake(_session(canModerate: true, presenterUserIds: const ['u-1']))
+            ..handsResult = LiveHandsPage(
+              items: [
+                _hand(
+                  id: 'h1',
+                  userId: 'u-1',
+                  state: SpeakerRequestState.granted,
+                  media: LiveObservedMedia.connected,
+                ),
+              ],
+              nextCursor: null,
+            );
+      await pump(tester, repo);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('live-revoke-presenter-u-1')), findsOneWidget);
+      expect(find.byKey(const Key('live-grant-presenter-u-1')), findsNothing);
+      expect(find.text(LiveCopy.presenterBadge), findsOneWidget);
+
+      await tester.ensureVisible(
+        find.byKey(const Key('live-revoke-presenter-u-1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('live-revoke-presenter-u-1')));
+      await tester.pumpAndSettle();
+      expect(repo.calls, ['revokePresenter:s-1:u-1']);
+      expect(find.text(LiveCopy.revokePresenterDone), findsOneWidget);
+    });
+
+    testWidgets('the host is never a target — their row carries no commands', (
+      tester,
+    ) async {
+      final repo = fake(_session(canModerate: true))
+        ..handsResult = LiveHandsPage(
+          items: [_hand(id: 'h1', userId: 'u-host', displayName: 'المعلّم')],
+          nextCursor: null,
+        );
+      await pump(tester, repo);
+      await tester.pumpAndSettle();
+      expect(find.text('المعلّم'), findsOneWidget);
+      expect(find.byKey(const Key('live-remove-u-host')), findsNothing);
+      expect(
+        find.byKey(const Key('live-grant-presenter-u-host')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('after a command the roster is re-read, not fabricated', (
+      tester,
+    ) async {
+      final repo = fake(_session(canModerate: true))
+        ..handsResult = LiveHandsPage(
+          items: [_hand(id: 'h1', userId: 'u-1')],
+          nextCursor: null,
+        );
+      await pump(tester, repo);
+      await tester.pumpAndSettle();
+      final before = repo.handsCalls.length;
+
+      await tester.ensureVisible(
+        find.byKey(const Key('live-grant-presenter-u-1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('live-grant-presenter-u-1')));
+      await tester.pumpAndSettle();
+      expect(repo.handsCalls.length, greaterThan(before));
+    });
+
+    testWidgets('a command refusal is said through the server’s code', (
+      tester,
+    ) async {
+      final repo = fake(_session(canModerate: true))
+        ..handsResult = LiveHandsPage(
+          items: [_hand(id: 'h1', userId: 'u-1')],
+          nextCursor: null,
+        )
+        ..commandError = const LiveException('live.presenter_slots_full', 'x');
+      await pump(tester, repo);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('live-grant-presenter-u-1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('live-grant-presenter-u-1')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(LiveCopy.commandError('live.presenter_slots_full')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the filter forwards the chosen state to the server', (
+      tester,
+    ) async {
+      final repo = fake(_session(canModerate: true));
+      await pump(tester, repo);
+      await tester.pumpAndSettle();
+      expect(repo.handsCalls, ['hands:s-1:null:null']); // default: all
+
+      await tester.tap(find.byTooltip(LiveCopy.rosterFilterTooltip));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(LiveCopy.rosterFilterGranted));
+      await tester.pumpAndSettle();
+      expect(repo.handsCalls.contains('hands:s-1:granted:null'), isTrue);
+    });
+
+    testWidgets('a failed roster read is said with a retry', (tester) async {
+      final repo = fake(_session(canModerate: true))
+        ..handsError = const LiveException('unavailable', 'x');
+      await pump(tester, repo);
+      await tester.pumpAndSettle();
+      expect(find.text(LiveCopy.rosterError), findsOneWidget);
+      expect(find.text(LiveCopy.retry), findsOneWidget);
     });
   });
 }

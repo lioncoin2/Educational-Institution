@@ -52,6 +52,57 @@ abstract final class LiveCopy {
   static const stopPresenter = 'إيقاف تقديمك';
   static const stopPresenterDone = 'أوقفت تقديمك.';
 
+  // ── The hands/speakers roster (Slice 7 — Q56/Q64) ─────────────────────
+  // The moderator's view of who has a raised hand or holds the floor, with the
+  // per-person authority commands (remove from the session; delegate or revoke
+  // a screen-share slot). Shown only when the server's own `me.canModerate`
+  // allows it; every command still goes to the server, which decides afresh. A
+  // name is the directory's; a person without one shows [participantFallback],
+  // never an account id.
+  static const rosterSection = 'طلبات الكلمة والمتحدثون';
+  static const rosterFilterTooltip = 'تصفية القائمة';
+  static const rosterFilterAll = 'الكل';
+  static const rosterFilterPending = 'طلبات منتظرة';
+  static const rosterFilterGranted = 'المتحدثون';
+  static const rosterEmpty = 'لا توجد طلبات كلمة أو متحدثون الآن.';
+  static const rosterError = 'تعذّر عرض القائمة.';
+  static const rosterLoadMore = 'عرض المزيد';
+  static const rosterLoadMoreFailed = 'تعذّر التحميل. إعادة المحاولة';
+
+  /// A person with no name the directory could resolve — a neutral word, never
+  /// an account id in a sentence.
+  static const participantFallback = 'مشارك';
+
+  /// A hand's lifecycle, in words (the roster queries pending/granted, but a
+  /// value a newer server adds is said neutrally).
+  static const handPending = 'طلب كلمة';
+  static const handGranted = 'يحمل الكلمة';
+  static const handOther = 'طلب سابق';
+
+  /// A granted hand's last-observed connection — a display hint, never truth.
+  static const mediaConnected = 'متصل';
+  static const mediaNotConnected = 'غير متصل';
+
+  /// That this person holds a screen-share (presenter) slot now (Q56). The
+  /// capture itself is media, unavailable in this build.
+  static const presenterBadge = 'مُقدّم عرض';
+
+  /// Remove a participant from the session (Q64) — an administrative
+  /// disconnect, never a ban; they may re-join at once.
+  static const removeParticipant = 'إزالة من الجلسة';
+  static const removeParticipantQuestion =
+      'إزالة هذا المشارك من الجلسة؟ يمكنه الانضمام إليها من جديد.';
+  static const removeParticipantConfirm = 'إزالة';
+  static const removeParticipantDone = 'تمت إزالة المشارك من الجلسة.';
+
+  /// Delegate / revoke a screen-share (presenter) slot (Q56). The slot is an
+  /// authority the server tracks; the screen capture is media (unavailable in
+  /// this build). Granting does not give the microphone or the floor.
+  static const grantPresenter = 'منح دور العرض';
+  static const grantPresenterDone = 'تم منح دور العرض.';
+  static const revokePresenter = 'سحب دور العرض';
+  static const revokePresenterDone = 'تم سحب دور العرض.';
+
   /// What became of a moderator command — the server's code, in words. Kept
   /// apart from [error] (which is about failing to DISPLAY the session).
   static String commandError(String? code) => switch (code) {

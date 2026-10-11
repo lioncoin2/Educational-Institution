@@ -14,6 +14,7 @@ import '../../providers/app_providers.dart';
 import 'live_copy.dart';
 import 'state/live_session_controller.dart';
 import 'widgets/live_moderation_actions.dart';
+import 'widgets/live_roster.dart';
 import 'widgets/live_states.dart';
 
 /// A community's live session, read-only: whether one is running now, who
@@ -175,6 +176,11 @@ class _SessionView extends ConsumerWidget {
         // allows. A command never mutates this view; the realtime
         // reconciliation (Slice 4) brings the authoritative session after.
         LiveModerationActions(session: session),
+        // A moderator's roster of raised hands and speakers, with the
+        // per-person authority commands (Q56/Q64). Reading the queue needs
+        // moderator standing — shown only when the server's own `me` grants it;
+        // every command still goes to the server, which decides afresh.
+        if (me.canModerate) LiveRoster(session: session),
       ],
     );
   }
