@@ -464,5 +464,25 @@ void main() {
         ); // the one connect before disposal, nothing more
       },
     );
+
+    test(
+      'disposal disconnects the client — the implicit leave releases media',
+      () async {
+        final c = boot();
+        final keepAlive = c.listen(liveMediaProvider('s-1'), (_, _) {});
+        final controller = c.read(liveMediaProvider('s-1').notifier);
+        await controller.connect();
+        client.emit(const LiveMediaConnected());
+        expect(client.disconnects, 0);
+
+        // Navigating away / changing session disposes the autoDispose controller.
+        keepAlive.close();
+        await settle();
+
+        // Disposal LEFT the room — no stranded live microphone or connection,
+        // and no divergence for a later controller that would read the client.
+        expect(client.disconnects, 1);
+      },
+    );
   });
 }

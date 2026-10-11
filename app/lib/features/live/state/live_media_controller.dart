@@ -53,6 +53,16 @@ class LiveMediaController extends Notifier<LiveMediaState> {
       _generation++;
       _connecting = false;
       unawaited(events.cancel());
+      // Disposal also LEAVES the room. Navigating away or changing session must
+      // not strand a live microphone, or a connection the UI can no longer show
+      // or control — and on return a fresh controller would read the client's
+      // lingering `connected` while the panel shows the mic off, a dangerous
+      // divergence. This resolves ADR 0030's open "should dispose disconnect?"
+      // toward release (there is no background-audio surface to keep it for) and
+      // makes "leave/disposal stops publication and releases resources" hold for
+      // the implicit leave too. Best-effort: the client swallows a teardown
+      // error, lands idle, and the port's teardown is already null-safe.
+      unawaited(client.disconnect());
     });
     return client.state;
   }

@@ -256,15 +256,29 @@ implementation, not the architecture:
 
 ## Open decisions
 
-Genuinely unresolved (and only these):
+Resolved since this ADR was accepted:
+
+- **Controller dispose → disconnect (P8 / Sprint 8).** Disposing the media
+  controller (navigating away, changing session) now LEAVES the room, so no live
+  microphone or uncontrollable connection is stranded and no later controller
+  diverges from a lingering `connected`. Background audio is intentionally not
+  kept — there is no UI surface for it. (`docs/p8-live-media-verification.md`.)
+
+Genuinely unresolved:
 
 - The final backoff/jitter policy for a terminal reconnect (Slice B does one
   immediate, event-driven re-join and no timers).
-- Whether controller dispose should also disconnect the media client
-  (background-audio vs leaked connection).
 - The mobile CI provider (GitHub Actions matrix vs Codemagic).
 - The exact per-platform / per-browser availability matrix.
-- The future participant-roster/speaking contract.
+- The future participant-roster/speaking contract — which would also let the UI
+  reflect an SDK-driven track mute (server or device), not only the
+  command-confirmed publish state it shows today.
+- Refreshing a connected client's publish capabilities when presenter authority
+  changes mid-session: the adapter caches the join grant's `screen` flag, so a
+  presenter granted AFTER joining media is refused locally even though the
+  backend has already pushed `canPublishScreen` to LiveKit
+  (`updateCapabilities`). A fresh `/join` reauthorises; a non-disruptive refresh
+  is the follow-up (`docs/p8-live-media-verification.md`).
 
 The LiveKit provider choice, the `livekit_client` version, the media
 architecture, and the Slice A/B contracts are **decided** and are not reopened

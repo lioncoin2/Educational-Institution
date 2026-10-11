@@ -16,15 +16,21 @@ class _FakeLiveRoom implements LiveKitLiveRoom {
   Object? failDisposeListener;
   Object? failDisconnect;
   Object? failDispose;
+  final List<bool> micCommands = [];
+  final List<(bool enabled, bool captureScreenAudio)> screenCommands = [];
 
   @override
-  Future<void> setMicrophoneEnabled(bool enabled) async {}
+  Future<void> setMicrophoneEnabled(bool enabled) async {
+    micCommands.add(enabled);
+  }
 
   @override
   Future<void> setScreenShareEnabled(
     bool enabled, {
     bool captureScreenAudio = false,
-  }) async {}
+  }) async {
+    screenCommands.add((enabled, captureScreenAudio));
+  }
 
   @override
   Future<void> disposeListener() async {
@@ -216,6 +222,75 @@ void main() {
         await pumpEventQueue();
 
         expect(events, [isA<LiveKitConnected>()]);
+        await port.dispose();
+      },
+    );
+  });
+
+  group('SdkLiveKitRoomPort publish forwarding', () {
+    test('mic and screen commands reach the open room; screenAudio stays off', () async {
+      final room = _FakeLiveRoom();
+      final port = SdkLiveKitRoomPort(openRoom: _openerFor([room]));
+      await port.connect('wss://x', 'tok');
+
+      await port.setMicrophoneEnabled(true);
+      await port.setMicrophoneEnabled(false);
+      await port.setScreenShareEnabled(true);
+
+      expect(room.micCommands, [true, false]);
+      // Q56: screen audio is never forced on by the port.
+      expect(room.screenCommands, [(true, false)]);
+      await port.dispose();
+    });
+
+    test('publish commands are safe no-ops with no open room', () async {
+      final room = _FakeLiveRoom();
+      final port = SdkLiveKitRoomPort(openRoom: _openerFor([room]));
+
+      // Before any connect: no room, no throw, nothing forwarded.
+      await port.setMicrophoneEnabled(true);
+      await port.setScreenShareEnabled(true);
+      expect(room.micCommands, isEmpty);
+      expect(room.screenCommands, isEmpty);
+
+      // And again after a teardown: the room was cleared, so it is a no-op.
+      await port.connect('wss://x', 'tok');
+      await port.disconnect();
+      await port.setMicrophoneEnabled(true);
+      expect(room.micCommands, isEmpty);
+      await port.dispose();
+    });
+  });
+
+  group('SdkLiveKitRoomPort connect failure', () {
+    test(
+      'an opener failure propagates and leaves the port with no room',
+      () async {
+        var calls = 0;
+        final second = _FakeLiveRoom(id: 'second');
+        final port = SdkLiveKitRoomPort(
+          openRoom: (url, token, emit) async {
+            calls += 1;
+            if (calls == 1) throw Exception('join boom');
+            return second;
+          },
+        );
+
+        // The join failure surfaces (the adapter maps it to a media failure)...
+        await expectLater(
+          port.connect('wss://x', 'tok'),
+          throwsA(isA<Exception>()),
+        );
+        // ...and nothing is retained: a publish is a safe no-op and a later
+        // disconnect tears down no orphaned transport from the failed join.
+        await port.setMicrophoneEnabled(true);
+        expect(second.micCommands, isEmpty);
+        await port.disconnect(); // no room → no-op, no throw
+
+        // A fresh connect then yields a live room that receives commands.
+        await port.connect('wss://y', 'tok2');
+        await port.setMicrophoneEnabled(true);
+        expect(second.micCommands, [true]);
         await port.dispose();
       },
     );

@@ -319,6 +319,20 @@ class _ConnectedCardState extends ConsumerState<_ConnectedCard> {
   LiveMediaController get _controller =>
       ref.read(liveMediaProvider(widget.sessionId).notifier);
 
+  @override
+  void didUpdateWidget(_ConnectedCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Presenter authority lost mid-session: the panel stops the capture and the
+    // backend drops the track, so the local control must drop its "on" too —
+    // otherwise a later re-grant would re-show the toggle reading "sharing"
+    // when nothing is captured. (The toggle is hidden while not presenting;
+    // this keeps it honest for when it returns.)
+    if (oldWidget.presenting && !widget.presenting) {
+      _screenOn = false;
+      _screenBusy = false;
+    }
+  }
+
   Future<void> _toggleMic() async {
     if (_micBusy) return;
     final messenger = ScaffoldMessenger.of(context);

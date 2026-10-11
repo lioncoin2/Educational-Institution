@@ -405,6 +405,31 @@ void main() {
       expect(h.client.screenShareCommands, [true, false]);
       expect(find.byKey(const Key('live-screen-toggle')), findsNothing);
     });
+
+    testWidgets('re-granting presenter after a revoke shows capture as off', (
+      tester,
+    ) async {
+      final h = await pump(tester, _session(canJoin: true, presenting: true));
+      await tester.pumpAndSettle();
+      await connect(tester, h);
+
+      await tester.ensureVisible(find.text(LiveCopy.screenShareStart));
+      await tester.tap(find.text(LiveCopy.screenShareStart));
+      await tester.pump();
+      expect(find.text(LiveCopy.screenShareOnStatus), findsOneWidget);
+
+      // Revoked, then re-granted — two reconciliations of the session's `me`.
+      h.session.value = _session(canJoin: true, presenting: false);
+      await tester.pump();
+      h.session.value = _session(canJoin: true, presenting: true);
+      await tester.pump();
+
+      // The toggle is back but reads OFF: the capture was stopped on the revoke,
+      // so a stale "sharing" state here would be a lie.
+      expect(find.byKey(const Key('live-screen-toggle')), findsOneWidget);
+      expect(find.text(LiveCopy.screenShareStart), findsOneWidget);
+      expect(find.text(LiveCopy.screenShareOnStatus), findsNothing);
+    });
   });
 
   group('lifecycle', () {
