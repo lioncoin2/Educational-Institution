@@ -41,6 +41,8 @@ class ConversationListState {
 ///   conversation.created a conversation to show: the list is fetched again
 ///   message.sent         the conversation's preview, activity, unread count
 ///                        and place in the list
+///   message.deleted      the preview, if it was the deleted message, becomes
+///                        a neutral "deleted" marker (ADR 0029 §6)
 ///   message.read         the badge clears (read on another device)
 ///   participant.added    a conversation to show: the list is fetched again
 ///   participant.removed  the conversation leaves the list
@@ -188,6 +190,28 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
     );
   }
 
+  /// A message was deleted (ADR 0029 §6). If it was the conversation's latest
+  /// — the one the preview shows — the preview becomes a neutral "deleted"
+  /// marker; an older message's deletion is not visible in the list. A
+  /// conversation this list has not loaded, or whose preview is a different
+  /// message, is left unchanged (a re-read reconciles).
+  void messageDeleted(String conversationId, int sequence) {
+    final current = state.value;
+    if (current == null) return;
+    final index = current.items.indexWhere((c) => c.id == conversationId);
+    if (index < 0) return;
+    final last = current.items[index].lastMessage;
+    if (last == null || last.sequence != sequence || last.deleted) return;
+    state = AsyncData(
+      current.copyWith(
+        items: [
+          for (final c in current.items)
+            c.id == conversationId ? c.withDeletedPreview() : c,
+        ],
+      ),
+    );
+  }
+
   void _onEvent(RealtimeEvent event) {
     switch (event) {
       case ConversationCreatedEvent():
@@ -197,6 +221,8 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
         if (!known) unawaited(_resync());
       case MessageSentEvent():
         messageStored(event.message, senderName: event.senderName);
+      case MessageDeletedEvent():
+        messageDeleted(event.conversationId, event.sequence);
       case MessageReadEvent() when event.userId == _viewerId:
         markedRead(event.conversationId, event.lastReadSequence);
       case ParticipantAddedEvent() when event.userId == _viewerId:

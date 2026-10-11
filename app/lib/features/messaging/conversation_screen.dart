@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/foundations/async_view.dart';
+import '../../data/models/communities.dart';
 import '../../data/models/messaging.dart';
+import '../communities/state/community_controller.dart';
 import 'messaging_copy.dart';
 import 'state/conversation_controller.dart';
 import 'widgets/composer.dart';
@@ -44,6 +46,22 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     });
 
     final conversation = value.value?.conversation;
+    // Moderation authority is a COMMUNITY capability (ADR 0029), surfaced only
+    // on the community's `me` — never on the conversation. For a community
+    // chat, ask the community whether this viewer may moderate; the server
+    // still re-checks every delete. Not a community chat → never offered.
+    final communityId = conversation?.communityId;
+    final canModerate = communityId == null
+        ? false
+        : ref.watch(
+            communityProvider(communityId).select(
+              (state) =>
+                  state.value?.community?.me.has(
+                    CommunityCapability.messagesModerate,
+                  ) ??
+                  false,
+            ),
+          );
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -81,7 +99,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           children: [
             const ConnectionBanner(),
             Expanded(
-              child: _Timeline(state: state, unreadAfter: _unreadAfter),
+              child: _Timeline(
+                state: state,
+                unreadAfter: _unreadAfter,
+                canModerate: canModerate,
+              ),
             ),
             if (state.removed)
               const _Notice(
@@ -116,10 +138,19 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 }
 
 class _Timeline extends ConsumerWidget {
-  const _Timeline({required this.state, required this.unreadAfter});
+  const _Timeline({
+    required this.state,
+    required this.unreadAfter,
+    this.canModerate = false,
+  });
 
   final ConversationState state;
   final int? unreadAfter;
+
+  /// The viewer may moderate this community chat (ADR 0029): a delete on any
+  /// message, and a review of a deleted one. Always false outside a community
+  /// chat, and for a member without the capability.
+  final bool canModerate;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -161,6 +192,15 @@ class _Timeline extends ConsumerWidget {
           mine: state.isMine(message),
           senderName: showNames && !state.isMine(message)
               ? state.senderNames[message.senderId]
+              : null,
+          // A moderator may delete a live message, or review a tombstoned one
+          // (ADR 0029). The server re-authorizes every call regardless.
+          onModerateDelete: canModerate && !message.isDeleted
+              ? () =>
+                    _moderateDelete(context, ref, state.conversation.id, message.id)
+              : null,
+          onReview: canModerate && message.isDeleted
+              ? () => _review(context, ref, state.conversation.id, message.id)
               : null,
         ),
         if (message == firstUnread) const _UnreadDivider(),
@@ -291,4 +331,102 @@ class _Notice extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Deletes a message as a moderator (ADR 0029): confirm first, then the
+/// controller tombstones it on success. The server re-authorizes; a refusal is
+/// said through its code, nothing local changes then.
+Future<void> _moderateDelete(
+  BuildContext context,
+  WidgetRef ref,
+  String conversationId,
+  String messageId,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      scrollable: true,
+      title: const Text(MessagingCopy.moderateDeleteTitle),
+      content: const Text(MessagingCopy.moderateDeleteBody),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text(MessagingCopy.moderateCancel),
+        ),
+        TextButton(
+          style: TextButton.styleFrom(foregroundColor: context.colors.error),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text(MessagingCopy.moderateDeleteConfirm),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await ref
+        .read(conversationProvider(conversationId).notifier)
+        .moderateDelete(messageId);
+    messenger.toast(MessagingCopy.moderateDeleteDone);
+  } on MessagingException catch (error) {
+    messenger.toast(MessagingCopy.error(error.code));
+  }
+}
+
+/// Reveals a deleted message's original (ADR 0029 §21.3) in a dialog — its
+/// content, who deleted it, and how many attachments it carried. Past the
+/// 7-day window, or with no such deleted message, the server refuses and the
+/// refusal is said through its code.
+Future<void> _review(
+  BuildContext context,
+  WidgetRef ref,
+  String conversationId,
+  String messageId,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final ReviewedMessage reviewed;
+  try {
+    reviewed = await ref
+        .read(conversationProvider(conversationId).notifier)
+        .reviewMessage(messageId);
+  } on MessagingException catch (error) {
+    messenger.toast(MessagingCopy.error(error.code));
+    return;
+  }
+  if (!context.mounted) return;
+  final body = reviewed.body;
+  await showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      scrollable: true,
+      title: const Text(MessagingCopy.reviewTitle),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(body == null || body.isEmpty ? MessagingCopy.reviewNoText : body),
+          if (reviewed.attachments.isNotEmpty) ...[
+            const SizedBox(height: Insets.sm),
+            Text(
+              MessagingCopy.reviewAttachments(reviewed.attachments.length),
+              style: context.text.labelSmall,
+            ),
+          ],
+          const SizedBox(height: Insets.sm),
+          Text(
+            MessagingCopy.reviewDeletedBy(reviewed.deletedByName),
+            style: context.text.labelSmall?.copyWith(
+              color: context.colors.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text(MessagingCopy.reviewClose),
+        ),
+      ],
+    ),
+  );
 }

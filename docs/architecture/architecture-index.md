@@ -223,7 +223,7 @@ responsibility and what each module must not know live in
 - **Path:** `app/lib/features/messaging/`
 - **Controllers:** `conversation_controller.dart`, `conversation_list_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
-- **Static imports → features:** —
+- **Static imports → features:** `communities`
 
 ### notifications
 

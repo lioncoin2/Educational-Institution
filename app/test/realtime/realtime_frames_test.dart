@@ -39,6 +39,22 @@ Map<String, Object?> messageSentJson({
   'sender': {'userId': 'teacher-1', 'displayName': 'الأستاذ'},
 };
 
+/// A `message.deleted` hint exactly as the backend builds one — ids and the
+/// sequence only, never the body, never who deleted it (ADR 0029 §6).
+Map<String, Object?> messageDeletedJson({
+  String conversationId = 'c-1',
+  int sequence = 7,
+  String messageId = 'm-7',
+}) => {
+  'type': 'message.deleted',
+  'version': 1,
+  'eventId': 'message.deleted:$messageId',
+  'occurredAt': '2026-09-23T08:05:00.000Z',
+  'conversationId': conversationId,
+  'messageId': messageId,
+  'sequence': sequence,
+};
+
 ServerFrame? parse(Map<String, Object?> json) =>
     ServerFrame.parse(jsonEncode(json));
 
@@ -64,6 +80,23 @@ void main() {
     final wrongConversation = messageSentJson()..['conversationId'] = 'c-2';
     expect(parse(wrongSequence), isNull);
     expect(parse(wrongConversation), isNull);
+  });
+
+  test('reads a message.deleted hint — ids and sequence, carrying no body', () {
+    final frame = parse(messageDeletedJson());
+    expect(frame, isA<MessageDeletedEvent>());
+    final event = frame! as MessageDeletedEvent;
+    expect(event.conversationId, 'c-1');
+    expect(event.messageId, 'm-7');
+    expect(event.sequence, 7);
+    expect(event.eventId, 'message.deleted:m-7');
+    // Content-free by construction: the wire frame has no body, no deleter.
+    expect(jsonEncode(messageDeletedJson()).contains('"body"'), isFalse);
+  });
+
+  test('drops a message.deleted missing its id or with a bad sequence', () {
+    expect(parse(messageDeletedJson()..['sequence'] = 'seven'), isNull);
+    expect(parse(messageDeletedJson()..remove('messageId')), isNull);
   });
 
   test('reads the control frames and the other events', () {

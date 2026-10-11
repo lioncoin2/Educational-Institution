@@ -56,7 +56,7 @@ void main() {
         final community = Community.fromJson(
           communityJson(
             capabilities: [
-              'community.messages.moderate',
+              'community.messages.incinerate', // fictional: unknown, dropped
               'community.members.view',
               '',
             ],
@@ -71,6 +71,22 @@ void main() {
         expect(community.canOpenChat, isFalse);
       },
     );
+
+    test('knows the community message-moderation capability (ADR 0029)', () {
+      final community = Community.fromJson(
+        communityJson(
+          capabilities: [
+            'community.messages.moderate',
+            'community.members.view',
+          ],
+        ),
+      );
+      expect(community.me.capabilities, {
+        CommunityCapability.messagesModerate,
+        CommunityCapability.membersView,
+      });
+      expect(community.me.has(CommunityCapability.messagesModerate), isTrue);
+    });
 
     test('keeps a status or standing it does not know as unknown', () {
       final community = Community.fromJson(

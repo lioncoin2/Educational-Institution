@@ -118,4 +118,77 @@ void main() {
     expect(parsed.withReadUpTo(12).unreadCount, 0);
     expect(parsed.withReadUpTo(4).lastReadSequence, 9); // never backwards
   });
+
+  // ── Moderation (ADR 0029) ───────────────────────────────────────────────
+
+  test('a message becomes a tombstone, keeping its identity and order', () {
+    final live = Message.fromJson(message);
+    expect(live.isDeleted, isFalse);
+    expect(live.attachments, isNotEmpty);
+    final gone = live.asTombstone(DateTime.utc(2026, 9, 2));
+    expect(gone.isDeleted, isTrue);
+    expect(gone.id, live.id);
+    expect(gone.sequence, live.sequence);
+    // The body and attachments are blanked, as the server blanks them.
+    expect(gone.body, isNull);
+    expect(gone.attachments, isEmpty);
+  });
+
+  test('ReviewedMessage parses the original, who deleted it, and the name', () {
+    const reviewed = {
+      'id': 'm-9',
+      'conversationId': 'c-1',
+      'sequence': 9,
+      'senderId': 'u-2',
+      'senderName': 'سارة',
+      'type': 'TEXT',
+      'body': 'النصّ الأصلي',
+      'replyToMessageId': null,
+      'createdAt': '2026-09-01T08:00:00.000Z',
+      'editedAt': null,
+      'deletedAt': '2026-09-02T08:00:00.000Z',
+      'deletedBy': 'u-mod',
+      'deletedByName': 'الأستاذ',
+      'attachments': [],
+    };
+    final parsed = ReviewedMessage.fromJson(reviewed);
+    expect(parsed.body, 'النصّ الأصلي');
+    expect(parsed.deletedBy, 'u-mod');
+    expect(parsed.deletedByName, 'الأستاذ');
+    expect(parsed.senderName, 'سارة');
+    expect(parsed.deletedAt, DateTime.utc(2026, 9, 2, 8));
+  });
+
+  test('MessagingException sorts moderation refusals by what they are', () {
+    const forbidden = MessagingException(
+      'messaging.message_moderation_forbidden',
+      'x',
+    );
+    expect(forbidden.isModerationForbidden, isTrue);
+    expect(forbidden.isReviewUnavailable, isFalse);
+
+    const expired = MessagingException(
+      'messaging.deleted_message_review_expired',
+      'x',
+    );
+    expect(expired.isReviewUnavailable, isTrue);
+
+    const absent = MessagingException(
+      'messaging.deleted_message_not_found',
+      'x',
+    );
+    expect(absent.isReviewUnavailable, isTrue);
+  });
+
+  test('withDeletedPreview blanks the preview text, keeping order', () {
+    final parsed = Conversation.fromJson(conversation);
+    expect(parsed.lastMessage?.deleted, isFalse);
+    final after = parsed.withDeletedPreview();
+    expect(after.lastMessage?.deleted, isTrue);
+    expect(after.lastMessage?.text, isNull);
+    // Only the preview changes — order, activity and sequence are the same.
+    expect(after.lastMessage?.sequence, parsed.lastMessage?.sequence);
+    expect(after.activityAt, parsed.activityAt);
+    expect(after.lastSequence, parsed.lastSequence);
+  });
 }

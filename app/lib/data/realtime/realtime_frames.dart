@@ -63,6 +63,7 @@ sealed class ServerFrame {
         'conversation.created' => ConversationCreatedEvent._fromJson(json),
         'message.sent' => MessageSentEvent._fromJson(json),
         'message.read' => MessageReadEvent._fromJson(json),
+        'message.deleted' => MessageDeletedEvent._fromJson(json),
         'participant.added' => ParticipantAddedEvent._fromJson(json),
         'participant.removed' => ParticipantRemovedEvent._fromJson(json),
         'notification.created' => NotificationCreatedEvent._fromJson(json),
@@ -278,6 +279,41 @@ final class MessageReadEvent extends ConversationEvent {
 
   final String userId;
   final int lastReadSequence;
+}
+
+/// A moderator deleted a message in this conversation (ADR 0029 §6). A
+/// content-free hint — ids and the sequence only, never the body, never who
+/// deleted it. The timeline marks that message a tombstone; the original is
+/// reachable only through the audited review over HTTP, never the wire.
+final class MessageDeletedEvent extends ConversationEvent {
+  const MessageDeletedEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.conversationId,
+    required this.messageId,
+    required this.sequence,
+  });
+
+  /// Null when the envelope is missing the message id or carries a
+  /// non-integer sequence — dropped rather than half-applied, the parser's
+  /// rule (as [MessageSentEvent] drops a disagreeing envelope).
+  static MessageDeletedEvent? _fromJson(Map<String, Object?> json) {
+    final messageId = json['messageId'];
+    final sequence = json['sequence'];
+    if (messageId is! String || messageId.isEmpty || sequence is! int) {
+      return null;
+    }
+    return MessageDeletedEvent(
+      eventId: json['eventId']! as String,
+      occurredAt: DateTime.parse(json['occurredAt']! as String),
+      conversationId: json['conversationId']! as String,
+      messageId: messageId,
+      sequence: sequence,
+    );
+  }
+
+  final String messageId;
+  final int sequence;
 }
 
 final class ParticipantAddedEvent extends ConversationEvent {

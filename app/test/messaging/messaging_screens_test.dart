@@ -10,7 +10,10 @@ import 'package:quran_institution_app/data/models/data_origin.dart';
 import 'package:quran_institution_app/data/models/messaging.dart';
 import 'package:quran_institution_app/data/realtime/realtime_client.dart';
 import 'package:quran_institution_app/data/realtime/realtime_frames.dart';
+import 'package:quran_institution_app/data/repositories/mock/mock_community_repository.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_messaging_repository.dart';
+import 'package:quran_institution_app/features/messaging/messaging_copy.dart';
+import 'package:quran_institution_app/features/messaging/widgets/message_bubble.dart';
 import 'package:quran_institution_app/providers/app_providers.dart';
 
 import '../realtime/fake_realtime_client.dart';
@@ -360,5 +363,57 @@ void main() {
     await tester.tap(find.text('الرسائل'));
     await tester.pumpAndSettle();
     expect(find.text('حلقة الفجر — التلاوة'), findsOneWidget);
+  });
+
+  // The viewer owns `ownedId` (its chat), so its community `me` grants
+  // `community.messages.moderate`; they are a plain member of `openId`'s chat.
+  // Moderation authority comes from the community, never the conversation
+  // (ADR 0029) — the demo's MockCommunityRepository provides it here.
+  group('community chat moderation (ADR 0029)', () {
+    const ownedChat = '${MockCommunityRepository.ownedId}-chat';
+    const openChat = '${MockCommunityRepository.openId}-chat';
+    const line = 'نلتقي بعد صلاة المغرب لمراجعة الورد.';
+
+    testWidgets('a moderator deletes a message, then reviews its original', (
+      tester,
+    ) async {
+      await open(tester, '/messages/$ownedChat');
+      expect(find.text(line), findsOneWidget);
+
+      // Long-press → the moderator sheet → delete, then confirm.
+      await tester.longPress(find.text(line));
+      await tester.pumpAndSettle();
+      expect(find.text(MessagingCopy.moderateDelete), findsOneWidget);
+      await tester.tap(find.text(MessagingCopy.moderateDelete));
+      await tester.pumpAndSettle();
+      expect(find.text(MessagingCopy.moderateDeleteTitle), findsOneWidget);
+      await tester.tap(find.text(MessagingCopy.moderateDeleteConfirm));
+      await tester.pumpAndSettle();
+
+      // The message now reads as a tombstone; the original is gone from view.
+      expect(find.text('تم حذف هذه الرسالة'), findsOneWidget);
+      expect(find.text(line), findsNothing);
+      expect(find.text(MessagingCopy.moderateDeleteDone), findsOneWidget);
+
+      // Long-press the tombstone → review → the original is disclosed.
+      await tester.longPress(find.text('تم حذف هذه الرسالة'));
+      await tester.pumpAndSettle();
+      expect(find.text(MessagingCopy.reviewOriginal), findsOneWidget);
+      await tester.tap(find.text(MessagingCopy.reviewOriginal));
+      await tester.pumpAndSettle();
+      expect(find.text(MessagingCopy.reviewTitle), findsOneWidget);
+      expect(find.text(line), findsOneWidget); // the original, in the dialog
+    });
+
+    testWidgets('a plain member is offered no moderation', (tester) async {
+      await open(tester, '/messages/$openChat');
+      // A readable message is shown, but a long-press offers nothing.
+      final message = find.byType(MessageBubble).first;
+      expect(message, findsOneWidget);
+      await tester.longPress(message);
+      await tester.pumpAndSettle();
+      expect(find.text(MessagingCopy.moderateDelete), findsNothing);
+      expect(find.text(MessagingCopy.reviewOriginal), findsNothing);
+    });
   });
 }

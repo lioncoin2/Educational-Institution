@@ -163,6 +163,90 @@ class Message {
   final List<Attachment> attachments;
 
   bool get isDeleted => deletedAt != null;
+
+  /// This message as a tombstone — the server having confirmed a moderator's
+  /// delete (ADR 0029): the body and attachment rows are blanked in every
+  /// normal read path, only that it is gone remains. The exact instant re-reads
+  /// on reopen; the timeline shows the tombstone from [isDeleted] alone, so the
+  /// approximate [at] here is only a non-null marker, never shown.
+  Message asTombstone(DateTime at) => Message(
+    id: id,
+    conversationId: conversationId,
+    sequence: sequence,
+    senderId: senderId,
+    type: type,
+    createdAt: createdAt,
+    replyToMessageId: replyToMessageId,
+    clientMessageId: clientMessageId,
+    editedAt: editedAt,
+    deletedAt: at,
+    attachments: const [],
+  );
+}
+
+/// A deleted message's original, as the audited moderation review returns it
+/// (ADR 0029 §21.3). Unlike [Message] it carries who deleted it and their name
+/// — this is the one disclosure of the original content and the moderator,
+/// reached only with `community.messages.moderate` and within the 7-day window
+/// (`POST …/messages/:id/review`). Past the window the server answers 404 and
+/// the UI says the original is no longer available.
+class ReviewedMessage {
+  const ReviewedMessage({
+    required this.id,
+    required this.conversationId,
+    required this.sequence,
+    required this.senderId,
+    required this.type,
+    required this.createdAt,
+    required this.deletedAt,
+    required this.deletedBy,
+    this.senderName,
+    this.deletedByName,
+    this.body,
+    this.replyToMessageId,
+    this.editedAt,
+    this.attachments = const [],
+  });
+
+  factory ReviewedMessage.fromJson(Map<String, Object?> json) =>
+      ReviewedMessage(
+        id: json['id']! as String,
+        conversationId: json['conversationId']! as String,
+        sequence: json['sequence']! as int,
+        senderId: json['senderId']! as String,
+        senderName: json['senderName'] as String?,
+        type: MessageType.fromWire(json['type']! as String),
+        body: json['body'] as String?,
+        replyToMessageId: json['replyToMessageId'] as String?,
+        createdAt: DateTime.parse(json['createdAt']! as String),
+        editedAt: _date(json['editedAt']),
+        deletedAt: DateTime.parse(json['deletedAt']! as String),
+        deletedBy: json['deletedBy']! as String,
+        deletedByName: json['deletedByName'] as String?,
+        attachments: [
+          for (final item
+              in (json['attachments'] as List<Object?>? ?? const []))
+            Attachment.fromJson((item! as Map).cast<String, Object?>()),
+        ],
+      );
+
+  final String id;
+  final String conversationId;
+  final int sequence;
+  final String senderId;
+  final String? senderName;
+  final MessageType type;
+  final String? body;
+  final String? replyToMessageId;
+  final DateTime createdAt;
+  final DateTime? editedAt;
+  final DateTime deletedAt;
+
+  /// The moderator who deleted it (an account id — never shown in a sentence;
+  /// [deletedByName] is the name, when the directory resolved it).
+  final String deletedBy;
+  final String? deletedByName;
+  final List<Attachment> attachments;
 }
 
 class MessagePreview {
@@ -325,6 +409,42 @@ class Conversation implements Sourced {
     );
   }
 
+  /// This conversation with its latest-message preview shown as deleted — the
+  /// content-free effect of a moderator deleting the very message the preview
+  /// shows (ADR 0029 §6). Order, activity and unread count are unchanged; only
+  /// the preview text is blanked to a neutral "deleted" marker, never the
+  /// original. No preview, or one already deleted, returns this unchanged.
+  Conversation withDeletedPreview() {
+    final last = lastMessage;
+    if (last == null || last.deleted) return this;
+    return Conversation(
+      id: id,
+      type: type,
+      title: title,
+      counterpartUserId: counterpartUserId,
+      memberCount: memberCount,
+      myRole: myRole,
+      canPost: canPost,
+      canManageMembers: canManageMembers,
+      lastSequence: lastSequence,
+      lastReadSequence: lastReadSequence,
+      unreadCount: unreadCount,
+      lastMessage: MessagePreview(
+        sequence: last.sequence,
+        senderId: last.senderId,
+        senderName: last.senderName,
+        type: last.type,
+        text: null,
+        deleted: true,
+        createdAt: last.createdAt,
+      ),
+      createdAt: createdAt,
+      activityAt: activityAt,
+      communityId: communityId,
+      origin: origin,
+    );
+  }
+
   Conversation withReadUpTo(int sequence) => Conversation(
     id: id,
     type: type,
@@ -424,6 +544,17 @@ class MessagingException implements Exception {
   final String message;
 
   bool get isNetwork => code == 'network.unreachable';
+
+  /// The viewer may read the chat but not moderate it (ADR 0029) — a member
+  /// without `community.messages.moderate`, e.g. a student.
+  bool get isModerationForbidden =>
+      code == 'messaging.message_moderation_forbidden';
+
+  /// There is no original to review: it was never deleted, it is not this
+  /// viewer's to see, or the 7-day review window has passed.
+  bool get isReviewUnavailable =>
+      code == 'messaging.deleted_message_not_found' ||
+      code == 'messaging.deleted_message_review_expired';
 
   @override
   String toString() => 'MessagingException($code): $message';

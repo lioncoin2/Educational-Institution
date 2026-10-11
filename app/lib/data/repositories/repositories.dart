@@ -203,6 +203,30 @@ abstract interface class MessagingRepository {
     String messageId,
     String fileAssetId,
   );
+
+  // ── Moderation (community chat only, ADR 0029) ──────────────────────────
+  // The server is the sole authority: it asks Communities for
+  // `community.messages.moderate` per call. The app shows these only when the
+  // community's `me` already grants it, but every call still re-authorizes. A
+  // refusal throws [MessagingException] with the server's code (403
+  // `messaging.message_moderation_forbidden`, 404 for a non-member / a
+  // non-community chat / an absent message, 503 when Communities is
+  // unreachable).
+
+  /// Deletes a message in a community's chat as a moderator — a tombstone, not
+  /// a hard delete. Idempotent: deleting an already-deleted message succeeds
+  /// too. Returns nothing; the message then reads as deleted (its body and
+  /// attachments blanked), and the original is reviewable for 7 days.
+  Future<void> deleteMessage(String conversationId, String messageId);
+
+  /// Reveals a deleted message's original for the review window (7 days) — the
+  /// one disclosure of the content and who deleted it, audited server-side. Past
+  /// the window, or with no such deleted message, throws [MessagingException]
+  /// (`messaging.deleted_message_review_expired` / `_not_found`).
+  Future<ReviewedMessage> reviewDeletedMessage(
+    String conversationId,
+    String messageId,
+  );
 }
 
 /// Communities — the groups the signed-in person belongs to

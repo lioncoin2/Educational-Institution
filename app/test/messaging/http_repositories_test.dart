@@ -295,6 +295,86 @@ void main() {
       );
     });
 
+    test('moderation: deletes a message (DELETE, 204, idempotent)', () async {
+      final server = FakeServer({
+        'DELETE /messaging/conversations/c-1/messages/m-9': (_) =>
+            http.Response('', 204),
+      });
+      await (await repository(server)).deleteMessage('c-1', 'm-9');
+      expect(
+        server.calls,
+        contains('DELETE /messaging/conversations/c-1/messages/m-9'),
+      );
+    });
+
+    test('moderation: a delete refusal maps to MessagingException', () async {
+      final server = FakeServer({
+        'DELETE /messaging/conversations/c-1/messages/m-9': (_) =>
+            error(403, 'messaging.message_moderation_forbidden'),
+      });
+      await expectLater(
+        (await repository(server)).deleteMessage('c-1', 'm-9'),
+        throwsA(
+          isA<MessagingException>()
+              .having(
+                (e) => e.code,
+                'code',
+                'messaging.message_moderation_forbidden',
+              )
+              .having((e) => e.isModerationForbidden, 'forbidden', isTrue),
+        ),
+      );
+    });
+
+    test('moderation: reviews a deleted message original', () async {
+      final server = FakeServer({
+        'POST /messaging/conversations/c-1/messages/m-9/review': (_) =>
+            json(200, {
+              'id': 'm-9',
+              'conversationId': 'c-1',
+              'sequence': 9,
+              'senderId': 'u-2',
+              'senderName': 'سارة',
+              'type': 'TEXT',
+              'body': 'النصّ الأصلي',
+              'replyToMessageId': null,
+              'createdAt': '2026-09-01T08:00:00.000Z',
+              'editedAt': null,
+              'deletedAt': '2026-09-02T08:00:00.000Z',
+              'deletedBy': 'u-mod',
+              'deletedByName': 'الأستاذ',
+              'attachments': const [],
+            }),
+      });
+      final reviewed = await (await repository(server)).reviewDeletedMessage(
+        'c-1',
+        'm-9',
+      );
+      expect(reviewed.body, 'النصّ الأصلي');
+      expect(reviewed.deletedBy, 'u-mod');
+      expect(reviewed.deletedByName, 'الأستاذ');
+      expect(reviewed.senderName, 'سارة');
+    });
+
+    test('moderation: an expired review maps to isReviewUnavailable', () async {
+      final server = FakeServer({
+        'POST /messaging/conversations/c-1/messages/m-9/review': (_) =>
+            error(404, 'messaging.deleted_message_review_expired'),
+      });
+      await expectLater(
+        (await repository(server)).reviewDeletedMessage('c-1', 'm-9'),
+        throwsA(
+          isA<MessagingException>()
+              .having(
+                (e) => e.code,
+                'code',
+                'messaging.deleted_message_review_expired',
+              )
+              .having((e) => e.isReviewUnavailable, 'unavailable', isTrue),
+        ),
+      );
+    });
+
     final image = OutgoingFile(
       bytes: Uint8List.fromList([0x89, 0x50, 0x4e, 0x47]),
       fileName: 'board.png',

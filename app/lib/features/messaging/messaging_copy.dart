@@ -28,8 +28,36 @@ abstract final class MessagingCopy {
     'messaging.members_hidden' => 'قائمة المشاركين في هذه المحادثة غير معروضة.',
     'messaging.membership_managed_by_community' =>
       'العضوية في هذه المحادثة تتبع العضوية في المجتمع.',
+    'messaging.message_moderation_forbidden' =>
+      'إدارة رسائل هذه المحادثة ليست من صلاحياتك.',
+    'messaging.message_not_found' ||
+    'messaging.deleted_message_not_found' => 'لم يُعثر على هذه الرسالة.',
+    'messaging.deleted_message_review_expired' =>
+      'انتهت مهلة مراجعة الرسالة المحذوفة.',
     _ => 'تعذّر إتمام العملية. حاول مرة أخرى.',
   };
+
+  // ── Moderation (community chat only, ADR 0029) ──────────────────────────
+  // A moderator may delete a community-chat message (a tombstone) and review
+  // its original for seven days. Shown only when the community's `me` grants
+  // `community.messages.moderate`.
+  static const moderateDelete = 'حذف الرسالة';
+  static const moderateDeleteTitle = 'حذف هذه الرسالة؟';
+  static const moderateDeleteBody =
+      'ستظهر للجميع كرسالة محذوفة، ويمكن لمشرف مراجعة أصلها خلال سبعة أيام.';
+  static const moderateDeleteConfirm = 'حذف';
+  static const moderateCancel = 'إلغاء';
+  static const moderateDeleteDone = 'تم حذف الرسالة.';
+  static const reviewOriginal = 'عرض الرسالة الأصلية';
+  static const reviewTitle = 'الرسالة الأصلية';
+  static const reviewNoText = '(لا يوجد نص)';
+  static const reviewClose = 'إغلاق';
+
+  /// Who deleted the message — the directory's name, or a neutral word, never
+  /// an account id.
+  static String reviewDeletedBy(String? name) => 'حذفها: ${name ?? 'مشرف'}';
+
+  static String reviewAttachments(int count) => 'المرفقات: $count';
 
   /// A community's chat the viewer may read but not post in — for a reason
   /// the server keeps to itself (locked, no capability, too large).

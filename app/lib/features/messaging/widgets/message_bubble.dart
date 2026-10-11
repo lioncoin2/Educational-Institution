@@ -17,6 +17,8 @@ class MessageBubble extends StatelessWidget {
     required this.message,
     required this.mine,
     this.senderName,
+    this.onModerateDelete,
+    this.onReview,
   });
 
   final Message message;
@@ -25,11 +27,19 @@ class MessageBubble extends StatelessWidget {
   /// Shown above others' messages in groups and channels.
   final String? senderName;
 
+  /// A moderator's long-press actions (ADR 0029), or null when the viewer may
+  /// not moderate. [onModerateDelete] deletes a live message; [onReview]
+  /// reveals a tombstoned one's original. At most one applies to a message.
+  final VoidCallback? onModerateDelete;
+  final VoidCallback? onReview;
+
   @override
   Widget build(BuildContext context) {
+    final hasActions = onModerateDelete != null || onReview != null;
     return _BubbleFrame(
       mine: mine,
       header: senderName,
+      onLongPress: hasActions ? () => _showModerationSheet(context) : null,
       footer: Text(
         MessagingCopy.clock(context, message.createdAt),
         style: context.text.labelSmall,
@@ -42,6 +52,45 @@ class MessageBubble extends StatelessWidget {
               ),
             )
           : _MessageContent(message: message),
+    );
+  }
+
+  /// The moderator's actions for this message, on a long-press. At most one
+  /// applies — delete for a live message, review for a tombstoned one.
+  void _showModerationSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (onReview != null)
+              ListTile(
+                leading: const Icon(Icons.history_rounded),
+                title: const Text(MessagingCopy.reviewOriginal),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  onReview!();
+                },
+              ),
+            if (onModerateDelete != null)
+              ListTile(
+                leading: Icon(
+                  Icons.delete_outline_rounded,
+                  color: context.colors.error,
+                ),
+                title: Text(
+                  MessagingCopy.moderateDelete,
+                  style: TextStyle(color: context.colors.error),
+                ),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  onModerateDelete!();
+                },
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -122,6 +171,7 @@ class _BubbleFrame extends StatelessWidget {
     required this.footer,
     this.header,
     this.faded = false,
+    this.onLongPress,
   });
 
   final bool mine;
@@ -129,6 +179,9 @@ class _BubbleFrame extends StatelessWidget {
   final Widget footer;
   final String? header;
   final bool faded;
+
+  /// A long-press on the bubble (the moderator's actions), or null.
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -172,13 +225,20 @@ class _BubbleFrame extends StatelessWidget {
         ],
       ),
     );
+    final pressable = onLongPress == null
+        ? bubble
+        : GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onLongPress: onLongPress,
+            child: bubble,
+          );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Align(
         alignment: mine
             ? AlignmentDirectional.centerEnd
             : AlignmentDirectional.centerStart,
-        child: Opacity(opacity: faded ? 0.7 : 1, child: bubble),
+        child: Opacity(opacity: faded ? 0.7 : 1, child: pressable),
       ),
     );
   }

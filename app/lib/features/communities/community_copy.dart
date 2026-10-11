@@ -112,6 +112,7 @@ abstract final class CommunityCopy {
         CommunityCapability.liveModerate => 'إدارة الجلسات المباشرة',
         CommunityCapability.attendanceRecord => 'جمع الحضور',
         CommunityCapability.attendanceView => 'عرض سجلّات الحضور',
+        CommunityCapability.messagesModerate => 'إدارة رسائل المحادثة',
         CommunityCapability.unknown => 'صلاحية',
       };
 

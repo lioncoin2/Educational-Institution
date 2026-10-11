@@ -200,6 +200,60 @@ class MockMessagingRepository implements MessagingRepository {
     );
   }
 
+  @override
+  Future<void> deleteMessage(String conversationId, String messageId) async {
+    await _wait();
+    final c = _find(conversationId);
+    // Moderation is a community-chat operation only; a direct or group message
+    // is the 404 a non-member hears, as on the server (ADR 0029).
+    if (c.communityId == null) throw _notFound;
+    final index = c.messages.indexWhere((m) => m.id == messageId);
+    if (index < 0) {
+      throw const MessagingException(
+        'messaging.message_not_found',
+        'No such message.',
+      );
+    }
+    final current = c.messages[index];
+    if (current.isDeleted) return; // idempotent: already a tombstone
+    final at = DateTime.now().toUtc();
+    c.deleted[messageId] = _DeletedOriginal(current, viewer, at);
+    c.messages[index] = current.asTombstone(at);
+  }
+
+  @override
+  Future<ReviewedMessage> reviewDeletedMessage(
+    String conversationId,
+    String messageId,
+  ) async {
+    await _wait();
+    final c = _find(conversationId);
+    final record = c.deleted[messageId];
+    if (record == null) {
+      throw const MessagingException(
+        'messaging.deleted_message_not_found',
+        'No such deleted message.',
+      );
+    }
+    final original = record.original;
+    return ReviewedMessage(
+      id: original.id,
+      conversationId: original.conversationId,
+      sequence: original.sequence,
+      senderId: original.senderId,
+      senderName: c.names[original.senderId],
+      type: original.type,
+      body: original.body,
+      replyToMessageId: original.replyToMessageId,
+      createdAt: original.createdAt,
+      editedAt: original.editedAt,
+      deletedAt: record.at,
+      deletedBy: record.by,
+      deletedByName: c.names[record.by],
+      attachments: original.attachments,
+    );
+  }
+
   Future<Message> _media(
     String conversationId,
     String clientMessageId,
@@ -521,6 +575,10 @@ class _MockConversation {
 
   final List<Message> messages = [];
   final Map<String, Message> byClientId = {};
+
+  /// Originals of messages a moderator deleted, kept for the review window
+  /// (ADR 0029). The demo does not expire them.
+  final Map<String, _DeletedOriginal> deleted = {};
   int lastRead = 0;
 
   int get lastSequence => messages.isEmpty ? 0 : messages.last.sequence;
@@ -592,4 +650,14 @@ class _MockConversation {
       origin: DataOrigin.mock,
     );
   }
+}
+
+/// A message a moderator deleted, kept so the review can reveal its original
+/// (ADR 0029): the message as it was, who deleted it, and when.
+class _DeletedOriginal {
+  const _DeletedOriginal(this.original, this.by, this.at);
+
+  final Message original;
+  final String by;
+  final DateTime at;
 }

@@ -88,6 +88,19 @@ MessageReadEvent read(String conversationId, int sequence) => MessageReadEvent(
   lastReadSequence: sequence,
 );
 
+/// A content-free `message.deleted` hint (ADR 0029 §6).
+MessageDeletedEvent deleted(
+  String conversationId,
+  String messageId,
+  int sequence,
+) => MessageDeletedEvent(
+  eventId: 'message.deleted:$messageId',
+  occurredAt: DateTime.now(),
+  conversationId: conversationId,
+  messageId: messageId,
+  sequence: sequence,
+);
+
 void main() {
   late LiveRepository repo;
   late FakeRealtimeClient realtime;
@@ -278,6 +291,36 @@ void main() {
       await settle();
       expect(current().messages.any((m) => m.id == elsewhere.id), isFalse);
     });
+
+    test('a message.deleted hint tombstones the held message (ADR 0029 §6)', () async {
+      await open();
+      final target = current().messages.firstWhere((m) => m.sequence == 36);
+      expect(target.isDeleted, isFalse);
+
+      realtime.emit(deleted(id, target.id, 36));
+      await settle();
+
+      final after = current().messages.firstWhere((m) => m.id == target.id);
+      expect(after.isDeleted, isTrue);
+      expect(after.body, isNull); // blanked, never the original on the wire
+      expect(after.attachments, isEmpty);
+    });
+
+    test('a message.deleted for a message not held changes nothing', () async {
+      await open();
+      final before = current().messages.length;
+      realtime.emit(deleted(id, 'never-loaded', 999));
+      await settle();
+      expect(current().messages.length, before);
+      expect(current().messages.any((m) => m.isDeleted), isFalse);
+    });
+
+    test("ignores a message.deleted for another conversation", () async {
+      await open();
+      realtime.emit(deleted('mock-direct', 'mock-direct-m1', 1));
+      await settle();
+      expect(current().messages.any((m) => m.isDeleted), isFalse);
+    });
   });
 
   group('the conversation list, live', () {
@@ -341,6 +384,41 @@ void main() {
       realtime.emit(read('mock-group', group.lastSequence));
       await pumpEventQueue();
       expect(item('mock-group').unreadCount, 0);
+    });
+
+    test('shows a deleted latest message as deleted in the preview', () async {
+      await load();
+      final message = repo.receive(
+        'mock-direct',
+        senderId: teacher,
+        body: 'to be removed',
+      );
+      realtime.emit(sent(message, senderName: 'الأستاذ عبدالله'));
+      await pumpEventQueue();
+      expect(item('mock-direct').lastMessage?.text, 'to be removed');
+      expect(item('mock-direct').lastMessage?.deleted, isFalse);
+
+      realtime.emit(deleted('mock-direct', message.id, message.sequence));
+      await pumpEventQueue();
+      expect(item('mock-direct').lastMessage?.deleted, isTrue);
+      expect(item('mock-direct').lastMessage?.text, isNull);
+    });
+
+    test('leaves the preview when the deleted message is not the latest', () async {
+      await load();
+      final message = repo.receive(
+        'mock-direct',
+        senderId: teacher,
+        body: 'latest',
+      );
+      realtime.emit(sent(message, senderName: 'الأستاذ'));
+      await pumpEventQueue();
+
+      // An older message's deletion: not the one the preview shows.
+      realtime.emit(deleted('mock-direct', 'mock-direct-m1', message.sequence - 1));
+      await pumpEventQueue();
+      expect(item('mock-direct').lastMessage?.text, 'latest');
+      expect(item('mock-direct').lastMessage?.deleted, isFalse);
     });
 
     test('drops a conversation the viewer was removed from', () async {

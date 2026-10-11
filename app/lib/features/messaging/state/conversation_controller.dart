@@ -305,6 +305,55 @@ class ConversationController extends AsyncNotifier<ConversationState> {
     }
   }
 
+  // ── Moderation (community chat only, ADR 0029) ──────────────────────────
+  // The server is the authority; it re-asks Communities for
+  // `community.messages.moderate` on every call. The screen offers these only
+  // when the community's `me` already grants it, but a refusal still surfaces
+  // as a [MessagingException] for the screen to explain.
+
+  /// Deletes a message as a moderator. On success the held message becomes a
+  /// tombstone at once — the server having confirmed it — so the timeline
+  /// reflects the delete without a re-read; the exact instant re-reads on
+  /// reopen. The original stays reviewable for 7 days ([reviewMessage]). A
+  /// refusal propagates; nothing local changes then.
+  Future<void> moderateDelete(String messageId) async {
+    await _repository.deleteMessage(conversationId, messageId);
+    if (!ref.mounted) return;
+    _markDeleted(messageId, DateTime.now().toUtc());
+  }
+
+  /// Replaces the held message [messageId] with a tombstone if it is held and
+  /// not already deleted — the local effect of a confirmed delete, whether this
+  /// viewer did it ([moderateDelete]) or another moderator did and the server
+  /// relayed a `message.deleted` hint (ADR 0029 §6). A message not held (below
+  /// the synced gap, or never loaded) or already a tombstone is a no-op; a
+  /// re-read on reopen shows the authoritative state. Never fabricates content:
+  /// [Message.asTombstone] blanks body and attachments, exactly as a server
+  /// read of a deleted message would.
+  void _markDeleted(String messageId, DateTime at) {
+    final current = state.value;
+    if (current == null) return;
+    if (!current.messages.any((m) => m.id == messageId && !m.isDeleted)) return;
+    state = AsyncData(
+      current.copyWith(
+        messages: [
+          for (final message in current.messages)
+            if (message.id == messageId && !message.isDeleted)
+              message.asTombstone(at)
+            else
+              message,
+        ],
+      ),
+    );
+  }
+
+  /// Reveals a deleted message's original for review — the one disclosure of
+  /// its content and who deleted it (ADR 0029). It changes no state; the screen
+  /// shows the result. A refusal (the window passed, or no such deleted
+  /// message) propagates as a [MessagingException].
+  Future<ReviewedMessage> reviewMessage(String messageId) =>
+      _repository.reviewDeletedMessage(conversationId, messageId);
+
   // ── The live connection ─────────────────────────────────────────────────
 
   void _onEvent(RealtimeEvent event) {
@@ -336,6 +385,12 @@ class ConversationController extends AsyncNotifier<ConversationState> {
             current.copyWith(lastReadSequence: event.lastReadSequence),
           );
         }
+      case MessageDeletedEvent():
+        // A moderator deleted a message — this viewer on another device, or
+        // another moderator (ADR 0029 §6). The hint has no body and no deleter;
+        // mark the held message a tombstone. Not held → no-op (a re-read shows
+        // it). The original is reachable only through the audited review.
+        _markDeleted(event.messageId, event.occurredAt);
       case ParticipantRemovedEvent() when event.userId == current.viewerId:
         _markRemoved();
       default:

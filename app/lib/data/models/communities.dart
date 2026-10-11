@@ -62,6 +62,7 @@ enum CommunityCapability {
   liveModerate('community.live.moderate'),
   attendanceRecord('community.attendance.record'),
   attendanceView('community.attendance.view'),
+  messagesModerate('community.messages.moderate'),
   unknown('unknown');
 
   const CommunityCapability(this.wire);
