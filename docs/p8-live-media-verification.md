@@ -73,9 +73,11 @@ claim is made that the harness cannot support.
   active capture. The client-side pre-check (deterministic, SDK-free) is kept —
   it now reflects the LIVE capability, not the stale join flag. See the Sprint 9
   section below.
-- **Live track mute (path 2).** The UI shows command-confirmed publish state,
-  not the SDK's live track state; an externally-driven mute is not reflected.
-  Resolved by the future roster/speaking slice (ADR 0030).
+- **Live track mute (path 2) — RESOLVED in Sprint 10.** The UI now reflects the
+  SDK's reconciled publication (published-and-unmuted) via the
+  `LiveKitLocalTracks` signal, so an externally-driven mute/unmute is shown.
+  (Remote-participant roster / speaking indicators remain the future ADR 0030
+  slice.)
 
 ## Sprint 9 — live capability synchronization (the D3 fix)
 
@@ -116,6 +118,57 @@ row is the ONLY real-media proof: it drives a real backend presenter
 grant/revoke and watches the real SDK permission reach the client — but it does
 NOT publish a screen track (headless Chrome has no screen source), so real
 screen CAPTURE remains the manual check B1 below.
+
+## Sprint 10 — media-state reconciliation
+
+Two consistency gaps from Sprint 9's notes are closed, and microphone
+publish-state is now verified over real LiveKit.
+
+**The reconciled model.** A new `LiveMediaPublication { screenAuthorized,
+microphoneOn, screenShareOn }` is the single SDK-reconciled truth, exposed by the
+client (`publication` + `publications`) and watched by the panel via
+`liveMediaPublicationProvider`. It is kept DISTINCT from the connection
+(`LiveMediaState`) and from a command's in-flight state (the widget's `_micBusy`
+/`_screenBusy`), so the three never duplicate:
+- `screenAuthorized` — the live server authorization (`LiveKitCapabilities`,
+  from `ParticipantPermissionsUpdatedEvent`).
+- `microphoneOn` / `screenShareOn` — the SDK's own `isMicrophoneEnabled()` /
+  `isScreenShareEnabled()` (published AND unmuted), fed by a new
+  `LiveKitLocalTracks` signal the adapter emits on `LocalTrackPublished`,
+  `LocalTrackUnpublished`, `TrackMuted` and `TrackUnmuted` for the local
+  participant.
+
+**Defects fixed.**
+- *Screen-start / authorization race.* Starting is now enabled only once
+  `screenAuthorized` is confirmed, never on `me.presenting` alone; during the
+  event-ordering window the control shows a disabled "confirming…" state
+  instead of a tap that would be refused.
+- *Mic (and screen) UI reflected a command, not the SDK.* The toggles now show
+  the reconciled `publication`; a command only drives the in-flight spinner. An
+  externally-driven mute (a server mute, a device loss) with no command is
+  reflected.
+
+**The six screen-share states** map to what the SDK actually exposes:
+not-authorized → authorized-idle → starting (the SDK collapses
+capture-acquisition and publication into one command-pending window — it exposes
+no separate capture-vs-publish callback; documented) → published (reconciled
+`screenShareOn`) → stopping → stopped / failed (the command threw).
+
+| Scenario | Kind | Ran? | Evidence |
+|---|---|---|---|
+| Capability grant → authorization confirmed → UI start enabled | widget | yes | `live_media_panel_test` (the race test) |
+| UI gating during the event-ordering window (disabled "confirming…") | widget | yes | same |
+| Mic enable/disable → SDK-reconciled on/off (not the command) | widget | yes | `live_media_panel_test` |
+| An external mute (no command) reconciled into the UI | widget | yes | same |
+| Revoke while sharing → stop + hide; re-grant shows off (no stale) | widget | yes | same |
+| Publication fed by capability + local-track signals; no-change no-churn; reset on disconnect | unit | yes | `livekit_live_media_client_test` |
+| `LiveKitLocalTracks` surfaces on the port stream | unit | yes | `livekit_room_port_test` |
+| **Real microphone publish → mute reconciliation over LiveKit** | **real-E2E** | yes (dispatched) | `livekit_web_e2e_test` — a real fake-device mic track; `publication.microphoneOn` observed true then false |
+| Real capability grant/revoke (Sprint 9 regression) | real-E2E | yes | `livekit_web_e2e_test` |
+
+**Real screen CAPTURE remains unverified in CI** (headless Chrome has no
+`getDisplayMedia` source). Microphone publish/mute IS now verified for real (the
+fake mic device supports it). Screen capture stays the manual check B1.
 
 ## Manual verification (NOT executed in CI)
 

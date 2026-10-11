@@ -30,10 +30,21 @@ class FakeLiveMediaClient implements LiveMediaClient {
   /// (pending) control and assert a duplicate command is blocked.
   Completer<void>? hold;
 
+  /// The reconciled publication (authorization + actual tracks) the test drives.
+  LiveMediaPublication _publication = const LiveMediaPublication();
+  final _publications =
+      StreamController<LiveMediaPublication>.broadcast(sync: true);
+
   /// Drives the state and notifies [states].
   void emit(LiveMediaState state) {
     _state = state;
     _states.add(state);
+  }
+
+  /// Drives the reconciled publication and notifies [publications].
+  void emitPublication(LiveMediaPublication publication) {
+    _publication = publication;
+    _publications.add(publication);
   }
 
   @override
@@ -44,6 +55,12 @@ class FakeLiveMediaClient implements LiveMediaClient {
 
   @override
   Stream<LiveMediaState> get states => _states.stream;
+
+  @override
+  LiveMediaPublication get publication => _publication;
+
+  @override
+  Stream<LiveMediaPublication> get publications => _publications.stream;
 
   @override
   Future<void> connect(LiveMediaGrant grant) async {
@@ -79,5 +96,8 @@ class FakeLiveMediaClient implements LiveMediaClient {
     }
   }
 
-  Future<void> dispose() => _states.close();
+  Future<void> dispose() async {
+    await _states.close();
+    await _publications.close();
+  }
 }

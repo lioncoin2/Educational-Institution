@@ -35,6 +35,15 @@ abstract interface class LiveMediaClient {
   /// Every change of [state].
   Stream<LiveMediaState> get states;
 
+  /// The live, SDK-reconciled publication state: the server's current
+  /// screen-publish authorization and the actually published microphone/screen
+  /// tracks. Distinct from [state] (the connection) and from any in-flight
+  /// command. Always safe to read.
+  LiveMediaPublication get publication;
+
+  /// Every change of [publication].
+  Stream<LiveMediaPublication> get publications;
+
   /// Joins the session's media room with the server's credential. The grant is
   /// consumed here and not kept; nothing above this seam holds the token.
   Future<void> connect(LiveMediaGrant grant);
@@ -70,6 +79,13 @@ class UnavailableLiveMediaClient implements LiveMediaClient {
   @override
   Stream<LiveMediaState> get states =>
       Stream<LiveMediaState>.value(const LiveMediaUnavailable());
+
+  @override
+  LiveMediaPublication get publication => const LiveMediaPublication();
+
+  @override
+  Stream<LiveMediaPublication> get publications =>
+      Stream<LiveMediaPublication>.value(const LiveMediaPublication());
 
   @override
   Future<void> connect(LiveMediaGrant grant) async => throw _unavailable;

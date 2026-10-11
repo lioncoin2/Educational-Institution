@@ -209,3 +209,17 @@ final liveMediaProvider = NotifierProvider.autoDispose
       LiveMediaController.new,
       retry: (_, _) => null,
     );
+
+/// The live, SDK-reconciled media publication — the server's current
+/// screen-publish authorization and the actually published microphone/screen
+/// tracks — for the one media client. The UI watches this to reflect the REAL
+/// track state and to gate the screen-share START on confirmed authorization,
+/// kept DISTINCT from the connection state [liveMediaProvider] carries. Seeded
+/// with the current snapshot so a late subscriber is never blank; autoDispose,
+/// so the subscription lives only while a live screen is watching it.
+final liveMediaPublicationProvider =
+    StreamProvider.autoDispose<LiveMediaPublication>((ref) async* {
+      final client = ref.watch(liveMediaClientProvider);
+      yield client.publication;
+      yield* client.publications;
+    });

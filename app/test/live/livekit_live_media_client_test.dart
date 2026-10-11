@@ -375,6 +375,89 @@ void main() {
     });
   });
 
+  // Sprint 10 — the publication snapshot/stream is the SDK-reconciled truth
+  // (authorization + the actually published tracks), fed by the port's
+  // LiveKitCapabilities and LiveKitLocalTracks signals. Deterministic fakes.
+  group('publication reconciliation (Sprint 10)', () {
+    test('connect seeds the publication from the grant authorization', () async {
+      await connected(screen: true);
+      expect(
+        client.publication,
+        const LiveMediaPublication(screenAuthorized: true),
+      );
+    });
+
+    test('local-track signals reconcile the mic/screen on-state', () async {
+      await connected(screen: true);
+      port.emit(
+        const LiveKitLocalTracks(microphoneOn: true, screenShareOn: false),
+      );
+      expect(client.publication.microphoneOn, isTrue);
+      expect(client.publication.screenShareOn, isFalse);
+
+      port.emit(
+        const LiveKitLocalTracks(microphoneOn: false, screenShareOn: true),
+      );
+      expect(client.publication.microphoneOn, isFalse);
+      expect(client.publication.screenShareOn, isTrue);
+    });
+
+    test('the capability signal reconciles the authorization', () async {
+      await connected(screen: false);
+      expect(client.publication.screenAuthorized, isFalse);
+      port.emit(const LiveKitCapabilities(canPublishScreen: true));
+      expect(client.publication.screenAuthorized, isTrue);
+      expect(client.screenAuthorized, isTrue); // the getter agrees
+    });
+
+    test('publications stream emits each real change, in order', () async {
+      await connected(screen: false);
+      final seen = <LiveMediaPublication>[];
+      final sub = client.publications.listen(seen.add);
+
+      port.emit(
+        const LiveKitLocalTracks(microphoneOn: true, screenShareOn: false),
+      );
+      port.emit(const LiveKitCapabilities(canPublishScreen: true));
+      await pumpEventQueue();
+
+      expect(seen, [
+        const LiveMediaPublication(microphoneOn: true),
+        const LiveMediaPublication(microphoneOn: true, screenAuthorized: true),
+      ]);
+      await sub.cancel();
+    });
+
+    test('a no-change signal does not churn the stream', () async {
+      await connected(screen: false);
+      final seen = <LiveMediaPublication>[];
+      final sub = client.publications.listen(seen.add);
+      port.emit(
+        const LiveKitLocalTracks(microphoneOn: false, screenShareOn: false),
+      );
+      await pumpEventQueue();
+      expect(seen, isEmpty); // identical to the current snapshot → no emit
+      await sub.cancel();
+    });
+
+    test('disconnect resets the publication to empty', () async {
+      await connected(screen: true);
+      port.emit(
+        const LiveKitLocalTracks(microphoneOn: true, screenShareOn: true),
+      );
+      expect(
+        client.publication,
+        const LiveMediaPublication(
+          screenAuthorized: true,
+          microphoneOn: true,
+          screenShareOn: true,
+        ),
+      );
+      await client.disconnect();
+      expect(client.publication, const LiveMediaPublication());
+    });
+  });
+
   group('security & resources', () {
     test('a failure never leaks the token into the exception', () async {
       port.failConnect = Exception('connect failed for token=super-secret-jwt');

@@ -162,6 +162,58 @@ final class LiveMediaFailed extends LiveMediaState {
   const LiveMediaFailed();
 }
 
+/// The live, SDK-reconciled state of THIS device's own media publication —
+/// distinct from the connection ([LiveMediaState]) and from any in-flight
+/// command. Three independent facts the UI needs:
+///
+///  - [screenAuthorized]: the server's CURRENT screen-publish authorization (a
+///    presenter grant/revoke, delivered live over the media SDK). It gates
+///    whether starting a share may even be offered — it is never proof that a
+///    track is publishing.
+///  - [microphoneOn] / [screenShareOn]: whether the microphone / screen track
+///    is actually published AND unmuted right now, as the media SDK reports it
+///    — never merely that a command returned.
+///
+/// A command's own in-flight state (acquiring, publishing, stopping) is the
+/// widget's to hold, not modelled here: it is a transient of the request, not a
+/// fact about the room.
+class LiveMediaPublication {
+  const LiveMediaPublication({
+    this.screenAuthorized = false,
+    this.microphoneOn = false,
+    this.screenShareOn = false,
+  });
+
+  final bool screenAuthorized;
+  final bool microphoneOn;
+  final bool screenShareOn;
+
+  LiveMediaPublication copyWith({
+    bool? screenAuthorized,
+    bool? microphoneOn,
+    bool? screenShareOn,
+  }) => LiveMediaPublication(
+    screenAuthorized: screenAuthorized ?? this.screenAuthorized,
+    microphoneOn: microphoneOn ?? this.microphoneOn,
+    screenShareOn: screenShareOn ?? this.screenShareOn,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is LiveMediaPublication &&
+      other.screenAuthorized == screenAuthorized &&
+      other.microphoneOn == microphoneOn &&
+      other.screenShareOn == screenShareOn;
+
+  @override
+  int get hashCode => Object.hash(screenAuthorized, microphoneOn, screenShareOn);
+
+  @override
+  String toString() =>
+      'LiveMediaPublication(screenAuthorized: $screenAuthorized, '
+      'microphoneOn: $microphoneOn, screenShareOn: $screenShareOn)';
+}
+
 /// A refusal from the media seam — kept apart from [LiveException], which is
 /// the HTTP/authority refusal. Minimal on purpose; the real media provider's
 /// error surface is a later slice.

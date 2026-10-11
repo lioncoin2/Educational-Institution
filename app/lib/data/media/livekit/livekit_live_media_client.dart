@@ -33,6 +33,13 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
   /// [setScreenShareEnabled]. Only the capability flag is kept; never the token.
   bool _screenAllowed = false;
 
+  /// The live, SDK-reconciled publication snapshot (authorization + the actual
+  /// mic/screen tracks). `_screenAllowed` is its authoritative mirror for the
+  /// publish gate; the two always move together.
+  LiveMediaPublication _publication = const LiveMediaPublication();
+  final StreamController<LiveMediaPublication> _publications =
+      StreamController<LiveMediaPublication>.broadcast();
+
   @override
   bool get isAvailable => true;
 
@@ -41,6 +48,12 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
 
   @override
   Stream<LiveMediaState> get states => _states.stream;
+
+  @override
+  LiveMediaPublication get publication => _publication;
+
+  @override
+  Stream<LiveMediaPublication> get publications => _publications.stream;
 
   /// The latest server-authorized screen-share capability — the SDK's live
   /// participant permission, updated as the backend grants or revokes a
@@ -60,6 +73,10 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
       );
     }
     _screenAllowed = grant.screen;
+    // A fresh connection starts from a clean publication: the join
+    // authorization, no tracks published yet. The SDK's live signals (capability
+    // and local-track events) update it from here.
+    _setPublication(LiveMediaPublication(screenAuthorized: grant.screen));
     _set(const LiveMediaConnecting());
     try {
       await _port.connect(grant.url, grant.token);
@@ -113,6 +130,7 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
       // Drop the cached authorization too, so a stale grant can never outlive
       // the connection it belonged to.
       _screenAllowed = false;
+      _setPublication(const LiveMediaPublication());
       _set(const LiveMediaIdle());
     }
   }
@@ -124,6 +142,7 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
     await _signals.cancel();
     await _port.dispose();
     if (!_states.isClosed) await _states.close();
+    if (!_publications.isClosed) await _publications.close();
   }
 
   void _onSignal(LiveKitRoomSignal signal) {
@@ -143,9 +162,22 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
         // genuine allowed→denied transition stops capture, once.
         final wasAllowed = _screenAllowed;
         _screenAllowed = canPublishScreen;
+        _setPublication(
+          _publication.copyWith(screenAuthorized: canPublishScreen),
+        );
         if (wasAllowed && !canPublishScreen) {
           unawaited(_stopScreenShareQuietly());
         }
+      case LiveKitLocalTracks(:final microphoneOn, :final screenShareOn):
+        // The SDK's reconciled view of OUR OWN published tracks — the single
+        // source of the mic/screen "on" state the UI shows, never a command's
+        // optimistic result.
+        _setPublication(
+          _publication.copyWith(
+            microphoneOn: microphoneOn,
+            screenShareOn: screenShareOn,
+          ),
+        );
     }
   }
 
@@ -164,6 +196,15 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
   void _set(LiveMediaState state) {
     _state = state;
     if (!_states.isClosed) _states.add(state);
+  }
+
+  /// Publishes a publication change only when something actually changed, so a
+  /// no-change SDK event (e.g. a duplicate permission update) does not churn the
+  /// stream.
+  void _setPublication(LiveMediaPublication next) {
+    if (next == _publication) return;
+    _publication = next;
+    if (!_publications.isClosed) _publications.add(next);
   }
 
   void _requireConnected() {

@@ -350,5 +350,27 @@ void main() {
       expect((events.single as LiveKitCapabilities).canPublishScreen, isTrue);
       await port.dispose();
     });
+
+    test('a local-tracks signal from the room surfaces on the port stream', () async {
+      late void Function(LiveKitRoomSignal) emit;
+      final port = SdkLiveKitRoomPort(
+        openRoom: (url, token, e) async {
+          emit = e;
+          return _FakeLiveRoom();
+        },
+      );
+      final events = <LiveKitRoomSignal>[];
+      port.signals.listen(events.add);
+
+      await port.connect('wss://x', 'tok');
+      emit(const LiveKitLocalTracks(microphoneOn: true, screenShareOn: false));
+      await pumpEventQueue();
+
+      expect(events.single, isA<LiveKitLocalTracks>());
+      final tracks = events.single as LiveKitLocalTracks;
+      expect(tracks.microphoneOn, isTrue);
+      expect(tracks.screenShareOn, isFalse);
+      await port.dispose();
+    });
   });
 }

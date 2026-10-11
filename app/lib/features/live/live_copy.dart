@@ -180,6 +180,11 @@ abstract final class LiveCopy {
   static const screenShareStart = 'بدء مشاركة الشاشة';
   static const screenShareStop = 'إيقاف مشاركة الشاشة';
   static const screenShareOnStatus = 'مشاركة الشاشة مُفعّلة';
+
+  /// The viewer holds the presenter slot, but the server's LIVE screen
+  /// authorization has not yet reached this device — the start action waits for
+  /// it (disabled) instead of offering a share that would be refused.
+  static const screenShareConfirming = 'جارٍ تأكيد صلاحية مشاركة الشاشة…';
   static const screenShareError =
       'تعذّرت مشاركة الشاشة. قد لا يدعمها المتصفّح أو أنها غير متاحة الآن.';
 

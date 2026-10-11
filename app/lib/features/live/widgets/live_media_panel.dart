@@ -311,41 +311,32 @@ class _ConnectedCard extends ConsumerStatefulWidget {
 }
 
 class _ConnectedCardState extends ConsumerState<_ConnectedCard> {
-  bool _micOn = false;
+  // Only the COMMAND-in-flight state is the widget's. The mic/screen "on" state
+  // and the screen authorization are the SDK-reconciled publication's — read
+  // from [liveMediaPublicationProvider], never held or guessed here.
   bool _micBusy = false;
-  bool _screenOn = false;
   bool _screenBusy = false;
 
   LiveMediaController get _controller =>
       ref.read(liveMediaProvider(widget.sessionId).notifier);
 
-  @override
-  void didUpdateWidget(_ConnectedCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Presenter authority lost mid-session: the panel stops the capture and the
-    // backend drops the track, so the local control must drop its "on" too —
-    // otherwise a later re-grant would re-show the toggle reading "sharing"
-    // when nothing is captured. (The toggle is hidden while not presenting;
-    // this keeps it honest for when it returns.)
-    if (oldWidget.presenting && !widget.presenting) {
-      _screenOn = false;
-      _screenBusy = false;
-    }
-  }
+  LiveMediaPublication get _publication =>
+      ref.read(liveMediaPublicationProvider).value ??
+      const LiveMediaPublication();
 
   Future<void> _toggleMic() async {
     if (_micBusy) return;
     final messenger = ScaffoldMessenger.of(context);
-    final next = !_micOn;
+    final next = !_publication.microphoneOn;
     setState(() => _micBusy = true);
     try {
       await _controller.setMicrophoneEnabled(next);
-      // Only now — the SDK confirmed the publish/unpublish — is it "on".
-      if (mounted) setState(() => _micOn = next);
+      // The displayed on/off is the SDK publication's, reconciled from the
+      // track events — never this command's optimistic result.
     } catch (_) {
       // A denied permission or an unsupported environment lands here; the seam
       // sanitizes the cause, so one actionable, recoverable line covers it, and
-      // the toggle stays as it was (never a pretended success).
+      // the toggle stays as the SDK reports (never a pretended success).
       if (mounted) messenger.toast(LiveCopy.micError);
     } finally {
       if (mounted) setState(() => _micBusy = false);
@@ -355,12 +346,12 @@ class _ConnectedCardState extends ConsumerState<_ConnectedCard> {
   Future<void> _toggleScreen() async {
     if (_screenBusy) return;
     final messenger = ScaffoldMessenger.of(context);
-    final next = !_screenOn;
+    final next = !_publication.screenShareOn;
     setState(() => _screenBusy = true);
     try {
       await _controller.setScreenShareEnabled(next);
-      // "On" means the SDK published the track, not that a slot was granted.
-      if (mounted) setState(() => _screenOn = next);
+      // "On" is the SDK's published-track state, reconciled from track events —
+      // never this command's result, and never a merely-granted slot.
     } catch (_) {
       // A cancelled picker, an unsupported browser or a grant the backend did
       // not permit all land here; the seam cannot tell them apart, so one
@@ -374,6 +365,12 @@ class _ConnectedCardState extends ConsumerState<_ConnectedCard> {
   @override
   Widget build(BuildContext context) {
     final enabled = !widget.reconnecting;
+    // The reconciled truth: what the SDK says is actually published, and the
+    // server's current screen authorization. The mic/screen toggles reflect
+    // THIS, not a command result.
+    final publication =
+        ref.watch(liveMediaPublicationProvider).value ??
+        const LiveMediaPublication();
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -414,7 +411,7 @@ class _ConnectedCardState extends ConsumerState<_ConnectedCard> {
           const SizedBox(height: Insets.md),
           _MediaToggle(
             key: const Key('live-mic-toggle'),
-            on: _micOn,
+            on: publication.microphoneOn,
             busy: _micBusy,
             enabled: enabled,
             onToggle: _toggleMic,
@@ -425,17 +422,23 @@ class _ConnectedCardState extends ConsumerState<_ConnectedCard> {
             statusOn: LiveCopy.micOnStatus,
             statusOff: LiveCopy.micOffStatus,
           ),
-          // The screen-share capture is shown ONLY to a current presenter
-          // (`me.presenting`, the session's authority). The authority is
-          // claimed/stopped through the moderation controls, never here; this
-          // only starts and stops the media track.
-          if (widget.presenting) ...[
+          // The screen-share capture is shown to a current presenter (the
+          // session's authority affordance) and whenever a track is still
+          // publishing. But STARTING is enabled only once the server's LIVE
+          // authorization is confirmed (`screenAuthorized`), never on
+          // `me.presenting` alone — so the event-ordering window shows a
+          // disabled "confirming…" control instead of a tap that would be
+          // refused. Stopping is always allowed. The authority itself is
+          // claimed/stopped through the moderation controls, never here.
+          if (widget.presenting || publication.screenShareOn) ...[
             const SizedBox(height: Insets.md),
             _MediaToggle(
               key: const Key('live-screen-toggle'),
-              on: _screenOn,
+              on: publication.screenShareOn,
               busy: _screenBusy,
               enabled: enabled,
+              canStart: publication.screenAuthorized,
+              pendingHint: LiveCopy.screenShareConfirming,
               onToggle: _toggleScreen,
               enableLabel: LiveCopy.screenShareStart,
               disableLabel: LiveCopy.screenShareStop,
@@ -475,11 +478,23 @@ class _MediaToggle extends StatelessWidget {
     required this.iconOff,
     required this.statusOn,
     this.statusOff,
+    this.canStart = true,
+    this.pendingHint,
   });
 
   final bool on;
   final bool busy;
   final bool enabled;
+
+  /// Whether the OFF→ON (start) action is permitted now — e.g. the server's
+  /// live screen authorization is confirmed. Stopping is always permitted while
+  /// connected; only starting waits on this.
+  final bool canStart;
+
+  /// Shown while off and [canStart] is false — the authorization is still being
+  /// confirmed, so the control waits rather than offering a share that would be
+  /// refused.
+  final String? pendingHint;
   final Future<void> Function() onToggle;
   final String enableLabel;
   final String disableLabel;
@@ -490,7 +505,12 @@ class _MediaToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = on ? statusOn : statusOff;
+    // Stopping (on→off) is always allowed while connected; starting (off→on)
+    // additionally waits for [canStart] (the confirmed authorization).
+    final actionEnabled = enabled && !busy && (on || canStart);
+    final status = on
+        ? statusOn
+        : (canStart ? statusOff : (pendingHint ?? statusOff));
     final label = on ? disableLabel : enableLabel;
     final icon = busy
         ? const ExcludeSemantics(
@@ -500,7 +520,7 @@ class _MediaToggle extends StatelessWidget {
             ),
           )
         : Icon(on ? iconOn : iconOff);
-    final onPressed = (enabled && !busy) ? onToggle : null;
+    final onPressed = actionEnabled ? onToggle : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

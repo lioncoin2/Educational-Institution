@@ -138,13 +138,29 @@ void main() {
   }
 
   /// Join → connected, the way the UI does it (no spinner-settling: the
-  /// connecting state shows an endless progress indicator).
-  Future<void> connect(WidgetTester tester, _Harness h) async {
+  /// connecting state shows an endless progress indicator). Seeds the reconciled
+  /// publication the adapter would emit on connect (authorization + tracks).
+  Future<void> connect(
+    WidgetTester tester,
+    _Harness h, {
+    bool screenAuthorized = false,
+    bool microphoneOn = false,
+    bool screenShareOn = false,
+  }) async {
     await tester.tap(find.byKey(const Key('live-audio-join')));
     await tester.pump(); // connecting shown; the held-free join resolves
     await tester.pump(); // client.connect lands
     h.client.emit(const LiveMediaConnected());
-    await tester.pump();
+    h.client.emitPublication(
+      LiveMediaPublication(
+        screenAuthorized: screenAuthorized,
+        microphoneOn: microphoneOn,
+        screenShareOn: screenShareOn,
+      ),
+    );
+    // Connected has no persistent spinner: settle so the ConnectedCard mounts
+    // and the publication provider seeds its value into the widget.
+    await tester.pumpAndSettle();
   }
 
   group('availability and idle', () {
@@ -292,22 +308,45 @@ void main() {
       expect(find.text(LiveCopy.micOffStatus), findsOneWidget);
     });
 
-    testWidgets('enabling the mic calls the client and reflects on, then off', (
+    testWidgets('enabling the mic commands the client; the SDK state reflects on, then off', (
       tester,
     ) async {
       final h = await pump(tester, _session(canJoin: true));
       await tester.pumpAndSettle();
       await connect(tester, h);
 
+      // The tap commands the client — but the UI does NOT flip until the SDK's
+      // reconciled publication confirms the track is published.
       await tester.tap(find.text(LiveCopy.micEnable));
       await tester.pump();
       expect(h.client.microphoneCommands, [true]);
-      expect(find.text(LiveCopy.micOnStatus), findsOneWidget);
+      expect(find.text(LiveCopy.micOffStatus), findsOneWidget); // not yet
+      h.client.emitPublication(const LiveMediaPublication(microphoneOn: true));
+      await tester.pump();
+      expect(find.text(LiveCopy.micOnStatus), findsOneWidget); // SDK-confirmed
 
       await tester.tap(find.text(LiveCopy.micDisable));
       await tester.pump();
       expect(h.client.microphoneCommands, [true, false]);
+      h.client.emitPublication(const LiveMediaPublication(microphoneOn: false));
+      await tester.pump();
       expect(find.text(LiveCopy.micOffStatus), findsOneWidget);
+    });
+
+    testWidgets('an external mute (no command) is reconciled into the UI', (
+      tester,
+    ) async {
+      final h = await pump(tester, _session(canJoin: true));
+      await tester.pumpAndSettle();
+      await connect(tester, h, microphoneOn: true);
+      expect(find.text(LiveCopy.micOnStatus), findsOneWidget);
+
+      // The SDK reports the track muted (a server mute, a device loss) with no
+      // command from us — the UI must reflect the real state.
+      h.client.emitPublication(const LiveMediaPublication(microphoneOn: false));
+      await tester.pump();
+      expect(find.text(LiveCopy.micOffStatus), findsOneWidget);
+      expect(h.client.microphoneCommands, isEmpty); // reconciled, not commanded
     });
 
     testWidgets('a denied mic is said recoverably and stays off', (
@@ -343,29 +382,67 @@ void main() {
 
       h.client.hold!.complete();
       await tester.pump();
+      // The command resolved; the SDK's reconciled publication confirms on.
+      h.client.emitPublication(const LiveMediaPublication(microphoneOn: true));
+      await tester.pump();
       expect(find.text(LiveCopy.micOnStatus), findsOneWidget);
     });
   });
 
-  group('screen share (presenter only)', () {
-    testWidgets('shown to a presenter, hidden otherwise', (tester) async {
+  group('screen share (presenter, authorization-gated)', () {
+    testWidgets('shown to a presenter, hidden to a non-presenter', (tester) async {
       final h = await pump(tester, _session(canJoin: true, presenting: true));
       await tester.pumpAndSettle();
-      await connect(tester, h);
+      await connect(tester, h, screenAuthorized: true);
       expect(find.byKey(const Key('live-screen-toggle')), findsOneWidget);
     });
 
-    testWidgets('starting share calls the client and reflects on', (
+    testWidgets('start stays disabled until authorization is confirmed (the race)', (
+      tester,
+    ) async {
+      // Presenter by session authority, but the live screen authorization has
+      // not reached this device yet: the control shows, start is disabled with
+      // a confirming hint, and a tap sends nothing — no refusal in the race.
+      final h = await pump(tester, _session(canJoin: true, presenting: true));
+      await tester.pumpAndSettle();
+      await connect(tester, h); // screenAuthorized: false
+
+      expect(find.byKey(const Key('live-screen-toggle')), findsOneWidget);
+      expect(find.text(LiveCopy.screenShareConfirming), findsOneWidget);
+      await tester.ensureVisible(find.text(LiveCopy.screenShareStart));
+      await tester.tap(find.text(LiveCopy.screenShareStart));
+      await tester.pump();
+      expect(h.client.screenShareCommands, isEmpty); // disabled → nothing sent
+
+      // Authorization confirmed live → start enables, the hint clears.
+      h.client.emitPublication(
+        const LiveMediaPublication(screenAuthorized: true),
+      );
+      await tester.pump();
+      expect(find.text(LiveCopy.screenShareConfirming), findsNothing);
+      await tester.ensureVisible(find.text(LiveCopy.screenShareStart));
+      await tester.tap(find.text(LiveCopy.screenShareStart));
+      await tester.pump();
+      expect(h.client.screenShareCommands, [true]);
+    });
+
+    testWidgets('starting commands the client; the SDK state reflects published', (
       tester,
     ) async {
       final h = await pump(tester, _session(canJoin: true, presenting: true));
       await tester.pumpAndSettle();
-      await connect(tester, h);
+      await connect(tester, h, screenAuthorized: true);
 
       await tester.ensureVisible(find.text(LiveCopy.screenShareStart));
       await tester.tap(find.text(LiveCopy.screenShareStart));
       await tester.pump();
       expect(h.client.screenShareCommands, [true]);
+      expect(find.text(LiveCopy.screenShareOnStatus), findsNothing); // not yet
+
+      h.client.emitPublication(
+        const LiveMediaPublication(screenAuthorized: true, screenShareOn: true),
+      );
+      await tester.pump();
       expect(find.text(LiveCopy.screenShareOnStatus), findsOneWidget);
     });
 
@@ -374,7 +451,7 @@ void main() {
     ) async {
       final h = await pump(tester, _session(canJoin: true, presenting: true));
       await tester.pumpAndSettle();
-      await connect(tester, h);
+      await connect(tester, h, screenAuthorized: true);
       h.client.failNext = const LiveMediaException('media_error', 'x');
 
       await tester.ensureVisible(find.text(LiveCopy.screenShareStart));
@@ -384,48 +461,64 @@ void main() {
 
       expect(h.client.screenShareCommands, [true]); // attempted
       expect(find.text(LiveCopy.screenShareError), findsOneWidget);
-      expect(find.text(LiveCopy.screenShareStart), findsOneWidget); // still off
+      // No publication confirmed it on → the control stays at "start".
+      expect(find.text(LiveCopy.screenShareStart), findsOneWidget);
     });
 
-    testWidgets('losing the presenter slot stops the capture', (tester) async {
-      final h = await pump(tester, _session(canJoin: true, presenting: true));
-      await tester.pumpAndSettle();
-      await connect(tester, h);
-
-      await tester.ensureVisible(find.text(LiveCopy.screenShareStart));
-      await tester.tap(find.text(LiveCopy.screenShareStart));
-      await tester.pump();
-      expect(h.client.screenShareCommands, [true]);
-
-      // The moderator revoked the slot: the session reconciles presenting→false.
-      h.session.value = _session(canJoin: true, presenting: false);
-      await tester.pump();
-
-      // The client was told to stop, and the control is gone.
-      expect(h.client.screenShareCommands, [true, false]);
-      expect(find.byKey(const Key('live-screen-toggle')), findsNothing);
-    });
-
-    testWidgets('re-granting presenter after a revoke shows capture as off', (
+    testWidgets('losing the presenter slot stops the capture and hides the control', (
       tester,
     ) async {
       final h = await pump(tester, _session(canJoin: true, presenting: true));
       await tester.pumpAndSettle();
-      await connect(tester, h);
+      await connect(tester, h, screenAuthorized: true);
 
       await tester.ensureVisible(find.text(LiveCopy.screenShareStart));
       await tester.tap(find.text(LiveCopy.screenShareStart));
       await tester.pump();
+      h.client.emitPublication(
+        const LiveMediaPublication(screenAuthorized: true, screenShareOn: true),
+      );
+      await tester.pump();
       expect(find.text(LiveCopy.screenShareOnStatus), findsOneWidget);
 
-      // Revoked, then re-granted — two reconciliations of the session's `me`.
+      // The moderator revokes: the session reconciles presenting→false (the
+      // panel tells the client to stop) and the SDK unpublishes the track.
       h.session.value = _session(canJoin: true, presenting: false);
       await tester.pump();
+      expect(h.client.screenShareCommands, [true, false]);
+      h.client.emitPublication(const LiveMediaPublication());
+      await tester.pump();
+      expect(find.byKey(const Key('live-screen-toggle')), findsNothing);
+    });
+
+    testWidgets('re-granting after a revoke shows capture as off, not stale-on', (
+      tester,
+    ) async {
+      final h = await pump(tester, _session(canJoin: true, presenting: true));
+      await tester.pumpAndSettle();
+      await connect(tester, h, screenAuthorized: true);
+
+      await tester.ensureVisible(find.text(LiveCopy.screenShareStart));
+      await tester.tap(find.text(LiveCopy.screenShareStart));
+      await tester.pump();
+      h.client.emitPublication(
+        const LiveMediaPublication(screenAuthorized: true, screenShareOn: true),
+      );
+      await tester.pump();
+      expect(find.text(LiveCopy.screenShareOnStatus), findsOneWidget);
+
+      // Revoke (track stops, authorization lost), then re-grant.
+      h.session.value = _session(canJoin: true, presenting: false);
+      await tester.pump();
+      h.client.emitPublication(const LiveMediaPublication());
+      await tester.pump();
       h.session.value = _session(canJoin: true, presenting: true);
+      h.client.emitPublication(
+        const LiveMediaPublication(screenAuthorized: true),
+      );
       await tester.pump();
 
-      // The toggle is back but reads OFF: the capture was stopped on the revoke,
-      // so a stale "sharing" state here would be a lie.
+      // Back, reading OFF — the reconciled state, never a stale "sharing".
       expect(find.byKey(const Key('live-screen-toggle')), findsOneWidget);
       expect(find.text(LiveCopy.screenShareStart), findsOneWidget);
       expect(find.text(LiveCopy.screenShareOnStatus), findsNothing);

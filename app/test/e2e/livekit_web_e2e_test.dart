@@ -193,8 +193,20 @@ void main() {
 
     // 3. Publish controls, gated by the LIVE server authorization.
     if (grant.microphone) {
+      // Sprint 10 — the microphone publish state reconciles from the SDK's own
+      // track events (LocalTrackPublished / TrackMuted), not the command
+      // return. The headless runner has a fake microphone device, so this is a
+      // REAL publish/mute verified over real LiveKit.
       await client.setMicrophoneEnabled(true);
+      await _until(
+        () => client.publication.microphoneOn,
+        reason: 'microphone publish did not reconcile to on',
+      );
       await client.setMicrophoneEnabled(false);
+      await _until(
+        () => !client.publication.microphoneOn,
+        reason: 'microphone mute did not reconcile to off',
+      );
     }
     // Authorization starts at the join grant: connect() seeds it from the
     // ticket and the adapter emits the SDK's live participant permission.

@@ -70,6 +70,20 @@ final class LiveKitCapabilities extends LiveKitRoomSignal {
   final bool canPublishScreen;
 }
 
+/// The LOCAL participant's actually-published tracks changed — a microphone or
+/// screen track was published, unpublished, muted or unmuted. Carries the SDK's
+/// own reconciled view (published AND unmuted), never a command result, so the
+/// UI reflects the real track state rather than an optimistic toggle.
+final class LiveKitLocalTracks extends LiveKitRoomSignal {
+  const LiveKitLocalTracks({
+    required this.microphoneOn,
+    required this.screenShareOn,
+  });
+
+  final bool microphoneOn;
+  final bool screenShareOn;
+}
+
 /// Translates a LiveKit `DisconnectReason` into the app's own reason. Only the
 /// three meaningful cases map across; everything else — `unknown`,
 /// `serverShutdown`, `stateMismatch`, `joinFailure`, `disconnected`,
@@ -122,6 +136,17 @@ LiveKitCapabilities _capabilitiesOf(ParticipantPermissions permissions) =>
         ],
       ),
     );
+
+/// Reads the local participant's actually-published-track state via the SDK's
+/// own reconciled getters (`isMicrophoneEnabled`/`isScreenShareEnabled`:
+/// published AND unmuted). Null-safe before the local participant exists.
+LiveKitLocalTracks _localTracksOf(Room room) {
+  final local = room.localParticipant;
+  return LiveKitLocalTracks(
+    microphoneOn: local?.isMicrophoneEnabled() ?? false,
+    screenShareOn: local?.isScreenShareEnabled() ?? false,
+  );
+}
 
 /// One connected LiveKit room reduced to the operations the port performs on
 /// it: the publish commands and the three teardown steps it owns (dispose the
@@ -302,6 +327,18 @@ Future<LiveKitLiveRoom> _openSdkRoom(
       // the SDK delivers here — live, with no reconnect.
       if (event.participant is! LocalParticipant) return;
       emit(_capabilitiesOf(event.permissions));
+    })
+    // Our OWN published tracks changed — reconcile the mic/screen state from
+    // the SDK's own view (published and unmuted), never from a command result.
+    // Local publish/unpublish events are always ours; mute/unmute are filtered
+    // to the local participant (a remote's mute is not ours to reflect).
+    ..on<LocalTrackPublishedEvent>((_) => emit(_localTracksOf(room)))
+    ..on<LocalTrackUnpublishedEvent>((_) => emit(_localTracksOf(room)))
+    ..on<TrackMutedEvent>((event) {
+      if (event.participant is LocalParticipant) emit(_localTracksOf(room));
+    })
+    ..on<TrackUnmutedEvent>((event) {
+      if (event.participant is LocalParticipant) emit(_localTracksOf(room));
     });
   try {
     await room.connect(url, token);
@@ -313,11 +350,14 @@ Future<LiveKitLiveRoom> _openSdkRoom(
     ).catchError((_) {});
     rethrow;
   }
-  // Emit the authorization the server granted at join, so the client starts
-  // from the SDK's live permission (not only the join ticket); later changes
-  // arrive through the event above.
+  // Seed the client from the SDK's live view at join: the server's screen
+  // authorization, and the (initially empty) published-track state. Later
+  // changes arrive through the events above.
   final local = room.localParticipant;
-  if (local != null) emit(_capabilitiesOf(local.permissions));
+  if (local != null) {
+    emit(_capabilitiesOf(local.permissions));
+    emit(_localTracksOf(room));
+  }
   return _SdkLiveRoom(room, listener);
 }
 
