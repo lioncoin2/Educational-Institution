@@ -296,9 +296,11 @@ describeWithPostgres('Communities in Postgres', () => {
             'communities_capability_grants_not_self',
           ],
           [
-            // Still-reserved (Q51/Q23): rejected by the capability CHECK. The
-            // attendance capabilities are now allowed (migration 0014).
-            row(`'community.messages.moderate', 'admin-1', now(), null, null, null`),
+            // An unknown capability is rejected by the enumerated CHECK. The
+            // whole capability vocabulary is now active (attendance via 0014,
+            // `community.messages.moderate` via 0017), so the invalid value here
+            // is one that is not a capability at all.
+            row(`'community.nonexistent', 'admin-1', now(), null, null, null`),
             'communities_capability_grants_capability_valid',
           ],
           [

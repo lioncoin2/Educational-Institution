@@ -482,8 +482,10 @@ describeWithPostgres('messaging and files on Postgres', () => {
     });
 
     it('renders a deleted message as a tombstone in the right place', async () => {
+      // A deletion always records who (the `messages_deleted_by_consistent`
+      // CHECK, migration 0017): set both, as every real delete path does.
       await scratch.db.execute(sql`
-        update messages set deleted_at = created_at + interval '1 minute'
+        update messages set deleted_at = created_at + interval '1 minute', deleted_by = ${reader}
         where conversation_id = ${conversationId} and sequence = ${TOTAL - 1}`);
       const slice = await readModel.listMessages(conversationId, {
         hiddenThroughSequence: 0,

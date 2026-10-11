@@ -11,7 +11,10 @@ import { DrizzleCommunityReadModel } from '../../src/modules/communities/infrast
 import { DrizzleCommunityRepository } from '../../src/modules/communities/infrastructure/drizzle-community-repository';
 import { ProtectLiveSessions } from '../../src/modules/live/application/protect-live-sessions';
 import type { LiveSessionView, SpeakerRequestView } from '../../src/modules/live/application/views';
-import { MAX_CONCURRENT_SPEAKERS } from '../../src/modules/live/domain/live-limits';
+import {
+  MAX_CONCURRENT_PRESENTERS,
+  MAX_CONCURRENT_SPEAKERS,
+} from '../../src/modules/live/domain/live-limits';
 import { capabilitiesFor } from '../../src/modules/live/domain/standing';
 import { DrizzleLiveStore } from '../../src/modules/live/infrastructure/drizzle-live-repositories';
 import { FakeRtcProvider } from '../../src/modules/live/infrastructure/fake-rtc-provider';
@@ -552,7 +555,7 @@ describeWithPostgres('Live races on Postgres (audit §14)', () => {
 
     it('claim + End, End first: 412, and no presenter grant', async () => {
       const { owner, session } = await scene();
-      const paused = pauseAt(1, [live(0).presenters, 'open']);
+      const paused = pauseAt(1, [live(0).presenters, 'openWithinCap']);
       const claiming = live(0).presenter.claim({
         principal: owner,
         sessionId: session.id,
@@ -910,33 +913,46 @@ describeWithPostgres('Live races on Postgres (audit §14)', () => {
       expect(await versionOf(session.id)).toBe(1 + 10 + MAX_CONCURRENT_SPEAKERS);
     });
 
-    it('two presenter claims in two processes: exactly one opens, the other 409 live.presenter_slot_taken', async () => {
+    it(`three presenter claims in three processes: exactly ${MAX_CONCURRENT_PRESENTERS} open (the cap), the rest live.presenter_slots_full`, async () => {
+      // Q56, ADR 0028: up to MAX_CONCURRENT_PRESENTERS (2) open per session, at
+      // most one per user. With three distinct claimants racing, the database
+      // decides the cap — two open, the third is turned away.
       const { communityId, owner, session } = await scene();
-      const rival = await live(0).delegate(
-        communityId,
-        owner,
-        'teacher-2',
-        'community.live.moderate',
-      );
+      const claimers = [owner];
+      for (let n = 2; n <= MAX_CONCURRENT_PRESENTERS + 1; n += 1) {
+        claimers.push(
+          await live(0).delegate(communityId, owner, `teacher-${n}`, 'community.live.moderate'),
+        );
+      }
       clearJournals();
-      const paused = pauseAt(2, [live(0).presenters, 'open'], [live(1).presenters, 'open']);
-      const claiming = [owner, rival].map((claimer, i) =>
+      const paused = pauseAt(
+        claimers.length,
+        ...claimers.map((_, i) => [live(i).presenters, 'openWithinCap'] as const),
+      );
+      const claiming = claimers.map((claimer, i) =>
         live(i).presenter.claim({ principal: claimer, sessionId: session.id, meta: META }),
       );
       await paused.reached;
       paused.open();
       const results = await Promise.all(claiming);
 
-      expect(results.filter((result) => result.ok && result.value.opened)).toHaveLength(1);
-      expect(results.filter((result) => !result.ok).map(codeOf)).toEqual([
-        'live.presenter_slot_taken',
-      ]);
+      expect(results.filter((result) => result.ok && result.value.opened)).toHaveLength(
+        MAX_CONCURRENT_PRESENTERS,
+      );
+      expect(results.filter((result) => !result.ok).map(codeOf)).toEqual(
+        Array.from(
+          { length: claimers.length - MAX_CONCURRENT_PRESENTERS },
+          () => 'live.presenter_slots_full',
+        ),
+      );
       expect(
         await number(sql`select count(*)::int as n from live_presenter_grants
                           where session_id = ${session.id}`),
-      ).toBe(1);
-      expect(await openPresenters(session.id)).toBe(1);
-      expect(eventNames()).toEqual(['live.screen_share.started']);
+      ).toBe(MAX_CONCURRENT_PRESENTERS);
+      expect(await openPresenters(session.id)).toBe(MAX_CONCURRENT_PRESENTERS);
+      expect(eventNames()).toEqual(
+        Array.from({ length: MAX_CONCURRENT_PRESENTERS }, () => 'live.screen_share.started'),
+      );
     });
 
     it('twenty raises by one person across five processes: one row, ONE event, one version step', async () => {

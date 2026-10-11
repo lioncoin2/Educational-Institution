@@ -95,7 +95,14 @@ describe('the presenter slot on the pinned LiveKit server', () => {
 
   it('closes it when another moderator takes it back: the screen goes the same way', async () => {
     await presenting();
-    const taken = await live.presenter.stop({ principal: owner, sessionId, meta: META });
+    // Two presenters (ADR 0028): `stop` ends one's OWN share; a moderator ends
+    // ANOTHER's with `revoke(targetUserId)` — reason `revoked`.
+    const taken = await live.presenter.revoke({
+      principal: owner,
+      sessionId,
+      targetUserId: 'teacher-2',
+      meta: META,
+    });
     expect(taken.ok).toBe(true);
     expect(closedLines().at(-1)).toMatchObject({
       userId: 'teacher-2',

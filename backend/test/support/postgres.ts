@@ -13,10 +13,27 @@ export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 /**
  * Integration suites run against a real Postgres when TEST_DATABASE_URL is set
  * and skip otherwise — announcing it, because a suite that silently vanishes is
- * indistinguishable from one that passes. CI always sets it.
+ * indistinguishable from one that passes.
+ *
+ * CI always sets it, and sets POSTGRES_REQUIRED=1 so that reliance is enforced:
+ * where the integration gate is required, a missing or renamed TEST_DATABASE_URL
+ * is a FAILURE, not a skip — the gate can never pass green on zero integration
+ * coverage. Locally, with POSTGRES_REQUIRED unset, it stays an announced skip,
+ * so the lightweight developer workflow (a plain `jest`) is unchanged.
  */
 export function describeWithPostgres(name: string, body: () => void): void {
   if (TEST_DATABASE_URL === undefined) {
+    if (process.env.POSTGRES_REQUIRED === '1') {
+      describe(name, () => {
+        it('requires TEST_DATABASE_URL — POSTGRES_REQUIRED is set, so it must not skip', () => {
+          throw new Error(
+            `${name}: POSTGRES_REQUIRED=1 but TEST_DATABASE_URL is unset — this Postgres ` +
+              `integration suite would have skipped. Set TEST_DATABASE_URL so the gate runs it.`,
+          );
+        });
+      });
+      return;
+    }
     describe.skip(name, body);
     process.stderr.write(
       `[skip] ${name}: set TEST_DATABASE_URL to run the Postgres integration tests.\n`,

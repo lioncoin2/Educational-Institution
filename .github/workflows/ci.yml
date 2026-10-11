@@ -63,11 +63,15 @@ jobs:
 
       # format:check, lint, typecheck, arch:graph, test — the same gate as local.
       # TEST_DATABASE_URL is what turns the Postgres integration suite on; without
-      # it those tests skip, and a skipped test proves nothing.
+      # it those tests skip, and a skipped test proves nothing. POSTGRES_REQUIRED
+      # enforces that reliance: if the URL is ever missing or renamed here, the
+      # integration suites fail loudly instead of skipping, so this gate can never
+      # pass green on zero integration coverage (test/support/postgres.ts).
       - name: Verify
         run: npm run verify
         env:
           TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/institution_test
+          POSTGRES_REQUIRED: '1'
 
       - name: Build
         run: npm run build

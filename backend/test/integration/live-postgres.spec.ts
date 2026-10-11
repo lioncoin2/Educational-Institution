@@ -450,12 +450,17 @@ describeWithPostgres('Live in Postgres', () => {
         ),
       ).toBe('no violation');
 
-      // P1: a second open presenter grant — a closed one is not open.
+      // P1 (Q56, ADR 0028): up to two presenters per session, at most one OPEN
+      // grant per user. A second open grant for the SAME user violates
+      // one_open_per_user; a different user is allowed (the per-session cap of
+      // MAX_CONCURRENT_PRESENTERS is the application's, not the index's); a
+      // closed grant is not open.
       const slot = await started(new DrizzleLiveStore(db));
       expect(await violated(presenterGrant(slot.id))).toBe('no violation');
-      expect(await violated(presenterGrant(slot.id, { user_id: `'rival'` }))).toBe(
-        'live_presenter_grants_one_open_per_session',
+      expect(await violated(presenterGrant(slot.id))).toBe(
+        'live_presenter_grants_one_open_per_user',
       );
+      expect(await violated(presenterGrant(slot.id, { user_id: `'rival'` }))).toBe('no violation');
       expect(
         await violated(presenterGrant(slot.id, { ended_at: T, end_reason: `'stopped'` })),
       ).toBe('no violation');
@@ -566,10 +571,13 @@ describeWithPostgres('Live in Postgres', () => {
             '(session_id, ended_at)',
           ],
           [
-            'live_presenter_grants_one_open_per_session',
+            // Up to two presenters per session, at most one open per user
+            // (Q56, ADR 0028; migration 0016). The uniqueness is per (session,
+            // user), not per session.
+            'live_presenter_grants_one_open_per_user',
             'UNIQUE',
             'live_presenter_grants',
-            '(session_id) WHERE (ended_at IS NULL)',
+            '(session_id, user_id) WHERE (ended_at IS NULL)',
           ],
           ['live_presenter_grants_pkey', 'UNIQUE', 'live_presenter_grants', '(id)'],
           // History, newest first: plain DESC — NULLS FIRST, as `ORDER BY … DESC` reads.
@@ -677,8 +685,15 @@ describeWithPostgres('Live in Postgres', () => {
       await note('yield again', (await yieldFloor())?.stateVersion);
       await note('claim', (await claim(store, session, moderator, at(8))).stateVersion);
       await note('claim again: held', (await claim(store, session, moderator, at(9))).stateVersion);
+      // A second user opens the second presenter slot (Q56, ADR 0028): an
+      // observable change now, not a no-op.
       await note(
-        'claim by another: occupied',
+        'claim by another: a second presenter opens',
+        (await claim(store, session, person(), at(9))).stateVersion,
+      );
+      // A third claim finds both slots full (MAX_CONCURRENT_PRESENTERS) — a no-op.
+      await note(
+        'claim by a third: occupied',
         (await claim(store, session, person(), at(9))).stateVersion,
       );
       await store.sessions.markEmpty(session.id, at(10));
@@ -724,13 +739,14 @@ describeWithPostgres('Live in Postgres', () => {
         ['yield again', 6, 6],
         ['claim', 7, 7],
         ['claim again: held', 7, 7],
-        ['claim by another: occupied', 7, 7],
-        ['bookkeeping', 7, 7],
-        ['stop', 8, 8],
-        ['stop again', 8, 8],
-        ['nothing to expire', 8, 8],
-        ['end', 9, 9],
-        ['end again', 9, 9],
+        ['claim by another: a second presenter opens', 8, 8],
+        ['claim by a third: occupied', 8, 8],
+        ['bookkeeping', 8, 8],
+        ['stop', 9, 9],
+        ['stop again', 9, 9],
+        ['nothing to expire', 9, 9],
+        ['end', 10, 10],
+        ['end again', 10, 10],
       ]);
     });
   });
