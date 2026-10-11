@@ -11,6 +11,7 @@ import '../models/live.dart';
 import '../models/live_media.dart';
 import '../models/messaging.dart';
 import '../models/notifications.dart';
+import '../models/people.dart';
 import '../models/progress.dart';
 import '../models/program.dart';
 import '../models/student.dart';
@@ -159,6 +160,16 @@ abstract interface class MessagingRepository {
   /// read (any more), or no such community: `messaging.conversation_not_found`.
   Future<Conversation> conversationForCommunity(String communityId);
 
+  /// Start — or return — the direct conversation with [userId] (Q6, owner
+  /// GROUP A ruling). The server decides who the viewer may reach: a student
+  /// reaches another student (`messaging.start_direct_peer`), staff any
+  /// addressable account (`messaging.start_direct`). A counterpart the viewer
+  /// may not reach and an unknown account are refused alike
+  /// (`messaging.participant_not_eligible`), so the app cannot probe. Idempotent:
+  /// the same pair always yields the one canonical conversation, whether it was
+  /// just created or already existed.
+  Future<Conversation> startDirect(String userId);
+
   /// Newest page when neither cursor is given; [before]/[after] are sequences.
   Future<MessagePage> messages(
     String conversationId, {
@@ -273,6 +284,14 @@ abstract interface class CommunityRepository {
 
   // ── Membership ──
 
+  /// Adds (or re-adds) accounts to the community by id — the owner, or a holder
+  /// of `community.members.invite`. Idempotent: an account already a member is
+  /// left as it is. The server decides afresh (the capability, and that each id
+  /// is an account that may take part); a refusal throws [CommunityException].
+  /// The ids come from a people search the viewer was authorised to run, never
+  /// an open directory.
+  Future<void> addMembers(String communityId, List<String> userIds);
+
   /// Ends [userId]'s membership.
   Future<void> removeMember(String communityId, String userId);
 
@@ -313,6 +332,24 @@ abstract interface class CommunityRepository {
   /// Hands the community to [userId]. The answer is the community as the
   /// VIEWER now stands in it, not as the new owner does.
   Future<Community> transferOwnership(String communityId, String userId);
+}
+
+/// People discovery — finding an account by name, for a staff member who may
+/// read the human record (the server gates `GET /people` on `people.read`; the
+/// app offers the search only where the server would allow it). Not an open
+/// directory: a result discloses only {userId, displayName}, and the server
+/// decides whom the caller may find. A refusal throws [PeopleException].
+abstract interface class PeopleRepository {
+  /// Accounts whose display name begins with [query] (a blank query is an
+  /// empty page), a keyset page at a time by an opaque [cursor]. Gated on the
+  /// server by `people.read` (staff only).
+  Future<PeopleSearchPage> search(String query, {String? cursor});
+
+  /// Eligible TEACHERS whose display name begins with [query] — the
+  /// student-facing teacher directory (Q6), gated on the server by the
+  /// student's `messaging.start_direct_teacher`. Returns only teachers (never
+  /// students, administrators or the owner), same minimal {userId, displayName}.
+  Future<PeopleSearchPage> searchTeachers(String query, {String? cursor});
 }
 
 /// Live sessions — a community's live audio room, read-only

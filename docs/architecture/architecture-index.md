@@ -77,8 +77,8 @@ responsibility and what each module must not know live in
 ### identity
 
 - **Path:** `backend/src/modules/identity/`
-- **Nest module:** `identity.module.ts` — exports: `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_DIRECTORY`, `AUTHORIZATION_SERVICE`
-- **Public contract (`contracts/`):** `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_DIRECTORY`, `ACCOUNT_DIRECTORY_MAX_IDS`, `ALL_PERMISSIONS`, `AUTHORIZATION_SERVICE`, `AccessTokenAuthenticator`, `AccountDirectory`, `AccountSummary`, `Authenticated`, `Authentication`, `AuthorizationContext`, `AuthorizationService`, `Permission`, `Permissions`, `REQUIRE_AUTHENTICATION`, `REQUIRE_PERMISSION`, `RequirePermission`, `SYSTEM_PRINCIPAL_PREFIX`, `SessionReference`, `isPermission`, `isSystemPrincipal`, `systemPrincipal`
+- **Nest module:** `identity.module.ts` — exports: `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_DIRECTORY`, `ACCOUNT_SEARCH`, `AUTHORIZATION_SERVICE`
+- **Public contract (`contracts/`):** `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_DIRECTORY`, `ACCOUNT_DIRECTORY_MAX_IDS`, `ACCOUNT_SEARCH`, `ALL_PERMISSIONS`, `AUTHORIZATION_SERVICE`, `AccessTokenAuthenticator`, `AccountDirectory`, `AccountSearch`, `AccountSummary`, `Authenticated`, `Authentication`, `AuthorizationContext`, `AuthorizationService`, `ELIGIBLE_TEACHER`, `Permission`, `Permissions`, `REQUIRE_AUTHENTICATION`, `REQUIRE_PERMISSION`, `RequirePermission`, `SYSTEM_PRINCIPAL_PREFIX`, `SessionReference`, `isPermission`, `isSystemPrincipal`, `systemPrincipal`
 - **Declared domain events:** —
 - **Static imports → modules:** —
 - **Docs:** [module-boundaries.md#identity](module-boundaries.md#identity)
@@ -125,7 +125,7 @@ responsibility and what each module must not know live in
 - **Nest module:** `people.module.ts` — exports: —
 - **Public contract (`contracts/`):** —
 - **Declared domain events:** —
-- **Static imports → modules:** —
+- **Static imports → modules:** `identity`
 - **Docs:** [module-boundaries.md#people](module-boundaries.md#people)
 
 ### realtime
@@ -262,7 +262,7 @@ responsibility and what each module must not know live in
 
 ## Flutter data seam (`app/lib/data/`, `app/lib/app/`)
 
-- **Repository contracts (`data/repositories/repositories.dart`):** `AcademicRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `InstitutionRepository`, `LearningRepository`, `LiveRepository`, `MessagingRepository`, `NotificationsRepository`, `ProgressRepository`
+- **Repository contracts (`data/repositories/repositories.dart`):** `AcademicRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `InstitutionRepository`, `LearningRepository`, `LiveRepository`, `MessagingRepository`, `NotificationsRepository`, `PeopleRepository`, `ProgressRepository`
 - **Routes (`app/routes.dart`):** `announcements` → `/announcements`, `certificates` → `/certificates`, `communities` → `/communities`, `home` → `/home`, `invite` → `/invite`, `messages` → `/messages`, `notificationSettings` → `/notifications/settings`, `notifications` → `/notifications`, `path` → `/path`, `profile` → `/profile`, `programs` → `/programs`, `progress` → `/progress`, `signIn` → `/sign-in`, `splash` → `/splash`
 - **Route builders:** `certificate`, `community`, `communityAttendance`, `communityAttendanceSnapshot`, `communityAttendanceSnapshots`, `communityInvitations`, `communityLive`, `communityMembers`, `conversation`, `episode`, `lesson`, `levels`, `program`
 - **Entry points:** `app/lib/main.dart`, `app/lib/app/app.dart`, `app/lib/app/router.dart`, `app/lib/providers/app_providers.dart`

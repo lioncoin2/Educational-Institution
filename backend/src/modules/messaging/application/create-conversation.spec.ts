@@ -59,15 +59,143 @@ describe('starting a direct conversation', () => {
     ]);
   });
 
-  // Q6, provisional: students take part; they do not initiate.
-  it('refuses a student — and an assistant — the right to start one', async () => {
-    const teacher = h.person(Roles.teacher);
-    for (const role of [Roles.student, Roles.assistantTeacher]) {
-      const person = h.person(role);
-      expect(expectErr(await start(person, teacher.userId)).code).toBe(
-        'identity.permission_denied',
+  // Q6, owner GROUP A ruling (2026-10-11): a student may start a DM with
+  // another student — and with no one else. An assistant still starts nothing.
+  it('lets a student start a direct conversation with another student, once, from either side', async () => {
+    const student = h.person(Roles.student, 'طالب');
+    const peer = h.person(Roles.student, 'زميل');
+
+    const created = expectOk(await start(student, peer.userId));
+    expect(created.created).toBe(true);
+    expect(created.conversation).toMatchObject({
+      type: 'DIRECT',
+      title: 'زميل',
+      counterpartUserId: peer.userId,
+      memberCount: 2,
+      canPost: true,
+      canManageMembers: false,
+    });
+
+    const reverse = expectOk(await start(peer, student.userId));
+    expect(reverse).toMatchObject({
+      created: false,
+      conversation: { id: created.conversation.id },
+    });
+    expect(reverse.conversation.title).toBe('طالب');
+  });
+
+  // Owner GROUP A ruling (Q6, 2026-10-11): a student may also start a DM with an
+  // eligible teacher — a holder of `academic.teach` who is not an administrator.
+  // Teacher AND assistant teacher both qualify; the owner/admin do not (they hold
+  // `users.manage`), nor does a supervisor (no `academic.teach`).
+  it('lets a student start a direct conversation with an eligible teacher (and an assistant teacher)', async () => {
+    const student = h.person(Roles.student, 'طالب');
+    const teacher = h.person(Roles.teacher, 'الأستاذ');
+    const assistant = h.person(Roles.assistantTeacher, 'المساعد');
+
+    const toTeacher = expectOk(await start(student, teacher.userId));
+    expect(toTeacher.created).toBe(true);
+    expect(toTeacher.conversation).toMatchObject({
+      type: 'DIRECT',
+      title: 'الأستاذ',
+      counterpartUserId: teacher.userId,
+      memberCount: 2,
+    });
+    // Canonical from the teacher's side too (a broad starter reaching back).
+    expect(expectOk(await start(teacher, student.userId))).toMatchObject({
+      created: false,
+      conversation: { id: toTeacher.conversation.id },
+    });
+
+    // An assistant teacher is an eligible teacher as well (holds `academic.teach`
+    // and is not an administrator) — the student may start one, even though the
+    // assistant may not initiate one themselves.
+    const toAssistant = expectOk(await start(student, assistant.userId));
+    expect(toAssistant.created).toBe(true);
+    expect(toAssistant.conversation).toMatchObject({
+      type: 'DIRECT',
+      counterpartUserId: assistant.userId,
+    });
+  });
+
+  // The student grants reach peers and teachers only: a supervisor (no
+  // `academic.teach`) and the administrators (owner, admin — they hold
+  // `users.manage`) are refused, and reported exactly like an id that does not
+  // exist, so a student cannot probe for who is an administrator.
+  it('refuses a student a DM with a supervisor, an admin, the owner, or an unknown account', async () => {
+    const student = h.person(Roles.student);
+    for (const who of [Roles.supervisor, Roles.admin, Roles.owner]) {
+      const target = h.person(who);
+      expect(expectErr(await start(student, target.userId)).code).toBe(
+        'messaging.participant_not_eligible',
       );
     }
+    expect(expectErr(await start(student, 'no-such-account')).code).toBe(
+      'messaging.participant_not_eligible',
+    );
+  });
+
+  it('refuses a student a DM with an inactive teacher, like any ineligible account', async () => {
+    const student = h.person(Roles.student);
+    const teacher = h.person(Roles.teacher);
+    h.directory.deactivate(teacher.userId);
+    expect(expectErr(await start(student, teacher.userId)).code).toBe(
+      'messaging.participant_not_eligible',
+    );
+  });
+
+  // A student may message a teacher, but that is not a window into the teacher's
+  // other conversations: a different student remains a non-member.
+  it('keeps a student↔teacher DM to its two members; a third student is refused', async () => {
+    const student = h.person(Roles.student);
+    const teacher = h.person(Roles.teacher);
+    const other = h.person(Roles.student);
+    const dm = expectOk(await start(student, teacher.userId)).conversation;
+    expect(
+      expectErr(await h.getConversation.execute({ principal: other, conversationId: dm.id })).code,
+    ).toBe('messaging.conversation_not_found');
+  });
+
+  it('refuses an assistant the right to start one at all', async () => {
+    const assistant = h.person(Roles.assistantTeacher);
+    const student = h.person(Roles.student);
+    expect(expectErr(await start(assistant, student.userId)).code).toBe(
+      'identity.permission_denied',
+    );
+  });
+
+  // The membership gate holds for a peer DM: the two students are in it; a
+  // third student — a peer, but not a member — is refused read and send alike,
+  // told only what a conversation that does not exist would tell them (Q22/Q23).
+  // Starting a peer DM grants no window into anyone else's.
+  it('keeps a student peer DM to its two members; a third student is refused as if it did not exist', async () => {
+    const a = h.person(Roles.student, 'أ');
+    const b = h.person(Roles.student, 'ب');
+    const c = h.person(Roles.student, 'ج');
+
+    const dm = expectOk(await start(a, b.userId)).conversation;
+
+    expect(
+      expectOk(await h.getConversation.execute({ principal: a, conversationId: dm.id })).id,
+    ).toBe(dm.id);
+    expect(
+      expectOk(await h.getConversation.execute({ principal: b, conversationId: dm.id })).id,
+    ).toBe(dm.id);
+
+    expect(
+      expectErr(await h.getConversation.execute({ principal: c, conversationId: dm.id })).code,
+    ).toBe('messaging.conversation_not_found');
+    expect(
+      expectErr(
+        await h.sendText.execute({
+          principal: c,
+          conversationId: dm.id,
+          clientMessageId: 'c-intrusion-0001',
+          body: 'hi',
+          meta: META,
+        }),
+      ).code,
+    ).toBe('messaging.conversation_not_found');
   });
 
   it('refuses oneself, an unknown account, and an inactive one — alike', async () => {

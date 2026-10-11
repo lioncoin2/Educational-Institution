@@ -123,8 +123,16 @@ export class ConversationsController {
     return { items: page.items.map(toConversationResponse), nextCursor: page.nextCursor };
   }
 
+  /**
+   * Start — or return — a direct conversation. Authenticated at the edge: two
+   * permissions open this door — `messaging.start_direct` (staff, any
+   * addressable account) and `messaging.start_direct_peer` (a student, another
+   * student only, Q6) — and only the use case can tell which the caller holds,
+   * and whether the counterpart is a permitted one. A caller holding neither is
+   * refused there with 403, exactly as the edge would have.
+   */
   @Post('direct')
-  @RequirePermission(Permissions.messaging.startDirect)
+  @Authenticated()
   async direct(
     @CurrentPrincipal() principal: Principal,
     @Body() dto: StartDirectDto,

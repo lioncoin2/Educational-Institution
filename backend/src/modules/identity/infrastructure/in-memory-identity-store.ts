@@ -82,6 +82,58 @@ export class InMemoryUserRepository implements UserRepository {
     };
   }
 
+  async searchActiveByDisplayName(prefix: string, page: PageRequest): Promise<Page<User>> {
+    const needle = prefix.trim().toLowerCase();
+    if (needle === '') return { items: [] };
+    const matched = [...this.byId.values()]
+      .filter(
+        (user) =>
+          user.status === AccountStatuses.active &&
+          user.displayName.toLowerCase().startsWith(needle),
+      )
+      .sort((a, b) => a.displayName.localeCompare(b.displayName) || a.id.localeCompare(b.id));
+    const start =
+      page.cursor === undefined ? 0 : matched.findIndex((user) => user.id === page.cursor) + 1;
+    const items = matched.slice(start, start + page.limit);
+    const last = items[items.length - 1];
+    return {
+      items,
+      nextCursor: start + page.limit < matched.length && last !== undefined ? last.id : undefined,
+    };
+  }
+
+  async searchActiveTeachersByDisplayName(
+    prefix: string,
+    page: PageRequest,
+    eligible: { readonly holds: string; readonly notHolds: string },
+  ): Promise<Page<User>> {
+    const needle = prefix.trim().toLowerCase();
+    if (needle === '') return { items: [] };
+    const holds = (user: User, permission: string): boolean => {
+      const matrix = PROVISIONAL_ROLE_PERMISSIONS as Record<string, readonly string[]>;
+      return user.roles.some(
+        (assignment) => matrix[assignment.role]?.includes(permission) ?? false,
+      );
+    };
+    const matched = [...this.byId.values()]
+      .filter(
+        (user) =>
+          user.status === AccountStatuses.active &&
+          user.displayName.toLowerCase().startsWith(needle) &&
+          holds(user, eligible.holds) &&
+          !holds(user, eligible.notHolds),
+      )
+      .sort((a, b) => a.displayName.localeCompare(b.displayName) || a.id.localeCompare(b.id));
+    const start =
+      page.cursor === undefined ? 0 : matched.findIndex((user) => user.id === page.cursor) + 1;
+    const items = matched.slice(start, start + page.limit);
+    const last = items[items.length - 1];
+    return {
+      items,
+      nextCursor: start + page.limit < matched.length && last !== undefined ? last.id : undefined,
+    };
+  }
+
   async anyActiveWithRole(role: RoleCode): Promise<boolean> {
     return [...this.byId.values()].some(
       (user) =>

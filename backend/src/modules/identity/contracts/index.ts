@@ -1,5 +1,6 @@
 export * from './access-tokens';
 export * from './account-directory';
+export * from './account-search';
 export * from './authorization';
 export * from './permissions';
 export * from './principal';

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, gt, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, ilike, inArray, or, sql } from 'drizzle-orm';
 
 import { DATABASE, isUniqueViolation, type Database } from '../../../platform/database';
 import type { Page, PageRequest } from '../../../shared';
@@ -179,6 +179,94 @@ export class DrizzleUserRepository implements UserRepository {
     };
   }
 
+  /**
+   * ACTIVE accounts whose display name begins with `prefix` (case-insensitive,
+   * via ILIKE), keyset-paged by (display_name, id). LIKE metacharacters in the
+   * prefix are escaped, so a `%` typed by the caller matches a literal `%`, not
+   * "anything". A blank prefix matches nothing — enumeration always starts from
+   * a typed name.
+   */
+  async searchActiveByDisplayName(prefix: string, page: PageRequest): Promise<Page<User>> {
+    const trimmed = prefix.trim();
+    if (trimmed === '') return { items: [] };
+    const cursor = decodeNameCursor(page.cursor);
+    const rows = await this.db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.status, AccountStatuses.active),
+          ilike(users.displayName, `${escapeLike(trimmed)}%`),
+          cursor === null
+            ? undefined
+            : or(
+                gt(users.displayName, cursor.displayName),
+                and(eq(users.displayName, cursor.displayName), gt(users.id, cursor.id)),
+              ),
+        ),
+      )
+      .orderBy(asc(users.displayName), asc(users.id))
+      .limit(page.limit + 1);
+
+    const pageRows = rows.slice(0, page.limit);
+    const last = pageRows[pageRows.length - 1];
+    return {
+      items: await this.hydrate(pageRows),
+      nextCursor:
+        rows.length > page.limit && last !== undefined
+          ? encodeNameCursor(last.displayName, last.id)
+          : undefined,
+    };
+  }
+
+  /**
+   * ACTIVE accounts matching `prefix` that hold `eligible.holds` through some
+   * role and hold `eligible.notHolds` through none — the eligible-teacher
+   * directory. Same keyset pagination as [searchActiveByDisplayName]; the role
+   * predicates are correlated EXISTS/NOT EXISTS over the runtime matrix
+   * (user_roles → role_permissions), so a role re-scoping takes effect at once.
+   */
+  async searchActiveTeachersByDisplayName(
+    prefix: string,
+    page: PageRequest,
+    eligible: { readonly holds: string; readonly notHolds: string },
+  ): Promise<Page<User>> {
+    const trimmed = prefix.trim();
+    if (trimmed === '') return { items: [] };
+    const cursor = decodeNameCursor(page.cursor);
+    const rows = await this.db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.status, AccountStatuses.active),
+          ilike(users.displayName, `${escapeLike(trimmed)}%`),
+          sql`exists (select 1 from user_roles ur join role_permissions rp on rp.role_code = ur.role
+                where ur.user_id = ${users.id} and rp.permission_code = ${eligible.holds})`,
+          sql`not exists (select 1 from user_roles ur join role_permissions rp on rp.role_code = ur.role
+                where ur.user_id = ${users.id} and rp.permission_code = ${eligible.notHolds})`,
+          cursor === null
+            ? undefined
+            : or(
+                gt(users.displayName, cursor.displayName),
+                and(eq(users.displayName, cursor.displayName), gt(users.id, cursor.id)),
+              ),
+        ),
+      )
+      .orderBy(asc(users.displayName), asc(users.id))
+      .limit(page.limit + 1);
+
+    const pageRows = rows.slice(0, page.limit);
+    const last = pageRows[pageRows.length - 1];
+    return {
+      items: await this.hydrate(pageRows),
+      nextCursor:
+        rows.length > page.limit && last !== undefined
+          ? encodeNameCursor(last.displayName, last.id)
+          : undefined,
+    };
+  }
+
   async anyActiveWithRole(role: RoleCode): Promise<boolean> {
     const rows = await this.db
       .select({ one: sql<number>`1` })
@@ -232,6 +320,29 @@ function toRoleRow(userId: string, assignment: RoleAssignment) {
 
 function encodeCursor(createdAt: Date, id: string): string {
   return Buffer.from(JSON.stringify([createdAt.toISOString(), id])).toString('base64url');
+}
+
+/** Escapes LIKE/ILIKE metacharacters so a typed prefix is matched literally. */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+function encodeNameCursor(displayName: string, id: string): string {
+  return Buffer.from(JSON.stringify([displayName, id])).toString('base64url');
+}
+
+/** A malformed name cursor reads as "from the start" rather than an error. */
+function decodeNameCursor(cursor: string | undefined): { displayName: string; id: string } | null {
+  if (cursor === undefined) return null;
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    if (!Array.isArray(parsed) || typeof parsed[0] !== 'string' || typeof parsed[1] !== 'string') {
+      return null;
+    }
+    return { displayName: parsed[0], id: parsed[1] };
+  } catch {
+    return null;
+  }
 }
 
 /** A malformed cursor reads as "from the start" rather than an error. */

@@ -34,6 +34,7 @@ import '../data/repositories/http/http_community_repository.dart';
 import '../data/repositories/http/http_live_repository.dart';
 import '../data/repositories/http/http_messaging_repository.dart';
 import '../data/repositories/http/http_notifications_repository.dart';
+import '../data/repositories/http/http_people_repository.dart';
 import '../data/repositories/mock/mock_academic_repository.dart';
 import '../data/repositories/mock/mock_attendance_repository.dart';
 import '../data/repositories/mock/mock_auth_repository.dart';
@@ -41,6 +42,7 @@ import '../data/repositories/mock/mock_community_repository.dart';
 import '../data/repositories/mock/mock_live_repository.dart';
 import '../data/repositories/mock/mock_messaging_repository.dart';
 import '../data/repositories/mock/mock_notifications_repository.dart';
+import '../data/repositories/mock/mock_people_repository.dart';
 import '../data/repositories/mock/mock_repositories.dart';
 import '../data/repositories/repositories.dart';
 
@@ -175,6 +177,15 @@ final communityRepositoryProvider = Provider<CommunityRepository>(
   (ref) => ref.watch(backendModeProvider)
       ? HttpCommunityRepository(ref.watch(apiClientProvider))
       : MockCommunityRepository(),
+);
+
+/// People discovery — the display-name search for adding a member (the server
+/// gates `GET /people` on `people.read`; the app offers it only where it is
+/// allowed). HTTP against the backend, the invented set in the demo.
+final peopleRepositoryProvider = Provider<PeopleRepository>(
+  (ref) => ref.watch(backendModeProvider)
+      ? HttpPeopleRepository(ref.watch(apiClientProvider))
+      : MockPeopleRepository(),
 );
 
 /// Writes the link to an invitation, given its token; null while nothing can.

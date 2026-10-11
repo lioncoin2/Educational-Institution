@@ -22,6 +22,7 @@ import {
   ACCOUNT_DIRECTORY,
   type AccountDirectory,
 } from '../../identity/contracts/account-directory';
+import { ELIGIBLE_TEACHER } from '../../identity/contracts/account-search';
 import { Permissions, type Permission } from '../../identity/contracts/permissions';
 import {
   newChannelConversation,
@@ -93,6 +94,16 @@ export class ConversationFactory {
   }
 
   /**
+   * Whether this principal holds `permission` — for deciding, by permission and
+   * never by role, which kind of direct conversation they may start: a holder
+   * of `messaging.start_direct` starts broadly (staff); a student holds instead
+   * `messaging.start_direct_peer` and/or `messaging.start_direct_teacher`.
+   */
+  can(principal: Principal, permission: Permission): boolean {
+    return this.access.can(principal, permission);
+  }
+
+  /**
    * Everyone named must be an ACTIVE account holding `permission` — decided by
    * identity, the same way as for a signed-in user. An unknown id and an
    * ineligible one are reported alike: no probing for accounts.
@@ -122,6 +133,51 @@ export class ConversationFactory {
       );
     }
     return ok(undefined);
+  }
+
+  /**
+   * A student starter may reach, according to the grants they hold:
+   *
+   *  - a PEER (`allow.peer`, from `messaging.start_direct_peer`): an ACTIVE
+   *    account that holds `messaging.start_direct_peer` and is NOT a broad
+   *    starter — i.e. another student, never staff, the owner or an admin;
+   *  - an eligible TEACHER (`allow.teacher`, from `messaging.start_direct_teacher`):
+   *    an ACTIVE account that holds `academic.teach` (the catalogue's "is a
+   *    teacher's account" marker) and is NOT an administrator (holds no
+   *    `users.manage`, which only the owner and admins hold) — i.e. a teacher or
+   *    assistant teacher, never an administrator, a student or a supervisor.
+   *
+   * The institution is a single one (no multi-institution model exists), so
+   * "the same institution" holds for every account and needs no check. As with
+   * `eligible`, an unknown id and an ineligible one are reported alike, so a
+   * student cannot probe for who is a teacher, an admin, or absent.
+   */
+  async eligibleForStudent(
+    userId: string,
+    allow: { readonly peer: boolean; readonly teacher: boolean },
+  ): Promise<Result<void>> {
+    if (allow.peer) {
+      const [peers, broad] = await Promise.all([
+        this.directory.withPermission([userId], Permissions.messaging.startDirectPeer),
+        this.directory.withPermission([userId], Permissions.messaging.startDirect),
+      ]);
+      if (peers.has(userId) && !broad.has(userId)) return ok(undefined);
+    }
+    if (allow.teacher) {
+      const [teachers, admins] = await Promise.all([
+        this.directory.withPermission([userId], ELIGIBLE_TEACHER.holds),
+        this.directory.withPermission([userId], ELIGIBLE_TEACHER.notHolds),
+      ]);
+      if (teachers.has(userId) && !admins.has(userId)) return ok(undefined);
+    }
+    return err(
+      failure(
+        'validation',
+        'messaging.participant_not_eligible',
+        'Some of these people cannot take part in conversations.',
+        { userIds: [userId] },
+      ),
+    );
   }
 
   /** After the conversation is stored: the audit entry, the event, the creator's view. */
@@ -180,7 +236,23 @@ export class StartDirectConversationUseCase {
     readonly meta: CallMetadata;
   }): Promise<Result<CreatedConversation>> {
     const { principal } = command;
-    const admitted = await this.factory.admit(principal, Permissions.messaging.startDirect);
+    // The permission decides who a caller may reach, never a role (Q6, owner
+    // GROUP A rulings). A broad starter (staff) reaches any addressable account;
+    // a student reaches a peer (`start_direct_peer`) and/or an eligible teacher
+    // (`start_direct_teacher`), according to the grants they hold.
+    const broad = this.factory.can(principal, Permissions.messaging.startDirect);
+    const mayPeer = !broad && this.factory.can(principal, Permissions.messaging.startDirectPeer);
+    const mayTeacher =
+      !broad && this.factory.can(principal, Permissions.messaging.startDirectTeacher);
+
+    // Admit against a start permission the caller actually holds (plus read and
+    // the rate limit); one who holds none is denied here, canonically.
+    const startPermission = broad
+      ? Permissions.messaging.startDirect
+      : mayPeer
+        ? Permissions.messaging.startDirectPeer
+        : Permissions.messaging.startDirectTeacher;
+    const admitted = await this.factory.admit(principal, startPermission);
     if (!admitted.ok) return admitted;
 
     const draft = newDirectConversation({
@@ -191,10 +263,12 @@ export class StartDirectConversationUseCase {
     });
     if (!draft.ok) return draft;
 
-    const eligible = await this.factory.eligible(
-      [command.counterpartUserId],
-      Permissions.messaging.read,
-    );
+    const eligible = broad
+      ? await this.factory.eligible([command.counterpartUserId], Permissions.messaging.read)
+      : await this.factory.eligibleForStudent(command.counterpartUserId, {
+          peer: mayPeer,
+          teacher: mayTeacher,
+        });
     if (!eligible.ok) return eligible;
 
     const outcome = await this.repository.createDirectConversation(draft.value);

@@ -56,6 +56,23 @@ abstract final class CommunityCopy {
   static const membersEmpty = 'لا يوجد أعضاء لعرضهم.';
   static const membersForbidden = 'عرض أعضاء هذا المجتمع غير متاح لك.';
 
+  // ── Adding a member (Owner Decision A1/A4) ────────────────────────────
+  // Offered only when the server's `me` grants `community.members.invite`;
+  // the search finds only people the server lets this viewer find, and the
+  // add is the server's decision on every id.
+  static const addMemberTooltip = 'إضافة عضو';
+  static const addMemberTitle = 'إضافة عضو';
+  static const addMemberSearchHint = 'ابحث عن شخص بالاسم';
+  static const addMemberPrompt = 'اكتب اسمًا للبحث عن شخص لإضافته.';
+  static const addMemberNoResults = 'لا نتائج مطابقة.';
+  static const addMemberSearchError = 'تعذّر البحث. حاول مرة أخرى.';
+  static const addMemberSearchForbidden = 'البحث عن الأشخاص غير متاح لك.';
+  static const addMemberAction = 'إضافة';
+  static const memberAdded = 'تمت إضافة العضو.';
+
+  /// A person the directory has no name for — never their id.
+  static const personFallback = 'حساب';
+
   /// A member the directory has no name for — never their id or email.
   static const unnamedMember = 'عضو';
   static const inactiveAccount = 'حساب غير نشط';

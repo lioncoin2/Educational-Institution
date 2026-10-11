@@ -170,12 +170,21 @@ void main() {
       );
     });
 
-    test('adds nobody by id: joining is by link, on one’s own request', () {
+    test('adds members by id through one server-gated route (Owner A1/A4/A2)', () {
+      // The direct add — deferred until a people-lookup policy existed
+      // (Q6/Q22/Q31/Q50) — is now approved: a holder of
+      // `community.members.invite` adds (or re-adds) people found through the
+      // people search. It is exactly one POST to /members, carrying ONLY
+      // account ids — never a role, a standing or any other claim the client
+      // could assert; the server re-authorises every add. Joining on one's own
+      // request stays by link (the `join` call remains).
       expect(
         calls.where((c) => c.startsWith('post ') && c.contains('/members')),
-        isEmpty,
+        hasLength(1),
       );
-      expect(http, isNot(contains('userIds')));
+      // The add carries only account ids — no role, standing or other claim.
+      expect(http, contains("body: {'userIds': userIds}"));
+      expect(calls.where((c) => c.contains('/join')), isNotEmpty);
     });
   });
 
@@ -301,6 +310,7 @@ const _allowedCalls = [
   "get '/communities'",
   'get _community(communityId)',
   r"get '${_community(communityId)}/members'",
+  r"post '${_community(communityId)}/members'",
   r"post '${_community(communityId)}/invitations'",
   r"get '${_community(communityId)}/invitations'",
   r"post '${_community(communityId)}/invitations/${_segment(invitationId)}/revoke'",

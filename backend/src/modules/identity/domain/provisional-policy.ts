@@ -113,9 +113,16 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
      * (`live.speak`) — speaking is granted per session by a host.
      *
      * Messaging: students read and reply in conversations staff place them in,
-     * but may not START one — no direct messages to peers or to adults of their
-     * choosing, no groups of their own. The conservative default for an
-     * institution of children; the institution decides otherwise (Q6).
+     * and — by the owner's GROUP A / Q6 rulings (2026-10-11) — may START a direct
+     * conversation with another student (`messaging.start_direct_peer`) and with
+     * an eligible teacher (`messaging.start_direct_teacher`). The peer permission
+     * reaches only a holder of it who is not a broad `start_direct` starter (so,
+     * another student); the teacher permission reaches only a holder of
+     * `academic.teach` who is not an administrator (`users.manage`), so a student
+     * reaches teachers and assistant teachers but never an admin or the owner.
+     * Neither broadens to `start_direct` (any account) or to people search. The
+     * parent-messaging and quiet-hours parts of Q6 stay open. Students still
+     * start no group or channel of their own.
      *
      * `academic.study`: eligible to be enrolled in a halaqa. Only students
      * hold it (besides OWNER and ADMIN, which hold everything they grant); a
@@ -131,6 +138,8 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
       Permissions.assignments.submit,
       Permissions.messaging.read,
       Permissions.messaging.send,
+      Permissions.messaging.startDirectPeer,
+      Permissions.messaging.startDirectTeacher,
       Permissions.live.join,
       Permissions.live.raiseHand,
       Permissions.files.read,

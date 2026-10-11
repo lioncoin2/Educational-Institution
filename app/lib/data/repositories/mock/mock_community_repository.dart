@@ -314,6 +314,27 @@ class MockCommunityRepository implements CommunityRepository {
   // ── Membership ──────────────────────────────────────────────────────────
 
   @override
+  Future<void> addMembers(String communityId, List<String> userIds) async {
+    await _wait();
+    final c = _find(communityId);
+    // The capability, then the lifecycle gate — as createInvitation does.
+    if (!c.viewerHolds(CommunityCapability.membersInvite)) {
+      throw _capabilityRequired(CommunityCapability.membersInvite);
+    }
+    if (!c.view().me.has(CommunityCapability.membersInvite)) {
+      throw _locked(CommunityCapability.membersInvite);
+    }
+    // Demo: re-admit anyone previously removed (the Q49 "a manager may re-add
+    // them directly" path). A brand-new account is accepted (idempotent); the
+    // generated roster does not track arbitrary accounts, so it does not newly
+    // appear here — the real server adds it.
+    for (final userId in userIds) {
+      final row = _rowOf(c, userId);
+      if (row != null) c.removedRows.remove(row);
+    }
+  }
+
+  @override
   Future<void> removeMember(String communityId, String userId) async {
     await _wait();
     final c = _find(communityId);

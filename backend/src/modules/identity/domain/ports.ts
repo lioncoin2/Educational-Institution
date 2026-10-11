@@ -25,6 +25,26 @@ export interface UserRepository {
   /** Persists changes to an existing account, including role and identifier diffs. */
   save(user: User): Promise<void>;
   list(page: PageRequest): Promise<Page<User>>;
+  /**
+   * ACTIVE accounts whose display name begins with `prefix` (case-insensitive),
+   * keyset-paged by (display_name, id). `prefix` is matched literally — LIKE
+   * metacharacters in it are escaped, so a caller cannot widen the match — and
+   * an empty/blank prefix matches nothing. The one way to enumerate accounts by
+   * name; the caller's RIGHT to do so is decided above this port (`people.read`).
+   */
+  searchActiveByDisplayName(prefix: string, page: PageRequest): Promise<Page<User>>;
+  /**
+   * Like [searchActiveByDisplayName], but only accounts that hold `eligible.holds`
+   * through a role and do NOT hold `eligible.notHolds` — the eligible-teacher
+   * definition, passed in so the policy lives in one contract constant
+   * (`ELIGIBLE_TEACHER`) rather than being re-encoded here. The RIGHT to call it
+   * is decided above this port (the student's teacher-messaging capability).
+   */
+  searchActiveTeachersByDisplayName(
+    prefix: string,
+    page: PageRequest,
+    eligible: { readonly holds: string; readonly notHolds: string },
+  ): Promise<Page<User>>;
   /** True when at least one ACTIVE account holds `role`. */
   anyActiveWithRole(role: RoleCode): Promise<boolean>;
 }

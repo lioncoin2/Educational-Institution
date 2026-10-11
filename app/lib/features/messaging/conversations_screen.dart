@@ -10,9 +10,11 @@ import '../../core/widgets/foundations/empty_state.dart';
 import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/layout/responsive_body.dart';
 import '../../providers/app_providers.dart';
+import 'messaging_copy.dart';
 import 'state/conversation_list_controller.dart';
 import 'widgets/connection_banner.dart';
 import 'widgets/conversation_tile.dart';
+import 'widgets/message_teacher_sheet.dart';
 
 /// The signed-in person's conversations, most recently active first.
 class ConversationsScreen extends ConsumerWidget {
@@ -20,10 +22,26 @@ class ConversationsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // A student may start a conversation with a teacher (Q6): offer the teacher
+    // directory when the viewer's account holds the capability. The server
+    // re-authorises every search and every start, so this only governs the
+    // affordance.
+    final canMessageTeacher = ref.watch(
+      sessionUserProvider.select(
+        (user) => user.value?.can('messaging.start_direct_teacher') ?? false,
+      ),
+    );
     return Scaffold(
       appBar: AppBar(
         title: const Text('الرسائل'),
         actions: [
+          if (canMessageTeacher)
+            IconButton(
+              key: const Key('message-teacher'),
+              tooltip: MessagingCopy.messageTeacherTooltip,
+              onPressed: () => showMessageTeacher(context),
+              icon: const Icon(Icons.person_add_alt_1_outlined),
+            ),
           IconButton(
             tooltip: 'تحديث',
             onPressed: () => ref.invalidate(conversationListProvider),

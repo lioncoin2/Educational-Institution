@@ -144,6 +144,12 @@ class ScriptedCommunities extends MockCommunityRepository {
       _write('join', () => super.join(token));
 
   @override
+  Future<void> addMembers(String communityId, List<String> userIds) => _write(
+    'addMembers $communityId ${userIds.join(',')}',
+    () => super.addMembers(communityId, userIds),
+  );
+
+  @override
   Future<void> removeMember(String communityId, String userId) => _write(
     'removeMember $communityId $userId',
     () => super.removeMember(communityId, userId),

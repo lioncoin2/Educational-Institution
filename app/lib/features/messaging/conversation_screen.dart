@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/foundations/async_view.dart';
 import '../../data/models/communities.dart';
 import '../../data/models/messaging.dart';
+import '../../providers/app_providers.dart';
 import '../communities/state/community_controller.dart';
 import 'messaging_copy.dart';
 import 'state/conversation_controller.dart';
+import 'state/conversation_list_controller.dart';
+import 'state/direct_message_starter.dart';
 import 'widgets/composer.dart';
 import 'widgets/connection_banner.dart';
 import 'widgets/message_bubble.dart';
@@ -62,6 +66,17 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   false,
             ),
           );
+    // Starting a direct conversation (Q6, owner GROUP A ruling): offered on a
+    // co-member's name in a group or community chat, to a viewer whose account
+    // may start one (a student → another student; staff → anyone). The server
+    // decides who they may actually reach, so this only governs the affordance.
+    final canStartDm = ref.watch(
+      sessionUserProvider.select(
+        (user) =>
+            user.value?.can('messaging.start_direct_peer') == true ||
+            user.value?.can('messaging.start_direct') == true,
+      ),
+    );
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -103,6 +118,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 state: state,
                 unreadAfter: _unreadAfter,
                 canModerate: canModerate,
+                canStartDm: canStartDm,
               ),
             ),
             if (state.removed)
@@ -142,6 +158,7 @@ class _Timeline extends ConsumerWidget {
     required this.state,
     required this.unreadAfter,
     this.canModerate = false,
+    this.canStartDm = false,
   });
 
   final ConversationState state;
@@ -151,6 +168,11 @@ class _Timeline extends ConsumerWidget {
   /// message, and a review of a deleted one. Always false outside a community
   /// chat, and for a member without the capability.
   final bool canModerate;
+
+  /// The viewer's account may start a direct conversation (Q6): a student with
+  /// another student, staff with anyone. Makes a co-member's name in a group or
+  /// community chat tappable; the server still decides who they may reach.
+  final bool canStartDm;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -192,6 +214,21 @@ class _Timeline extends ConsumerWidget {
           mine: state.isMine(message),
           senderName: showNames && !state.isMine(message)
               ? state.senderNames[message.senderId]
+              : null,
+          // Tapping a co-member's name starts a direct conversation with them
+          // (Q6), when the viewer's account may and the name is known. The
+          // server decides who they may actually reach — the UI is not the gate.
+          onTapAuthor:
+              canStartDm &&
+                  showNames &&
+                  !state.isMine(message) &&
+                  state.senderNames[message.senderId] != null
+              ? () => _messageAuthor(
+                  context,
+                  ref,
+                  message.senderId,
+                  state.senderNames[message.senderId]!,
+                )
               : null,
           // A moderator may delete a live message, or review a tombstoned one
           // (ADR 0029). The server re-authorizes every call regardless.
@@ -429,4 +466,55 @@ Future<void> _review(
       ],
     ),
   );
+}
+
+/// Offers to start a direct conversation with [userId] (Q6): a sheet naming the
+/// person, then the start itself. The server decides who the viewer may reach —
+/// a refusal (a counterpart they may not, reported like an unknown account) is
+/// said through its code, and nothing opens. On success the conversation list
+/// is refreshed and the conversation opened by its own id. The start is
+/// idempotent, so even a stray second tap never makes a second conversation.
+Future<void> _messageAuthor(
+  BuildContext context,
+  WidgetRef ref,
+  String userId,
+  String name,
+) async {
+  final chosen = await showModalBottomSheet<bool>(
+    context: context,
+    builder: (sheet) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(Insets.lg),
+            child: Text(
+              MessagingCopy.messagePerson(name),
+              style: context.text.titleMedium,
+            ),
+          ),
+          ListTile(
+            key: Key('start-dm-$userId'),
+            leading: const Icon(Icons.chat_bubble_outline_rounded),
+            title: const Text(MessagingCopy.startDm),
+            onTap: () => Navigator.pop(sheet, true),
+          ),
+          const SizedBox(height: Insets.sm),
+        ],
+      ),
+    ),
+  );
+  if (chosen != true || !context.mounted) return;
+  final messenger = ScaffoldMessenger.of(context);
+  final result = await ref.read(directMessageStarterProvider).start(userId);
+  if (!context.mounted) return;
+  switch (result) {
+    case OpenConversation(:final location):
+      // A newly started conversation should be in the list when the viewer
+      // returns to it (offline, there is no realtime to announce it).
+      ref.invalidate(conversationListProvider);
+      context.push(location);
+    case CannotStartDm(:final message):
+      messenger.toast(message);
+  }
 }

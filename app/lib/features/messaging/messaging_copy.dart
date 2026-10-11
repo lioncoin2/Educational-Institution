@@ -63,6 +63,44 @@ abstract final class MessagingCopy {
   /// the server keeps to itself (locked, no capability, too large).
   static const cannotPostHere = 'لا يمكنك النشر في هذه المحادثة حاليًا.';
 
+  // ── Starting a direct conversation (Q6, owner GROUP A ruling) ────────────
+  // Offered on a co-member's name in a group or community chat, to a viewer
+  // whose account may start one. The server decides who they may reach.
+  static const startDm = 'بدء محادثة خاصة';
+
+  /// "Message {name}" — the title of the sheet offering to start a DM.
+  static String messagePerson(String name) => 'مراسلة $name';
+
+  /// Why a direct conversation could not be started — the server's code, said
+  /// plainly. A counterpart the viewer may not reach is told the same as an
+  /// unknown account, so nothing is revealed about who is staff.
+  static String dmUnavailable(String? code) => switch (code) {
+    'messaging.participant_not_eligible' =>
+      'لا يمكنك بدء محادثة خاصة مع هذا الشخص.',
+    'messaging.direct_with_self' => 'لا يمكنك مراسلة نفسك.',
+    'messaging.too_many_conversations' =>
+      'بدأت محادثات كثيرة متتابعة. حاول بعد قليل.',
+    _ => error(code),
+  };
+
+  // ── The teacher directory (Q6): a student finds a teacher to message ────────
+  static const messageTeacherTooltip = 'مراسلة معلّم';
+  static const messageTeacherTitle = 'مراسلة معلّم';
+  static const messageTeacherHint = 'ابحث باسم المعلّم';
+  static const messageTeacherPrompt = 'اكتب اسم المعلّم للبحث عنه.';
+  static const messageTeacherNoResults = 'لا يوجد معلّم بهذا الاسم.';
+
+  /// A failure of the teacher search itself (not of starting a conversation):
+  /// a refusal (the account may not use the directory) or an unreadable answer.
+  static String teacherSearchError(String? code) => switch (code) {
+    'identity.permission_denied' => 'لا تملك صلاحية البحث عن المعلّمين.',
+    'network.unreachable' => 'تعذّر الاتصال بالخادم. تحقّق من الاتصال.',
+    // 503 from the server: a transient outage, not "no teachers" — the viewer
+    // may retry (editing the search re-asks).
+    'unavailable' => 'الخدمة غير متاحة مؤقتًا. حاول مرة أخرى بعد قليل.',
+    _ => 'تعذّر البحث. حاول مرة أخرى.',
+  };
+
   static String typeLabel(ConversationType type, int memberCount) =>
       switch (type) {
         ConversationType.direct => 'محادثة خاصة',

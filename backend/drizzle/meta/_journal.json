@@ -127,6 +127,20 @@
       "when": 1791324893317,
       "tag": "0017_community_messages_moderate",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791411293317,
+      "tag": "0018_seed_messaging_peer_dm",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791497693317,
+      "tag": "0019_seed_messaging_teacher_dm",
+      "breakpoints": true
     }
   ]
 }

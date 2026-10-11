@@ -69,11 +69,22 @@ export const Permissions = {
    * member of — holding `messaging.read` never means "may read everything".
    * STARTING a conversation is its own permission, because who may initiate
    * contact with whom is a safeguarding decision (open-questions.md Q6).
+   *
+   * `start_direct` reaches any addressable account; `start_direct_peer` reaches
+   * only another holder of `start_direct_peer` who is not a broad starter — so a
+   * student reaches students, never staff; `start_direct_teacher` reaches only an
+   * eligible teacher (a holder of `academic.teach` who is not an administrator,
+   * i.e. holds no `users.manage`), so a student reaches teachers but never an
+   * administrator. Both student grants are the owner's GROUP A / Q6 rulings
+   * ("may students message each other?" and "…a teacher?" → yes); the parent and
+   * quiet-hours parts of Q6 stay open and untouched.
    */
   messaging: {
     read: 'messaging.read',
     send: 'messaging.send',
     startDirect: 'messaging.start_direct',
+    startDirectPeer: 'messaging.start_direct_peer',
+    startDirectTeacher: 'messaging.start_direct_teacher',
     createGroup: 'messaging.create_group',
     createChannel: 'messaging.create_channel',
     manage: 'messaging.manage',

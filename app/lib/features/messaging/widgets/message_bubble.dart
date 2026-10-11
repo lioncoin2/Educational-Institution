@@ -17,6 +17,7 @@ class MessageBubble extends StatelessWidget {
     required this.message,
     required this.mine,
     this.senderName,
+    this.onTapAuthor,
     this.onModerateDelete,
     this.onReview,
   });
@@ -26,6 +27,12 @@ class MessageBubble extends StatelessWidget {
 
   /// Shown above others' messages in groups and channels.
   final String? senderName;
+
+  /// Tapping the sender's name starts a direct conversation with them (Q6),
+  /// when the viewer's account may start one. Null hides that affordance (a
+  /// direct conversation, the viewer's own message, or a viewer who may not
+  /// start one). The server still decides who the viewer may actually reach.
+  final VoidCallback? onTapAuthor;
 
   /// A moderator's long-press actions (ADR 0029), or null when the viewer may
   /// not moderate. [onModerateDelete] deletes a live message; [onReview]
@@ -38,7 +45,7 @@ class MessageBubble extends StatelessWidget {
     final hasActions = onModerateDelete != null || onReview != null;
     return _BubbleFrame(
       mine: mine,
-      header: senderName,
+      header: _header(context),
       onLongPress: hasActions ? () => _showModerationSheet(context) : null,
       footer: Text(
         MessagingCopy.clock(context, message.createdAt),
@@ -52,6 +59,40 @@ class MessageBubble extends StatelessWidget {
               ),
             )
           : _MessageContent(message: message),
+    );
+  }
+
+  /// The sender's name above others' messages (groups and channels). When the
+  /// viewer may start a direct conversation, it is tappable and offers to start
+  /// one with that person, with a small chat glyph to signal so; otherwise it
+  /// is plain text. The server decides who the viewer may actually reach.
+  Widget? _header(BuildContext context) {
+    final name = senderName;
+    if (name == null) return null;
+    final label = Text(
+      name,
+      style: context.text.labelMedium?.copyWith(
+        color: context.colors.primary,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+    if (onTapAuthor == null) return label;
+    return GestureDetector(
+      key: Key('message-author-${message.senderId}'),
+      behavior: HitTestBehavior.opaque,
+      onTap: onTapAuthor,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(child: label),
+          const SizedBox(width: Insets.xs),
+          Icon(
+            Icons.chat_bubble_outline_rounded,
+            size: 14,
+            color: context.colors.primary,
+          ),
+        ],
+      ),
     );
   }
 
@@ -177,7 +218,7 @@ class _BubbleFrame extends StatelessWidget {
   final bool mine;
   final Widget child;
   final Widget footer;
-  final String? header;
+  final Widget? header;
   final bool faded;
 
   /// A long-press on the bubble (the moderator's actions), or null.
@@ -209,16 +250,7 @@ class _BubbleFrame extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (header != null) ...[
-            Text(
-              header!,
-              style: context.text.labelMedium?.copyWith(
-                color: context.colors.primary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 2),
-          ],
+          if (header != null) ...[header!, const SizedBox(height: 2)],
           DefaultTextStyle.merge(style: context.text.bodyMedium, child: child),
           const SizedBox(height: Insets.xs),
           Align(alignment: AlignmentDirectional.centerEnd, child: footer),

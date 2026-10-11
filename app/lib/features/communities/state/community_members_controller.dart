@@ -261,6 +261,35 @@ class CommunityMembersController extends AsyncNotifier<CommunityMembersState> {
     (repository) => repository.transferOwnership(communityId, userId),
   );
 
+  /// Adds (or re-adds) accounts by id — the ids the people picker chose. One
+  /// request; on success the roster and the community (its count) are read
+  /// again, so a re-admitted member reappears. A refusal surfaces for the
+  /// picker to explain, and the roster is reconciled when the refusal answers
+  /// for the community (a right lost since). The server decides afresh: the
+  /// capability, and that each id may take part.
+  Future<WriteOutcome<void>> addMembers(List<String> userIds) async {
+    if (userIds.isEmpty || state.isLoading || state.value == null) {
+      return const WriteNotSent();
+    }
+    // Seen through even if the screen is left meanwhile — through the
+    // container, which outlives this controller.
+    final owner = ref;
+    final container = ref.container;
+    final alive = owner.keepAlive();
+    try {
+      try {
+        await ref.read(communityRepositoryProvider).addMembers(communityId, userIds);
+      } on CommunityException catch (error) {
+        if (answersForTheCommunity(error)) await _reconcile(container);
+        return WriteFailed(error);
+      }
+      final refreshed = await _reconcile(container);
+      return WriteDone(null, refreshed: refreshed);
+    } finally {
+      if (owner.mounted) alive.close();
+    }
+  }
+
   /// [send] answers the community as the viewer now stands in it — or null,
   /// for a removal, which answers nothing.
   Future<WriteOutcome<void>> _write(

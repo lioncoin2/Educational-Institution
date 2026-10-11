@@ -18,6 +18,7 @@ import 'state/community_controller.dart';
 import 'state/community_members_controller.dart';
 import 'state/community_viewer.dart';
 import 'state/community_write.dart';
+import 'widgets/add_member_sheet.dart';
 import 'widgets/community_change.dart';
 import 'widgets/community_states.dart';
 import 'widgets/member_capabilities_sheet.dart';
@@ -62,6 +63,16 @@ class CommunityMembersScreen extends ConsumerWidget {
       title: CommunityCopy.membersTitle,
       subtitle: community.title,
       actions: [
+        // Add (or re-add) a member — shown only when the server's `me` grants
+        // the capability; the picker's search and the add are the server's
+        // decisions (Owner Decision A1/A4).
+        if (community.me?.has(CommunityCapability.membersInvite) ?? false)
+          IconButton(
+            key: const Key('community-add-member'),
+            tooltip: CommunityCopy.addMemberTooltip,
+            onPressed: () => showAddMember(context, communityId: communityId),
+            icon: const Icon(Icons.person_add_alt_1_outlined),
+          ),
         IconButton(
           tooltip: CommunityCopy.refresh,
           // Reads again under what is shown — the roster, and the `me` its

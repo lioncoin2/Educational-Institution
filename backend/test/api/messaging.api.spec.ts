@@ -27,6 +27,7 @@ describe('messaging API', () => {
   let owner: Account;
   let teacher: Account;
   let student: Account;
+  let student2: Account;
   let outsider: Account;
 
   async function provision(name: string, role: string): Promise<Account> {
@@ -68,6 +69,7 @@ describe('messaging API', () => {
     owner = { id: bootstrapped.value.id, token: login.body.accessToken as string };
     teacher = await provision('teacher', 'TEACHER');
     student = await provision('student', 'STUDENT');
+    student2 = await provision('student2', 'STUDENT');
     outsider = await provision('outsider', 'TEACHER');
   }, 60_000);
 
@@ -412,6 +414,72 @@ describe('messaging API', () => {
         token: teacher.token,
       });
       expect(view.body.memberCount).toBe(1);
+    });
+  });
+
+  // Owner GROUP A rulings (Q6): a student may start a DM with another student and
+  // with an eligible teacher — and with no one else (never an administrator). The
+  // edge only requires an account; the use case decides who a student may reach,
+  // so the UI is never the boundary. Placed last so its fresh conversations do
+  // not perturb the ordered blocks above.
+  describe('student-initiated direct messaging', () => {
+    it('lets a student start one with a peer (201), then returns the same one (200)', async () => {
+      const created = await api.call('POST', '/messaging/conversations/direct', {
+        token: student.token,
+        body: { userId: student2.id },
+      });
+      expect(created.status).toBe(201);
+      expect(created.body).toMatchObject({ type: 'DIRECT', counterpartUserId: student2.id });
+
+      const again = await api.call('POST', '/messaging/conversations/direct', {
+        token: student2.token,
+        body: { userId: student.id },
+      });
+      expect(again.status).toBe(200);
+      expect(again.body.id).toBe(created.body.id);
+    });
+
+    it('lets a student start one with an eligible teacher (201)', async () => {
+      // `outsider` is a TEACHER account; a fresh pair with the student.
+      const response = await api.call('POST', '/messaging/conversations/direct', {
+        token: student.token,
+        body: { userId: outsider.id },
+      });
+      expect(response.status).toBe(201);
+      expect(response.body).toMatchObject({ type: 'DIRECT', counterpartUserId: outsider.id });
+    });
+
+    it('refuses a student a DM with the owner (an administrator) and an unknown account (422)', async () => {
+      const toOwner = await api.call('POST', '/messaging/conversations/direct', {
+        token: student.token,
+        body: { userId: owner.id },
+      });
+      expect(toOwner.status).toBe(422);
+      expect(errorOf(toOwner.body).code).toBe('messaging.participant_not_eligible');
+
+      const toUnknown = await api.call('POST', '/messaging/conversations/direct', {
+        token: student.token,
+        body: { userId: 'no-such-account' },
+      });
+      expect(toUnknown.status).toBe(422);
+      expect(errorOf(toUnknown.body).code).toBe('messaging.participant_not_eligible');
+    });
+
+    it('still lets a teacher (staff) start a DM with a student (201)', async () => {
+      const response = await api.call('POST', '/messaging/conversations/direct', {
+        token: outsider.token, // a TEACHER, a fresh pair with student2
+        body: { userId: student2.id },
+      });
+      expect(response.status).toBe(201);
+      expect(response.body).toMatchObject({ type: 'DIRECT', counterpartUserId: student2.id });
+    });
+
+    it('requires an account: an unauthenticated start is 401', async () => {
+      const response = await api.call('POST', '/messaging/conversations/direct', {
+        body: { userId: student2.id },
+      });
+      expect(response.status).toBe(401);
+      expect(errorOf(response.body).code).toBe('identity.authentication_required');
     });
   });
 

@@ -52,6 +52,16 @@ class HttpMessagingRepository implements MessagingRepository {
   );
 
   @override
+  Future<Conversation> startDirect(String userId) => _call(
+    () async => Conversation.fromJson(
+      await _api.post(
+        '/messaging/conversations/direct',
+        body: {'userId': userId},
+      ),
+    ),
+  );
+
+  @override
   Future<MessagePage> messages(
     String conversationId, {
     int? before,

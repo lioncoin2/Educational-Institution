@@ -99,6 +99,11 @@ class HttpCommunityRepository implements CommunityRepository {
   );
 
   @override
+  Future<void> addMembers(String communityId, List<String> userIds) => _call(
+    () => _api.post('${_community(communityId)}/members', body: {'userIds': userIds}),
+  );
+
+  @override
   Future<void> removeMember(String communityId, String userId) => _call(
     () => _api.delete('${_community(communityId)}/members/${_segment(userId)}'),
   );

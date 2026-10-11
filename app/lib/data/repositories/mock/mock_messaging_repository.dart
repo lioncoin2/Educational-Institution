@@ -45,6 +45,19 @@ class MockMessagingRepository implements MessagingRepository {
   static const String _teacher = 'mock-teacher';
   static const String _admin = 'mock-admin';
 
+  /// Who the viewer (a student) may start a direct conversation with (Q6): the
+  /// demo's other students (`messaging.start_direct_peer`) and the eligible
+  /// teacher (`messaging.start_direct_teacher`). The admin (`_admin`) and
+  /// unknown ids are absent, so the mock refuses them exactly as the server
+  /// does. Names match the demo people repository.
+  static const Map<String, String> _reachable = {
+    'mock-peer-1': 'أحمد',
+    'mock-peer-2': 'يوسف',
+    'mock-person-sara': 'سارة',
+    'mock-person-salma': 'سلمى',
+    'mock-teacher': 'الأستاذ عبدالله', // an eligible teacher
+  };
+
   final Map<String, _MockConversation> _conversations = {};
 
   static final DateTime _start = DateTime.utc(2026, 9, 1, 5, 30);
@@ -81,6 +94,49 @@ class MockMessagingRepository implements MessagingRepository {
       );
     }
     return _view(chat);
+  }
+
+  @override
+  Future<Conversation> startDirect(String userId) async {
+    await _wait();
+    if (userId == viewer) {
+      throw const MessagingException(
+        'messaging.direct_with_self',
+        'A direct conversation needs two people.',
+      );
+    }
+    // The demo viewer is a student: they reach another student or an eligible
+    // teacher, never an administrator. An admin and an unknown id are refused
+    // alike — the server is the boundary (start_direct_peer / _teacher), and the
+    // app cannot probe for who is who.
+    final name = _reachable[userId];
+    if (name == null) {
+      throw const MessagingException(
+        'messaging.participant_not_eligible',
+        'Some of these people cannot take part in conversations.',
+      );
+    }
+    // Canonical: the same pair always yields the one conversation.
+    final existing = _conversations.values
+        .where(
+          (c) =>
+              c.type == ConversationType.direct && c.counterpartUserId == userId,
+        )
+        .firstOrNull;
+    if (existing != null) return _view(existing);
+    final created = _MockConversation(
+      id: 'mock-direct-$userId',
+      type: ConversationType.direct,
+      title: name,
+      counterpartUserId: userId,
+      memberCount: 2,
+      myRole: ParticipantRole.member,
+      canPost: true,
+      createdAt: DateTime.now().toUtc(),
+      names: {userId: name, viewer: 'طالب تجريبي'},
+    );
+    _conversations[created.id] = created;
+    return _view(created);
   }
 
   @override

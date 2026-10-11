@@ -108,6 +108,7 @@ describe('route authorization', () => {
       'modules/messaging/api/community-chat.controller.ts#CommunityChatController',
       'modules/messaging/api/conversations.controller.ts#ConversationsController',
       'modules/notifications/api/notifications.controller.ts#NotificationsController',
+      'modules/people/api/people.controller.ts#PeopleController',
       'platform/health/health.controller.ts#HealthController',
     ]);
     expect(routes.length).toBeGreaterThanOrEqual(20);

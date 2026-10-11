@@ -4,6 +4,7 @@ import { auditLog } from '../../src/platform/audit/schema';
 import { DrizzleAuditLog } from '../../src/platform/audit/drizzle-audit-log';
 import { UuidIdGenerator } from '../../src/platform/primitives/uuid-id-generator';
 import { asId } from '../../src/shared';
+import { ELIGIBLE_TEACHER } from '../../src/modules/identity/contracts/account-search';
 import { ALL_PERMISSIONS } from '../../src/modules/identity/contracts/permissions';
 import { openSession, type AuthSession } from '../../src/modules/identity/domain/auth-session';
 import { PROVISIONAL_ROLE_PERMISSIONS } from '../../src/modules/identity/domain/provisional-policy';
@@ -116,6 +117,36 @@ describeWithPostgres('identity persistence (PostgreSQL, committed migrations)', 
           .insert(rolePermissions)
           .values({ roleCode: 'TEACHER', permissionCode: 'live.teleport' }),
       ).rejects.toThrow();
+    });
+  });
+
+  // The teacher directory (Q6): its correlated EXISTS/NOT EXISTS over the real
+  // role_permissions matrix is Postgres-specific, so it is verified here on real
+  // SQL, not only against the in-memory twin.
+  describe('the teacher directory (searchActiveTeachersByDisplayName)', () => {
+    it('returns only ACTIVE eligible teachers — teacher and assistant, never student, admin, or inactive', async () => {
+      const teacher = account('zed-teacher@example.com', { roles: ['TEACHER'], status: 'ACTIVE' });
+      const assistant = account('zed-assistant@example.com', {
+        roles: ['ASSISTANT_TEACHER'],
+        status: 'ACTIVE',
+      });
+      const studentAcc = account('zed-student@example.com', {
+        roles: ['STUDENT'],
+        status: 'ACTIVE',
+      });
+      const adminAcc = account('zed-admin@example.com', { roles: ['ADMIN'], status: 'ACTIVE' });
+      const inactiveTeacher = account('zed-gone@example.com', { roles: ['TEACHER'] }); // not ACTIVE
+      for (const user of [teacher, assistant, studentAcc, adminAcc, inactiveTeacher]) {
+        await usersRepo.create(user);
+      }
+
+      const page = await usersRepo.searchActiveTeachersByDisplayName(
+        'zed-',
+        { limit: 10 },
+        ELIGIBLE_TEACHER,
+      );
+      const found = new Set(page.items.map((user) => user.id));
+      expect(found).toEqual(new Set([teacher.id, assistant.id]));
     });
   });
 
