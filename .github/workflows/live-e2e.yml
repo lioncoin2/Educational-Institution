@@ -87,6 +87,11 @@ jobs:
       POSTGRES_DB: institution
       E2E_OWNER_EMAIL: owner@e2e.test
       E2E_BASE_URL: http://127.0.0.1:3000
+      # A SECOND participant for the two-client remote-media E2E (Sprint 12).
+      # The owner creates/activates/authorizes it through the real admin API in
+      # the provisioning step; its password is generated fresh below.
+      E2E_PARTICIPANT_EMAIL: participant-b@e2e.test
+      E2E_PARTICIPANT_NAME: "E2E Participant B"
 
     steps:
       - uses: actions/checkout@v4
@@ -139,7 +144,8 @@ jobs:
         run: |
           gen() { node -e 'process.stdout.write(require("crypto").randomBytes(48).toString("base64url"))'; }
           for name in JWT_SECRET STORAGE_SIGNING_SECRET LIVEKIT_API_SECRET \
-                      POSTGRES_PASSWORD REDIS_PASSWORD E2E_OWNER_PASSWORD; do
+                      POSTGRES_PASSWORD REDIS_PASSWORD E2E_OWNER_PASSWORD \
+                      E2E_PARTICIPANT_PASSWORD; do
             value="$(gen)"
             echo "::add-mask::$value"
             printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
@@ -264,14 +270,20 @@ jobs:
             if (!out.accessToken || !out.sessionId) {
               throw new Error("fixture output missing accessToken/sessionId");
             }
+            if (!out.participantAccessToken || !out.participantUserId) {
+              throw new Error("fixture output missing the second participant (participantAccessToken/participantUserId)");
+            }
             console.log("::add-mask::" + out.accessToken);
+            console.log("::add-mask::" + out.participantAccessToken);
             const defines = {
               LIVEKIT_E2E_BASE_URL: process.env.E2E_BASE_URL,
               LIVEKIT_E2E_ACCESS_TOKEN: out.accessToken,
               LIVEKIT_E2E_SESSION_ID: out.sessionId,
+              LIVEKIT_E2E_ACCESS_TOKEN_B: out.participantAccessToken,
+              LIVEKIT_E2E_USER_B: out.participantUserId,
             };
             fs.writeFileSync(process.env.E2E_DEFINES_FILE, JSON.stringify(defines), { mode: 0o600 });
-            process.stderr.write("dart-define file written for session " + out.sessionId + "\n");
+            process.stderr.write("dart-define file written for session " + out.sessionId + " with two participants\n");
           '
 
       # The real E2E. flutter test (3.47.5) exposes no --web-browser-flag, so the
@@ -295,7 +307,10 @@ jobs:
             echo "exec \"$CHROME_BIN\" \"\$@\" --disable-web-security --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --autoplay-policy=no-user-gesture-required"
           } > "$wrapper"
           chmod +x "$wrapper"
-          CHROME_EXECUTABLE="$wrapper" flutter test test/e2e/livekit_web_e2e_test.dart \
+          # The whole test/e2e/ directory: the single-client harness
+          # (livekit_web_e2e_test.dart) AND the two-client remote-media harness
+          # (livekit_two_client_e2e_test.dart). Both are @TestOn('browser').
+          CHROME_EXECUTABLE="$wrapper" flutter test test/e2e/ \
             --platform chrome \
             --dart-define-from-file="$E2E_DEFINES_FILE"
 

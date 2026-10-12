@@ -49,7 +49,14 @@ export interface Provisioned {
   readonly communityId: string;
 }
 
-export type ProvisionStage = 'config' | 'network' | 'login' | 'community' | 'live' | 'malformed';
+export type ProvisionStage =
+  | 'config'
+  | 'network'
+  | 'login'
+  | 'community'
+  | 'live'
+  | 'participant'
+  | 'malformed';
 
 /** An actionable failure. Its message is always safe to log — never a token,
  * a password or a response body, only the stage, the HTTP status and a hint. */
@@ -136,6 +143,88 @@ export async function provisionLiveSession(
   return { accessToken, sessionId, communityId };
 }
 
+/** A SECOND participant for the two-client LiveKit E2E. */
+export interface ParticipantConfig {
+  readonly displayName: string;
+  readonly email: string;
+  readonly password: string;
+}
+
+export interface ProvisionedParticipant {
+  /** The participant's own access token (used by the second Flutter client). */
+  readonly accessToken: string;
+  /** Their platform user id — the LiveKit identity the first client observes. */
+  readonly userId: string;
+}
+
+/**
+ * Provisions a SECOND authorized participant through the EXISTING admin + auth
+ * API, using the owner's token — authorization-preserving, test-only:
+ *
+ *   POST /admin/users                      → create (starts PENDING, no roles)
+ *   POST /admin/users/:id/roles  {STUDENT} → grants `live.join` (+ raise hand)
+ *   POST /admin/users/:id/status {ACTIVE}  → only ACTIVE accounts authenticate
+ *   POST /communities/:id/members          → may join that community's session
+ *   POST /auth/login                       → the participant's own access token
+ *
+ * It invents no permission and bypasses no rule: the owner must legitimately
+ * hold `users.manage`/`roles.assign`/`communities.read`, and the participant
+ * joins the media room through the same `/join` authorization as anyone else.
+ * Never logs; the password/token never ride in a thrown error.
+ */
+export async function provisionParticipant(
+  http: HttpClient,
+  params: {
+    readonly ownerToken: string;
+    readonly communityId: string;
+    readonly participant: ParticipantConfig;
+  },
+): Promise<ProvisionedParticipant> {
+  const { ownerToken, communityId, participant } = params;
+
+  const created = await http('POST', '/admin/users', {
+    token: ownerToken,
+    body: {
+      displayName: participant.displayName,
+      identifier: participant.email,
+      initialPassword: participant.password,
+    },
+  });
+  expectStatus('participant', created.status, [200, 201], 'participant account creation failed');
+  const userId = requireString(created.body, 'id', 'participant');
+
+  const role = await http('POST', `/admin/users/${encodeURIComponent(userId)}/roles`, {
+    token: ownerToken,
+    body: { role: 'STUDENT' },
+  });
+  expectStatus('participant', role.status, [200, 201], 'participant role assignment failed');
+
+  const status = await http('POST', `/admin/users/${encodeURIComponent(userId)}/status`, {
+    token: ownerToken,
+    body: { status: 'ACTIVE' },
+  });
+  expectStatus('participant', status.status, [200, 204], 'participant activation failed');
+
+  const member = await http('POST', `/communities/${encodeURIComponent(communityId)}/members`, {
+    token: ownerToken,
+    body: { userIds: [userId] },
+  });
+  expectStatus(
+    'participant',
+    member.status,
+    [200, 201],
+    'adding the participant to the community failed',
+  );
+
+  const login = await http('POST', '/auth/login', {
+    body: { identifier: participant.email, password: participant.password },
+  });
+  expectStatus('participant', login.status, [200], 'participant login failed');
+  const accessToken = requireString(login.body, 'accessToken', 'participant');
+
+  return { accessToken, userId };
+}
+
 /** What is safe to print anywhere: the resource ids, the token redacted. */
 export function redactedSummary(provisioned: Provisioned): Record<string, string> {
   return {
@@ -197,17 +286,29 @@ function requireEnv(name: string): string {
 /** Writes {accessToken, sessionId} to E2E_OUTPUT_FILE (0600). stdout is used
  * only when E2E_ALLOW_STDOUT=1 is set deliberately; otherwise, refusing to
  * print a credential, it fails with guidance. */
-function emit(provisioned: Provisioned): void {
+function emit(provisioned: Provisioned, participant?: ProvisionedParticipant): void {
   const payload = JSON.stringify({
     accessToken: provisioned.accessToken,
     sessionId: provisioned.sessionId,
     communityId: provisioned.communityId,
+    ...(participant === undefined
+      ? {}
+      : {
+          participantAccessToken: participant.accessToken,
+          participantUserId: participant.userId,
+        }),
   });
   const outputFile = process.env.E2E_OUTPUT_FILE;
   if (outputFile !== undefined && outputFile.length > 0) {
     writeFileSync(outputFile, payload, { mode: 0o600 });
+    const summary = {
+      ...redactedSummary(provisioned),
+      ...(participant === undefined
+        ? {}
+        : { participantUserId: participant.userId, participantAccessToken: '<redacted>' }),
+    };
     process.stderr.write(
-      `provisioned ${JSON.stringify(redactedSummary(provisioned))}; token written to ${outputFile}\n`,
+      `provisioned ${JSON.stringify(summary)}; token(s) written to ${outputFile}\n`,
     );
     return;
   }
@@ -225,14 +326,30 @@ function emit(provisioned: Provisioned): void {
 
 async function main(): Promise<void> {
   const baseUrl = requireEnv('E2E_BASE_URL');
+  const http = fetchHttpClient(baseUrl);
   const config: ProvisionConfig = {
     baseUrl,
     ownerEmail: requireEnv('E2E_OWNER_EMAIL'),
     ownerPassword: requireEnv('E2E_OWNER_PASSWORD'),
     communityTitle: process.env.E2E_COMMUNITY_TITLE,
   };
-  const provisioned = await provisionLiveSession(config, fetchHttpClient(baseUrl));
-  emit(provisioned);
+  const provisioned = await provisionLiveSession(config, http);
+  // A SECOND participant is provisioned only when its env is set (the two-client
+  // E2E). The single-client E2E leaves it unset and gets the original output.
+  const participantEmail = process.env.E2E_PARTICIPANT_EMAIL;
+  const participant =
+    participantEmail !== undefined && participantEmail.length > 0
+      ? await provisionParticipant(http, {
+          ownerToken: provisioned.accessToken,
+          communityId: provisioned.communityId,
+          participant: {
+            displayName: requireEnv('E2E_PARTICIPANT_NAME'),
+            email: participantEmail,
+            password: requireEnv('E2E_PARTICIPANT_PASSWORD'),
+          },
+        })
+      : undefined;
+  emit(provisioned, participant);
 }
 
 if (require.main === module) {

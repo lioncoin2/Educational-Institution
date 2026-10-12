@@ -218,11 +218,49 @@ hint are unchanged and kept separate.
 | Roster shows live mic/muted/screen for a matched hand | widget | yes | `live_session_screen_test` |
 | Remote set initialises empty over real LiveKit | real-E2E | yes | `livekit_web_e2e_test` — `remoteParticipants.length == 0` (one participant) |
 
-**Harness limitation (honest).** The real E2E has ONE participant; it does NOT
-create a second, so a real remote join/leave/track event is NOT verified
-against a real peer. Those paths are covered by deterministic fakes. A real
-second participant (a second bootstrapped user + a second LiveKit connection) is
-the next harness step.
+**Harness limitation — RESOLVED in Sprint 12.** Sprint 11's real E2E had ONE
+participant, so a real remote join/leave/track event was not verified against a
+real peer (only deterministic fakes). Sprint 12 adds a genuine two-client
+scenario — see below.
+
+## Sprint 12 — real two-participant E2E
+
+Sprint 11's harness limitation is closed: a genuine TWO-CLIENT scenario now
+verifies the remote path against a real LiveKit server.
+
+**Topology.** `app/test/e2e/livekit_two_client_e2e_test.dart` connects TWO
+independent production clients (`LiveKitLiveMediaClient` each) to the SAME real
+room with DISTINCT backend-authorized identities:
+- Client A = the owner/host (the existing token).
+- Client B = a second STUDENT, created through the REAL admin API by the
+  provisioning fixture: `POST /admin/users` → `…/roles {STUDENT}` (which grants
+  `live.join`) → `…/status {ACTIVE}` → `POST /communities/:id/members` →
+  `POST /auth/login`. No permission is invented and no rule bypassed; B joins
+  the media room through the same `/join` authorization as anyone.
+
+**Verified at the application boundary** (`client.remoteParticipants`, not SDK
+internals), each with bounded event-driven waits:
+
+| Behavior | Kind | Ran? | Evidence |
+|---|---|---|---|
+| Two independent clients, one real room, distinct identities, no duplicate | real-E2E | yes | `livekit_two_client_e2e_test` |
+| A observes B (real events → adapter → application state) | real-E2E | yes | same |
+| Real remote audio publish → `live` reconciliation on A | real-E2E | yes | same |
+| Remote mute → leaves `live`; unmute → returns to `live` | real-E2E | yes | same |
+| Remote departure drops the participant within a bounded timeout | real-E2E | yes | same |
+| B's LOCAL publication is not confused with A's remote view | real-E2E | yes | same |
+| Duplicate / out-of-order / stale idempotency | unit | yes | `livekit_live_media_client_test` (fakes — cannot be forced reliably through the real SDK) |
+
+The audio INPUT may be a fake device in headless CI
+(`--use-fake-device-for-media-stream`), but the connection, publication,
+subscription and remote events are REAL. The provisioning fixture
+(`provision-live-session.ts`) is unit-tested (`provisionParticipant`), and the
+workflow runs the whole `app/test/e2e/` directory (single-client + two-client).
+
+**Still not E2E-verified (honest).** Remote screen CAPTURE (headless Chrome has
+no `getDisplayMedia` source — unit-tested + manual B1), and per-participant
+RECONNECT (the SDK exposes no reliable per-remote reconnecting signal — not
+asserted).
 
 ## Manual verification (NOT executed in CI)
 

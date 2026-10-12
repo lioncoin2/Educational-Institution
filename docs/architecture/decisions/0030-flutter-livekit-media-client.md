@@ -282,9 +282,9 @@ Genuinely unresolved:
 - Remote participant SPEAKING detection and remote VIDEO / camera. (Remote
   participant PRESENCE + audio (none/unsubscribed/muted/live) + screen-share
   publication are now reconciled live — P11 / Sprint 11, `LiveRemoteParticipant`
-  + `LiveKitRemoteParticipants`, surfaced in the roster. Speaking detection and
-  camera stay out of scope — no approved contract — and a real second
-  participant is not yet in the E2E harness.)
+  + `LiveKitRemoteParticipants`, surfaced in the roster, and verified against a
+  real SECOND participant in a two-client E2E — P12 / Sprint 12. Speaking
+  detection and camera stay out of scope — no approved contract.)
 
 The LiveKit provider choice, the `livekit_client` version, the media
 architecture, and the Slice A/B contracts are **decided** and are not reopened

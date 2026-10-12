@@ -1,9 +1,11 @@
 import {
   DEFAULT_COMMUNITY_TITLE,
   type HttpClient,
+  type ParticipantConfig,
   type ProvisionConfig,
   ProvisionError,
   provisionLiveSession,
+  provisionParticipant,
   redactedSummary,
 } from './provision-live-session';
 
@@ -250,5 +252,120 @@ describe('provisionLiveSession', () => {
         for (const spy of spies) spy.mockRestore();
       }
     });
+  });
+});
+
+describe('provisionParticipant', () => {
+  const PARTICIPANT: ParticipantConfig = {
+    displayName: 'E2E Participant B',
+    email: 'participant-b@e2e.test',
+    password: 'participant-b-secret-password',
+  };
+  const TOKEN_B = 'header.payload.participant-access-token';
+
+  /** A recording fake for the admin + auth endpoints `provisionParticipant`
+   * drives; healthy defaults, with narrow overrides for the failure cases. */
+  function fakeParticipantHttp(
+    overrides: { createStatus?: number; createBody?: Record<string, unknown> } = {},
+  ): { http: HttpClient; calls: Call[] } {
+    const calls: Call[] = [];
+    const http: HttpClient = async (method, path, options = {}) => {
+      calls.push({ method, path, token: options.token, body: options.body });
+      if (path === '/admin/users') {
+        return { status: overrides.createStatus ?? 201, body: overrides.createBody ?? { id: 'user-b' } };
+      }
+      if (/^\/admin\/users\/[^/]+\/roles$/.test(path)) return { status: 200, body: {} };
+      if (/^\/admin\/users\/[^/]+\/status$/.test(path)) return { status: 204, body: {} };
+      if (/^\/communities\/[^/]+\/members$/.test(path)) return { status: 201, body: {} };
+      if (path === '/auth/login') return { status: 200, body: { accessToken: TOKEN_B } };
+      throw new Error(`unexpected path in test: ${path}`);
+    };
+    return { http, calls };
+  }
+
+  it('creates, grants STUDENT, activates, adds to the community, logs in', async () => {
+    const { http, calls } = fakeParticipantHttp();
+    const result = await provisionParticipant(http, {
+      ownerToken: TOKEN,
+      communityId: 'community-1',
+      participant: PARTICIPANT,
+    });
+
+    expect(result).toEqual({ accessToken: TOKEN_B, userId: 'user-b' });
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      'POST /admin/users',
+      'POST /admin/users/user-b/roles',
+      'POST /admin/users/user-b/status',
+      'POST /communities/community-1/members',
+      'POST /auth/login',
+    ]);
+    // The admin calls bearer the OWNER token; the final login is public.
+    expect(calls[0].token).toBe(TOKEN);
+    expect(calls[0].body).toEqual({
+      displayName: PARTICIPANT.displayName,
+      identifier: PARTICIPANT.email,
+      initialPassword: PARTICIPANT.password,
+    });
+    expect(calls[1].body).toEqual({ role: 'STUDENT' });
+    expect(calls[2].body).toEqual({ status: 'ACTIVE' });
+    expect(calls[3].body).toEqual({ userIds: ['user-b'] });
+    expect(calls[4].token).toBeUndefined();
+    expect(calls[4].body).toEqual({
+      identifier: PARTICIPANT.email,
+      password: PARTICIPANT.password,
+    });
+  });
+
+  it('url-encodes the created user id in the role/status paths', async () => {
+    const { http, calls } = fakeParticipantHttp({ createBody: { id: 'u/b x' } });
+    await provisionParticipant(http, {
+      ownerToken: TOKEN,
+      communityId: 'c-1',
+      participant: PARTICIPANT,
+    });
+    expect(calls[1].path).toBe('/admin/users/u%2Fb%20x/roles');
+    expect(calls[2].path).toBe('/admin/users/u%2Fb%20x/status');
+  });
+
+  it('fails at the participant stage when account creation is refused', async () => {
+    const { http } = fakeParticipantHttp({ createStatus: 403 });
+    const error = await expectProvisionError(
+      provisionParticipant(http, {
+        ownerToken: TOKEN,
+        communityId: 'c-1',
+        participant: PARTICIPANT,
+      }),
+      'participant',
+    );
+    expect(error.status).toBe(403);
+  });
+
+  it('rejects a create response missing the user id', async () => {
+    const { http } = fakeParticipantHttp({ createBody: { name: 'x' } });
+    const error = await expectProvisionError(
+      provisionParticipant(http, {
+        ownerToken: TOKEN,
+        communityId: 'c-1',
+        participant: PARTICIPANT,
+      }),
+      'malformed',
+    );
+    expect(error.message).toContain('id');
+  });
+
+  it('never puts the participant password or token in a thrown error', async () => {
+    const { http } = fakeParticipantHttp({ createStatus: 500 });
+    try {
+      await provisionParticipant(http, {
+        ownerToken: TOKEN,
+        communityId: 'c-1',
+        participant: PARTICIPANT,
+      });
+      throw new Error('expected a failure');
+    } catch (error) {
+      const text = `${(error as Error).message}\n${(error as Error).stack ?? ''}`;
+      expect(text).not.toContain(PARTICIPANT.password);
+      expect(text).not.toContain(TOKEN_B);
+    }
   });
 });
