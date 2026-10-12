@@ -247,6 +247,7 @@ describe('route authorization', () => {
       'CommunitiesController.lock': read,
       'CommunitiesController.unlock': read,
       'CommunitiesController.members': read,
+      'CommunitiesController.memberCandidates': read,
       'CommunitiesController.add': read,
       'CommunitiesController.remove': read,
       'CommunitiesController.leave': read,

@@ -30,6 +30,7 @@ import {
   RedeemInvitationUseCase,
   RevokeInvitationUseCase,
 } from './application/invitation.use-cases';
+import { SearchMemberCandidatesUseCase } from './application/member-candidates.use-case';
 import {
   AddMembersUseCase,
   LeaveCommunityUseCase,
@@ -106,6 +107,7 @@ import { InMemoryCommunityStore } from './infrastructure/in-memory-community-sto
     RemoveMemberUseCase,
     LeaveCommunityUseCase,
     ListMembersUseCase,
+    SearchMemberCandidatesUseCase,
     CreateInvitationUseCase,
     ListInvitationsUseCase,
     RevokeInvitationUseCase,

@@ -176,15 +176,20 @@ describeWithPostgres('people API over PostgreSQL (HTTP → Drizzle)', () => {
     });
   });
 
-  describe('GET /people keeps its people.read restriction over SQL', () => {
-    it('refuses a student (403) and serves a teacher (200)', async () => {
+  describe('GET /people is an owner/admin directory over SQL (Sprint 24, Design X)', () => {
+    it('refuses a student and a teacher (403), serves an admin (200)', async () => {
       const student = await api.call('GET', '/people?q=سا', { token: tokens.student });
       expect(student.status).toBe(403);
       expect(errorOf(student.body).code).toBe('identity.permission_denied');
 
-      const staff = await api.call('GET', '/people?q=سا', { token: tokens.teacher });
+      // A teacher no longer holds people.read — the global directory is closed.
+      const teacher = await api.call('GET', '/people?q=سا', { token: tokens.teacher });
+      expect(teacher.status).toBe(403);
+      expect(errorOf(teacher.body).code).toBe('identity.permission_denied');
+
+      // An admin retains the institution-wide directory, and it is not role-scoped.
+      const staff = await api.call('GET', '/people?q=سا', { token: tokens.admin });
       expect(staff.status).toBe(200);
-      // The staff search is not teacher-only: it reaches the student too.
       expect(items(staff.body).map((i) => i.userId)).toContain(ids.student);
     });
   });

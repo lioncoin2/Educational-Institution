@@ -226,8 +226,11 @@ Off-box ladder (S1/S2/R1…R6) deferred until real users. Targets (**not proven*
 The authoritative, grouped list is [`docs/owner-decision-register.md`](owner-decision-register.md).
 Summary (do NOT invent answers):
 
-- **GROUP A — people directory & membership (received & reconciled, register §12–§14):** people discovery
-  (`GET /people`, `people.read`), member add/re-add (`community.members.invite`), student↔student DM
+- **GROUP A — people directory & membership (received & reconciled, register §12–§15):** the
+  institution-wide directory `GET /people` is **owner/admin only** (supervisors/teachers lost `people.read`,
+  migration 0020); community member discovery is the **community-scoped** `GET /communities/:id/member-candidates`
+  gated per community on `community.members.invite` (Sprint 24, Design X, register §15). Member add/re-add
+  (`community.members.invite`), student↔student DM
   (`messaging.start_direct_peer`, migration 0018) and student↔teacher DM (`messaging.start_direct_teacher`,
   migration 0019, `GET /people/teachers`) are **IMPLEMENTED**. **Still owner-blocked:** parent messaging,
   quiet hours (Q6).

@@ -1,3 +1,5 @@
+import type { Page } from '../../../shared';
+import type { AccountSummary } from '../../identity/contracts';
 import type {
   CommunityCapability,
   CommunityOperation,
@@ -136,4 +138,28 @@ export function toPageResponse<T, R>(
   map: (item: T) => R,
 ): { readonly items: readonly R[]; readonly nextCursor: string | null } {
   return { items: page.items.map(map), nextCursor: page.nextCursor };
+}
+
+/**
+ * One member-candidate: the whole of what a candidate search discloses — an id
+ * to add and a name to show, never an email, a role or any security state (the
+ * same minimal projection `GET /people` uses). Sourced from identity's
+ * `AccountSummary`; no second identity DTO is introduced.
+ */
+export interface MemberCandidateResult {
+  readonly userId: string;
+  readonly displayName: string;
+}
+
+export function toMemberCandidatesResponse(page: Page<AccountSummary>): {
+  readonly items: readonly MemberCandidateResult[];
+  readonly nextCursor: string | null;
+} {
+  return {
+    items: page.items.map((account) => ({
+      userId: account.userId,
+      displayName: account.displayName,
+    })),
+    nextCursor: page.nextCursor ?? null,
+  };
 }

@@ -113,6 +113,16 @@ describe('people API — GET /people', () => {
       role: 'ADMIN',
       activate: true,
     });
+    // A supervisor — holds oversight reads but, as of Sprint 24, NOT people.read,
+    // so the institution-wide directory is closed to them.
+    await provision({
+      key: 'supervisor',
+      email: 'sameh@institution.test',
+      password: 'supervisor passphrase',
+      displayName: 'سامح المشرف',
+      role: 'SUPERVISOR',
+      activate: true,
+    });
   }, 60_000);
 
   afterAll(async () => {
@@ -131,8 +141,24 @@ describe('people API — GET /people', () => {
     expect(errorOf(res.body).code).toBe('identity.permission_denied');
   });
 
-  it('200 — a teacher searches across the institution, minimal fields only', async () => {
+  // Sprint 24 (Design X): the institution-wide directory is an owner/admin
+  // membership-management surface. Supervisors and teachers no longer hold
+  // people.read, so it is closed to them; community member discovery is the
+  // community-scoped, community.members.invite-gated candidate search instead.
+  it('403 — refuses a teacher, who no longer holds people.read', async () => {
     const res = await api.call('GET', '/people?q=سا', { token: tokens.teacher });
+    expect(res.status).toBe(403);
+    expect(errorOf(res.body).code).toBe('identity.permission_denied');
+  });
+
+  it('403 — refuses a supervisor, who does not hold people.read', async () => {
+    const res = await api.call('GET', '/people?q=سا', { token: tokens.supervisor });
+    expect(res.status).toBe(403);
+    expect(errorOf(res.body).code).toBe('identity.permission_denied');
+  });
+
+  it('200 — an admin searches across the institution, minimal fields only', async () => {
+    const res = await api.call('GET', '/people?q=سا', { token: tokens.admin });
     expect(res.status).toBe(200);
     expect(Object.keys(res.body).sort()).toEqual(['items', 'nextCursor']);
     for (const item of items(res.body)) {
@@ -141,6 +167,11 @@ describe('people API — GET /people', () => {
     const found = items(res.body).map((i) => i.userId);
     expect(found).toContain(ids.teacher);
     expect(found).toContain(ids.student);
+  });
+
+  it('200 — the owner searches across the institution too', async () => {
+    const res = await api.call('GET', '/people?q=سا', { token: ownerToken });
+    expect(res.status).toBe(200);
   });
 
   it('returns only ACTIVE accounts — a PENDING match is absent', async () => {

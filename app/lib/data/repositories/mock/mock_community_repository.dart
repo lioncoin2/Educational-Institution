@@ -4,6 +4,7 @@ import 'dart:math';
 import '../../../app/app_config.dart';
 import '../../models/communities.dart';
 import '../../models/data_origin.dart';
+import '../../models/people.dart';
 import '../repositories.dart';
 
 /// In-memory stand-in for `/communities`, for the demo build and for widget
@@ -312,6 +313,38 @@ class MockCommunityRepository implements CommunityRepository {
   }
 
   // ── Membership ──────────────────────────────────────────────────────────
+
+  /// The invented accounts the demo add-member picker can find — the same small
+  /// set the demo `GET /people` serves, filtered by display-name prefix. Demo
+  /// data only; discloses just {userId, displayName}, as the server does.
+  static const List<PersonSearchResult> _candidates = [
+    PersonSearchResult(userId: 'mock-teacher', displayName: 'الأستاذ عبدالله'),
+    PersonSearchResult(userId: 'mock-peer-1', displayName: 'أحمد'),
+    PersonSearchResult(userId: 'mock-peer-2', displayName: 'يوسف'),
+    PersonSearchResult(userId: 'mock-person-sara', displayName: 'سارة'),
+    PersonSearchResult(userId: 'mock-person-salma', displayName: 'سلمى'),
+  ];
+
+  @override
+  Future<PeopleSearchPage> memberCandidates(
+    String communityId,
+    String query, {
+    String? cursor,
+  }) async {
+    await _wait();
+    final needle = query.trim().toLowerCase();
+    // A blank query is empty, and the demo is a single page: a cursor is spent.
+    if (needle.isEmpty || cursor != null) {
+      return const PeopleSearchPage(items: [], origin: DataOrigin.mock);
+    }
+    return PeopleSearchPage(
+      items: [
+        for (final person in _candidates)
+          if ((person.displayName ?? '').toLowerCase().startsWith(needle)) person,
+      ],
+      origin: DataOrigin.mock,
+    );
+  }
 
   @override
   Future<void> addMembers(String communityId, List<String> userIds) async {

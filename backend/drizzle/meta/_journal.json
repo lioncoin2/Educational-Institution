@@ -141,6 +141,13 @@
       "when": 1791497693317,
       "tag": "0019_seed_messaging_teacher_dm",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791584093317,
+      "tag": "0020_restrict_people_directory",
+      "breakpoints": true
     }
   ]
 }

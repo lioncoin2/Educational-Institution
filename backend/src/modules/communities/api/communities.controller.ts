@@ -31,6 +31,7 @@ import {
 } from '../application/community.use-cases';
 import { TransferOwnershipUseCase } from '../application/delegation.use-cases';
 import { RedeemInvitationUseCase } from '../application/invitation.use-cases';
+import { SearchMemberCandidatesUseCase } from '../application/member-candidates.use-case';
 import {
   AddMembersUseCase,
   LeaveCommunityUseCase,
@@ -41,6 +42,7 @@ import {
   AddMembersDto,
   CreateCommunityDto,
   ListCommunitiesQuery,
+  MemberCandidatesQuery,
   PageQuery,
   RedeemInvitationDto,
   TransferOwnershipDto,
@@ -48,6 +50,7 @@ import {
 import {
   toAddMembersResponse,
   toCommunityResponse,
+  toMemberCandidatesResponse,
   toMemberResponse,
   toPageResponse,
 } from './responses';
@@ -72,6 +75,7 @@ export class CommunitiesController {
     private readonly getCommunity: GetCommunityUseCase,
     private readonly changeStatus: ChangeCommunityStatusUseCase,
     private readonly listMembers: ListMembersUseCase,
+    private readonly searchMemberCandidates: SearchMemberCandidatesUseCase,
     private readonly addMembers: AddMembersUseCase,
     private readonly removeMember: RemoveMemberUseCase,
     private readonly leaveCommunity: LeaveCommunityUseCase,
@@ -191,6 +195,34 @@ export class CommunitiesController {
         }),
       ),
       toMemberResponse,
+    );
+  }
+
+  /**
+   * The add-member picker's candidate search: people who could be added to THIS
+   * community, by display-name prefix. The edge gate is `communities.read` as on
+   * every route; the use case decides on `community.members.invite` in this
+   * community, so a caller without invitation authority here is refused — never
+   * an institution-wide directory. Discovery is not the add (which re-authorizes
+   * the same capability). {userId, displayName} only.
+   */
+  @Get(':communityId/member-candidates')
+  @RequirePermission(Permissions.communities.read)
+  async memberCandidates(
+    @CurrentPrincipal() principal: Principal,
+    @Param('communityId') communityId: string,
+    @Query() query: MemberCandidatesQuery,
+  ) {
+    return toMemberCandidatesResponse(
+      unwrap(
+        await this.searchMemberCandidates.execute({
+          principal,
+          communityId,
+          query: query.q,
+          ...(query.cursor === undefined ? {} : { cursor: query.cursor }),
+          ...(query.limit === undefined ? {} : { limit: query.limit }),
+        }),
+      ),
     );
   }
 

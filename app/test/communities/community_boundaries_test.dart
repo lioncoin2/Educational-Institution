@@ -310,6 +310,7 @@ const _allowedCalls = [
   "get '/communities'",
   'get _community(communityId)',
   r"get '${_community(communityId)}/members'",
+  r"get '${_community(communityId)}/member-candidates'",
   r"post '${_community(communityId)}/members'",
   r"post '${_community(communityId)}/invitations'",
   r"get '${_community(communityId)}/invitations'",

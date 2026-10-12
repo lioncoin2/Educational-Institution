@@ -9,7 +9,7 @@ import '../../../data/models/people.dart';
 import '../community_copy.dart';
 import '../state/community_members_controller.dart';
 import '../state/community_write.dart';
-import '../state/people_search_provider.dart';
+import '../state/member_candidates_provider.dart';
 import 'community_change.dart';
 
 /// Opens the add-member picker for [communityId]. The caller shows it only when
@@ -24,9 +24,10 @@ Future<void> showAddMember(BuildContext context, {required String communityId}) 
   );
 }
 
-/// A name search over [PeopleRepository] (gated server-side on `people.read`)
-/// with an add on each result. Finding a person and adding them are two
-/// separate server decisions: a result discloses only {userId, displayName},
+/// A community-scoped candidate search (gated server-side on
+/// `community.members.invite` in THIS community — never the institution-wide
+/// directory) with an add on each result. Finding a person and adding them are
+/// two separate server decisions: a result discloses only {userId, displayName},
 /// and the add is re-authorised by the server. On a successful add the roster
 /// reconciles (the controller) and the sheet closes.
 class _AddMemberSheet extends ConsumerStatefulWidget {
@@ -122,7 +123,12 @@ class _AddMemberSheetState extends ConsumerState<_AddMemberSheet> {
     if (_query.trim().isEmpty) {
       return _Hint(text: CommunityCopy.addMemberPrompt);
     }
-    final value = ref.watch(peopleSearchProvider(_query));
+    final value = ref.watch(
+      communityMemberCandidatesProvider((
+        communityId: widget.communityId,
+        query: _query,
+      )),
+    );
     return value.when(
       loading: () => const Padding(
         padding: EdgeInsets.all(Insets.lg),

@@ -1,6 +1,7 @@
 import '../../api/api_client.dart';
 import '../../models/communities.dart';
 import '../../models/data_origin.dart';
+import '../../models/people.dart';
 import '../repositories.dart';
 
 /// [CommunityRepository] against the real backend (`/communities`).
@@ -96,6 +97,37 @@ class HttpCommunityRepository implements CommunityRepository {
       await _api.post('/communities/join', body: {'token': token}),
       origin: DataOrigin.records,
     ),
+  );
+
+  @override
+  Future<PeopleSearchPage> memberCandidates(
+    String communityId,
+    String query, {
+    String? cursor,
+  }) async {
+    // A refusal here is said as a [PeopleException] (as the add-member picker's
+    // error handling expects), keeping the server's code — a caller without
+    // invite authority in this community sees `identity.permission_denied`.
+    try {
+      return PeopleSearchPage.fromJson(
+        await _api.get(
+          '${_community(communityId)}/member-candidates',
+          query: {'q': query, 'cursor': ?cursor},
+        ),
+        origin: DataOrigin.records,
+      );
+    } on ApiException catch (error) {
+      throw PeopleException(error.code, error.message);
+    } on FormatException {
+      throw _peopleUnreadable;
+    } on TypeError {
+      throw _peopleUnreadable;
+    }
+  }
+
+  static const _peopleUnreadable = PeopleException(
+    'people.unreadable',
+    'The server sent something this app cannot read.',
   );
 
   @override

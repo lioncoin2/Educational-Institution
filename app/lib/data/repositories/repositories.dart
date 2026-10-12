@@ -284,12 +284,25 @@ abstract interface class CommunityRepository {
 
   // ── Membership ──
 
+  /// Candidates to add to THIS community, by display-name prefix (a blank query
+  /// is an empty page), a keyset page at a time by an opaque [cursor]. The
+  /// server gates it on `community.members.invite` IN this community — a
+  /// community-scoped search, never the institution-wide directory — and
+  /// discloses only {userId, displayName}. A refusal (the caller lacks invite
+  /// authority here) throws [PeopleException]. Finding a candidate is not adding
+  /// them: [addMembers] is a separate, re-authorised mutation.
+  Future<PeopleSearchPage> memberCandidates(
+    String communityId,
+    String query, {
+    String? cursor,
+  });
+
   /// Adds (or re-adds) accounts to the community by id — the owner, or a holder
   /// of `community.members.invite`. Idempotent: an account already a member is
   /// left as it is. The server decides afresh (the capability, and that each id
   /// is an account that may take part); a refusal throws [CommunityException].
-  /// The ids come from a people search the viewer was authorised to run, never
-  /// an open directory.
+  /// The ids come from [memberCandidates], a search the viewer was authorised to
+  /// run in this community, never an open directory.
   Future<void> addMembers(String communityId, List<String> userIds);
 
   /// Ends [userId]'s membership.

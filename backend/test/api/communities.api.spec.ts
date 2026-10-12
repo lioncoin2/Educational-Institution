@@ -546,6 +546,112 @@ describe('communities API', () => {
     expect((await call('GET', `/communities/${communityId}`, admin)).status).toBe(200);
   });
 
+  describe('member-candidates search (community-scoped, Design X)', () => {
+    let aId: string; // admin owns; teacher is a delegate holding community.members.invite
+    let bId: string; // admin owns; teacher is neither member nor delegate here
+    let cId: string; // r.owner owns; admin has only oversight (communities.manage)
+
+    beforeAll(async () => {
+      const a = await call('POST', '/communities', admin, { title: 'حلقة المرشحين' });
+      aId = a.body.id as string;
+      await call('POST', `/communities/${aId}/members`, admin, {
+        userIds: [teacher.id, student.id],
+      });
+      const granted = await call('POST', `/communities/${aId}/grants`, admin, {
+        userId: teacher.id,
+        capabilities: ['community.members.invite'],
+      });
+      expect(granted.status).toBe(201);
+
+      const b = await call('POST', '/communities', admin, { title: 'حلقة أخرى' });
+      bId = b.body.id as string;
+
+      const c = await call('POST', '/communities', r.owner, { title: 'حلقة المالك' });
+      cId = c.body.id as string;
+    });
+
+    const search = (id: string, account?: Account, q = 'ز') =>
+      call('GET', `/communities/${id}/member-candidates?q=${encodeURIComponent(q)}`, account);
+
+    it('the owner may search candidates in their community — minimal fields only', async () => {
+      const res = await search(aId, admin);
+      expect(res.status).toBe(200);
+      expect(Object.keys(res.body).sort()).toEqual(['items', 'nextCursor']);
+      const found = res.body.items as Record<string, unknown>[];
+      for (const item of found) {
+        expect(Object.keys(item).sort()).toEqual(['displayName', 'userId']);
+      }
+      // 'زينب' (the outsider) is an ACTIVE account whose name begins with the
+      // prefix — a candidate to add, though not a member. Discovery reaches it.
+      expect(found.map((i) => i.userId)).toContain(outsider.id);
+    });
+
+    it('a delegate holding community.members.invite may search that community', async () => {
+      const res = await search(aId, teacher);
+      expect(res.status).toBe(200);
+      expect(res.body.items as unknown[]).toBeInstanceOf(Array);
+    });
+
+    it('that delegate may NOT search a community where they lack the capability — exactly as the add refuses', async () => {
+      const searched = await search(bId, teacher);
+      const added = await call('POST', `/communities/${bId}/members`, teacher, {
+        userIds: [student.id],
+      });
+      expect(searched.status).not.toBe(200);
+      // The candidate search refuses a cross-community caller byte-for-byte as
+      // the add mutation does: discovery is scoped to the one community's invite
+      // authority, never the institution.
+      expect(withoutRequestId(searched)).toBe(withoutRequestId(added));
+    });
+
+    it('a member without community.members.invite is denied (403)', async () => {
+      const res = await search(aId, student);
+      expect(res.status).toBe(403);
+      expect(code(res)).toBe('identity.permission_denied');
+    });
+
+    it('communities.manage (oversight) alone does not satisfy community.members.invite', async () => {
+      // admin holds communities.manage, but is not the owner or a member of c.
+      const searched = await search(cId, admin);
+      const added = await call('POST', `/communities/${cId}/members`, admin, {
+        userIds: [student.id],
+      });
+      expect(searched.status).not.toBe(200);
+      // Oversight never adds (§6.11), and never searches candidates: the search
+      // refuses exactly as the add does.
+      expect(withoutRequestId(searched)).toBe(withoutRequestId(added));
+    });
+
+    it('refuses an anonymous caller (401)', async () => {
+      expect((await search(aId, undefined)).status).toBe(401);
+    });
+
+    it('does not mutate membership — a search adds nobody', async () => {
+      const before = (await call('GET', `/communities/${aId}`, admin)).body.memberCount as number;
+      const res = await search(aId, admin); // 'زينب' surfaces as a candidate
+      expect(res.status).toBe(200);
+      expect((res.body.items as Record<string, unknown>[]).map((i) => i.userId)).toContain(
+        outsider.id,
+      );
+      const after = (await call('GET', `/communities/${aId}`, admin)).body.memberCount as number;
+      expect(after).toBe(before); // the candidate was found, never added
+    });
+
+    it('validates the query and clamps an oversize limit', async () => {
+      expect((await call('GET', `/communities/${aId}/member-candidates`, admin)).status).toBe(400);
+      expect((await call('GET', `/communities/${aId}/member-candidates?q=%20`, admin)).status).toBe(
+        400,
+      );
+      expect(
+        (await call('GET', `/communities/${aId}/member-candidates?q=ز&limit=1000000`, admin))
+          .status,
+      ).toBe(200);
+      expect(
+        (await call('GET', `/communities/${aId}/member-candidates?q=ز&role=X`, admin)).status,
+      ).toBe(400);
+    });
+  });
+
   it('never answers with an email, and never with a token hash', () => {
     expect(transcript.length).toBeGreaterThan(30);
     for (const raw of transcript) {

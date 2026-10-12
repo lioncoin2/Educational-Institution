@@ -631,6 +631,39 @@ the teacher directory (GROUP A remainder).
 
 ---
 
+## 15. Q31/Q50 (search scope) — least-privilege people discovery, resolved & implemented (Sprint 24, Design X)
+
+The owner ruled on the people-search scope sub-part of the people-lookup policy, and it was implemented as
+one server-authoritative change. This resolves only the **search-scope** sub-part; the broader Q50
+(enrollment-sourced membership, halaqa link, derived capabilities) and **Q22** (conversation-member
+visibility) stay **OPEN**, and ADR 0023 (attendance authorization) is unchanged.
+
+- **Institution-wide directory is owner/admin only.** `GET /people` (gated on `people.read`) is a
+  membership-management surface for owner/admin. Supervisors and teachers **lose `people.read`
+  (`provisional-policy.ts`; data-only migration `0020_restrict_people_directory`)** — no role gets an
+  institution-wide directory merely by holding `people.read`. Students and parents gain nothing.
+- **Community member discovery is community-scoped.** New `GET /communities/:id/member-candidates?q=`
+  (`SearchMemberCandidatesUseCase`), authorized per community on **`community.members.invite`** (the one
+  community authorizer, never `communities.manage` — oversight never adds). A teacher who owns or is
+  delegated invitation authority in a community still finds candidates **there**; anyone without it,
+  including an oversight-only admin, is refused exactly as the add mutation refuses. Search reuses
+  identity's `ACCOUNT_SEARCH` (relationship-blind, ACTIVE-only) and the minimal **`{userId, displayName}`**
+  projection.
+- **Search is not a mutation.** Discovery grants no membership, messaging permission or attendance
+  entitlement; `AddMembersUseCase` still re-authorizes `community.members.invite` on the add.
+- **Academic discovery unchanged.** No cross-halaqa student search was built; teachers read their own
+  halaqa roster via the existing ACTIVE-assignment path (Q31). No academic/enrollment data enters
+  community discovery.
+- **Flutter:** the add-member picker now calls the community-scoped endpoint with the open community's id
+  (never `GET /people`).
+- **Still open (unchanged):** Q50 membership-sourcing/halaqa-link/derived-capabilities; Q22; the
+  people directory beyond add-member and the teacher directory; parent messaging and quiet hours (Q6).
+
+An ADR recording this (search ≠ membership ≠ attendance; owner/admin directory; community-scoped
+candidate search) is the documentation follow-up; the decision is the owner's ruling above.
+
+---
+
 > This register is advisory and reversible. Closing a question means: record an ADR in `decisions/`,
 > make the (usually small) change, and delete the entry from `open-questions.md` with the ADR number —
 > per that file's "How to close one."

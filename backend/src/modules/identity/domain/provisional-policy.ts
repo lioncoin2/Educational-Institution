@@ -44,10 +44,17 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
         permission !== Permissions.settings.manage && permission !== Permissions.messaging.manage,
     ),
 
-    /** Provisional: oversight — read access, no management. Q1: may they amend attendance? */
+    /**
+     * Provisional: oversight — read access, no management. Q1: may they amend
+     * attendance? No `people.read`: the institution-wide people directory
+     * (`GET /people`) is an owner/admin membership-management surface (Sprint 24,
+     * approved Design X); a supervisor cannot own or be delegated a community
+     * (no `communities.moderate`), so never adds members and needs no directory.
+     * Community member discovery is the community-scoped, `community.members.
+     * invite`-gated candidate search instead.
+     */
     [Roles.supervisor]: [
       Permissions.users.read,
-      Permissions.people.read,
       Permissions.academic.read,
       Permissions.attendance.read,
       Permissions.assignments.read,
@@ -69,9 +76,16 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
      * capability in one — a ceiling, not a power. A teacher acts in a
      * community only as its owner or through a grant there (Q44); creating
      * one is OWNER and ADMIN only (Q41).
+     *
+     * No `people.read`: the institution-wide people directory (`GET /people`)
+     * is an owner/admin membership-management surface (Sprint 24, approved
+     * Design X). A teacher who owns or is delegated `community.members.invite`
+     * in a community finds members through the community-scoped,
+     * `community.members.invite`-gated candidate search — not a global directory.
+     * Per-halaqa student rosters stay governed by the ACTIVE teaching assignment
+     * (Q31), unchanged.
      */
     [Roles.teacher]: [
-      Permissions.people.read,
       Permissions.academic.read,
       Permissions.academic.teach,
       Permissions.attendance.read,

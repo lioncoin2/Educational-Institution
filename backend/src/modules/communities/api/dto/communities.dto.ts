@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   Allow,
   ArrayMaxSize,
@@ -7,6 +7,7 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
@@ -38,6 +39,22 @@ export class PageQuery {
   @IsOptional()
   @IsString()
   cursor?: string;
+}
+
+/**
+ * `GET /communities/:id/member-candidates?q=&limit=&cursor=` — the community
+ * add-member picker's search. `q` is the required display-name prefix (trimmed,
+ * non-empty, at most 100 chars), the same shape `GET /people` uses; `limit` is
+ * clamped by identity, `cursor` is the opaque keyset cursor. The caller's right
+ * to search is `community.members.invite` IN this community, decided in the use
+ * case — never asserted by the client.
+ */
+export class MemberCandidatesQuery extends PageQuery {
+  @IsString()
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsNotEmpty()
+  @MaxLength(100)
+  q!: string;
 }
 
 export class ListCommunitiesQuery extends PageQuery {
