@@ -166,21 +166,29 @@ export interface ProvisionedParticipant {
  *   POST /admin/users/:id/status {ACTIVE}  → only ACTIVE accounts authenticate
  *   POST /communities/:id/members          → may join that community's session
  *   POST /auth/login                       → the participant's own access token
+ *   POST /live/sessions/:id/hand           → the participant raises a hand
+ *   POST /live/requests/:id/grant          → the owner gives them the floor
  *
- * It invents no permission and bypasses no rule: the owner must legitimately
- * hold `users.manage`/`roles.assign`/`communities.read`, and the participant
- * joins the media room through the same `/join` authorization as anyone else.
- * Never logs; the password/token never ride in a thrown error.
+ * The last two matter for real media: a STUDENT may raise a hand but not speak
+ * until a moderator grants the floor (the policy), so WITHOUT the grant the
+ * participant's join token would carry no microphone source and a publish would
+ * be refused (NOT_ALLOWED). The grant is the legitimate path — the owner holds
+ * `live.moderate` — so the participant then joins the media room with a mic
+ * source through the same `/join` authorization as anyone else.
+ *
+ * It invents no permission and bypasses no rule. Never logs; the password/token
+ * never ride in a thrown error.
  */
 export async function provisionParticipant(
   http: HttpClient,
   params: {
     readonly ownerToken: string;
     readonly communityId: string;
+    readonly sessionId: string;
     readonly participant: ParticipantConfig;
   },
 ): Promise<ProvisionedParticipant> {
-  const { ownerToken, communityId, participant } = params;
+  const { ownerToken, communityId, sessionId, participant } = params;
 
   const created = await http('POST', '/admin/users', {
     token: ownerToken,
@@ -221,6 +229,23 @@ export async function provisionParticipant(
   });
   expectStatus('participant', login.status, [200], 'participant login failed');
   const accessToken = requireString(login.body, 'accessToken', 'participant');
+
+  // Raise the participant's hand, then have the owner grant the floor — so the
+  // join token will carry a microphone source and a real publish is allowed.
+  const raised = await http('POST', `/live/sessions/${encodeURIComponent(sessionId)}/hand`, {
+    token: accessToken,
+  });
+  expectStatus('participant', raised.status, [200, 201], 'participant raise-hand failed');
+  const request = raised.body.request;
+  if (request === null || typeof request !== 'object') {
+    throw new ProvisionError('malformed', 0, 'the raise-hand response did not include a "request"');
+  }
+  const requestId = requireString(request as Record<string, unknown>, 'id', 'participant');
+
+  const granted = await http('POST', `/live/requests/${encodeURIComponent(requestId)}/grant`, {
+    token: ownerToken,
+  });
+  expectStatus('participant', granted.status, [200], 'granting the participant the floor failed');
 
   return { accessToken, userId };
 }
@@ -342,6 +367,7 @@ async function main(): Promise<void> {
       ? await provisionParticipant(http, {
           ownerToken: provisioned.accessToken,
           communityId: provisioned.communityId,
+          sessionId: provisioned.sessionId,
           participant: {
             displayName: requireEnv('E2E_PARTICIPANT_NAME'),
             email: participantEmail,

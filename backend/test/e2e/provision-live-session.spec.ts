@@ -278,16 +278,21 @@ describe('provisionParticipant', () => {
       if (/^\/admin\/users\/[^/]+\/status$/.test(path)) return { status: 204, body: {} };
       if (/^\/communities\/[^/]+\/members$/.test(path)) return { status: 201, body: {} };
       if (path === '/auth/login') return { status: 200, body: { accessToken: TOKEN_B } };
+      if (/^\/live\/sessions\/[^/]+\/hand$/.test(path)) {
+        return { status: 201, body: { request: { id: 'request-1' } } };
+      }
+      if (/^\/live\/requests\/[^/]+\/grant$/.test(path)) return { status: 200, body: {} };
       throw new Error(`unexpected path in test: ${path}`);
     };
     return { http, calls };
   }
 
-  it('creates, grants STUDENT, activates, adds to the community, logs in', async () => {
+  it('creates, grants STUDENT, activates, adds, logs in, then raises+grants the floor', async () => {
     const { http, calls } = fakeParticipantHttp();
     const result = await provisionParticipant(http, {
       ownerToken: TOKEN,
       communityId: 'community-1',
+      sessionId: 'session-1',
       participant: PARTICIPANT,
     });
 
@@ -298,8 +303,10 @@ describe('provisionParticipant', () => {
       'POST /admin/users/user-b/status',
       'POST /communities/community-1/members',
       'POST /auth/login',
+      'POST /live/sessions/session-1/hand',
+      'POST /live/requests/request-1/grant',
     ]);
-    // The admin calls bearer the OWNER token; the final login is public.
+    // The admin calls bearer the OWNER token; login is public.
     expect(calls[0].token).toBe(TOKEN);
     expect(calls[0].body).toEqual({
       displayName: PARTICIPANT.displayName,
@@ -314,6 +321,9 @@ describe('provisionParticipant', () => {
       identifier: PARTICIPANT.email,
       password: PARTICIPANT.password,
     });
+    // The participant raises their OWN hand; the owner grants the floor.
+    expect(calls[5].token).toBe(TOKEN_B);
+    expect(calls[6].token).toBe(TOKEN);
   });
 
   it('url-encodes the created user id in the role/status paths', async () => {
@@ -321,6 +331,7 @@ describe('provisionParticipant', () => {
     await provisionParticipant(http, {
       ownerToken: TOKEN,
       communityId: 'c-1',
+      sessionId: 'session-1',
       participant: PARTICIPANT,
     });
     expect(calls[1].path).toBe('/admin/users/u%2Fb%20x/roles');
@@ -333,6 +344,7 @@ describe('provisionParticipant', () => {
       provisionParticipant(http, {
         ownerToken: TOKEN,
         communityId: 'c-1',
+        sessionId: 'session-1',
         participant: PARTICIPANT,
       }),
       'participant',
@@ -346,6 +358,7 @@ describe('provisionParticipant', () => {
       provisionParticipant(http, {
         ownerToken: TOKEN,
         communityId: 'c-1',
+        sessionId: 'session-1',
         participant: PARTICIPANT,
       }),
       'malformed',
@@ -359,6 +372,7 @@ describe('provisionParticipant', () => {
       await provisionParticipant(http, {
         ownerToken: TOKEN,
         communityId: 'c-1',
+        sessionId: 'session-1',
         participant: PARTICIPANT,
       });
       throw new Error('expected a failure');
