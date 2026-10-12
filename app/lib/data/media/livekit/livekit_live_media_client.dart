@@ -182,6 +182,14 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
         _setRemote(LiveRemoteParticipants.empty);
         _set(LiveMediaDisconnected(reason));
       case LiveKitCapabilities(:final canPublishScreen):
+        // RECONCILE signals (capability / local tracks / remote participants)
+        // describe the CURRENT room, so they apply ONLY while a live connection
+        // exists. After a terminal drop (handled above) or an explicit
+        // disconnect(), the port's async broadcast can still deliver a signal that
+        // was queued around teardown; without this guard it would RESURRECT stale
+        // media state while the client is idle/disconnected/failed. Reconnecting
+        // IS live — reconciling across the blip is how the state converges.
+        if (!_hasLiveConnection) return;
         // The server's live authorization — the only thing that un-blocks (or
         // re-blocks) screen sharing mid-session. A grant NEVER starts capture
         // (that needs explicit user intent); a revoke DOES stop any active
@@ -197,6 +205,7 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
           unawaited(_stopScreenShareQuietly());
         }
       case LiveKitLocalTracks(:final microphoneOn, :final screenShareOn):
+        if (!_hasLiveConnection) return; // see the capability case above
         // The SDK's reconciled view of OUR OWN published tracks — the single
         // source of the mic/screen "on" state the UI shows, never a command's
         // optimistic result.
@@ -207,12 +216,21 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
           ),
         );
       case LiveKitRemoteParticipants(:final participants):
+        if (!_hasLiveConnection) return; // see the capability case above
         // The reconciled remote set (presence + audio/screen), keyed by
         // identity — scoped to THIS room; cleared on connect/disconnect, so a
         // previous room's participants never linger.
         _setRemote(participants);
     }
   }
+
+  /// Whether a live media connection exists right now — the only window in which
+  /// a reconcile signal (capability / local tracks / remote participants) is
+  /// meaningful. `connecting`, `disconnected`, `failed`, `idle` and `unavailable`
+  /// are NOT live: a late/stale reconcile signal in those states is ignored, so
+  /// it cannot resurrect media state a terminal drop or disconnect() cleared.
+  bool get _hasLiveConnection =>
+      _state is LiveMediaConnected || _state is LiveMediaReconnecting;
 
   /// Stops any screen capture best-effort when screen authority is lost. A
   /// teardown error is swallowed (the track may already be gone server-side,

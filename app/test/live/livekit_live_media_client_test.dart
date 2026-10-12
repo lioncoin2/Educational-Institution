@@ -677,6 +677,81 @@ void main() {
     });
   });
 
+  // Sprint 16 — a reconcile signal (capability / local tracks / remote
+  // participants) that arrives when there is NO live connection — a late/queued
+  // event delivered around a teardown, since the port's broadcast is async and
+  // the client's subscription outlives disconnect() — must be IGNORED, so it
+  // cannot resurrect stale media state after a terminal drop or an explicit
+  // disconnect(). During a transient reconnecting it IS still applied, which is
+  // how the client converges to the current room after the blip.
+  group('stale reconcile signals without a live connection are ignored (Sprint 16)', () {
+    LiveRemoteParticipants remoteSet(Map<String, LiveRemoteParticipant> m) =>
+        LiveRemoteParticipants(Map.unmodifiable(m));
+
+    test('a remote signal after an explicit disconnect is ignored', () async {
+      await connected();
+      await client.disconnect();
+      expect(client.state, const LiveMediaIdle());
+      port.emit(
+        LiveKitRemoteParticipants(
+          remoteSet({'u-1': const LiveRemoteParticipant(identity: 'u-1')}),
+        ),
+      );
+      expect(client.remoteParticipants, LiveRemoteParticipants.empty);
+    });
+
+    test('a local-tracks signal after disconnect does not resurrect the publication', () async {
+      await connected(screen: true);
+      await client.disconnect();
+      port.emit(const LiveKitLocalTracks(microphoneOn: true, screenShareOn: true));
+      expect(client.publication, const LiveMediaPublication());
+    });
+
+    test('a capability signal after disconnect does not re-authorize screen share', () async {
+      await connected(screen: false);
+      await client.disconnect();
+      port.emit(const LiveKitCapabilities(canPublishScreen: true));
+      expect(client.screenAuthorized, isFalse);
+      expect(client.publication.screenAuthorized, isFalse);
+    });
+
+    test('a late remote signal queued around a TERMINAL drop cannot bring a peer back', () async {
+      await connected();
+      port.emit(
+        LiveKitRemoteParticipants(
+          remoteSet({'u-1': const LiveRemoteParticipant(identity: 'u-1')}),
+        ),
+      );
+      expect(client.remoteParticipants.length, 1);
+      // The terminal drop clears (Sprint 15) ...
+      port.emit(const LiveKitDisconnected(LiveMediaDisconnectReason.roomDeleted));
+      expect(client.remoteParticipants, LiveRemoteParticipants.empty);
+      // ... and a stale event delivered just after it cannot resurrect the peer.
+      port.emit(
+        LiveKitRemoteParticipants(
+          remoteSet({'u-1': const LiveRemoteParticipant(identity: 'u-1')}),
+        ),
+      );
+      expect(client.remoteParticipants, LiveRemoteParticipants.empty);
+    });
+
+    test('a reconcile signal DURING reconnecting IS applied (converges across a blip)', () async {
+      await connected();
+      port.emit(const LiveKitReconnecting());
+      expect(client.state, const LiveMediaReconnecting());
+      // Reconnecting is a live state: reconciling here is how the client
+      // converges to the current room after the transient interruption.
+      port.emit(
+        LiveKitRemoteParticipants(
+          remoteSet({
+            'u-1': const LiveRemoteParticipant(identity: 'u-1', audio: LiveRemoteAudio.live),
+          }),
+        ),
+      );
+      expect(client.remoteParticipants['u-1']?.audio, LiveRemoteAudio.live);
+    });
+  });
+
   // Sprint 13 — the LOCAL publication state and the REMOTE participant state are
   // independent facts, carried by different signals. A signal about our OWN
   // tracks must never alter the remote set, and a signal about REMOTE

@@ -472,6 +472,69 @@ terminal end path (Sprint 14). The deterministic idempotency/stale-state
 cleanup that matters (no duplicate on rejoin, departed dropped, connect/disconnect
 reset the local + remote set) is unit-covered.
 
+## Sprint 16 — reconnect contract & stale-signal ownership closure
+
+Sprint 16 audits the reconnect/concurrency/cleanup contract and closes the last
+stale-state ownership gap. Findings grounded in the pinned `livekit_client`
+2.13.0 adapter (`livekit_room_port.dart`): `RoomReconnectingEvent` →
+`LiveKitReconnecting`, `RoomReconnectedEvent` → `LiveKitConnected` (reconnected is
+NOT a terminal drop — it returns to connected), `RoomDisconnectedEvent` →
+`LiveKitDisconnected(reason)` (a `clientInitiated` leave is dropped, never mapped
+to a kick). The adapter reconciles the remote/local/capability snapshot on each
+room event; the controller `_generation`/`_isCurrent` stale-guard and the
+adapter's best-effort teardown were re-confirmed correct and observably tested —
+unchanged.
+
+**DEFECT FIXED — a stale reconcile signal could resurrect media state after a
+drop (`livekit_live_media_client.dart`).** The port's signal stream is an ASYNC
+broadcast and the client's subscription outlives `disconnect()` (only `dispose()`
+cancels it), so a reconcile signal (capability / local tracks / remote
+participants) queued around a teardown could be delivered AFTER a terminal drop
+or an explicit leave. `_onSignal` applied those signals unconditionally, so a
+late event could re-populate the roster / publication / screen authorization
+while the client was idle/disconnected — a stale indicator with no live
+connection behind it. Sprint 15 cleared state AT the terminal transition; this
+closes the matching window AFTER it. Fix (client, the owning layer): the three
+reconcile cases now apply only while `_hasLiveConnection`
+(`connected` || `reconnecting`); a signal in any non-live state is ignored. A
+transient `reconnecting` is deliberately still live, so the client keeps
+converging across the blip.
+
+| Scenario | Kind | Ran? | Evidence |
+|---|---|---|---|
+| A remote signal after an explicit disconnect is ignored | unit | yes | `livekit_live_media_client_test` ("stale reconcile signals without a live connection …") |
+| A local-tracks signal after disconnect does not resurrect the publication | unit | yes | same |
+| A capability signal after disconnect does not re-authorize screen share | unit | yes | same |
+| A late remote signal queued around a terminal drop cannot bring a peer back | unit | yes | same |
+| A reconcile signal DURING reconnecting IS applied (converges across a blip) | unit | yes | same |
+
+**Concurrency / ownership re-confirmed (no change).** Superseded connect (the
+controller `_generation` guard: "a join that resolves after disconnect does NOT
+reconnect"), one-room-at-a-time teardown (the adapter: "connect tears down a
+still-open previous room", "reconnecting never reuses the orphaned room"), and
+disposal cleanup (the observable `_FakeLiveRoom`) are already covered. No new
+guard or state store was added — the existing mechanisms provide the ownership
+guarantees.
+
+**Diagnostics re-confirmed adequate (no change).** Media failures surface as a
+sanitized `LiveMediaException(media_error)` carrying only the error's runtime
+TYPE — never a token, URL or body (tested: "a failure never leaks the token into
+the exception"); the E2E diagnostics redact JWTs and token/secret values. The
+meaningful categories the app acts on are already distinct codes
+(`invalid_grant`, `screen_not_permitted`, `not_connected`, `media_error`) plus the
+typed `LiveMediaDisconnectReason` (roomDeleted / participantRemoved /
+duplicateIdentity / other). Left unchanged.
+
+**Reconnect — still NOT VERIFIED E2E (unchanged, honest).** The SDK's INTERNAL
+network reconnect (`RoomReconnecting` → `RoomReconnected` on a transient blip that
+keeps the room) is mapped and now UNIT-verified on both the terminal-clear and
+the reconnecting-preserve/converge sides, but a genuine partition that preserves
+the room cannot be induced deterministically in a single-runner Docker harness
+(restarting / pausing LiveKit loses the room → `roomDeleted`, a different path —
+the documented blocker). What IS verified end-to-end remains: room-reset recovery
+(Sprint 15), terminal end (Sprint 14), multi-participant and screen-share
+(Sprints 12–14). Internal reconnect is not claimed as end-to-end verified.
+
 ## Manual verification (NOT executed in CI)
 
 These are the checks the automated harness cannot perform. They require a real

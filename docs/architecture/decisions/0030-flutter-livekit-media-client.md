@@ -317,6 +317,22 @@ Resolved since this ADR was accepted:
   transient blip) stays NOT-VERIFIED E2E — unit-covered only — because a partition
   that keeps the room alive cannot be induced deterministically here.
   (`docs/p8-live-media-verification.md`, Sprint 15.)
+- **Reconnect contract & stale-signal ownership closure (P16 / Sprint 16).**
+  Audited the reconnect/concurrency/cleanup contract against the pinned SDK
+  (`RoomReconnecting`→reconnecting, `RoomReconnected`→connected,
+  `RoomDisconnected`→terminal). Fixed one remaining stale-state gap: because the
+  port's signal broadcast is async and the client's subscription outlives
+  `disconnect()`, a reconcile signal (capability / local tracks / remote
+  participants) queued around a teardown could be delivered after a terminal drop
+  or leave and resurrect the roster/publication/authorization while the client was
+  idle. Fix (client `_onSignal`): the reconcile cases now apply only while a live
+  connection exists (`connected` || `reconnecting`); a stale signal in any non-live
+  state is ignored — complementing the Sprint 15 clear-at-transition. Reconnecting
+  stays live so the client still converges across a blip. Concurrency guards
+  (controller `_generation`), one-room teardown, observable cleanup and the
+  sanitized diagnostic contract were re-confirmed correct and left unchanged. The
+  SDK INTERNAL network reconnect stays NOT-VERIFIED E2E (same deterministic-induction
+  blocker). (`docs/p8-live-media-verification.md`, Sprint 16.)
 
 Genuinely unresolved:
 
