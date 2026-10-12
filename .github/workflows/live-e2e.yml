@@ -337,6 +337,36 @@ jobs:
             --platform chrome \
             --dart-define-from-file="$E2E_DEFINES_FILE"
 
+      # The PRODUCTION-COMPOSITION harness (Sprint 20). Every harness above wires
+      # LiveKitLiveMediaClient directly (test-only); this one instead reads the
+      # client, repository and controller from the APP'S OWN providers under the
+      # real activation configuration — backend mode (API_BASE_URL), the explicit
+      # LIVE_MEDIA_ENABLED flag, and web — and asserts the wiring SELECTS the real
+      # client before driving a real join / microphone / screen-authorization /
+      # leave. A green direct-client E2E is not proof of activation; exercising
+      # the production binding is. It connects and leaves cleanly and does NOT end
+      # the shared session. @TestOn('browser').
+      - name: Flutter Web → LiveKit E2E (production provider composition, headless)
+        working-directory: app
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          wrapper="$RUNNER_TEMP/chrome-e2e"
+          {
+            echo '#!/usr/bin/env bash'
+            echo "exec \"$CHROME_BIN\" \"\$@\" --disable-web-security --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --autoplay-policy=no-user-gesture-required"
+          } > "$wrapper"
+          chmod +x "$wrapper"
+          # API_BASE_URL + LIVE_MEDIA_ENABLED flip the app into the real
+          # activation path; the session token and id come from the shared
+          # defines file. No secret is on the command line.
+          CHROME_EXECUTABLE="$wrapper" flutter test \
+            test/e2e/livekit_app_composition_e2e_test.dart \
+            --platform chrome \
+            --dart-define-from-file="$E2E_DEFINES_FILE" \
+            --dart-define=API_BASE_URL="$E2E_BASE_URL" \
+            --dart-define=LIVE_MEDIA_ENABLED=true
+
       # REAL browser screen capture (Sprint 13). getDisplayMedia() has no source
       # in headless Chrome, so this one harness runs in HEADED Chrome on an Xvfb
       # virtual display — a real X framebuffer Chrome's screen-capture pipeline

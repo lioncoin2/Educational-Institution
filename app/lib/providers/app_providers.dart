@@ -11,6 +11,7 @@ import '../data/api/api_client.dart';
 import '../data/api/secure_token_store.dart';
 import '../data/api/token_store.dart';
 import '../data/media/live_media_seams.dart';
+import '../data/media/livekit/livekit_live_media_client.dart';
 import '../data/media/media_seams.dart';
 import '../data/models/auth.dart';
 
@@ -208,7 +209,8 @@ final inviteLinkBuilderProvider = Provider<InviteLinkBuilder?>(
 // ── Live ─────────────────────────────────────────────────────────────────────
 // A community's live session, read-only (the state in features/live reads
 // this). Media participation is the separate seam below
-// (liveMediaClientProvider), Unavailable in this build.
+// (liveMediaClientProvider), activated on web in backend mode behind an
+// explicit flag (Sprint 20) and Unavailable everywhere else.
 
 final liveRepositoryProvider = Provider<LiveRepository>(
   (ref) => ref.watch(backendModeProvider)
@@ -306,12 +308,39 @@ final voicePlayerProvider = Provider<VoicePlayer>(
   (ref) => const UnavailableVoicePlayer(),
 );
 
-/// Live-session media (audio), unbound in this milestone: the non-media
-/// foundation shows the session; joining arrives later behind this seam (see
-/// live_media_seams.dart). Until then the live screen says audio is unavailable.
-final liveMediaClientProvider = Provider<LiveMediaClient>(
-  (ref) => const UnavailableLiveMediaClient(),
+/// Whether the build explicitly enabled live media (`LIVE_MEDIA_ENABLED`). A
+/// provider — mirroring [backendModeProvider] — so a test exercises both the
+/// enabled and the disabled policy without a build-time define.
+final liveMediaConfigEnabledProvider = Provider<bool>(
+  (ref) => BackendConfig.liveMediaEnabled,
 );
+
+/// Whether this target supports the real live-media client. The LiveKit adapter
+/// is web-first (ADR 0030); native iOS/Android media is a separate slice, so
+/// the real client never activates off the web. A provider, so a test can
+/// simulate a supported or unsupported platform without a device.
+final liveMediaPlatformSupportedProvider = Provider<bool>((ref) => kIsWeb);
+
+/// Live-session media (audio). The real [LiveKitLiveMediaClient] is bound ONLY
+/// when a backend is configured, the build explicitly enables live media, AND
+/// the platform is the supported web target; anything else — the demo build,
+/// an absent/false flag, an unsupported platform, or a widget test — falls
+/// closed to [UnavailableLiveMediaClient], and the live screen says audio is
+/// unavailable. This is the one place the real client is constructed (one room
+/// owner); it owns an SDK room and listeners, released with the provider.
+final liveMediaClientProvider = Provider<LiveMediaClient>((ref) {
+  final activate =
+      ref.watch(backendModeProvider) &&
+      ref.watch(liveMediaConfigEnabledProvider) &&
+      ref.watch(liveMediaPlatformSupportedProvider);
+  if (!activate) return const UnavailableLiveMediaClient();
+  final client = LiveKitLiveMediaClient();
+  // The client holds the SDK room, its event subscription and the state
+  // streams; dispose it with the provider so no room, listener or stream
+  // outlives the binding (e.g. when backend mode is toggled off in a test).
+  ref.onDispose(() => unawaited(client.dispose()));
+  return client;
+});
 
 /// Academic reads may now be answered by the server, and a refusal (sign in,
 /// no access) is not something to try again silently: the error reaches the

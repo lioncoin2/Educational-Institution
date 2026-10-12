@@ -237,11 +237,30 @@ void main() {
         ),
         isEmpty,
       );
-      // Bound once, to its Unavailable default, in the provider wiring only.
+      // The fail-closed default is still referenced in the provider wiring:
+      // the demo build, an unsupported platform or a disabled flag all land on
+      // UnavailableLiveMediaClient (Sprint 20 activates the real client only in
+      // backend mode, on web, behind an explicit flag).
       final binding = sources['lib/providers/app_providers.dart']!;
       expect(binding.contains('UnavailableLiveMediaClient'), isTrue);
     },
   );
+
+  test('constructs the real LiveKit client in the provider wiring only', () {
+    // The real LiveKitLiveMediaClient is DEFINED in the adapter and CONSTRUCTED
+    // in exactly one place — the provider wiring (Sprint 20) — so there is one
+    // room owner and no screen, controller or repository ever builds its own.
+    // This reads lib/ only; the E2E harnesses under test/ may construct it
+    // directly and are out of scope here.
+    final sites = {
+      for (final MapEntry(key: path, value: text) in sources.entries)
+        if (RegExp(r'\bLiveKitLiveMediaClient\s*\(').hasMatch(text)) path,
+    };
+    expect(sites, {
+      'lib/data/media/livekit/livekit_live_media_client.dart',
+      'lib/providers/app_providers.dart',
+    });
+  });
 
   test(
     'keeps the media vocabulary plain Dart — no transport, no media SDK',

@@ -690,6 +690,95 @@ independent sessions unsupported) and the sanitized diagnostic contract (four
 remain accurate; no production change. The one capability matrix row that changes
 is transient internal reconnect, per the diagnostic run above.
 
+## Sprint 20 — production activation on web
+
+Through Sprint 18 the real `LiveKitLiveMediaClient` and its SDK adapter were
+built and tested, but `liveMediaClientProvider` was hard-bound to
+`UnavailableLiveMediaClient` in every build, so no application path ever used
+them. Sprint 20 activates the subsystem on web, behind an explicit flag, and
+proves the activation through the production composition.
+
+### The binding (production code)
+
+`liveMediaClientProvider` now selects the real client when, and only when, all
+three hold (otherwise it falls closed to `UnavailableLiveMediaClient`):
+
+- `backendModeProvider` — a backend is configured (`API_BASE_URL` set);
+- `liveMediaConfigEnabledProvider` — the build set
+  `--dart-define=LIVE_MEDIA_ENABLED=true` (`BackendConfig.liveMediaEnabled`,
+  default false);
+- `liveMediaPlatformSupportedProvider` — the target is web (`kIsWeb`).
+
+The config and platform inputs are providers (mirroring `backendModeProvider`)
+so the policy is unit-testable without a build define or a device. The real
+client is constructed in that one provider — one room owner — and disposed with
+it (`ref.onDispose`). No other production code changed: the `LiveMediaController`,
+the `LiveMediaPanel` and the whole live screen were already seam-driven, so a
+bound client with `isAvailable == true` activates the existing join / mic /
+screen / leave controls with zero UI change.
+
+Safe by default: the GitHub Pages demo build sets neither `API_BASE_URL` nor the
+flag, so it stays on `UnavailableLiveMediaClient`; and `kIsWeb` is false under the
+VM, so every widget/unit test stays on it too unless it overrides the inputs.
+
+### Provider-selection coverage (VM, deterministic)
+
+`test/live/live_media_activation_test.dart` asserts the policy on the VM
+(constructing `LiveKitLiveMediaClient` touches no platform channel until
+`connect`):
+
+| Case | Selected |
+|---|---|
+| backend + enabled + web | `LiveKitLiveMediaClient` (real) |
+| backend + enabled + NOT web | `UnavailableLiveMediaClient` |
+| backend + flag off + web | `UnavailableLiveMediaClient` |
+| demo (no backend) + enabled + web | `UnavailableLiveMediaClient` |
+| plain container (widget-test defaults) | `UnavailableLiveMediaClient` |
+| backend + enabled + web, read twice | the SAME instance (one room owner) |
+| dispose the provider | the client's streams close (disposed, no leak) |
+
+`test/live/live_boundaries_test.dart` gains a guard that `LiveKitLiveMediaClient`
+is constructed under `lib/` in exactly two places — its own adapter file and the
+provider wiring — so no screen, controller or repository builds a second room
+owner.
+
+### Production-composition E2E (real LiveKit, browser)
+
+The existing E2E harnesses prove the real chain but wire the client directly
+(test-only), so they do not prove the *application* selects it. Sprint 20 adds
+`test/e2e/livekit_app_composition_e2e_test.dart` (`@TestOn('browser')`,
+`live-e2e.yml` step "production provider composition"): it builds a production
+`ProviderContainer` under the real activation config (`API_BASE_URL`,
+`LIVE_MEDIA_ENABLED=true`, `kIsWeb`), overriding only `tokenStoreProvider` to
+inject the backend-issued session credential (the web secure-storage impl is not
+registered under `flutter test --platform chrome`), and then:
+
+1. asserts `container.read(liveMediaClientProvider)` is a `LiveKitLiveMediaClient`
+   — the app's own wiring selected the real client;
+2. asserts reading the session media state does not auto-connect (explicit join);
+3. connects through `LiveMediaController.connect()` → the real `/join` → a real
+   LiveKit room → `LiveMediaConnected` (the reconciled remote set empty for one
+   client);
+4. publishes and mutes the microphone, reconciled from the SDK's own track events
+   through `liveMediaPublicationProvider`;
+5. gates screen sharing on the server's LIVE authorization: an unauthorized local
+   start is refused, a presenter grant made after joining authorizes it with no
+   reconnect, and a revoke withdraws it — all observed through the publication,
+   never by publishing a capture;
+6. leaves through the controller → idle, releasing the room.
+
+A green direct-client E2E is not treated as proof of activation; this one
+exercises the production binding end to end. The screen-capture, two-/three-
+client, reset-recovery and session-end harnesses are preserved unchanged.
+
+### Unchanged limitations
+
+Full transient reconnect recovery remains NOT-VERIFIED E2E (Sprint 18); it does
+not block normal join / microphone / screen. Large-scale capacity is a separate
+gate (not claimed here). Native iOS/Android media stays out of scope (ADR 0030) —
+the flag never activates the real client off the web. Interactive screen-capture
+(B1) and the real mic-permission prompt (B2) remain manual checks below.
+
 ## Manual verification (NOT executed in CI)
 
 These are the checks the automated harness cannot perform. They require a real

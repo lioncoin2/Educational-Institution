@@ -13,4 +13,18 @@ abstract final class BackendConfig {
 
   static Uri get baseUri =>
       Uri.parse(apiBaseUrl.endsWith('/') ? apiBaseUrl : '$apiBaseUrl/');
+
+  /// Whether this build activates the real live-media client (LiveKit). Off by
+  /// default — never a secret, only a switch — so a build opts in explicitly:
+  ///
+  ///   flutter build web \
+  ///     --dart-define=API_BASE_URL=https://api.example.org \
+  ///     --dart-define=LIVE_MEDIA_ENABLED=true
+  ///
+  /// Even when true, the real client is bound ONLY in backend mode and only on
+  /// the supported web target (see `liveMediaClientProvider`); the demo build,
+  /// an absent/false flag, and an unsupported platform all fall closed to the
+  /// Unavailable default. The flag enables no native (iOS/Android) media — that
+  /// stays a separate slice (ADR 0030).
+  static const bool liveMediaEnabled = bool.fromEnvironment('LIVE_MEDIA_ENABLED');
 }

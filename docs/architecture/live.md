@@ -1789,6 +1789,20 @@ abstract interface class LiveMediaClient {           // lib/data/live/live_media
   `core/widgets` never import `package:http`, `web_socket`, `api_client.dart`,
   repository implementations, `websocket_realtime_client.dart` or
   `livekit_client`.
+- **Sprint 20 — web activation.** The `LiveKitLiveMediaClient` adapter (at
+  `lib/data/media/livekit/`, the only `livekit_client` importer) is now bound in
+  production by `liveMediaClientProvider` — but only when a backend is configured,
+  the build sets `--dart-define=LIVE_MEDIA_ENABLED=true`, **and** the target is
+  web (`liveMediaConfigEnabledProvider` / `liveMediaPlatformSupportedProvider`,
+  both overridable in tests). Any other case — the demo build, an absent/false
+  flag, or a non-web target — falls closed to `UnavailableLiveMediaClient`, so the
+  GitHub Pages demo and every widget test are unaffected. The real client is
+  constructed in that one provider (one room owner) and disposed with it; no UI
+  changed (the panel is seam-driven). Native iOS/Android media stays out of scope
+  (ADR 0030). The real join → room → mic/screen path is verified through this
+  production wiring by the Live E2E
+  (`test/e2e/livekit_app_composition_e2e_test.dart`); see
+  `docs/p8-live-media-verification.md` (Sprint 20).
 
 ---
 

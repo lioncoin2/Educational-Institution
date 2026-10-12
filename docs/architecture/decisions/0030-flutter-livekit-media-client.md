@@ -364,6 +364,26 @@ Resolved since this ADR was accepted:
   headless/no-TURN harness (media/ICE did not re-establish), so it stays NOT
   VERIFIED E2E; the test records `fullRoomRecovery=false` and never fakes it.
   (See `docs/p8-live-media-verification.md`, Sprint 18.)
+- **Production activation on web (P20 / Sprint 20).** The seam is no longer
+  bound to `UnavailableLiveMediaClient` "in every build". `liveMediaClientProvider`
+  now binds the real `LiveKitLiveMediaClient` when — and only when — a backend is
+  configured (`API_BASE_URL`), the build explicitly enables live media
+  (`--dart-define=LIVE_MEDIA_ENABLED=true`), and the target is the supported web
+  platform (`kIsWeb`); every other combination fails closed to the Unavailable
+  default, so the GitHub Pages demo, an unset flag, an unsupported platform and
+  every widget test are unchanged, and native iOS/Android media is NOT enabled
+  (it stays a separate slice — conditions 4/6). The real client is constructed in
+  that one provider (one room owner) and disposed with it; no UI changed (the
+  panel was always seam-driven). Condition 3 ("a real end-to-end connection
+  against LiveKit server 1.13.7 must be verified") is now met THROUGH the
+  production wiring: a new Live E2E (`livekit_app_composition_e2e_test`) reads the
+  client, repository and controller from the app's own providers under the real
+  activation config, asserts the wiring SELECTS the real client, then drives a
+  real join / microphone publish+mute / live presenter grant+revoke / leave — a
+  green direct-client E2E being insufficient proof of activation. Full transient
+  reconnect recovery stays NOT-VERIFIED (unchanged from Sprint 18) and does not
+  block normal join/mic/screen; large-scale capacity stays a separate gate.
+  (`docs/p8-live-media-verification.md`, Sprint 20.)
 
 Genuinely unresolved:
 
