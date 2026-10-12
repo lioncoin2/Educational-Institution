@@ -300,3 +300,4 @@ responsibility and what each module must not know live in
 - [0029 — Community message moderation: delete, review, retention](decisions/0029-community-message-moderation.md)
 - [0030 — Flutter LiveKit media client (P7b)](decisions/0030-flutter-livekit-media-client.md)
 - [0031 — A generated, code-derived architecture index and a root entry point](decisions/0031-architecture-navigation-index.md)
+- [0032 — People discovery is not membership, authorization, or attendance](decisions/0032-discovery-membership-attendance-separation.md)

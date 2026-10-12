@@ -55,6 +55,7 @@ below says.
 | [0029](0029-community-message-moderation.md) | Community message moderation: delete to a tombstone, a 7-day audited review, then retention; authority is the delegable `community.messages.moderate` under `communities.moderate`, never identity's `messaging.manage` (Q51/Q23) | Accepted |
 | [0030](0030-flutter-livekit-media-client.md) | Flutter LiveKit media client (P7b): the app's RTC adapter behind the `LiveMediaClient` seam, `livekit_client` pinned and adapter-confined | Accepted |
 | [0031](0031-architecture-navigation-index.md) | A generated, code-derived architecture index, a root `CLAUDE.md` entry point, and a project-wide Flutter layering test; freshness enforced in CI, no new dependency | Accepted |
+| [0032](0032-discovery-membership-attendance-separation.md) | People discovery is not membership, authorization, or attendance: owner/admin-only `GET /people`, community-scoped candidate search on `community.members.invite`, and the explicit add re-authorizes; academic relationships and attendance ([0023](0023-attendance-authorization-and-policy.md)) stay independent; Q50 and Q22 stay OPEN (formalizes Sprint 24) | Accepted |
 
 > **`Proposed`** (added 2026-09-23): a design under review, with nothing
 > implemented. It becomes `Accepted` when the user accepts it (dated in the

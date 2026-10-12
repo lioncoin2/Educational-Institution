@@ -659,8 +659,10 @@ visibility) stay **OPEN**, and ADR 0023 (attendance authorization) is unchanged.
 - **Still open (unchanged):** Q50 membership-sourcing/halaqa-link/derived-capabilities; Q22; the
   people directory beyond add-member and the teacher directory; parent messaging and quiet hours (Q6).
 
-An ADR recording this (search ≠ membership ≠ attendance; owner/admin directory; community-scoped
-candidate search) is the documentation follow-up; the decision is the owner's ruling above.
+The separation this implies (search ≠ membership ≠ attendance; owner/admin directory; community-scoped
+candidate search; the add re-authorizes; academic relationships and attendance stay independent) is
+formalized in [ADR 0032](architecture/decisions/0032-discovery-membership-attendance-separation.md).
+Q50 and Q22 remain OPEN — that ADR resolves neither.
 
 ---
 
