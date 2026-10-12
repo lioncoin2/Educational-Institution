@@ -666,6 +666,29 @@ Q50 and Q22 remain OPEN — that ADR resolves neither.
 
 ---
 
+## 16. GROUP A / Q50 — discovery policy, consolidated & verified (Sprint 27)
+
+The owner's selected discovery policies (P1–P6) are recorded here against where each is **enforced in
+source** and **negative-tested** — a verification pass, not a new decision. Nothing here resolves a
+broader open question.
+
+| Policy | Where enforced (source) | Negative tests | Status |
+| --- | --- | --- | --- |
+| P1 — discovery contexts are distinct (community candidate vs academic halaqa); never one global directory | `SearchMemberCandidatesUseCase` (community) + `AcademicAccess.halaqaMembers` (academic); `GET /people` owner/admin only | `communities.api.spec`, `academic.api.spec`, `access.spec` | **Implemented+verified** |
+| P2 — teacher academic discovery = **current** students of **ACTIVE-assigned** halaqat, via the existing roster (no separate/cross-halaqa endpoint built) | `AcademicAccess.halaqaMembers` → `academic.teach` AND `isTeaching(ACTIVE)`; `ListHalaqaStudentsUseCase` | `access.spec` (unassigned, cross-halaqa, **ended assignment**, demoted role); `academic.api.spec` (outsider/cross-halaqa → 403) | **Implemented+verified** |
+| P3 — supervisor gets **no** academic scope by role | `AcademicAccess` (no `academic.teach`, no assignment → denied) | `access.spec` + `academic.api.spec` (supervisor → 403) | **Implemented+verified** |
+| P4 — academic relationships scope academic discovery only; grant no community membership/permission/attendance/role | module boundaries; no academic import in `communities`/`people`; ADR 0032 | `academic-boundaries.spec`, `communities-boundaries.spec` | **Implemented+verified** |
+| P5 — minor/identity exposure is minimal and relationship-scoped, enforced server-side | every search projects `{userId, displayName}` at the use case/response, not the client | `people.api.spec` (no email on the wire), `academic.api.spec` (`/me` hides classmates), `communities.api.spec` | **Implemented+verified** |
+| P6 — Sprint 24 contract (owner/admin `GET /people`; per-community `community.members.invite`; add re-authorizes; discovery confers nothing; ADR 0023 attendance unchanged) | ADR 0032; `people.read` owner/admin (migration 0020); `AddMembersUseCase` recheck | `people.api.spec`, `communities.api.spec` (incl. the Sprint 27 **revoke → re-denied** lifecycle test) | **Implemented+verified** |
+
+**Remains OPEN (not resolved by any of the above):** Q50's broad halaqa-link / enrollment-sourced
+membership / derived-capability questions; Q22 conversation-member visibility; whether a teacher may ever
+see **former** or pre-assignment students (Q31 sub-question — the roster's status filter still allows ENDED
+enrollments, a deliberate shipped behavior left undecided); **parent** messaging and **non-teacher-staff**
+communication; the people directory beyond add-member and the teacher directory.
+
+---
+
 > This register is advisory and reversible. Closing a question means: record an ADR in `decisions/`,
 > make the (usually small) change, and delete the entry from `open-questions.md` with the ADR number —
 > per that file's "How to close one."

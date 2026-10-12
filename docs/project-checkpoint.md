@@ -79,7 +79,7 @@ unverified on target platform** · **Mock/stub** · **Owner-decision-gated** · 
 | --- | --- | --- |
 | Authentication & identity; persistent sessions | **Implemented+verified** (native keystore unverified) | Sprint 19 — see below |
 | Communities & membership | **Implemented+verified** | lists, roster, keyset pagination, lock/unlock, join-by-link, leave, invitations, remove, grant/revoke/transfer, server-authoritative `me` |
-| People directory & member add/re-add; student↔student & student↔teacher DMs | **Implemented+verified** | GROUP A (register §12–§15; ADR 0032); `people.read` (owner/admin only, migration 0020), community-scoped `member-candidates` on `community.members.invite`, `messaging.start_direct_peer`/`_teacher` (migrations 0018/0019) |
+| People directory & member add/re-add; student↔student & student↔teacher DMs | **Implemented+verified** | GROUP A (register §12–§16; ADR 0032); `people.read` (owner/admin only, migration 0020), community-scoped `member-candidates` on `community.members.invite`, `messaging.start_direct_peer`/`_teacher` (migrations 0018/0019) |
 | Text messaging, moderation, cross-client delete | **Implemented+verified** | send/history/pagination/read-unread/catch-up; moderation delete + 7-day review (ADR 0029); the `messaging.message.deleted` realtime hint |
 | Message attachments & voice notes (image/PDF/voice) | **Implemented, partially verified** (web; native/real-device unverified) | Sprint 21 — see below |
 | Live-session control plane (hands, moderation roster, presenter grants, kick, reset) | **Implemented+verified** | P12; HTTP control plane, server-authoritative |
@@ -228,7 +228,7 @@ Off-box ladder (S1/S2/R1…R6) deferred until real users. Targets (**not proven*
 The authoritative, grouped list is [`docs/owner-decision-register.md`](owner-decision-register.md).
 Summary (do NOT invent answers):
 
-- **GROUP A — people directory & membership (received & reconciled, register §12–§15):** the
+- **GROUP A — people directory & membership (received & reconciled, register §12–§16):** the
   institution-wide directory `GET /people` is **owner/admin only** (supervisors/teachers lost `people.read`,
   migration 0020); community member discovery is the **community-scoped** `GET /communities/:id/member-candidates`
   gated per community on `community.members.invite` (Sprint 24, Design X, register §15). Member add/re-add

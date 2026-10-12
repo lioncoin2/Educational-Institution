@@ -550,6 +550,7 @@ describe('communities API', () => {
     let aId: string; // admin owns; teacher is a delegate holding community.members.invite
     let bId: string; // admin owns; teacher is neither member nor delegate here
     let cId: string; // r.owner owns; admin has only oversight (communities.manage)
+    let teacherGrantId: string; // the teacher's community.members.invite grant in aId
 
     beforeAll(async () => {
       const a = await call('POST', '/communities', admin, { title: 'حلقة المرشحين' });
@@ -562,6 +563,7 @@ describe('communities API', () => {
         capabilities: ['community.members.invite'],
       });
       expect(granted.status).toBe(201);
+      teacherGrantId = (granted.body.created as Record<string, unknown>[])[0].grantId as string;
 
       const b = await call('POST', '/communities', admin, { title: 'حلقة أخرى' });
       bId = b.body.id as string;
@@ -649,6 +651,22 @@ describe('communities API', () => {
       expect(
         (await call('GET', `/communities/${aId}/member-candidates?q=ز&role=X`, admin)).status,
       ).toBe(400);
+    });
+
+    // Discovery authority is re-evaluated on every request (the authorizer is
+    // stateless), so revoking the delegate's capability closes candidate search
+    // at once — a member must never keep discovering after losing the grant.
+    // Declared last: it ends the teacher's grant in aId.
+    it('a revoked delegate can no longer search — authority is re-checked per request', async () => {
+      expect((await search(aId, teacher)).status).toBe(200); // precondition: can search now
+      const revoked = await call('DELETE', `/communities/${aId}/grants/${teacherGrantId}`, admin);
+      expect(revoked.status).toBe(204);
+      const after = await search(aId, teacher);
+      expect(after.status).toBe(403);
+      // The teacher still holds the `communities.moderate` ceiling and is still a
+      // member, but no longer the grant, so the refusal is the member-without-
+      // -capability code (not the no-ceiling `identity.permission_denied`).
+      expect(code(after)).toBe('communities.capability_required');
     });
   });
 
