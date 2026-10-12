@@ -3,7 +3,10 @@
 # This is a SEPARATE, NON-BLOCKING workflow from `live-e2e.yml`: it is the only
 # place that induces a transient network interruption, and it is intentionally
 # kept out of the regression pipeline so its timing sensitivity can NEVER make
-# the normal CI flaky. It runs ONLY on manual dispatch.
+# the normal CI flaky. It runs on manual dispatch and when its OWN harness files
+# change (a `push` trigger scoped to this workflow + the reconnect test only —
+# never on unrelated pushes; a `push` trigger, unlike `workflow_dispatch`, works
+# from a non-default branch). A red run here never fails CI, Live E2E or deploy.
 #
 # It proves (or honestly disproves) genuine SDK reconnection: two real LiveKit
 # clients join the SAME room, then the LiveKit container is FROZEN with
@@ -19,6 +22,12 @@ name: Live Reconnect Diagnostic (real LiveKit)
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - claude/quranic-education-app-prototype-gkzle8
+    paths:
+      - ".github/workflows/live-reconnect-diagnostic.yml"
+      - "app/test/e2e/livekit_reconnect_e2e_test.dart"
 
 permissions:
   contents: read
