@@ -252,6 +252,8 @@ describe('route authorization', () => {
       'CommunitiesController.remove': read,
       'CommunitiesController.leave': read,
       'CommunitiesController.transfer': read,
+      'CommunitiesController.linkHalaqa': read,
+      'CommunitiesController.unlinkHalaqa': read,
       'CommunityInvitationsController.create': read,
       'CommunityInvitationsController.list': read,
       'CommunityInvitationsController.revoke': read,

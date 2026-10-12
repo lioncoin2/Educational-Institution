@@ -61,6 +61,19 @@ export type StatusChange =
   | BasisLost
   | Contended;
 
+/**
+ * Setting or clearing a community's academic halaqa association (Q50). An
+ * oversight act resting on identity's ceiling alone: no stint, no lifecycle
+ * gate — so no `basis_lost`. A repeat with the same value writes nothing
+ * (`unchanged`). A deadlock victim, after one retry, is `conflict` (the
+ * in-memory store never answers it).
+ */
+export type SetHalaqaChange =
+  | { readonly kind: 'changed'; readonly community: Community }
+  | { readonly kind: 'unchanged'; readonly community: Community }
+  | { readonly kind: 'not_found' }
+  | Contended;
+
 export type AddMembersOutcome =
   | {
       readonly kind: 'added';
@@ -217,6 +230,19 @@ export interface CommunityStore {
     readonly actorUserId: string | null;
     readonly at: Date;
   }): Promise<StatusChange>;
+
+  /**
+   * Sets (`halaqaId`) or clears (null) the community's academic halaqa
+   * association (Q50) — an oversight act, touching only the community row. A
+   * repeat with the same value writes nothing. Nothing else about the
+   * community changes: not its membership, not a grant, not its lifecycle.
+   */
+  setHalaqa(input: {
+    readonly communityId: string;
+    readonly halaqaId: string | null;
+    readonly actorUserId: string | null;
+    readonly at: Date;
+  }): Promise<SetHalaqaChange>;
 
   /**
    * Adds whoever is not already an ACTIVE member — provided the community

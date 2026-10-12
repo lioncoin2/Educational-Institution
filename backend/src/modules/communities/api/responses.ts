@@ -28,6 +28,8 @@ export interface CommunityResponse {
   readonly status: string;
   readonly lifecycleVersion: number;
   readonly memberCount: number;
+  /** The academic halaqa this community is associated with, or null (Q50). */
+  readonly halaqaId: string | null;
   readonly createdAt: string;
   readonly me: {
     readonly standing: MembershipStanding | null;
@@ -45,6 +47,7 @@ export function toCommunityResponse(view: CommunityView): CommunityResponse {
     status: view.status,
     lifecycleVersion: view.lifecycleVersion,
     memberCount: view.memberCount,
+    halaqaId: view.halaqaId,
     createdAt: view.createdAt.toISOString(),
     me: {
       standing: view.me.standing,

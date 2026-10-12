@@ -435,6 +435,26 @@ describe('academic API', () => {
       expect((await call('GET', `/halaqat/${tajweed.id}/students`, r.owner)).status).toBe(200);
     });
 
+    it('gives a teacher the current roster only — former enrollments are an administrator’s view (Q31)', async () => {
+      for (const status of ['COMPLETED', 'WITHDRAWN']) {
+        const refused = await call(
+          'GET',
+          `/halaqat/${tajweed.id}/students?status=${status}`,
+          teacher,
+        );
+        expect([refused.status, errorCode(refused)]).toEqual([
+          403,
+          'academic.historical_roster_denied',
+        ]);
+      }
+      // The teacher's current roster is unaffected, and an academic
+      // administrator keeps the historical view.
+      expect((await call('GET', `/halaqat/${tajweed.id}/students`, teacher)).status).toBe(200);
+      expect(
+        (await call('GET', `/halaqat/${tajweed.id}/students?status=COMPLETED`, admin)).status,
+      ).toBe(200);
+    });
+
     it('shows a student their own halaqa and its teachers — not their classmates', async () => {
       const mine = await call('GET', '/me', student);
       expect(mine.status).toBe(200);

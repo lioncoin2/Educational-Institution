@@ -415,6 +415,31 @@ describe('messaging API', () => {
       });
       expect(view.body.memberCount).toBe(1);
     });
+
+    it('shows a conversation’s member list only to an administrator, server-side (Q22)', async () => {
+      const created = await api.call('POST', '/messaging/conversations/groups', {
+        token: teacher.token,
+        body: { title: 'Roster', memberIds: [student.id, owner.id] },
+      });
+      const id = created.body.id as string;
+      // The conversation's own owner (a teacher) and a plain member (a student)
+      // are refused at the server, 403 — participating never grants the roster.
+      for (const token of [teacher.token, student.token]) {
+        const denied = await api.call('GET', `/messaging/conversations/${id}/participants`, {
+          token,
+        });
+        expect(denied.status).toBe(403);
+        expect(errorOf(denied.body).code).toBe('messaging.members_hidden');
+      }
+      // The institution owner (`users.manage`), a member here, may.
+      const listed = await api.call('GET', `/messaging/conversations/${id}/participants`, {
+        token: owner.token,
+      });
+      expect(listed.status).toBe(200);
+      expect((listed.body.items as { userId: string }[]).map((p) => p.userId).sort()).toEqual(
+        [teacher.id, student.id, owner.id].sort(),
+      );
+    });
   });
 
   // Owner GROUP A rulings (Q6): a student may start a DM with another student and

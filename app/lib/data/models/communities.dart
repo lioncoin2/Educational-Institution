@@ -190,6 +190,7 @@ class Community implements Sourced {
     required this.memberCount,
     required this.createdAt,
     required this.me,
+    this.halaqaId,
     this.origin = DataOrigin.records,
   });
 
@@ -207,6 +208,7 @@ class Community implements Sourced {
     me: json['me'] is Map
         ? CommunityMe.fromJson((json['me']! as Map).cast<String, Object?>())
         : const CommunityMe(standing: CommunityStanding.unknown),
+    halaqaId: _optional(json['halaqaId']),
     origin: origin,
   );
 
@@ -222,6 +224,11 @@ class Community implements Sourced {
   final int memberCount;
   final DateTime createdAt;
   final CommunityMe me;
+
+  /// The academic halaqa this community is associated with, or null (Q50).
+  /// Inert metadata set by institutional oversight: it confers no membership,
+  /// capability or academic access — nothing in `me` is derived from it.
+  final String? halaqaId;
 
   @override
   final DataOrigin origin;

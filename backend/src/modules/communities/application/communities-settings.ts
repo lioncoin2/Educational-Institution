@@ -25,6 +25,10 @@ export const CommunityAudit = {
   /** The owner took a grant back (P3). Grants ending with a stint are in the stint's entry. */
   capabilityRevoked: 'communities.capability.revoked',
   ownershipTransferred: 'communities.ownership.transferred',
+  /** Oversight associated the community with an academic halaqa (Q50). */
+  halaqaLinked: 'communities.halaqa.linked',
+  /** Oversight cleared the community's academic halaqa association (Q50). */
+  halaqaUnlinked: 'communities.halaqa.unlinked',
   /** PROVISIONAL (Q43): a read made without membership, on the oversight basis. */
   oversightRead: 'communities.oversight.read',
 } as const;

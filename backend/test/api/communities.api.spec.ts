@@ -670,6 +670,83 @@ describe('communities API', () => {
     });
   });
 
+  describe('academic halaqa association (Q50)', () => {
+    let linkId: string;
+
+    beforeAll(async () => {
+      const created = await call('POST', '/communities', admin, { title: 'حلقة مرتبطة' });
+      linkId = created.body.id as string;
+      // A plain member, to prove membership grants no authority over the link.
+      await call('POST', `/communities/${linkId}/members`, admin, { userIds: [student.id] });
+    });
+
+    it('is null on a community that has never been linked', async () => {
+      expect((await call('GET', `/communities/${linkId}`, admin)).body.halaqaId).toBeNull();
+    });
+
+    it('links and unlinks only for institutional oversight, never via membership', async () => {
+      // A non-member holder of communities.read (teacher) and a plain member
+      // (student) both lack communities.manage, so neither may link.
+      for (const actor of [teacher, student]) {
+        const refused = await call('PUT', `/communities/${linkId}/halaqa`, actor, {
+          halaqaId: 'halaqa-1',
+        });
+        expect(refused.status).toBe(403);
+        expect(code(refused)).toBe('identity.permission_denied');
+      }
+      // Oversight links it; the association is then visible on the community.
+      const linked = await call('PUT', `/communities/${linkId}/halaqa`, admin, {
+        halaqaId: 'halaqa-1',
+      });
+      expect([linked.status, linked.body.halaqaId]).toEqual([200, 'halaqa-1']);
+      expect((await call('GET', `/communities/${linkId}`, admin)).body.halaqaId).toBe('halaqa-1');
+      // And clearing it is the DELETE, which carries no body.
+      const unlinked = await call('DELETE', `/communities/${linkId}/halaqa`, admin);
+      expect([unlinked.status, unlinked.body.halaqaId]).toEqual([200, null]);
+    });
+
+    it('changes nothing but the association — not membership, a capability or the lifecycle', async () => {
+      const before = await call('GET', `/communities/${linkId}`, admin);
+      const linked = await call('PUT', `/communities/${linkId}/halaqa`, admin, {
+        halaqaId: 'halaqa-2',
+      });
+      expect(linked.body).toMatchObject({
+        memberCount: before.body.memberCount,
+        lifecycleVersion: before.body.lifecycleVersion,
+        status: before.body.status,
+      });
+      // The member added earlier is still only a member; the link conferred nothing.
+      const members = await call('GET', `/communities/${linkId}/members`, admin);
+      expect((members.body.items as { userId: string }[]).map((m) => m.userId)).toContain(
+        student.id,
+      );
+      expect((await call('DELETE', `/communities/${linkId}/halaqa`, student)).status).toBe(403);
+    });
+
+    it('imposes no cardinality — one halaqa may back more than one community', async () => {
+      const other = await call('POST', '/communities', admin, { title: 'حلقة أخرى' });
+      const otherId = other.body.id as string;
+      expect(
+        (await call('PUT', `/communities/${linkId}/halaqa`, admin, { halaqaId: 'shared' })).body
+          .halaqaId,
+      ).toBe('shared');
+      const second = await call('PUT', `/communities/${otherId}/halaqa`, admin, {
+        halaqaId: 'shared',
+      });
+      expect([second.status, second.body.halaqaId]).toEqual([200, 'shared']);
+    });
+
+    it('refuses a malformed link body, and a community that does not exist', async () => {
+      expect(
+        (await call('PUT', `/communities/${linkId}/halaqa`, admin, { halaqaId: '' })).status,
+      ).toBe(400);
+      expect((await call('PUT', `/communities/${linkId}/halaqa`, admin, {})).status).toBe(400);
+      expect(
+        (await call('PUT', '/communities/does-not-exist/halaqa', admin, { halaqaId: 'h' })).status,
+      ).toBe(404);
+    });
+  });
+
   it('never answers with an email, and never with a token hash', () => {
     expect(transcript.length).toBeGreaterThan(30);
     for (const raw of transcript) {

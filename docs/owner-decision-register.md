@@ -689,6 +689,85 @@ communication; the people directory beyond add-member and the teacher directory.
 
 ---
 
+## 17. Q50 halaqa link, Q22 member-list visibility, Q31 current-student roster — resolved & implemented (Sprint 28)
+
+Three owner-approved decisions, implemented as the actual architecture safely supports. ADR 0033 records
+the Q50 design; ADR 0023 (attendance) is unchanged; no role grant, `people.read`, messaging capability or
+attendance rule was touched.
+
+### Q50 — optional community↔halaqa association (APPROVED)
+
+A community MAY be associated with one academic halaqa. The link is **inert metadata**: it creates/removes
+no membership, grants/revokes no capability, and derives no messaging, attendance, academic or role
+authority. No SYNC source, derived-capability source, background job or implicit invitation was built.
+
+- **Schema:** nullable `communities.halaqa_id` (migration **0021**, additive `ADD COLUMN`, data-safe).
+  **Not** a foreign key — academic owns `academic_halaqat` and no module constrains another's tables (§17);
+  **no** uniqueness, so a halaqa may back any number of communities (**smallest cardinality model — no
+  institutional rule imposed**): community → 0..1 halaqa, halaqa → 0..n communities.
+- **Who manages (A3):** `SetCommunityHalaqaUseCase`, gated on the **existing** identity permission
+  `communities.manage` (institutional oversight — held by owner + admin, who also hold `academic.manage`).
+  No new capability/role invented; not a community *act/operation*, so the `me` block and capability
+  counts are untouched. Routes `PUT /communities/:id/halaqa` (set) and `DELETE …/halaqa` (clear), edge
+  `communities.read`, use case enforces `communities.manage` — the established "coarse edge, use-case
+  decides" pattern. Audited (`communities.halaqa.linked` / `.unlinked`); no domain event (nothing may
+  react, by the inert rule).
+- **ISOLATED ARCHITECTURAL DECISION (validation vs. boundary):** ADR 0016 dec 11 anticipated validating the
+  referenced halaqa "through `ACADEMIC_RELATIONSHIPS`." That is now **prohibited** by the CI-enforced
+  communities↔academic isolation (communities.md §17; `communities-boundaries.spec.ts`: Communities imports
+  *only* identity contracts). Because the link derives nothing, a stale reference is inert, so the link is
+  **shape-validated only** (non-empty id); cross-module existence validation is **deferred** pending an
+  owner/architect choice — see ADR 0033 for the options. This is a genuine boundary trade-off, surfaced,
+  not silently guessed.
+- **Flutter:** `Community.halaqaId` added (inspect round-trips). The link/unlink **UI control is a
+  documented deferred entry point**: oversight authority (`communities.manage`) is deliberately not
+  surfaced in the community `me` block, so there is no server-authorized client signal to gate a control
+  without either reintroducing a community operation (the ripple this design avoided) or modelling
+  institution-admin standing in the app. Server remains the single enforcement point.
+- **Tests:** `communities.api.spec` (link/unlink by oversight only; member & non-member-reader denied
+  `identity.permission_denied`; inspect; no membership/capability/lifecycle change; cardinality — one
+  halaqa backs two communities; malformed body → 400; unknown community → 404); `communities-boundaries.spec`
+  green (confirms **no** new communities→academic edge).
+
+### Q22 — conversation member list is owner/admin only (APPROVED)
+
+Only the institution **owner and top-level administration** may read a conversation's participant list.
+The boundary **is** cleanly expressible in the existing model — `users.manage` is held by OWNER + ADMIN
+only (no teacher, supervisor, assistant-teacher, student, parent) and is already the repo's canonical
+"is an administrator" test — so the slice proceeded (no STOP). Reusing it invents no role/permission.
+
+- **Enforcement (server-side, single point):** `ListParticipantsUseCase` now requires
+  `users.manage` after the membership/community checks, uniformly across DIRECT/GROUP/CHANNEL. The former
+  channel-only rule is subsumed. Taking part, owning the conversation, channel-publishing, teaching or
+  managing a community grant **no** roster access. The membership precondition is kept (narrowing only —
+  no new non-member snooping added). Reading messages, sending, and managing participants are unchanged.
+  The one roster route (`GET /messaging/conversations/:id/participants`) is the only member-list surface;
+  community-chat rosters remain refused here (Communities' `community.members.view`).
+- **Flutter:** no consumer fetches the roster; the generic `messaging.members_hidden` copy already exists —
+  no app change needed.
+- **Tests:** `reading.spec` (owner/admin lists; conversation-owner & plain member denied; channel subscriber
+  denied; paging by the admin); `messaging.api.spec` (server-side 403 for teacher/student, 200 for owner).
+
+### Q31 — teacher roster is current students only (CORRECTION)
+
+A teacher's roster is the halaqa's **current** (ACTIVE) students; **former** enrollments (COMPLETED,
+WITHDRAWN) are an academic administrator's view (`academic.manage`), never reached through a teaching
+assignment. There are **no "future" enrollments** in the data model (an enrollment is ACTIVE from the
+moment it is made), so none to exclude. Historical records are preserved and the admin workflow is intact.
+
+- **Enforcement:** `ListHalaqaStudentsUseCase` refuses a non-ACTIVE `status` filter
+  (`academic.historical_roster_denied`, 403) unless the caller holds `academic.manage`. The default
+  (ACTIVE) roster — the teacher's normal call — is unchanged, so no teacher workflow breaks.
+- **Tests:** `access.spec` (teacher denied COMPLETED/WITHDRAWN, current roster intact, admin keeps history);
+  `academic.api.spec` (HTTP 403 for a teacher's `?status=COMPLETED|WITHDRAWN`, 200 for the admin).
+
+**Now closed:** Q22; the Q31 former-/future-student sub-question; Q50's optional halaqa-link (as inert
+metadata). **Remains OPEN:** Q50's enrollment-sourced membership and derived-capability questions (still
+not built, by design); cross-module halaqa-existence validation (deferred, ADR 0033); parent/non-teacher-
+staff communication.
+
+---
+
 > This register is advisory and reversible. Closing a question means: record an ADR in `decisions/`,
 > make the (usually small) change, and delete the entry from `open-questions.md` with the ADR number —
 > per that file's "How to close one."

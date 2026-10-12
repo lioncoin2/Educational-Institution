@@ -137,3 +137,16 @@ export class TransferOwnershipDto {
   @MaxLength(ID_MAX)
   userId!: string;
 }
+
+/**
+ * `PUT /communities/:id/halaqa` — the academic halaqa this community is
+ * associated with (Q50). A non-empty opaque id; existence is not asserted by
+ * the client, and the link is inert metadata. Clearing the association is the
+ * route's DELETE, which carries no body.
+ */
+export class SetHalaqaDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(ID_MAX)
+  halaqaId!: string;
+}

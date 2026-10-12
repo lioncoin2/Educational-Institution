@@ -61,8 +61,9 @@ silently invent institutional rules — record unknowns as deferred.
 - **ADRs:** `docs/architecture/decisions/` — esp. **0015** (academic reconciliation), **0016** (Q40),
   **0023** (attendance authorization), **0024/0025** (P10 notifications), **0026–0029** (P12 live/moderation
   policy), **0030** (Flutter LiveKit media client), **0031** (architecture index), **0032** (discovery ≠
-  membership ≠ authorization ≠ attendance — owner/admin-only `GET /people`, community-scoped member search).
-  Table: `.../decisions/README.md`.
+  membership ≠ authorization ≠ attendance — owner/admin-only `GET /people`, community-scoped member search),
+  **0033** (Sprint 28: optional community–halaqa link as inert metadata; conversation member-list is
+  owner/admin-only; teacher roster is current students only). Table: `.../decisions/README.md`.
 - **Live-media verification log:** [`docs/p8-live-media-verification.md`](p8-live-media-verification.md).
   **Messaging/attachments + client dependencies:** [`docs/architecture/messaging.md`](architecture/messaging.md),
   [`docs/architecture/live.md`](architecture/live.md) §17.
@@ -78,7 +79,9 @@ unverified on target platform** · **Mock/stub** · **Owner-decision-gated** · 
 | Area | Status | Notes |
 | --- | --- | --- |
 | Authentication & identity; persistent sessions | **Implemented+verified** (native keystore unverified) | Sprint 19 — see below |
-| Communities & membership | **Implemented+verified** | lists, roster, keyset pagination, lock/unlock, join-by-link, leave, invitations, remove, grant/revoke/transfer, server-authoritative `me` |
+| Communities & membership | **Implemented+verified** | lists, roster, keyset pagination, lock/unlock, join-by-link, leave, invitations, remove, grant/revoke/transfer, server-authoritative `me`; optional academic `halaqa_id` link (Sprint 28, inert metadata, `communities.manage` oversight; migration 0021; ADR 0033 / register §17) |
+| Conversation member-list visibility | **Implemented+verified** | Sprint 28 — owner/admin-only (`users.manage`), server-side in `ListParticipantsUseCase`, all conversation types (Q22; ADR 0033) |
+| Teacher roster = current students | **Implemented+verified** | Sprint 28 — `ListHalaqaStudentsUseCase` refuses non-ACTIVE status without `academic.manage`; admins keep history (Q31; ADR 0033) |
 | People directory & member add/re-add; student↔student & student↔teacher DMs | **Implemented+verified** | GROUP A (register §12–§16; ADR 0032); `people.read` (owner/admin only, migration 0020), community-scoped `member-candidates` on `community.members.invite`, `messaging.start_direct_peer`/`_teacher` (migrations 0018/0019) |
 | Text messaging, moderation, cross-client delete | **Implemented+verified** | send/history/pagination/read-unread/catch-up; moderation delete + 7-day review (ADR 0029); the `messaging.message.deleted` realtime hint |
 | Message attachments & voice notes (image/PDF/voice) | **Implemented, partially verified** (web; native/real-device unverified) | Sprint 21 — see below |

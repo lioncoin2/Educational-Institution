@@ -55,6 +55,14 @@ export const communities = pgTable(
     lifecycleVersion: integer('lifecycle_version').notNull().default(1),
     membershipVersion: bigint('membership_version', { mode: 'number' }).notNull().default(0),
     memberCount: integer('member_count').notNull().default(0),
+    /**
+     * An optional academic halaqa this community is associated with (Q50) —
+     * inert metadata. NOT a foreign key: academic owns `academic_halaqat`, and
+     * no module holds a constraint on another's tables (§17). No uniqueness: a
+     * halaqa may back any number of communities, so no cardinality rule is
+     * imposed. The link derives no membership, capability or authorization.
+     */
+    halaqaId: text('halaqa_id'),
     createdBy: text('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     statusChangedAt: timestamp('status_changed_at', { withTimezone: true }),

@@ -277,20 +277,31 @@ describe('reading conversations', () => {
   });
 
   describe('participants', () => {
-    it('lists a group’s members to its members, with names', async () => {
+    // Q22: the member list is an administrative view. Only the owner and
+    // top-level administration (`users.manage`) may read it — not a plain
+    // member, not even the conversation's own OWNER.
+    it('lists a group’s members only to an administrator, with names', async () => {
       const teacher = h.person(Roles.teacher, 'الأستاذ');
       const student = h.person(Roles.student, 'الطالب');
-      const group = await h.group(teacher, [student]);
+      const admin = h.person(Roles.admin, 'المشرفة');
+      const group = await h.group(teacher, [student, admin]);
+      // The conversation's own owner and a plain member cannot see who is in it.
+      for (const principal of [teacher, student]) {
+        expect(
+          expectErr(await h.listParticipants.execute({ principal, conversationId: group.id })).code,
+        ).toBe('messaging.members_hidden');
+      }
+      // The administrator — a member here, holding `users.manage` — may.
       const page = expectOk(
-        await h.listParticipants.execute({ principal: student, conversationId: group.id }),
+        await h.listParticipants.execute({ principal: admin, conversationId: group.id }),
       );
-      expect(page.items.map((p) => [p.displayName, p.role]).sort()).toEqual([
-        ['الأستاذ', 'OWNER'],
-        ['الطالب', 'MEMBER'],
-      ]);
+      expect(new Set(page.items.map((p) => p.displayName))).toEqual(
+        new Set(['الأستاذ', 'الطالب', 'المشرفة']),
+      );
+      expect(page.items.find((p) => p.role === 'OWNER')?.displayName).toBe('الأستاذ');
     });
 
-    // Q22, provisional: a notice board does not publish its readers.
+    // Q22: a channel subscriber — like any plain member — is not an administrator.
     it("hides a channel's subscribers from one another", async () => {
       const admin = h.person(Roles.admin);
       const student = h.person(Roles.student);
@@ -314,16 +325,16 @@ describe('reading conversations', () => {
       ).toHaveLength(2);
     });
 
-    it('pages members by a stable key', async () => {
-      const teacher = h.person(Roles.teacher);
+    it('pages members by a stable key, for the administrator who may list them', async () => {
+      const admin = h.person(Roles.admin);
       const students = Array.from({ length: 7 }, () => h.person(Roles.student));
-      const group = await h.group(teacher, students);
+      const group = await h.group(admin, students);
       const seen: string[] = [];
       let cursor: string | undefined;
       do {
         const page = expectOk(
           await h.listParticipants.execute({
-            principal: teacher,
+            principal: admin,
             conversationId: group.id,
             cursor,
             limit: 3,
@@ -332,7 +343,7 @@ describe('reading conversations', () => {
         seen.push(...page.items.map((p) => p.userId));
         cursor = page.nextCursor ?? undefined;
       } while (cursor !== undefined);
-      expect(seen).toEqual([teacher, ...students].map((p) => p.userId).sort());
+      expect(seen).toEqual([admin, ...students].map((p) => p.userId).sort());
     });
   });
 });

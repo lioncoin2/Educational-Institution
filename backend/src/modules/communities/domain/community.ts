@@ -5,8 +5,11 @@ import type { CommunityStatus } from '../contracts/vocabulary';
  * room and never derived from one.
  *
  * The root is small and never holds its members. There is no owner column
- * (ownership is standing on a stint), no kind (a kind would pre-answer Q36)
- * and no halaqa link (Q50). A community is never deleted (Q47).
+ * (ownership is standing on a stint) and no kind (a kind would pre-answer
+ * Q36). It MAY carry an optional academic halaqa association (`halaqaId`,
+ * Q50): inert metadata, set and cleared by institutional oversight, deriving
+ * no membership, capability or authorization. A community is never deleted
+ * (Q47).
  *
  * `status` is typed as the known vocabulary, but a row written by a later
  * build may carry a status this one does not know; `lifecycle.ts` gives such
@@ -22,6 +25,8 @@ export interface Community {
   readonly membershipVersion: number;
   /** ACTIVE stints, kept in the same transaction as every stint start and end. No upper bound. */
   readonly memberCount: number;
+  /** An optional academic halaqa association (Q50): inert metadata, null when unlinked. */
+  readonly halaqaId: string | null;
   /** Always a person in v1; nullable only for symmetry with the journals. */
   readonly createdBy: string | null;
   readonly createdAt: Date;
@@ -48,6 +53,7 @@ export function newCommunity(input: {
     lifecycleVersion: 1,
     membershipVersion: 1,
     memberCount: 1,
+    halaqaId: null,
     createdBy: input.createdBy,
     createdAt: input.at,
     statusChangedAt: null,

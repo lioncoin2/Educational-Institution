@@ -3,7 +3,6 @@ import { Inject, Injectable } from '@nestjs/common';
 import { err, failure, ok, type Principal, type Result } from '../../../shared';
 import { Permissions } from '../../identity/contracts/permissions';
 import type { ConversationId } from '../domain/conversation';
-import { canManageMembers } from '../domain/participant';
 import { MESSAGING_READ_MODEL, type MessagingReadModel } from '../domain/ports';
 import { COMMUNITY_CHAT_MEMBERS_HIDDEN } from './community-chat-settings';
 import { CommunityChats } from './community-chats';
@@ -166,11 +165,22 @@ export class ListMessagesUseCase {
 }
 
 /**
- * Who is in a conversation. In a channel, subscribers do not see one another
- * — a notice board does not publish its readers — so only its owner and
- * publishers may list them (provisional, Q22). A community chat's members
- * are never listed here, by anyone: the roster is Communities'
- * (`community.members.view`).
+ * A conversation's member list is available only to administrators (Q22).
+ */
+const MEMBERS_ADMIN_ONLY = failure(
+  'forbidden',
+  'messaging.members_hidden',
+  "A conversation's member list is available only to administrators.",
+);
+
+/**
+ * Who is in a conversation. The member list is an administrative view: only
+ * the institution owner and top-level administration (`users.manage`) may read
+ * it (Q22). Taking part in a conversation — even owning it, publishing to a
+ * channel, teaching, or managing a community — never grants the roster; that
+ * is a deliberate separation from reading messages, sending, and managing
+ * participants, each decided on its own. A community chat's members are never
+ * listed here, by anyone: the roster is Communities' (`community.members.view`).
  */
 @Injectable()
 export class ListParticipantsUseCase {
@@ -192,16 +202,14 @@ export class ListParticipantsUseCase {
       Permissions.messaging.read,
     );
     if (!membership.ok) return membership;
-    const { conversation, participant } = membership.value;
+    const { conversation } = membership.value;
     if (conversation.communityId !== null) return err(COMMUNITY_CHAT_MEMBERS_HIDDEN);
-    if (
-      conversation.type === 'CHANNEL' &&
-      !canManageMembers(conversation.type, participant.role) &&
-      participant.role !== 'PUBLISHER'
-    ) {
-      return err(
-        failure('forbidden', 'messaging.members_hidden', "A channel's members are not listed."),
-      );
+    // Q22: only the owner and top-level administration (`users.manage`, held by
+    // owner and admin alone) may see who is in a conversation. Membership, the
+    // conversation OWNER role, a channel PUBLISHER, teaching and community
+    // management grant no access to the roster.
+    if (!this.access.can(query.principal, Permissions.users.manage)) {
+      return err(MEMBERS_ADMIN_ONLY);
     }
 
     const after = decodeMemberCursor(query.cursor);

@@ -47,6 +47,17 @@ const ENROLLMENT_NOT_FOUND = failure(
   'No such enrollment.',
 );
 
+/**
+ * A teacher's roster is the halaqa's CURRENT students. Former enrollments
+ * (COMPLETED, WITHDRAWN) are history — an academic administrator's view
+ * (`academic.manage`), never reached through a teaching assignment alone (Q31).
+ */
+const HISTORICAL_ROSTER_DENIED = failure(
+  'forbidden',
+  'academic.historical_roster_denied',
+  "The halaqa roster lists its current students; former enrollments are an academic administrator's view.",
+);
+
 export interface EnrolledView extends PlacedEnrollmentView {
   /** False when this person was already enrolled here: nothing new was made. */
   readonly created: boolean;
@@ -239,11 +250,16 @@ function statusFilter(raw: string | undefined): Result<EnrollmentStatus> {
 }
 
 /**
- * Who is in a halaqa — its students, by status (ACTIVE unless asked
- * otherwise), in enrollment order, a page at a time, each with a display
- * name from identity: one enrollment query and one directory call per page.
+ * Who is in a halaqa — its students, by status, in enrollment order, a page
+ * at a time, each with a display name from identity: one enrollment query and
+ * one directory call per page.
  *
  * Visible to the halaqa's own teachers and to academic administrators only.
+ * A teacher sees the CURRENT roster — ACTIVE enrollments — and nothing else:
+ * former enrollments (COMPLETED, WITHDRAWN) are history, reached only through
+ * `academic.manage`, never through a teaching assignment (Q31). There are no
+ * future enrollments to exclude — an enrollment is ACTIVE from the moment it
+ * is made.
  */
 @Injectable()
 export class ListHalaqaStudentsUseCase {
@@ -264,6 +280,14 @@ export class ListHalaqaStudentsUseCase {
     if (!reader.ok) return reader;
     const status = statusFilter(command.status);
     if (!status.ok) return status;
+    // Q31: current students only for a teacher. Listing former enrollments is
+    // an academic administrator's act; a teaching assignment never reaches it.
+    if (
+      status.value !== 'ACTIVE' &&
+      !this.access.can(command.principal, Permissions.academic.manage)
+    ) {
+      return err(HISTORICAL_ROSTER_DENIED);
+    }
     const after = decodeCursor(command.cursor);
     if (!after.ok) return after;
     const limit = pageLimit(command.limit, AcademicPages.roster);

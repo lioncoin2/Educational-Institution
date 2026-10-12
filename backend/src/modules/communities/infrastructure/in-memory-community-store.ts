@@ -31,6 +31,7 @@ import type {
   RemoveOutcome,
   RevokeGrantOutcome,
   RevokeInvitationOutcome,
+  SetHalaqaChange,
   StatusChange,
   TransferOutcome,
 } from '../domain/ports';
@@ -139,6 +140,24 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
       lifecycleVersion: community.lifecycleVersion + 1,
       statusChangedAt: input.at,
       statusChangedBy: input.actorUserId,
+      updatedAt: later(community.updatedAt, input.at),
+    };
+    this.communityById.set(changed.id, changed);
+    return { kind: 'changed', community: changed };
+  }
+
+  async setHalaqa(input: {
+    readonly communityId: string;
+    readonly halaqaId: string | null;
+    readonly actorUserId: string | null;
+    readonly at: Date;
+  }): Promise<SetHalaqaChange> {
+    const community = this.communityById.get(input.communityId);
+    if (community === undefined) return { kind: 'not_found' };
+    if (community.halaqaId === input.halaqaId) return { kind: 'unchanged', community };
+    const changed: Community = {
+      ...community,
+      halaqaId: input.halaqaId,
       updatedAt: later(community.updatedAt, input.at),
     };
     this.communityById.set(changed.id, changed);

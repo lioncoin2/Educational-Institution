@@ -34,6 +34,8 @@ export interface CommunityView {
   readonly status: string;
   readonly lifecycleVersion: number;
   readonly memberCount: number;
+  /** The academic halaqa this community is associated with, or null (Q50). */
+  readonly halaqaId: string | null;
   readonly createdAt: Date;
   readonly me: MeView;
 }
@@ -45,6 +47,7 @@ export function communityView(community: Community, me: MeView): CommunityView {
     status: community.status,
     lifecycleVersion: community.lifecycleVersion,
     memberCount: community.memberCount,
+    halaqaId: community.halaqaId,
     createdAt: community.createdAt,
     me,
   };

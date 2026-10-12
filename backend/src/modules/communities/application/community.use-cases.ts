@@ -349,3 +349,70 @@ export class ChangeCommunityStatusUseCase {
     }
   }
 }
+
+/**
+ * Associates a community with an academic halaqa, or clears the association
+ * (Q50). Institutional oversight — `communities.manage`, held by the owner and
+ * admins — decides it, never membership or ownership of the community; the same
+ * administrators administer the academic structure, so no new authority is
+ * invented. The association is inert metadata: it creates and removes no
+ * membership, grants and revokes no capability, and derives no messaging,
+ * attendance or academic authorization. A repeat with the same value changes
+ * nothing. The referenced halaqa is not validated against academic here —
+ * Communities depends on no other business module (§17), and the link derives
+ * nothing, so a stale reference is inert (ADR 0033).
+ */
+@Injectable()
+export class SetCommunityHalaqaUseCase {
+  constructor(
+    @Inject(AUTHORIZATION_SERVICE) private readonly identity: AuthorizationService,
+    private readonly authorization: CommunityAuthorizationService,
+    @Inject(COMMUNITY_STORE) private readonly store: CommunityStore,
+    @Inject(CLOCK) private readonly clock: Clock,
+    private readonly journal: CommunitiesJournal,
+  ) {}
+
+  async execute(command: {
+    readonly principal: Principal;
+    readonly communityId: string;
+    readonly halaqaId: string | null;
+    readonly meta: CallMetadata;
+  }): Promise<Result<CommunityView>> {
+    const { principal, communityId } = command;
+    const oversees = this.identity.authorize(principal, Permissions.communities.manage, {
+      resourceType: COMMUNITY_RESOURCE,
+      resourceId: communityId,
+    });
+    if (!oversees.ok) return oversees;
+
+    const at = this.clock.now();
+    const actor = actorOf(principal);
+    const outcome = await this.store.setHalaqa({
+      communityId,
+      halaqaId: command.halaqaId,
+      actorUserId: actor,
+      at,
+    });
+    if (outcome.kind === 'not_found') return err(COMMUNITY_NOT_FOUND);
+    if (outcome.kind === 'conflict') return err(COMMUNITY_CONFLICT);
+    if (outcome.kind === 'changed') {
+      await this.journal.record(
+        {
+          actorUserId: actor,
+          action:
+            command.halaqaId === null ? CommunityAudit.halaqaUnlinked : CommunityAudit.halaqaLinked,
+          resourceType: COMMUNITY_AUDIT_RESOURCE,
+          resourceId: communityId,
+          at,
+          metadata: { halaqaId: command.halaqaId },
+          correlationId: command.meta.correlationId,
+        },
+        [],
+      );
+    }
+    const read = await this.store.authorityOf(communityId, principal.userId);
+    return ok(
+      communityView(outcome.community, this.authorization.me(principal, communityId, read)),
+    );
+  }
+}

@@ -16,6 +16,7 @@ import {
   CreateCommunityUseCase,
   GetCommunityUseCase,
   ListCommunitiesUseCase,
+  SetCommunityHalaqaUseCase,
 } from './application/community.use-cases';
 import { CommunitiesJournal } from './application/communities-journal';
 import {
@@ -103,6 +104,7 @@ import { InMemoryCommunityStore } from './infrastructure/in-memory-community-sto
     GetCommunityUseCase,
     ListCommunitiesUseCase,
     ChangeCommunityStatusUseCase,
+    SetCommunityHalaqaUseCase,
     AddMembersUseCase,
     RemoveMemberUseCase,
     LeaveCommunityUseCase,

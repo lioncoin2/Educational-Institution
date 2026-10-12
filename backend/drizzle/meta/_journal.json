@@ -148,6 +148,13 @@
       "when": 1791584093317,
       "tag": "0020_restrict_people_directory",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791841186960,
+      "tag": "0021_community_halaqa_link",
+      "breakpoints": true
     }
   ]
 }

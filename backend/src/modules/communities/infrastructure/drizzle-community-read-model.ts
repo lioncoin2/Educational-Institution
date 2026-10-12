@@ -329,6 +329,7 @@ function fromJson(json: unknown): CommunityRow {
     lifecycleVersion: Number(row.lifecycle_version),
     membershipVersion: Number(row.membership_version),
     memberCount: Number(row.member_count),
+    halaqaId: row.halaqa_id as string | null,
     createdBy: row.created_by as string | null,
     createdAt: date(row.created_at) as Date,
     statusChangedAt: date(row.status_changed_at),

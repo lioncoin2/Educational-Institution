@@ -105,6 +105,37 @@ describe('academic access and privacy', () => {
     }
   });
 
+  it('gives a teacher only the current roster — former enrollments are an administrator’s view (Q31)', async () => {
+    const [entry] = expectOk(await roster(admin, halaqaX.id)).items;
+    if (entry === undefined) throw new Error('fixture');
+    expectOk(
+      await h.endEnrollment.execute({
+        principal: admin,
+        enrollmentId: entry.enrollment.id,
+        outcome: 'COMPLETED',
+        meta: META,
+      }),
+    );
+
+    // The teacher's current roster no longer holds the former student, and
+    // asking for a non-current status is refused: teaching never reaches history.
+    expect(expectOk(await roster(teacherA, halaqaX.id)).items).toEqual([]);
+    for (const status of ['COMPLETED', 'WITHDRAWN']) {
+      expect(
+        expectErr(await h.students.execute({ principal: teacherA, halaqaId: halaqaX.id, status })),
+      ).toEqual(
+        expect.objectContaining({ code: 'academic.historical_roster_denied', kind: 'forbidden' }),
+      );
+    }
+
+    // An academic administrator keeps the historical view.
+    expect(
+      expectOk(
+        await h.students.execute({ principal: admin, halaqaId: halaqaX.id, status: 'COMPLETED' }),
+      ).items.map((item) => item.student.userId),
+    ).toEqual(['student-a']);
+  });
+
   it('says "no such halaqa" for one that does not exist, to anyone', async () => {
     expect(expectErr(await roster(admin, 'nope')).code).toBe('academic.halaqa_not_found');
   });

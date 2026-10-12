@@ -540,6 +540,12 @@ rule (full history), PROVISIONALLY; see
 
 ## Q22 — Who may see who is in a conversation?
 
+> **RESOLVED (Sprint 28 — [ADR 0033](decisions/0033-community-halaqa-link-and-member-list-visibility.md),
+> [register §17](../owner-decision-register.md)).** A conversation's member list is
+> owner/admin only (`users.manage`), enforced server-side in `ListParticipantsUseCase`
+> across all conversation types. Participating, owning, publishing, teaching or managing
+> a community grants no roster access. Kept for the history below.
+
 **Question.** Should the subscribers of an announcements channel see one
 another? Should group members see each other's names?
 
@@ -932,6 +938,13 @@ with the ending and link decided in Q37. Who may enrol is the role matrix
 ---
 
 ## Q31 — Teaching scope, and what staff may see
+
+> **RESOLVED for the roster (Sprint 28 — [ADR 0033](decisions/0033-community-halaqa-link-and-member-list-visibility.md),
+> [register §17](../owner-decision-register.md)).** A teacher's roster is CURRENT (ACTIVE)
+> students only; former enrollments (COMPLETED/WITHDRAWN) are an `academic.manage` view,
+> never reached by a teaching assignment (`ListHalaqaStudentsUseCase`). There are no
+> "future" enrollments in the model. The teaching-scope reach (ACTIVE-assignment path) was
+> already settled; what a **supervisor** may see remains open.
 
 **Question.**
 
@@ -1844,6 +1857,15 @@ be scheduled) and, for a notification, a translator
 ---
 
 ## Q50 — Communities and the academic structure
+
+> **RESOLVED in part (Sprint 28 — [ADR 0033](decisions/0033-community-halaqa-link-and-member-list-visibility.md),
+> [register §17](../owner-decision-register.md)).** A community MAY carry an optional
+> `halaqa_id` association — **inert metadata** set by `communities.manage` oversight,
+> deriving no membership, capability or authorization (migration 0021). Cardinality:
+> community → 0..1 halaqa, halaqa → 0..n communities (no rule imposed). **Still open:**
+> enrollment-sourced membership and derived capabilities (deliberately not built); and
+> cross-module halaqa-existence validation (deferred — the link is validated for shape
+> only, to preserve the communities↔academic isolation boundary; options in ADR 0033).
 
 **Question.**
 

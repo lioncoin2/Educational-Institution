@@ -26,6 +26,7 @@ import type {
   RemoveOutcome,
   RevokeGrantOutcome,
   RevokeInvitationOutcome,
+  SetHalaqaChange,
   StatusChange,
   TransferOutcome,
 } from '../domain/ports';
@@ -330,6 +331,37 @@ export class DrizzleCommunityRepository implements CommunityStore {
       return current === undefined
         ? { kind: 'not_found' }
         : { kind: 'unchanged', community: toCommunity(current) };
+    });
+  }
+
+  async setHalaqa(input: {
+    readonly communityId: string;
+    readonly halaqaId: string | null;
+    readonly actorUserId: string | null;
+    readonly at: Date;
+  }): Promise<SetHalaqaChange> {
+    // An oversight act on the community row alone — the lock keeps a concurrent
+    // link change from being lost, and the compare makes a repeat `unchanged`.
+    return this.write(input.communityId, async (tx) => {
+      const [current] = await tx
+        .select()
+        .from(communities)
+        .where(eq(communities.id, input.communityId));
+      if (current === undefined) return { kind: 'not_found' };
+      if (current.halaqaId === input.halaqaId) {
+        return { kind: 'unchanged', community: toCommunity(current) };
+      }
+      const [row] = await tx
+        .update(communities)
+        .set({
+          halaqaId: input.halaqaId,
+          updatedAt: notBefore(communities.updatedAt, input.at),
+        })
+        .where(eq(communities.id, input.communityId))
+        .returning();
+      return row === undefined
+        ? { kind: 'not_found' }
+        : { kind: 'changed', community: toCommunity(row) };
     });
   }
 
