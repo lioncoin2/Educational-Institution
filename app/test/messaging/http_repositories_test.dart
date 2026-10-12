@@ -215,6 +215,9 @@ void main() {
           overrides: [
             backendModeProvider.overrideWithValue(true),
             httpClientProvider.overrideWithValue(server.client),
+            // Backend mode now selects SecureTokenStore (the platform keystore),
+            // which has no VM implementation; the in-memory double stands in.
+            tokenStoreProvider.overrideWithValue(InMemoryTokenStore()),
           ],
         );
         addTearDown(container.dispose);

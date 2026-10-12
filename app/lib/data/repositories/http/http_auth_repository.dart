@@ -15,6 +15,11 @@ class HttpAuthRepository implements AuthRepository {
   final ApiClient _api;
   CurrentUser? _user;
 
+  /// Bumped on every known change to the session (sign-in, sign-out). A slow
+  /// [currentUser] restoration that resolves after one of those must not
+  /// overwrite the newer state with a stale `/auth/me` — it checks this.
+  int _session = 0;
+
   @override
   Future<CurrentUser> signIn({
     required String identifier,
@@ -36,6 +41,7 @@ class HttpAuthRepository implements AuthRepository {
           refreshToken: json['refreshToken']! as String,
         ),
       );
+      _session++;
       return _user = CurrentUser.fromJson(
         (json['user']! as Map).cast<String, Object?>(),
       );
@@ -52,6 +58,7 @@ class HttpAuthRepository implements AuthRepository {
       // Signing out locally must work offline, and with an expired session.
     } finally {
       await _api.tokens.clear();
+      _session++;
       _user = null;
     }
   }
@@ -62,8 +69,13 @@ class HttpAuthRepository implements AuthRepository {
   Future<CurrentUser?> currentUser() async {
     if (await _api.tokens.read() == null) return _user = null;
     if (_user != null) return _user;
+    final startedAt = _session;
     try {
-      return _user = CurrentUser.fromJson(await _api.get('/auth/me'));
+      final user = CurrentUser.fromJson(await _api.get('/auth/me'));
+      // A sign-in or sign-out landed while `/auth/me` was in flight: that
+      // newer state wins — this restoration is stale, so do not apply it.
+      if (_session != startedAt) return _user;
+      return _user = user;
     } on ApiException catch (error) {
       if (error.isUnauthenticated) return null;
       throw AuthException(error.code, error.message);

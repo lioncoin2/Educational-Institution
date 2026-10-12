@@ -12,14 +12,12 @@ class Tokens {
 
 /// Where tokens live between requests.
 ///
-/// PRODUCTION REQUIREMENT: a secure-storage implementation — Keychain on iOS,
-/// Keystore-backed storage on Android — so tokens survive restarts without
-/// sitting in plain preferences. The vetted candidate is
-/// `flutter_secure_storage` (BSD-3, all platforms); it is not added in this
-/// milestone because its native builds cannot be verified in this
-/// environment (docs/architecture/messaging.md, "Client dependencies").
-///
-/// Until then [InMemoryTokenStore] is used: correct, and forgets on restart.
+/// Two implementations: `SecureTokenStore` against the real backend — iOS
+/// Keychain, Android Keystore-backed storage — so a signed-in device survives
+/// a restart (Sprint 19); and [InMemoryTokenStore] for the demo build and
+/// tests, which forgets on restart. `tokenStoreProvider` picks by mode. The
+/// native builds of `flutter_secure_storage` are verified on a device, not in
+/// this environment (docs/architecture/messaging.md, "Client dependencies").
 abstract interface class TokenStore {
   Future<Tokens?> read();
   Future<void> write(Tokens tokens);

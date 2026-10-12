@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import '../app/backend_config.dart';
 import '../app/invite_link.dart';
 import '../data/api/api_client.dart';
+import '../data/api/secure_token_store.dart';
 import '../data/api/token_store.dart';
 import '../data/media/live_media_seams.dart';
 import '../data/media/media_seams.dart';
@@ -124,8 +125,14 @@ final httpClientProvider = Provider<http.Client>((ref) {
   return client;
 });
 
-/// In memory until a secure-storage implementation is added (see TokenStore).
-final tokenStoreProvider = Provider<TokenStore>((ref) => InMemoryTokenStore());
+/// Secure, persistent token storage against the real backend — iOS Keychain /
+/// Android Keystore, so a signed-in device survives a restart. The demo build
+/// has no server session to keep, so it stays in memory. Tests override this.
+final tokenStoreProvider = Provider<TokenStore>(
+  (ref) => ref.watch(backendModeProvider)
+      ? SecureTokenStore()
+      : InMemoryTokenStore(),
+);
 
 final Provider<ApiClient> apiClientProvider = Provider<ApiClient>(
   (ref) => ApiClient(

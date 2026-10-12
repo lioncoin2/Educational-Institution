@@ -18,6 +18,11 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.6.0
   web_socket: ^1.0.1
+  # Secure, persistent session tokens — iOS Keychain / Android Keystore-backed
+  # storage so a signed-in device survives a cold restart (Sprint 19, ADR 0010).
+  # A native plugin: consumed ONLY by lib/data/api/secure_token_store.dart
+  # (test/auth/secure_token_store_boundaries_test.dart enforces the confinement).
+  flutter_secure_storage: ^11.2.0
   # Live media provider (ADR 0030, P7b). Pinned EXACTLY — a bump is a deliberate
   # ADR change. Consumed ONLY by the future lib/data/media/livekit/ adapter; no
   # other Dart file may import it (test/live/live_boundaries_test.dart enforces).

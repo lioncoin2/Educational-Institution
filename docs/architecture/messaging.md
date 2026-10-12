@@ -563,12 +563,25 @@ shows their buttons disabled with an explanatory tooltip:
 | `AttachmentPicker` | `file_picker` 13.1 (MIT, all platforms) | not added |
 | `VoiceRecorder` | `record` 7.1 (BSD-3, all platforms; web records Opus/WebM) | not added |
 | `VoicePlayer` | `just_audio` 0.10 (Apache-2.0/MIT; Android, iOS, macOS, web) | not added |
-| `TokenStore` | `flutter_secure_storage` 11.2 (BSD-3, all platforms) | not added — tokens live in memory |
+| `TokenStore` | `flutter_secure_storage` 11.2 (BSD-3, all platforms) | **added (Sprint 19)** — backend-mode sessions persist in the platform keystore; the demo build stays in memory |
 
-They were not added because their native builds (Android SDK, Xcode, a
-browser for web recording) cannot be verified in this environment, and a
-dependency is not added blind. Binding each is one class implementing the
-seam and one provider line.
+The first three were not added because their native builds (Android SDK,
+Xcode, a browser for web recording) cannot be verified in this environment,
+and a dependency is not added blind. Binding each is one class implementing
+the seam and one provider line.
+
+`TokenStore` is the exception, bound in Sprint 19: `SecureTokenStore`
+(`lib/data/api/secure_token_store.dart`) keeps the two session tokens in the
+platform keystore — iOS Keychain, Android AES-GCM Keystore-backed storage,
+the Web Crypto store on web — so a signed-in device survives a cold restart;
+`tokenStoreProvider` selects it in backend mode and keeps `InMemoryTokenStore`
+for the demo and tests. The package import is confined to that one adapter
+(`test/auth/secure_token_store_boundaries_test.dart`), as `livekit_client` is.
+Its Dart logic is unit-tested on the VM against a fake keystore; the native
+Keychain/Keystore behaviour is verified on a device, not here — and on web,
+browser storage is not equivalent to a native keychain. A keystore failure
+surfaces as a recoverable error and never silently downgrades to insecure
+storage.
 
 ---
 
