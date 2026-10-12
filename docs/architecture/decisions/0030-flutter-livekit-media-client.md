@@ -286,6 +286,18 @@ Resolved since this ADR was accepted:
   so the SDK's web-mobile guard refused capture; the test overrides it to a
   desktop platform to match a real desktop-web browser — no production change.)
   (`docs/p8-live-media-verification.md`, Sprint 13.)
+- **Multi-participant & termination lifecycle verification (P14 / Sprint 14).**
+  The audit confirmed the lifecycle already correct (stale/superseded-client
+  guard, dispose→disconnect, reconcile-from-snapshot, backend end contract — all
+  present and tested), so NO production code changed. Added real-LiveKit
+  coverage of what was unverified: a THREE-client harness (distinct identities,
+  each sees exactly the other two, no duplicate, one departing removes only that
+  one while the rest and their live media stay intact), and a SESSION-END harness
+  (a moderator ends the session → a connected client observes the authoritative
+  `LiveMediaDisconnected(roomDeleted)` transition over the real SDK, and a later
+  join is refused `live.session_not_live`). Per-participant RECONNECT stays NOT
+  E2E-verified (same honest limitation as P13). (`docs/p8-live-media-verification.md`,
+  Sprint 14.)
 
 Genuinely unresolved:
 

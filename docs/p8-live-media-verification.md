@@ -350,6 +350,57 @@ cleared on connect/disconnect so a new session inherits no stale media, and a
 local reconnect opens a fresh room without a duplicate. Per-participant reconnect
 as a real E2E is **not claimed**; it stays an honest limitation.
 
+## Sprint 14 — multi-participant lifecycle & session termination
+
+Sprint 14 strengthens the VERIFICATION of the existing live-session lifecycle
+under more than two participants and under moderator-initiated termination. The
+audit found the lifecycle already correct and well unit-tested (the stale/
+superseded-client guard, dispose→disconnect, reconcile-from-snapshot, and the
+backend end contract are all in place and covered), so **no production code
+changed** — the gaps were real-LiveKit coverage of three participants and of a
+connected client observing session end.
+
+**Three-client harness** (`app/test/e2e/livekit_three_client_e2e_test.dart`,
+real-E2E). Extends the Sprint 12 two-client harness to A (owner) + B + C (two
+STUDENTs provisioned the same authorization-preserving way — the fixture's
+`provisionParticipant` reused verbatim). Asserted at the application boundary
+(`remoteParticipants`), bounded event-driven waits:
+
+| Behavior | Kind | Ran? | Evidence |
+|---|---|---|---|
+| Three independent clients, one real room, DISTINCT identities | real-E2E | yes | `livekit_three_client_e2e_test` (`_userB != _userC`; A sees exactly {B,C}) |
+| Each client sees exactly the OTHER two; none sees itself; no duplicate | real-E2E | yes | same (length == 2 on A/B/C; B/C exclude their own id) |
+| B's real mic reconciles to `live` on BOTH other clients | real-E2E | yes | same |
+| One participant (C) leaving removes ONLY C; A and B remain, B's audio intact | real-E2E | yes | same (A/B length → 1, C absent, B still `live` on A) |
+| Three-party reconcile: one departs → only that one removed, others' media intact | unit | yes | `livekit_live_media_client_test` ("three participants: one departs …") |
+
+**Session termination** (`app/test/e2e/livekit_session_end_e2e_test.dart`,
+real-E2E). The backend END contract (`POST /live/sessions/:id/end`, moderator-
+gated: ends atomically, deletes the media room, refuses later joins) was already
+unit/spec-tested on the backend and at the controller (roomDeleted→rejoin-or-
+terminal). This adds the one missing end-to-end link — a CONNECTED client
+observing termination over real LiveKit:
+
+| Behavior | Kind | Ran? | Evidence |
+|---|---|---|---|
+| Owner connects, then ends the session (`HttpLiveRepository.endSession`) | real-E2E | yes | `livekit_session_end_e2e_test` (`ended.state == ended`) |
+| The connected client observes the authoritative terminal transition | real-E2E | yes | same — media state reconciles to `LiveMediaDisconnected(roomDeleted)` via the real SDK event |
+| A fresh join after termination is refused | real-E2E | yes | same — `LiveException(live.session_not_live)` |
+
+This harness runs LAST in its own workflow step because it ends the shared
+session; every other harness finishes with the session first. Attendance and
+moderation records are untouched (attendance is a separate module; end stores
+`ended` before deleting the room, preserving attendance's race-safety — not
+modified here).
+
+**Still NOT E2E-verified (honest, unchanged from Sprint 13).** Per-participant
+RECONNECT: `livekit_client` 2.13.0 exposes room-level reconnecting/reconnected
+(unit-verified) but no reliable per-remote reconnecting flag, and a true
+transport partition cannot be induced deterministically in this harness. The
+idempotency that matters (reconnect/rejoin never duplicates a participant, a
+departed one is dropped and never revived, a new session inherits no stale
+media) is unit-covered. Reconnect is **not** claimed as end-to-end verified.
+
 ## Manual verification (NOT executed in CI)
 
 These are the checks the automated harness cannot perform. They require a real

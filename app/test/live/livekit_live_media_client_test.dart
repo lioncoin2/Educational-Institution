@@ -533,6 +533,39 @@ void main() {
       expect(client.remoteParticipants['u-2']?.screenSharing, isTrue);
     });
 
+    // Sprint 14 — the deterministic complement to the three-client E2E: with
+    // THREE remote participants, one departing removes ONLY that one and leaves
+    // the others' media state intact (reconcile-from-snapshot, so no ghost and
+    // no collateral change).
+    test('three participants: one departs → only that one removed, others intact', () async {
+      await connected(screen: false);
+      port.emit(
+        LiveKitRemoteParticipants(
+          remoteSet({
+            'u-1': const LiveRemoteParticipant(identity: 'u-1', audio: LiveRemoteAudio.live),
+            'u-2': const LiveRemoteParticipant(identity: 'u-2', audio: LiveRemoteAudio.muted),
+            'u-3': const LiveRemoteParticipant(identity: 'u-3', screenSharing: true),
+          }),
+        ),
+      );
+      expect(client.remoteParticipants.length, 3);
+
+      // u-2 leaves: the next authoritative snapshot simply omits it; u-1's live
+      // audio and u-3's screen share are untouched.
+      port.emit(
+        LiveKitRemoteParticipants(
+          remoteSet({
+            'u-1': const LiveRemoteParticipant(identity: 'u-1', audio: LiveRemoteAudio.live),
+            'u-3': const LiveRemoteParticipant(identity: 'u-3', screenSharing: true),
+          }),
+        ),
+      );
+      expect(client.remoteParticipants.length, 2);
+      expect(client.remoteParticipants['u-2'], isNull);
+      expect(client.remoteParticipants['u-1']?.audio, LiveRemoteAudio.live);
+      expect(client.remoteParticipants['u-3']?.screenSharing, isTrue);
+    });
+
     test('disconnect clears the remote set', () async {
       await connected(screen: false);
       port.emit(

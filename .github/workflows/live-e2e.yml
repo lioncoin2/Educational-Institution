@@ -93,6 +93,10 @@ jobs:
       # the provisioning step; its password is generated fresh below.
       E2E_PARTICIPANT_EMAIL: participant-b@e2e.test
       E2E_PARTICIPANT_NAME: "E2E Participant B"
+      # A THIRD participant for the three-client lifecycle E2E (Sprint 14),
+      # provisioned the same authorization-preserving way as the second.
+      E2E_PARTICIPANT_C_EMAIL: participant-c@e2e.test
+      E2E_PARTICIPANT_C_NAME: "E2E Participant C"
 
     steps:
       - uses: actions/checkout@v4
@@ -146,7 +150,7 @@ jobs:
           gen() { node -e 'process.stdout.write(require("crypto").randomBytes(48).toString("base64url"))'; }
           for name in JWT_SECRET STORAGE_SIGNING_SECRET LIVEKIT_API_SECRET \
                       POSTGRES_PASSWORD REDIS_PASSWORD E2E_OWNER_PASSWORD \
-                      E2E_PARTICIPANT_PASSWORD; do
+                      E2E_PARTICIPANT_PASSWORD E2E_PARTICIPANT_C_PASSWORD; do
             value="$(gen)"
             echo "::add-mask::$value"
             printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
@@ -274,17 +278,23 @@ jobs:
             if (!out.participantAccessToken || !out.participantUserId) {
               throw new Error("fixture output missing the second participant (participantAccessToken/participantUserId)");
             }
+            if (!out.participantCAccessToken || !out.participantCUserId) {
+              throw new Error("fixture output missing the third participant (participantCAccessToken/participantCUserId)");
+            }
             console.log("::add-mask::" + out.accessToken);
             console.log("::add-mask::" + out.participantAccessToken);
+            console.log("::add-mask::" + out.participantCAccessToken);
             const defines = {
               LIVEKIT_E2E_BASE_URL: process.env.E2E_BASE_URL,
               LIVEKIT_E2E_ACCESS_TOKEN: out.accessToken,
               LIVEKIT_E2E_SESSION_ID: out.sessionId,
               LIVEKIT_E2E_ACCESS_TOKEN_B: out.participantAccessToken,
               LIVEKIT_E2E_USER_B: out.participantUserId,
+              LIVEKIT_E2E_ACCESS_TOKEN_C: out.participantCAccessToken,
+              LIVEKIT_E2E_USER_C: out.participantCUserId,
             };
             fs.writeFileSync(process.env.E2E_DEFINES_FILE, JSON.stringify(defines), { mode: 0o600 });
-            process.stderr.write("dart-define file written for session " + out.sessionId + " with two participants\n");
+            process.stderr.write("dart-define file written for session " + out.sessionId + " with three participants\n");
           '
 
       # The real E2E. flutter test (3.47.5) exposes no --web-browser-flag, so the
@@ -298,12 +308,13 @@ jobs:
       # getUserMedia without a device. Production CORS is untouched; defines come
       # from a file, so no secret is on the command line.
       #
-      # These two harnesses need no real display (a fake microphone device is
+      # These harnesses need no real display (a fake microphone device is
       # enough), so they keep running in the proven HEADLESS Chrome. The
       # screen-share harness needs a real getDisplayMedia source and runs in its
       # OWN step below (headed on Xvfb) — kept separate so its execution is
-      # independently evidenced and the proven harnesses never change.
-      - name: Flutter Web → LiveKit E2E (connect + remote audio, headless)
+      # independently evidenced and the proven harnesses never change. NONE of
+      # these three end the session (the termination harness runs LAST, below).
+      - name: Flutter Web → LiveKit E2E (connect + remote audio + 3-client, headless)
         working-directory: app
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
@@ -314,12 +325,15 @@ jobs:
             echo "exec \"$CHROME_BIN\" \"\$@\" --disable-web-security --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --autoplay-policy=no-user-gesture-required"
           } > "$wrapper"
           chmod +x "$wrapper"
-          # The single-client harness (livekit_web_e2e_test.dart) AND the
-          # two-client remote-media harness (livekit_two_client_e2e_test.dart);
-          # both @TestOn('browser'). The screen-share harness runs below.
+          # The single-client harness (livekit_web_e2e_test.dart), the two-client
+          # remote-media harness (livekit_two_client_e2e_test.dart) and the
+          # three-client lifecycle harness (livekit_three_client_e2e_test.dart);
+          # all @TestOn('browser'). The screen-share and session-end harnesses run
+          # below. None of these end the shared session.
           CHROME_EXECUTABLE="$wrapper" flutter test \
             test/e2e/livekit_web_e2e_test.dart \
             test/e2e/livekit_two_client_e2e_test.dart \
+            test/e2e/livekit_three_client_e2e_test.dart \
             --platform chrome \
             --dart-define-from-file="$E2E_DEFINES_FILE"
 
@@ -363,6 +377,28 @@ jobs:
             flutter test test/e2e/livekit_two_client_screenshare_e2e_test.dart \
               --platform chrome \
               --dart-define-from-file="$E2E_DEFINES_FILE"
+
+      # Session TERMINATION (Sprint 14) — runs LAST on purpose: it ENDS the
+      # shared session, and every harness above has already finished with it, so
+      # ending it here disturbs nothing. Headless (no screen capture): the owner
+      # connects, ends the session, and the connected client must observe the
+      # authoritative terminal transition (roomDeleted) with a post-end join
+      # refused (live.session_not_live). @TestOn('browser').
+      - name: Flutter Web → LiveKit session-end E2E (headless, ends the session)
+        working-directory: app
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          wrapper="$RUNNER_TEMP/chrome-e2e"
+          {
+            echo '#!/usr/bin/env bash'
+            echo "exec \"$CHROME_BIN\" \"\$@\" --disable-web-security --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --autoplay-policy=no-user-gesture-required"
+          } > "$wrapper"
+          chmod +x "$wrapper"
+          CHROME_EXECUTABLE="$wrapper" flutter test \
+            test/e2e/livekit_session_end_e2e_test.dart \
+            --platform chrome \
+            --dart-define-from-file="$E2E_DEFINES_FILE"
 
       # Diagnostics on failure, secrets excluded: status, the two health
       # endpoints (non-secret), and bounded log tails. The env, the fixture

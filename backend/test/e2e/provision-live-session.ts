@@ -305,7 +305,11 @@ function requireEnv(name: string): string {
 /** Writes {accessToken, sessionId} to E2E_OUTPUT_FILE (0600). stdout is used
  * only when E2E_ALLOW_STDOUT=1 is set deliberately; otherwise, refusing to
  * print a credential, it fails with guidance. */
-function emit(provisioned: Provisioned, participant?: ProvisionedParticipant): void {
+function emit(
+  provisioned: Provisioned,
+  participant?: ProvisionedParticipant,
+  participantC?: ProvisionedParticipant,
+): void {
   const payload = JSON.stringify({
     accessToken: provisioned.accessToken,
     sessionId: provisioned.sessionId,
@@ -316,6 +320,14 @@ function emit(provisioned: Provisioned, participant?: ProvisionedParticipant): v
           participantAccessToken: participant.accessToken,
           participantUserId: participant.userId,
         }),
+    // A THIRD participant (C) for the three-client lifecycle E2E. The first
+    // participant's keys are unchanged, so the two-client harness is unaffected.
+    ...(participantC === undefined
+      ? {}
+      : {
+          participantCAccessToken: participantC.accessToken,
+          participantCUserId: participantC.userId,
+        }),
   });
   const outputFile = process.env.E2E_OUTPUT_FILE;
   if (outputFile !== undefined && outputFile.length > 0) {
@@ -325,6 +337,9 @@ function emit(provisioned: Provisioned, participant?: ProvisionedParticipant): v
       ...(participant === undefined
         ? {}
         : { participantUserId: participant.userId, participantAccessToken: '<redacted>' }),
+      ...(participantC === undefined
+        ? {}
+        : { participantCUserId: participantC.userId, participantCAccessToken: '<redacted>' }),
     };
     process.stderr.write(
       `provisioned ${JSON.stringify(summary)}; token(s) written to ${outputFile}\n`,
@@ -369,7 +384,24 @@ async function main(): Promise<void> {
           },
         })
       : undefined;
-  emit(provisioned, participant);
+  // A THIRD participant (C) is provisioned only when its env is set (the
+  // three-client lifecycle E2E). Same owner, community and session; the same
+  // authorization-preserving path as B (reusing provisionParticipant verbatim).
+  const participantCEmail = process.env.E2E_PARTICIPANT_C_EMAIL;
+  const participantC =
+    participantCEmail !== undefined && participantCEmail.length > 0
+      ? await provisionParticipant(http, {
+          ownerToken: provisioned.accessToken,
+          communityId: provisioned.communityId,
+          sessionId: provisioned.sessionId,
+          participant: {
+            displayName: requireEnv('E2E_PARTICIPANT_C_NAME'),
+            email: participantCEmail,
+            password: requireEnv('E2E_PARTICIPANT_C_PASSWORD'),
+          },
+        })
+      : undefined;
+  emit(provisioned, participant, participantC);
 }
 
 if (require.main === module) {
