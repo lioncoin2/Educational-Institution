@@ -50,13 +50,7 @@ export interface Provisioned {
 }
 
 export type ProvisionStage =
-  | 'config'
-  | 'network'
-  | 'login'
-  | 'community'
-  | 'live'
-  | 'participant'
-  | 'malformed';
+  'config' | 'network' | 'login' | 'community' | 'live' | 'participant' | 'malformed';
 
 /** An actionable failure. Its message is always safe to log — never a token,
  * a password or a response body, only the stage, the HTTP status and a hint. */

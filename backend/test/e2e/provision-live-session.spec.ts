@@ -272,7 +272,10 @@ describe('provisionParticipant', () => {
     const http: HttpClient = async (method, path, options = {}) => {
       calls.push({ method, path, token: options.token, body: options.body });
       if (path === '/admin/users') {
-        return { status: overrides.createStatus ?? 201, body: overrides.createBody ?? { id: 'user-b' } };
+        return {
+          status: overrides.createStatus ?? 201,
+          body: overrides.createBody ?? { id: 'user-b' },
+        };
       }
       if (/^\/admin\/users\/[^/]+\/roles$/.test(path)) return { status: 200, body: {} };
       if (/^\/admin\/users\/[^/]+\/status$/.test(path)) return { status: 204, body: {} };
