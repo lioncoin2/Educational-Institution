@@ -1,366 +1,303 @@
 # Project checkpoint — Educational Institution
 
-**This file is the continuity source.** A fresh Claude Code conversation should read this first (then
-the authoritative docs it links) and continue without reconstructing history from chat logs.
+**This file is the continuity source.** A fresh Claude Code conversation should read this first (then the
+authoritative docs it links) and continue without reconstructing history from chat logs.
+
+> **Before continuing, verify reality.** `git -C /opt/Educational-Institution rev-parse HEAD`,
+> `git status --porcelain`, and the latest CI for that SHA. This checkpoint is accurate as of the SHA
+> below; treat anything it says as needing re-confirmation against current source, tests and
+> `docs/owner-decision-register.md` (the roadmap authority). **Every decision here is CURRENT and
+> REVERSIBLE** — a current institutional decision, not a permanent architectural lock.
+
+## Project identity
+
+A single-institution platform for the Global Institution for Teaching the Noble Quran: a NestJS
+modular-monolith backend (Postgres/Drizzle, LiveKit) and a Flutter/Riverpod app (web-first; `android/`
+and `ios/` exist but are never built by CI). The app runs in two modes from one composition root
+(`app/lib/providers/app_providers.dart`): **backend mode** when `API_BASE_URL` is set (real HTTP + realtime
++ secure storage), and **demo/mock mode** otherwise (the GitHub Pages build and widget tests, entirely
+in-memory). Product scope is the owner's; engineering never invents institutional policy.
+
+## Repository state (verify before trusting)
 
 - **Branch:** `claude/quranic-education-app-prototype-gkzle8`
-- **HEAD:** `7313815` — `feat(messaging): community message moderation (Q51/Q23)`. Recent **P12**
-  lineage (policy-gated live features + community moderation, all on this branch): Q51/Q23 community
-  message moderation (`7313815`, ADR 0029), Q56 screen sharing / two presenters (`20e80cb`, ADR 0028),
-  Q59 no hidden listeners (`34826e3`, ADR 0027) and Q64 kick / room reset (`370acda`, ADR 0026); the
-  engineering-governance commit (`45dcd1d`, `docs/ENGINEERING_RULES.md`) precedes all four. Before P12,
-  the P10 lineage: the attendance notification translator (`0d7a241`), ADR 0025 deferring a persistent
-  `live.session.started` (`e4e6c15`), the live speaker notification translator (`3d23274`), the
-  community notification translator (`43dd0b1`) and ADR 0024 (`b3ca01c`). Before them: the Flutter
-  Attendance viewing foundation (`ee66d95`), the record foundation (`639ee5c`), the Flutter Live
-  non-media foundation (`417e210`), the P9 Attendance **backend** (RecordSnapshot write + view paths,
-  architecture-boundary-hardened), Academic Reconciliation (ADR 0015, Option A) and the prior code
-  commit `9d2925e`.
-- **Date:** 2026-10-07 (updated: **P12 Policy-gated Live features — COMPLETE** across four slices
-  (Q64/Q59/Q56/Q51-Q23; ADRs 0026–0029), with the living docs and this checkpoint reconciled. Earlier:
-  P10 Notifications translators landed; `live.session.started` kept realtime-only by ADR 0025)
-- **Current focus:** **P12 Policy-gated Live features — complete.** Four owner-approved slices shipped on
-  this branch, each with its ADR, tests and verification gates green: Q64 kick / room reset (ADR 0026),
-  Q59 no hidden listeners (ADR 0027), Q56 screen sharing up to two concurrent presenters with delegated
-  student access (ADR 0028), and Q51/Q23 community message moderation (ADR 0029). The P12 policy
-  questions are **answered** (recorded in `open-questions.md` and the ADRs). P10 Notifications
-  (translators) and P9 Attendance (backend + the full Flutter attendance surface, §17) remain complete.
-  The EXPLAIN-at-scale check, academic notifications, guaranteed delivery (outbox) and P7b media binding
-  remain deferred; P11 (horizontal scale) remains blocked on P8 load evidence.
-- **Every decision below is CURRENT and REVERSIBLE** — a current institutional decision, not a
-  permanent architectural lock. Future requirements may change it.
+- **HEAD:** `8b88f92` — `feat(messaging): support real message attachments` (Sprint 21). **In sync with
+  `origin`** (0 ahead / 0 behind at the time of writing).
+- **Latest work, newest first:** Sprint 21 attachments/voice (`8b88f92`); Sprint 20 LiveKit web
+  activation (`76e8e48`); Sprint 19 secure persistent sessions (`89a8879`); before that the reconnect
+  diagnostic/evidence series (`6350e46`…) and the long P6→P18 live-media programme. Use `git log --oneline`
+  for the full lineage — it is the authoritative history, not this file.
+- **Date reconciled:** 2026-10-12 (Sprint 22 — this documentation-only reconciliation).
+- **Preserved local working-tree changes (do NOT overwrite):** four owner-maintained files remain modified
+  and intentionally uncommitted — `backend/src/platform/health/health.controller.ts` (+ its new
+  `health.controller.spec.ts`, a DB-readiness probe, observability.md §3), `docs/architecture/observability.md`,
+  and `docs/architecture/communities-live-attendance.md`. A future engineer must not `git checkout`,
+  `reset`, `clean` or `stash` them away. (This checkpoint file is itself committed by Sprint 22.)
 
 ## Engineering principles (standing)
 
-**Mandatory: every implementation task MUST read and obey
-[`docs/ENGINEERING_RULES.md`](ENGINEERING_RULES.md) before writing any code.**
-That document is the permanent, project-wide engineering governance (clean/modular
-architecture, responsibility ownership, SRP, dependency direction, module
-boundaries, contract-first and vertical-slice development, test strategy and
-non-vacuous architecture tests, authorization ownership, error taxonomy,
-database/migration discipline, security, observability, performance, ADR
-discipline, and the Definition of Done). It is authoritative; this checkpoint's
-reversible decisions never override it.
-
-Every task follows the required workflow:
-**INSPECT → UNDERSTAND ARCHITECTURE → IDENTIFY RESPONSIBILITY OWNER → IDENTIFY
-DEPENDENCY BOUNDARIES → PLAN FILES → DEFINE CONTRACTS → DEFINE TESTS → IMPLEMENT →
-VERIFY → REVIEW DIFF → UPDATE DOCS/ADR IF REQUIRED → COMMIT.** No step is skipped;
-real conflicts are surfaced and resolved explicitly, never guessed or silently
-patched.
-
-The digest (full rules in `ENGINEERING_RULES.md`): clean modular architecture;
-strict domain/application/infrastructure boundaries; no spaghetti, no hacks sold
-as final. File size: 100–300 preferred, 300–500 ok, 500–700 review, >700
-decompose, >1000 prohibited unless justified; split by cohesion, not artificially.
-Tests mandatory; architecture/dependency checks mandatory. Security and
-historical-data integrity matter. Document decisions. Never silently invent
-institutional rules — record unknowns as deferred. Build toward the final
-architecture directly, not throwaway versions.
+**Mandatory: every implementation task MUST read and obey [`docs/ENGINEERING_RULES.md`](ENGINEERING_RULES.md)
+before writing any code.** It is the permanent, project-wide governance (clean/modular architecture,
+domain/application/infrastructure boundaries, SRP, dependency direction, contract-first vertical slices,
+non-vacuous architecture tests, authorization ownership, error taxonomy, migration discipline, security,
+observability, ADR discipline, Definition of Done). It is authoritative; this checkpoint's reversible
+decisions never override it. The required workflow (no step skipped): **INSPECT → UNDERSTAND ARCHITECTURE
+→ IDENTIFY RESPONSIBILITY OWNER → IDENTIFY DEPENDENCY BOUNDARIES → PLAN FILES → DEFINE CONTRACTS → DEFINE
+TESTS → IMPLEMENT → VERIFY → REVIEW DIFF → UPDATE DOCS/ADR IF REQUIRED → COMMIT.** File-size guide:
+100–300 preferred, 300–500 ok, 500–700 review, >700 decompose, >1000 prohibited unless justified. Never
+silently invent institutional rules — record unknowns as deferred.
 
 ## Authoritative documents (read these)
 
-- **Engineering governance (read first, obey always): [`docs/ENGINEERING_RULES.md`](ENGINEERING_RULES.md)** — the permanent rules and the required implementation workflow for every task.
-- Phase roadmap: `docs/architecture/communities-live-attendance.md` §25 (status + plan tables).
-- Open questions (answers recorded inline): `docs/architecture/open-questions.md`.
-- Academic reconciliation: `docs/architecture/academic-reconciliation.md` (§13), `docs/owner-information.md`.
-- ADRs: `docs/architecture/decisions/` — esp. **0015** (academic structure reconciliation),
-  **0016** (Q40 ruling), **0020** (attendance snapshots, HELD).
-- P9 owner decision sheet: `docs/p9-attendance-decisions.md`.
-- Attendance entry gate: `docs/architecture/attendance.md` §23.
+- **Engineering governance (read first, obey always):** [`docs/ENGINEERING_RULES.md`](ENGINEERING_RULES.md).
+- **Roadmap / owner-policy authority:** [`docs/owner-decision-register.md`](owner-decision-register.md) —
+  every unresolved owner decision, grouped A–G, cross-referencing `open-questions.md` and the ADRs. This
+  checkpoint links and summarizes it; it does not replace it.
+- **Product spec:** [`docs/prototype-spec.md`](prototype-spec.md).
+- **Navigation:** root [`CLAUDE.md`](../CLAUDE.md) + the generated
+  `docs/architecture/architecture-index.md` (code-derived; regenerate `cd backend && npm run arch:index`;
+  ADR 0031). Phase roadmap tables: `docs/architecture/communities-live-attendance.md` §25.
+- **Open questions (answers inline):** `docs/architecture/open-questions.md`.
+- **ADRs:** `docs/architecture/decisions/` — esp. **0015** (academic reconciliation), **0016** (Q40),
+  **0023** (attendance authorization), **0024/0025** (P10 notifications), **0026–0029** (P12 live/moderation
+  policy), **0030** (Flutter LiveKit media client), **0031** (architecture index). Table: `.../decisions/README.md`.
+- **Live-media verification log:** [`docs/p8-live-media-verification.md`](p8-live-media-verification.md).
+  **Messaging/attachments + client dependencies:** [`docs/architecture/messaging.md`](architecture/messaging.md),
+  [`docs/architecture/live.md`](architecture/live.md) §17.
 
 ---
 
-## Phase ledger
+## Implementation status (classified)
 
-| Phase                                                                                                                                                                                            | State                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P0 Corrections & guards · P1 Live hardening · P2 Communities · P3 Delegation · P4 Community chat · P5 Community realtime+Flutter · P5.1 Community management · P6 Community-scoped live sessions | **DONE**                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| P7.1 LiveKit server/provider readiness · P7.2 real media integration · P7.3 staging deploy · P7.4 external client test                                                                           | **DONE** (staging live)                                                                                                                                                                                                                                                                                                                                                                                                      |
-| P7b Flutter media binding (`livekit_client`)                                                                                                                                                     | **DEFERRED** (needs devices/CI + ADR)                                                                                                                                                                                                                                                                                                                                                                                        |
-| P8 Load/capacity harness (P8.0–P8.4 built, committed `9d2925e`)                                                                                                                                  | **DONE (infra)**; off-box ladder S1→R6 **DEFERRED** until real users                                                                                                                                                                                                                                                                                                                                                         |
-| **Academic reconciliation (§13 / ADR 0015)**                                                                                                                                                     | **LANDED** on the operational seed + tests (Option A, 2026-10-05); printed profile untouched; verified in-memory only                                                                                                                                                                                                                                                                                                        |
-| **P9 Attendance**                                                                                                                                                                                | **BACKEND + FULL FLUTTER SURFACE LANDED** — backend: RecordSnapshot write + VIEW (community list / one snapshot / participants), `AttendanceAccess`, `LIVE_PRESENCE`, Postgres + in-memory repositories, DI/boot wiring, the API, full error-coverage E2E, and the `attendance-boundaries` architecture guards. Flutter (§17): the Live non-media foundation; the Attendance **record** foundation (`AttendanceRepository.record`, `SnapshotView`, Http/Mock repos, record controller + screen, capability-gated doorway); and the Attendance **viewing** foundation (`snapshots`/`snapshot`/`participants`, `SnapshotPage`/`SnapshotParticipant`/`SnapshotParticipantPage`/`SnapshotConnection`, two paginated controllers + a detail header provider, the snapshots-list and snapshot-detail screens with load-more, an `attendanceView`-gated doorway, boundary guards). **DEFERRED:** the connection-filter and session-scoped viewing UIs, the EXPLAIN-at-scale check (§21/§22), and the ADR 0023 Option-B formal write-up (P10 notifications have since landed — see the P10 row) |
-| P10 Notifications translators · P11 Horizontal scale · P12 Policy-gated Live features                                                                                                            | **P10 LANDED** — community (`43dd0b1`), live-speaker (`3d23274`) and attendance (`0d7a241`) notification translators, policy ADR 0024; `live.session.started` kept realtime-only (ADR 0025, `e4e6c15`). Academic notifications + guaranteed delivery (outbox) deferred. **P12 COMPLETE** — Q64 kick/room reset (`370acda`, ADR 0026), Q59 no hidden listeners (`34826e3`, ADR 0027), Q56 two presenters + delegated student share (`20e80cb`, ADR 0028), Q51/Q23 community message moderation (`7313815`, ADR 0029); policy answered, gates green (see the P12 status section). **P11 BLOCKED** — still needs P8 load evidence                                                                                                     |
+Classifications: **Implemented+verified** · **Implemented, partially verified** · **Implemented but
+unverified on target platform** · **Mock/stub** · **Owner-decision-gated** · **External-resource-gated** ·
+**Unsupported by current contract**.
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Authentication & identity; persistent sessions | **Implemented+verified** (native keystore unverified) | Sprint 19 — see below |
+| Communities & membership | **Implemented+verified** | lists, roster, keyset pagination, lock/unlock, join-by-link, leave, invitations, remove, grant/revoke/transfer, server-authoritative `me` |
+| People directory & member add/re-add; student↔student & student↔teacher DMs | **Implemented+verified** | GROUP A (register §12–§14); `people.read`, `community.members.invite`, `messaging.start_direct_peer`/`_teacher` (migrations 0018/0019) |
+| Text messaging, moderation, cross-client delete | **Implemented+verified** | send/history/pagination/read-unread/catch-up; moderation delete + 7-day review (ADR 0029); the `messaging.message.deleted` realtime hint |
+| Message attachments & voice notes (image/PDF/voice) | **Implemented, partially verified** (web; native/real-device unverified) | Sprint 21 — see below |
+| Live-session control plane (hands, moderation roster, presenter grants, kick, reset) | **Implemented+verified** | P12; HTTP control plane, server-authoritative |
+| Live media (join/mic/screen on web) | **Implemented, partially verified** | Sprint 20 — activated on web; see below |
+| Attendance (record + view) | **Implemented+verified** (EXPLAIN-at-scale deferred) | backend write/view + full Flutter surface; ADR 0023 |
+| Notifications & preferences | **Implemented+verified** (push delivery external-gated) | list/read/badge/preferences/device-registration; P10 translators (ADRs 0024/0025) |
+| Academic **read** stack | **Implemented+verified** | catalog/profile read surfaces only — NOT the learning loop |
+| Progress, assessment, mastery/promotion, certificates, assignments, announcements/feed, owner operations | **Owner-decision-gated** | NOT implemented as a product loop; policy must not be invented — register groups C/D/G |
+
+**Backend-mode vs demo/mock.** The composition root selects HTTP/realtime/secure-storage/real-media
+implementations in backend mode and in-memory mocks otherwise. The GitHub Pages demo is mock mode and does
+**not** represent a connected backend: attachments are stored in-memory and render as placeholders, live
+media stays Unavailable, and sessions are not persisted server-side.
+
+---
+
+## Sprint 19 — Secure persistent sessions (`89a8879`)
+
+`tokenStoreProvider` = backend-mode ? `SecureTokenStore` : `InMemoryTokenStore`. `SecureTokenStore`
+(`app/lib/data/api/secure_token_store.dart`, `flutter_secure_storage` 11.2 confined to that one adapter)
+persists `{accessToken, refreshToken}` so a signed-in device survives a cold restart; restoration flows
+through the existing lazy `sessionUserProvider → currentUser() → /auth/me` (no new state machine), with a
+generation guard so a slow restoration can't overwrite a newer sign-in/out. A keystore failure raises
+`TokenStorageException` (fails closed, **never a silent downgrade to insecure storage**), never logging
+tokens. **Verification:** Dart logic unit-tested on the VM against a fake keystore; the full suite + web
+build pass. **Not verified here:** actual iOS Keychain / Android Keystore runtime (device-only; Android
+needs `minSdk ≥ 23`), and web browser storage is weaker than a native keychain.
+
+## Sprint 20 — LiveKit media activation on web (`76e8e48`)
+
+`liveMediaClientProvider` binds the real `LiveKitLiveMediaClient` **iff** `backendMode && kIsWeb &&
+BackendConfig.liveMediaEnabled` (`--dart-define=LIVE_MEDIA_ENABLED=true`); every other case (demo, non-web,
+flag absent, VM tests) falls closed to `UnavailableLiveMediaClient`. One client is constructed in that one
+provider (one room owner) and disposed with it; no UI changed (the panel was already seam-driven). The
+`livekit_client` adapter stays confined to `app/lib/data/media/livekit/` (ADR 0030). Server-authoritative
+join tokens (`/join`) and presenter authorization are unchanged. **Verified:** a production-composition
+Live E2E (`test/e2e/livekit_app_composition_e2e_test.dart`) selects the real client through the app's own
+providers and drives a real join → room → mic publish/mute → live presenter grant/revoke → leave
+(live-e2e.yml, green). **Do NOT describe live media as unavailable** — it is wired under its documented
+activation config. **Retained limitations (accurate):** full transient reconnect/media/ICE recovery is
+**NOT verified E2E** (reconnecting-*entry* was induced + verified in the diagnostic workflow, Sprint 18);
+large-scale **capacity not load-tested**; **native iOS/Android live media out of the approved contract**;
+interactive screen-picker and real device permission prompts are manual checks.
+
+## Sprint 21 — Message attachments & voice notes, web-first (`8b88f92`)
+
+The whole attachment pipeline (the `OutgoingFile` model, the 3-step signed upload declare→PUT→complete,
+image/voice/file sends, optimistic retry by `clientMessageId`, conversation-history rendering, signed-link
+authenticated download) **was already implemented and tested**; Sprint 21 supplied the three device-seam
+implementations and bound them. `deviceMediaSupportedProvider` (`kIsWeb`) binds `FilePickerAttachmentPicker`
+(`file_picker`, images jpg/png/webp + PDF), `RecordVoiceRecorder` (`record`, Opus→WebM `audio/webm`) and
+`JustAudioVoicePlayer` (`just_audio`), each confining its plugin import to one adapter
+(`app/lib/data/media/{pickers,voice}/`, enforced by `test/messaging/attachment_boundaries_test.dart`); off
+web they fall closed to Unavailable. **Backend contract (verified, unchanged):** `POST /files/uploads`
+(perm `files.upload`) → ticket → `PUT` bytes (signed, no bearer) → `POST /files/uploads/:id/complete`
+(verifies size + **magic bytes vs declared content type**) → `POST /messaging/conversations/:id/messages/
+{image,voice,file}` `{clientMessageId, fileAssetId, caption?}` → `GET …/attachments/:id/link` → short-lived
+signed Range-capable download. **Policy:** IMAGE jpeg/png/webp 10MB; VOICE mp4/aac/ogg/webm 5MB/10min;
+DOCUMENT pdf 25MB. Authorization stays server-authoritative; recorder/player release on dispose; a
+generation guard protects against a stale stop. **Not CI-verified (no device in CI):** real file selection,
+real microphone capture + WebM encoding, audio playback — manual/browser checks. **Native out of scope.**
 
 ---
 
 ## Academic structure — CURRENT DECISIONS (reversible)
 
-**Hierarchy: `Section → Program → Halaqa`.** Program is a first-class entity and is **kept** (not
-removed, not renamed).
+**Hierarchy: `Section → Program → Halaqa`.** Program is first-class and **kept**. **Level: RETIRED /
+SUPERSEDED** — the `Section → Program → Level → Halaqa` model was rejected by the owner; all Level
+sub-decisions are REVOKED (see "Level status" — nil code impact).
 
-**Level: RETIRED / SUPERSEDED.** A `Section → Program → Level → Halaqa` model was considered in a
-read-only design pass and then **rejected by the owner** (complexity without sufficient value). All
-prior Level sub-decisions (first-class entity, `academic_levels`, Program→Level→Halaqa, moving a halaqa
-between levels, level delete/disable rules, level ordering/owner-management) are **REVOKED**. See
-"Level status" below for the (nil) code impact.
+**Seven official core sections** (official names; order 1–7 is display only, not a study sequence):
 
-**Seven official core sections** (names are the official names; printed «قسم …» names not preserved;
-order 1–7 is **display only**, not a study sequence):
+| # | Official name | Code | Note |
+| --- | --- | --- | --- |
+| 1 | محو الأمية | `dep-literacy` | count 5 → **10** |
+| 2 | تلقين الحروف | `dep-letters` | |
+| 3 | المبتدئ | `dep-tajweed-1` | = old قسم تجويد مبتدئ |
+| 4 | **تجويد الحروف** | **`dep-tajweed-letters`** | **NEW**, owner-approved code |
+| 5 | التجويد المتوسط | `dep-tajweed-2` | |
+| 6 | التجويد المتقدم | `dep-tajweed-3` | |
+| 7 | دورة التهجي وإعداد المعلمات | `dep-tahajji` (proposed) | uniform model; see Tahajji |
 
-| #   | Official name               | Code                      | Note                                    |
-| --- | --------------------------- | ------------------------- | --------------------------------------- |
-| 1   | محو الأمية                  | `dep-literacy`            | count 5 → **10**                        |
-| 2   | تلقين الحروف                | `dep-letters`             |                                         |
-| 3   | المبتدئ                     | `dep-tajweed-1`           | same section as the old قسم تجويد مبتدئ |
-| 4   | **تجويد الحروف**            | **`dep-tajweed-letters`** | **NEW**; owner-approved code            |
-| 5   | التجويد المتوسط             | `dep-tajweed-2`           |                                         |
-| 6   | التجويد المتقدم             | `dep-tajweed-3`           |                                         |
-| 7   | دورة التهجي وإعداد المعلمات | `dep-tahajji` (proposed)  | uniform model; see Tahajji              |
+Owner rulings: every core section has **≥ 10 halaqat** (10 = initial minimum, not a limit); **no
+Basic/Additional classification**; **"need" not used**; sections/halaqat are **dynamic, owner-managed**
+(add/edit/delete/rename/reorder); **halaqa codes / historical identity preserved**; deletion must be
+historically safe. **Academic progression (assessment→placement→mastery→higher progression), the broader
+development path, and «نظام الضخ بين الأقسام» are institutional concepts only — do NOT invent promotion
+criteria, mastery thresholds, assessment formulas or mandatory sequences.**
 
-Other owner rulings: every core section has **≥ 10 halaqat** (10 = initial minimum, not a limit, not a
-"basic" class); **no Basic/Additional classification** (all halaqat equal); **"need" not used**;
-sections and halaqat are **dynamic, owner-managed** (add/edit/delete/rename/reorder); **halaqa codes /
-historical identity preserved**; deletion must be historically safe. Academic progression
-(assessment → placement → halaqa → mastery → higher progression) and the broader development path
-(education→mastery→specialization→training→teacher-preparation→teacher→supervision→leadership) and
-«نظام الضخ بين الأقسام» are **institutional concepts only** — **do not** invent promotion criteria,
-mastery thresholds, assessment formulas or mandatory sequences.
+- **Tahajji / City of Tahajji — RESOLVED (uniform model):** same `Section → Program → Halaqa` model; a
+  Tahajji "group" is an academic halaqa (not a chat/LiveKit/community construct); core section #7
+  (`dep-tahajji`, reversible); dynamic, owner-managed; nothing seeded beyond the reconciliation. Existing
+  `sec-spelling` (قسم التهجي) left as dynamic owner data. Voice/LiveKit-mapping stays deferred.
+- **Non-core sections — RESOLVED (dynamic owner data):** `sec-kids` (البراعم), `sec-languages` (اللغات),
+  `accompanying` (البرامج المرافقة, incl. مدينة الحفاظ) are dynamic owner-managed data, not architectural
+  decisions; kept; no "core" flag. Not a question to re-open.
 
-### Tahajji / City of Tahajji — RESOLVED (uniform model)
-
-- دورة التهجي / مدينة التهجي use the **same academic model `Section → Program → Halaqa`** — no special
-  entity, no hard-coded count, no fixed 40. A Tahajji "group" is an **academic halaqa** under this model
-  (not a chat / LiveKit / Community construct).
-- دورة التهجي وإعداد المعلمات = core section **#7** (proposed code `dep-tahajji`, reversible); its
-  programs/halaqat are **dynamic, owner-managed**; **nothing seeded now** beyond the reconciliation.
-- The existing `sec-spelling` (قسم التهجي) is left as **dynamic owner data** (not asserted to be the
-  same section as #7). The separate voice/LiveKit-mapping question stays deferred; the Live architecture
-  stays separate.
-
-### Non-core sections — RESOLVED (dynamic owner data)
-
-`sec-kids` (البراعم), `sec-languages` (اللغات), `accompanying` (البرامج المرافقة, incl. مدينة الحفاظ) are
-**dynamic, owner-managed data — not architectural decisions** (owner, 2026-10-05). They are **kept**; no
-"core" flag; the owner manages them at runtime. Not a question to re-open.
-
----
-
-## Level status: NOT IMPLEMENTED
-
+### Level status: NOT IMPLEMENTED
 No `academic_levels` table, no `level_id`, no Level domain/contract/repository/API/Flutter code, no
-migration. **No migration or code removal is required.** The only textual trace is the word "levels"
-inside two `academic.*` permission _descriptions_ in the committed migration
-`drizzle/0002_seed_access_catalog.sql:29-30` ("View/Change programs, levels and halaqat") — **cosmetic,
-non-structural**; an optional later description fix (a new migration or description update), not done
-here and not blocking.
+migration. The only trace is the word "levels" in two `academic.*` permission *descriptions* in
+`drizzle/0002_seed_access_catalog.sql` — cosmetic, non-structural; an optional later description fix (via a
+new migration, never editing an applied one), not blocking.
 
-## P9 Attendance status: BACKEND LANDED (write + view + boundary hardening)
-
-Owner policy answers are **recorded** (in `open-questions.md`; enforced by the landed P9 backend):
-
-- **Q8** — owner controls who may amend student attendance + the window; every amendment records
-  `reason` + `amendedBy` (already required by `AttendanceAmendment` in `operations/contracts`).
-- **Q12** — attendance recorded for every live broadcast session and every exam; actual date/time;
-  academic calendar/term **not** a prerequisite.
-- **Q69a** — authority considers **BOTH** academic relationship **AND** community standing/membership
-  (complementary).
-- **Q69b** — owner controls record/view grants; teachers record when granted; a "Collect Attendance"
-  action during a broadcast creates the snapshot and notifies teacher/owner/granted; **no student or
-  parent self-view**.
-
-Attendance policy is now **recorded in [ADR 0023](architecture/decisions/0023-attendance-authorization-and-policy.md)**
-(2026-10-05): **Q69a** → authorization uses **both `ACADEMIC_RELATIONSHIPS` and community standing**
-(supersedes ADR 0020 decision 8); **Q69b** → the "Collect Attendance" **notifications are deferred to
-P10 / Q67** (ADR 0020 decision 9 "no notification" stands for P9); **Q8** → amendment applies to the
-future attendance record, not the immutable snapshot; **Q12** → every live session + every exam, actual
-date/time, no calendar prerequisite.
-
-**Gate (attendance.md §23): all governance decisions MADE.** Q40 answered (ADR 0016); Q8/Q12/Q69
-answered & recorded (ADR 0023); Q35/Q36 + Tahajji + non-core + uniform model all decided (ADR 0015).
-
-1. ✅ **§13 academic-structure reconciliation applied to the seed + tests** (ADR 0015, Option A,
-   2026-10-05) — DONE and verified in-memory; the §13 "before any new module" step is complete.
-2. ✅ **Owner lifted the attendance hold and started P9** (2026-10-05), choosing **Option B** for the
-   Q69a composition: the academic relationship is an _additional_ layer, **conditional on an
-   established academic↔community link**; while no such link exists (Q50 OPEN, untouched) community
-   standing governs and its absence never fails authorization. (The formal ADR 0023 Option-B write-up
-   is a deferred, not-yet-done step.)
-
-### P9 implementation — backend + Flutter record foundation landed
-
-**Prerequisite (2026-10-05):** the two Communities attendance acts
-`community.attendance.record` / `community.attendance.view` are **active** — in
-`COMMUNITY_CAPABILITIES`, with act-rules/ceilings (`communities.moderate`, **no `attendance.*`**,
-gate `always`, no oversight) and the CHECK migration `drizzle/0014_community_attendance_acts.sql`.
-
-**Built and committed (the attendance module, backend):**
-
-- `AttendanceAccess` (attendance.md §11.3 — community standing via `COMMUNITY_AUTHORIZATION`; Option B
-  keeps any academic layer conditional on a community↔halaqa link, of which there is none, so community
-  standing governs; Q50 untouched).
-- The pure snapshot domain (`takeSnapshot`, immutable, append-only) and `LIVE_PRESENCE` observation.
-- RecordSnapshot **write** path: application use case (idempotency, rate limit, audit-then-event),
-  Postgres + in-memory repositories (migration `drizzle/0015`), DI/boot wiring, the
-  `POST /attendance/live-sessions/:id/snapshots` route, and full error-coverage E2E (201/200/400/401/
-  403/404/412/422/429/503).
-- RecordSnapshot **view** path: the three GET routes (community list, one snapshot, participants),
-  keyset pagination with `attendance.cursor_invalid` → 422, the read-only `recordedOrHostedInSession`
-  fallback read, and name resolution via `ACCOUNT_DIRECTORY`.
-- **Architecture boundary guards:** `test/architecture/attendance-boundaries.spec.ts` (§22) — layers,
-  domain purity, vendor/LiveKit confinement, contracts-only cross-module access, the `LIVE_PRESENCE`
-  allow-list, no `COMMUNITY_MEMBERSHIP`/`COMMUNITY_CAPABILITY_HOLDERS` injection, no reserved
-  `attendance.read`/`.manage`, own-schema-only — each guard non-vacuous. Attendance's schema joins the
-  shared `OTHER_SCHEMAS` list. All green; **no boundary violation was found** in the shipped module.
-
-All backend work was verified on isolated/in-memory or ephemeral-Postgres harnesses only — no
-production/shared DB seeded or migrated.
-
-**Built and committed (the Flutter app — the Attendance RECORD + VIEWING foundations, attendance.md §17):**
-
-- **Prerequisite:** the Flutter Live non-media foundation (`LiveRepository.currentSession`,
-  `LiveSession`/`LiveMe`, the live session screen), which the attendance screen consumes for
-  `isLive` and `me.canModerate`.
-- `AttendanceRepository.record(liveSessionId, clientRequestId)` (contract in `repositories.dart`) with
-  `HttpAttendanceRepository` (`POST /attendance/live-sessions/:id/snapshots`, error-mapped to
-  `AttendanceException`) and `MockAttendanceRepository` (idempotency reproduced, `DataOrigin.mock`),
-  bound only in `app_providers.dart`.
-- `SnapshotView`/`SnapshotRecorder` wire model (counts only; defensive parsing); `RecordAttendanceController`
-  (one idempotency key per press via `newClientId()`, reused on retry, cleared on a result; button
-  disabled in flight); `RecordAttendanceScreen` gated `(me.has(attendanceRecord) || canModerate) && isLive`
-  — UX only, backend remains the authority; copy says connected/connecting, never present/absent/ratio.
-- `CommunityCapability.attendanceRecord`/`.attendanceView` added (backend-supported vocabulary); a
-  navigation-only, capability-gated community doorway. Non-vacuous `attendance_boundaries_test.dart`:
-  no transport/LiveKit/media/Academic/`live_session_screen` reach, provider-only construction.
-
-Then the **VIEWING** foundation (the §17 read surface), consuming no Live and no realtime — snapshots
-are historical and the VIEW API is authoritative:
-
-- `AttendanceRepository.snapshots(communityId, {liveSessionId?, cursor?})`,
-  `snapshot(snapshotId)`, `participants(snapshotId, {connection?, cursor?})` on the same repository
-  (record unchanged), with Http (opaque cursor forwarded, no `limit` sent) and Mock (deterministic,
-  cached, paginated, honoring the filters) implementations.
-- Models reuse `SnapshotView`; added `SnapshotConnection` (defensive `unknown`), `SnapshotParticipant`,
-  `SnapshotPage`, `SnapshotParticipantPage`, and the view error classifiers.
-- Two stripped paginated controllers (community snapshots; one snapshot's participants — dedupe by id /
-  account id, load-more, refresh-to-page-1, no reconcile/write machinery) and a
-  `FutureProvider.autoDispose.family` snapshot-header provider.
-- `AttendanceSnapshotsScreen` (history list) and `AttendanceSnapshotDetailScreen` (header + participants)
-  with a "عرض المزيد" load-more footer; an `attendanceView`-gated, navigation-only community doorway;
-  routes `…/attendance/snapshots` and `…/attendance/snapshots/:snapshotId`. Copy shows connected /
-  connecting, a neutral fallback for an unresolved name, never present/absent/ratio or an account id.
-
-**Deferred (not built, by decision):** the attendance **connection-filter UI** and **session-scoped
-viewing UI** (the repository/API support both; the current UI exposes neither); the EXPLAIN-at-scale /
-1M-entry read benchmark (§21/§22 — measure before production use); the formal ADR 0023 Option-B
-write-up (a documentation task; ADRs are immutable and superseded, never edited).
-
-Progress: Q35/Q36, تجويد الحروف=`dep-tajweed-letters`, Level retired, Q8/Q12/Q69 (ADR 0023), Tahajji §7
-uniform (`dep-tahajji`), non-core = dynamic owner data, seed reconciliation LANDED, Communities
-attendance-act enablement LANDED, **P9 Attendance backend (write + view + boundary hardening) LANDED**,
-**P9 full Flutter attendance surface LANDED** — Live non-media foundation + Attendance RECORD + VIEWING
-foundations (§17); connection-filter and session-scoped viewing UIs deferred.
-
-## Academic Reconciliation status: LANDED (operational seed + tests, Option A)
-
-- **All decisions made:** Q35/Q36 (ADR 0015); تجويد الحروف=`dep-tajweed-letters`; Level retired
-  (Section→Program→Halaqa); Tahajji §7 uniform (`dep-tahajji`); non-core = dynamic owner data; one
-  uniform model, dynamic & owner-managed, no hard-coded counts.
-- **Applied (2026-10-05) — Option A (split sources):**
-  - **Printed Profile stays separate and untouched:** `institution-structure.json`/`.ts` and the Flutter
-    `ProfileData` are unchanged; `app/test/academic/profile_structure_test.dart` still passes unchanged.
-  - **Operational Academic Structure is now the seed's source:** new `operational-structure.json` +
-    `operational-structure.ts` (11 sections / 11 programs / 70 halaqat — 10 per core program); the seed
-    use case reads it, not the printed profile.
-  - **Provenance profile/owner applied:** each entry marked `owner` (ADR 0015) or `profile` (page),
-    threaded into audit metadata; the seed's parent/integrity check (`validateOperationalStructure`)
-    and explicit per-entry halaqa codes (`<section>-h<n>`) are enforced.
-  - **Tests + gates green:** academic suite 101/101, architecture 141/141, Flutter profile test 4/4;
-    format/lint/typecheck clean.
-  - **No seed run against production/shared DB:** verified on the in-memory harness only (H1 honored).
-- Reconciliation at the seed + test layer is **complete and verified**. Deploying it to a real DB via
-  the explicit seed command is a separate operational step, intentionally not done here.
-
-## P8 capacity status: DEFERRED
-
-Off-box ladder (S1/S2/R1…R6) deferred until real users enter the app. Targets (**not proven**):
-≈3,000 listeners/room, ≈10,000 concurrent participants across rooms. Do not reopen P8.4 S1/S2 unless
-explicitly requested. (`docs/p8/*`, `docs/p8-load-capacity-plan.md`.)
+### Academic Reconciliation: LANDED (Option A — split sources)
+Printed Profile stays separate and untouched (`institution-structure.json`/`.ts`, Flutter `ProfileData`,
+`profile_structure_test.dart`). The seed reads a separate **operational** source
+(`operational-structure.json/.ts`, 11 sections / 11 programs / 70 halaqat, 10 per core program) with
+`owner`/`profile` provenance (ADR 0015) and enforced parent/integrity + per-entry halaqa codes. Verified
+in-memory only; **no seed run against a production/shared DB**. Deploying via the explicit seed command is
+a separate operational step, intentionally not done.
 
 ---
 
-## P12 Policy-gated Live features status: COMPLETE
+## P9 Attendance — policy & status (ADR 0023)
+Owner answers recorded in `open-questions.md` and enforced by the landed backend: **Q8** (owner controls
+amendments + window; `reason` + `amendedBy`); **Q12** (every live session + every exam; actual date/time;
+no calendar prerequisite); **Q69a** (authority uses **both** academic relationship **and** community
+standing — Option B: the academic layer is additional and conditional on an established academic↔community
+link, of which there is none, so community standing governs; Q50 untouched); **Q69b** (owner controls
+record/view grants; "Collect Attendance" during a broadcast creates the snapshot; **no student/parent
+self-view**; notifications landed in P10). Backend (RecordSnapshot write + 3 view routes, `AttendanceAccess`,
+`LIVE_PRESENCE`, Postgres + in-memory, boundary guards) and the **full Flutter surface** (record + viewing,
+connection-filter + session-scoped UIs) are landed and tested. **Deferred (by decision):** the
+EXPLAIN-at-scale / 1M-entry read benchmark (§21/§22, measure before production use) and the formal ADR 0023
+Option-B write-up (a documentation task).
 
-All four owner-approved P12 slices are implemented, tested and verified on this branch; the P12 policy
-questions are **answered** (recorded in `open-questions.md` and the ADRs below). The final
-reconciliation audit found **no code, architecture, security, migration, API, realtime or test
-blocker** — only documentation drift, reconciled in this change.
+## P12 Policy-gated Live features — COMPLETE (ADRs 0026–0029)
+Four owner-approved slices, policy answered, backend + Flutter surfaces landed: **Q64** kick/room-reset
+(ADR 0026 — authority via existing `community.live.moderate`/`.host`, no ban, re-entry allowed, optional
+audit-only reason); **Q59** no hidden listeners (ADR 0027 — `hidden` enforced-`false` invariant + drift
+backstop); **Q56** screen sharing up to **two** concurrent presenters (`MAX_CONCURRENT_PRESENTERS = 2`, DB
+compare-and-set under the session lock; owner/moderator/teacher by right, a student only under an explicit
+session-scoped delegated grant; screen audio off); **Q51/Q23** community message moderation (ADR 0029 —
+`community.messages.moderate` soft-deletes a tombstone, original reviewable 7 days then purged; moderation
+is not chat read; CHANNEL conversations only; migration 0017). The moderation Flutter surfaces (live roster;
+message delete/review) and the cross-client `messaging.message.deleted` realtime hint are implemented.
 
-- **Q64 — Kick / Room Reset** (`370acda`, [ADR 0026](architecture/decisions/0026-live-participant-control-and-media-reset.md)):
-  a session moderator or the host — authority via `community.live.moderate` / `community.live.host`,
-  **no new permission** — may kick a participant (disconnect + inform the removed person alone + audit;
-  **no ban, re-entry allowed**) and reset the media room. The reason is optional and audit-only (never
-  on the wire). Neither kick nor reset closes a presenter grant.
-- **Q59 — No Hidden Listeners** (`34826e3`, [ADR 0027](architecture/decisions/0027-no-hidden-live-listeners.md)):
-  every admitted participant is visible in the roster; `hidden` is an enforced-`false` invariant and a
-  drift backstop (`capabilityDrift` treats any observed `hidden` as a breach). No hidden/spectator role.
-- **Q56 — Screen Sharing** (`20e80cb`, [ADR 0028](architecture/decisions/0028-screen-sharing-two-presenters-and-delegated-student-access.md)):
-  up to **two** concurrent presenters (`MAX_CONCURRENT_PRESENTERS = 2`, counted by a DB compare-and-set
-  under the session lock — never a LiveKit count); owner/moderator/teacher present by right, a student
-  only under an explicit, session-scoped delegated grant that survives kick/reset and ends at session
-  end; the delegated student gets neither the microphone nor `live.speak`; screen audio stays off; no
-  new role or permission platform.
-- **Q51/Q23 — Community Message Moderation** (`7313815`, [ADR 0029](architecture/decisions/0029-community-message-moderation.md)):
-  a holder of the new delegable Community capability `community.messages.moderate` (owner implicitly, or
-  a delegated moderator/teacher) soft-deletes a community-chat message (a tombstone); the original is
-  reviewable for exactly 7 days through a separate audited operation and then purged by retention.
-  Moderation is **not** chat read — reading stays `community.chat.read` / membership; students cannot
-  delete others' messages; scope is community CHANNEL conversations only. Migration `0017` adds the
-  capability to the grant CHECK and the `messages.deleted_by` column.
-
-Verification (whole branch at HEAD `7313815`): **3714 passed / 0 failed / 371 skipped**; typecheck,
-lint, format and dependency-cruiser clean; all four ADRs present and immutable. Nothing pushed or
-merged — the branch is ahead of origin. **Deferred, not part of P12:** screen audio, a
-persistent/broadcast `live.session.started` (ADR 0025 conditions), and the non-live roadmap items
-below. **Blocked:** P11 (horizontal scale) still needs P8 load evidence.
+## P8 capacity — DEFERRED
+Off-box ladder (S1/S2/R1…R6) deferred until real users. Targets (**not proven**): ≈3,000 listeners/room,
+≈10,000 concurrent participants across rooms. Do not reopen P8.4 S1/S2 unless explicitly requested
+(`docs/p8/*`, `docs/p8-load-capacity-plan.md`).
 
 ---
+
+## Owner-decision-gated & incomplete product areas
+The authoritative, grouped list is [`docs/owner-decision-register.md`](owner-decision-register.md).
+Summary (do NOT invent answers):
+
+- **GROUP A — people directory & membership (received & reconciled, register §12–§14):** people discovery
+  (`GET /people`, `people.read`), member add/re-add (`community.members.invite`), student↔student DM
+  (`messaging.start_direct_peer`, migration 0018) and student↔teacher DM (`messaging.start_direct_teacher`,
+  migration 0019, `GET /people/teachers`) are **IMPLEMENTED**. **Still owner-blocked:** parent messaging,
+  quiet hours (Q6).
+- **GROUP B — community lifecycle:** archive (Q47), delete (Q47 / ADR 0016 — no delete route by design,
+  FKs RESTRICT), a separate channel entity / group→channel nesting (Q36 — ADR 0016 rejected a `kind`
+  field), app-side create-community (`POST /communities` exists but OWNER/ADMIN-only, Q41 PROVISIONAL),
+  edit/rename metadata + a description field (ADR 0016 decision 3, title-only) — all **blocked**.
+  **Messaging edit** is unbuilt everywhere (only a reserved `editedAt`); out of scope until approved.
+- **GROUP C — academic progression, assessment, mastery, certificates (Q37/Q9/Q38):** **must NOT be
+  invented.**
+- **GROUP D — assignments & submissions:** no phase, no ADR — gated.
+- **GROUP E — notifications delivery & push provider (Q24/Q27/Q28/Q65):** real push delivery is
+  **external-resource-gated** (Firebase/Apple/device); academic notification facts and guaranteed delivery
+  (outbox/T2) are deferred policy.
+- **GROUP F — live media binding & capacity (Q57/Q65/P7b/P8/P11):** web binding is **done** (Sprint 20);
+  native and capacity remain gated (below).
+- **GROUP G — attendance-record/operations/automation/reporting (Q70/Q71/Q72/Q68):** policy + dependency
+  gated. Note the register's corrections: Q36 resolved (ADR 0015) and Q67 resolved (ADR 0024); this repo's
+  **Q11 is "localization," not "operations recurrence"** (operations is gated by Q70, not Q11).
+
+**Engineering available without an owner decision (if prioritised):** the ADR 0023 Option-B write-up; the
+cosmetic `academic.*` "levels" description fix (new migration). **IMPLEMENTABLE_NOW feature work = none**
+(building more would invent policy).
+
+## External-resource gates (not owner policy)
+- Real push delivery — Firebase/Apple credentials + a device (Q65).
+- P7b **native** (iOS/Android) media/attachments/recording — physical devices + a mobile CI/signing
+  pipeline (none exists); bound Unavailable off-web.
+- P8 off-box load/capacity testing.
+- EXPLAIN-at-scale read benchmark — a large seeded dataset.
+
+## Known technical limitations & unverified behavior
+- LiveKit **full transient reconnect/media/ICE recovery** NOT verified E2E (reconnecting-entry verified).
+- **Native** live media / attachments / recording unimplemented on-device; bound Unavailable off-web.
+- **Real browser** file picking, microphone capture + WebM encoding, and audio playback are not exercised
+  by CI (no device) — manual checks.
+- Web browser secure storage ≠ a native keychain; iOS Keychain / Android Keystore runtime unverified here.
+- EXPLAIN-at-scale attendance read benchmark not run.
+- `GET /health/ready` DB probe: its 2 s timeout releases-with-error but does not cancel the in-flight SQL
+  (pg has no in-flight cancel) — documented in observability.md §3 (a preserved file).
+
+---
+
+## CI / E2E / deployment evidence
+- **CI** run `38259433922` @ `8b88f92` (2026-10-12) → **success** — jobs Backend, Backend — real LiveKit,
+  Flutter app. **Deploy Pages** run `38259433921` @ `8b88f92` → **success**.
+- **Live E2E** (real LiveKit) run `38254959768` @ `76e8e48` → **success** (production-composition + the
+  2-/3-client, screen-share, reset, session-end harnesses). Not re-dispatched for `8b88f92` (no live-media
+  wiring change; it is dispatch-only — `gh workflow run live-e2e.yml --ref <branch>`).
+- Flutter full VM suite = **1394 passed** locally @ `8b88f92`; web release build ✓; `arch:index:check`
+  up to date. Backend suite is exercised by the CI Backend job (incl. the PostgreSQL integration suites,
+  which CI runs with `POSTGRES_REQUIRED=1`, and the real-LiveKit contract job).
 
 ## Deferred / open questions (do not guess)
-
 - Voice/LiveKit mapping of educational groups (separate from the academic model).
-- Mastery / promotion / assessment / «نظام الضخ» operational rules.
+- Mastery / promotion / assessment / «نظام الضخ» operational rules (institutional concepts only).
 - Reviewer acceptance of the combined attendance-scoping design (Q69a, ADR 0023).
-- Attendance "Collect Attendance" notifications → **implemented in P10** (the notifications module's `AttendanceNotificationTranslator`, `0d7a241`; policy [ADR 0024](architecture/decisions/0024-notification-policy-p10.md)). Academic notifications remain a separate, deferred decision.
-- Concrete per-section/per-halaqa seed content beyond the firmly-decided renames/new sections — these
-  are **dynamic owner data** managed at runtime, not architectural questions (do not re-open).
+- Academic notification facts and guaranteed delivery (outbox/T2) — separate deferred decisions.
+- Concrete per-section/per-halaqa seed content beyond the decided renames/new sections — **dynamic owner
+  data** managed at runtime, not architectural questions.
 
-## NEXT (exact step)
+## Recommended next phases (and dependencies)
+1. **Owner decisions first** — the highest unlock is **GROUP A residue + GROUP B/G policy**; without them
+   no new product loop is implementable without inventing policy (register §6 ranks the smallest set for
+   the greatest unlock).
+2. **Engineering, no owner needed:** ADR 0023 Option-B write-up; the `academic.*` "levels" description fix.
+3. **When resources exist (external-gated):** push delivery (Firebase/Apple); native media/attachments
+   (devices + mobile CI/signing); P8 load evidence → then P11 horizontal scale; EXPLAIN-at-scale benchmark.
+4. **Before any new module:** obey `ENGINEERING_RULES.md`, consult the owner-decision-register, and verify
+   actual HEAD + worktree.
 
-The **P9 Attendance functional surface is complete** — backend and the full Flutter surface — all
-committed on this branch (at `ee66d95`; the branch HEAD is now `0d7a241` after the P10 notification slices), all gates green:
-
-- **Backend:** RecordSnapshot write + VIEW (community list / one snapshot / participants),
-  `AttendanceAccess` (Option B), `LIVE_PRESENCE`, Postgres + in-memory repositories, the API with full
-  error-coverage E2E, and the `attendance-boundaries` guards — no boundary violation found.
-- **Flutter (attendance.md §17):** the Live non-media foundation (`417e210`), the Attendance **record**
-  foundation (`639ee5c`), and the Attendance **viewing** foundation (`ee66d95`) — the repository
-  (`record`, `snapshots`, `snapshot`, `participants`), the wire models, two paginated controllers + a
-  detail-header provider, the record / snapshots-list / snapshot-detail screens, the
-  `attendanceRecord`/`attendanceView`-gated community doorways, opaque-cursor pagination, and the
-  Flutter `attendance_boundaries_test` guards.
-
-**P10 Notifications is implemented:** per-fact translators importing only each source module's
-contracts, plus the community/live/attendance notification vocabulary and catalog lines — community
-(`43dd0b1`), live speaker (`3d23274`) and attendance (`0d7a241`) — with no publisher, dispatcher,
-relay, push or outbox change. `live.session.started` is kept realtime-only
-(**[ADR 0025](architecture/decisions/0025-defer-persistent-live-session-start-notifications.md)**, `e4e6c15`);
-the policy is **[ADR 0024](architecture/decisions/0024-notification-policy-p10.md)**. (The full backend
-suite's only failures are the 3 pre-existing Academic-seed baseline failures — 9-vs-11 sections —
-**unrelated to P10**.) Remaining for a future, explicitly-requested slice: academic notifications, a
-persistent/broadcast `live.session.started` (ADR 0025 conditions), the per-type channel-default seam,
-and guaranteed delivery (outbox/T2).
-
-**Intentionally deferred, non-blocking** (do not start without an explicit request): the Flutter
-connection-filter UI and session-scoped (`liveSessionId`) viewing UI; the "view history" shortcut from
-the Record screen; the EXPLAIN-at-scale / 1M-entry read benchmark (§21/§22, measure before production
-use); **academic** notification facts (a separate policy decision) and **guaranteed delivery**
-(outbox/T2); the ADR 0023 Option-B write-up; P7b real LiveKit media binding (the `LiveMediaClient` seam
-stays Unavailable). P11 (horizontal scale) still needs P8 load evidence; **P12 (policy-gated live
-features) is complete** — Q64/Q59/Q56/Q51-Q23 shipped with ADRs 0026–0029 (see the "P12 Policy-gated
-Live features status" section above), docs and this checkpoint reconciled.
-
-**No new implementation beyond an explicitly requested focused slice.**
-
-> Reminder: everything in this checkpoint is a current, reversible decision.
+> Reminder: everything in this checkpoint is a current, reversible decision. Re-verify HEAD, worktree and
+> CI before continuing.
