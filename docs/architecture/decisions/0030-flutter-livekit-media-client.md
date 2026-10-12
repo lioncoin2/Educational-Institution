@@ -272,19 +272,38 @@ Resolved since this ADR was accepted:
   and a revoke re-blocks it and stops any active capture. Authorization stays
   distinct from the capture/publication state, and a grant never auto-starts
   capture. (`docs/p8-live-media-verification.md`.)
+- **Real browser screen capture (P13 / Sprint 13).** The long-standing
+  limitation — "real screen CAPTURE is not verifiable; headless Chrome has no
+  `getDisplayMedia` source" — is closed. A dedicated E2E
+  (`livekit_two_client_screenshare_e2e_test`) runs in HEADED Chrome on an Xvfb
+  virtual display with `--auto-select-desktop-capture-source`, so a GENUINE
+  screen-capture track (not a fake device) is published by the presenter through
+  the production SDK path and RECEIVED by a second independent client; start,
+  stop and presenter-revoke are all reconciled, and local vs remote screen state
+  is asserted separate. The six states (authority → capability → capture source →
+  publication → remote reception → remote state) are kept distinct.
+  (`docs/p8-live-media-verification.md`, Sprint 13.)
 
 Genuinely unresolved:
 
 - The final backoff/jitter policy for a terminal reconnect (Slice B does one
-  immediate, event-driven re-join and no timers).
+  immediate, event-driven re-join and no timers). **Per-participant remote
+  reconnection (investigated P13 / Sprint 13) stays NOT E2E-verified**: the SDK
+  exposes room-level reconnecting/reconnected (mapped + unit-verified) but no
+  reliable per-remote reconnecting flag, and a true transport partition cannot be
+  induced deterministically in the harness. The idempotency that matters —
+  reconnect/rejoin never duplicates a participant, a departed one is dropped and
+  never revived, and a new session inherits no stale media — is unit-covered.
 - The mobile CI provider (GitHub Actions matrix vs Codemagic).
 - The exact per-platform / per-browser availability matrix.
 - Remote participant SPEAKING detection and remote VIDEO / camera. (Remote
   participant PRESENCE + audio (none/unsubscribed/muted/live) + screen-share
-  publication are now reconciled live — P11 / Sprint 11, `LiveRemoteParticipant`
-  + `LiveKitRemoteParticipants`, surfaced in the roster, and verified against a
-  real SECOND participant in a two-client E2E — P12 / Sprint 12. Speaking
-  detection and camera stay out of scope — no approved contract.)
+  publication are reconciled live — P11 / Sprint 11, `LiveRemoteParticipant`
+  + `LiveKitRemoteParticipants`, surfaced in the roster. Presence + remote AUDIO
+  were verified against a real SECOND participant in a two-client E2E — P12 /
+  Sprint 12; remote SCREEN-SHARE reception from a real captured display — P13 /
+  Sprint 13. Speaking detection and camera stay out of scope — no approved
+  contract.)
 
 The LiveKit provider choice, the `livekit_client` version, the media
 architecture, and the Slice A/B contracts are **decided** and are not reopened

@@ -34,7 +34,7 @@ claim is made that the harness cannot support.
 |---|---|---|---|---|---|
 | 1 | Explicit join → backend grant → LiveKit connect | widget + real-E2E | yes | `live_media_panel_test` (tap `live-audio-join` → one `/join` for the session id → connecting); E2E `🎉 1 test passed` with a real `RoomConnectedEvent`, `serverVersion: 1.13.7`, ICE `…StateConnected` | — |
 | 2 | Mic permission + publish → mute → unmute → stop | widget + unit + real-E2E | yes | panel: enable/disable reflect the **SDK-confirmed** command (the publish future resolving, only then "on"), denied → recoverable + stays off, pending blocks a duplicate; `livekit_room_port_test` forwards mic; E2E toggles mic when the grant permits | UI reflects the **command-confirmed** publish, not a live track subscription; an SDK-driven mute (server mute, device loss) is not surfaced — ADR 0030 roster/speaking future slice |
-| 3 | Screen authority → capture → publish → stop | widget + unit | **partial** | panel: presenter-only gating, start/stop, cancel/failure recoverable; `livekit_live_media_client_test` refuses without a grant (`screen_not_permitted`); port forwards screen with `captureScreenAudio:false` | **real screen CAPTURE is NOT verified** — headless Chrome has no screen source. `me.presenting`/a grant is never treated as proof of a publishing track. See browser-manual. |
+| 3 | Screen authority → capture → publish → stop | widget + unit + **real-E2E** | **yes (Sprint 13)** | panel: presenter-only gating, start/stop, cancel/failure recoverable; `livekit_live_media_client_test` refuses without a grant (`screen_not_permitted`); port forwards screen with `captureScreenAudio:false`; **Sprint 13**: `livekit_two_client_screenshare_e2e_test` acquires a REAL display source (headed Chrome on Xvfb) and publishes a real screen track that a second client receives | real CAPTURE now verified end-to-end (not headless; a virtual X display). Authority is still never treated as proof of a publishing track. See the Sprint 13 section. |
 | 4 | Presenter authority revoked while sharing | widget | yes | panel: revoke → capture stopped (client told `false`) **and** re-grant shows capture OFF (no stale "sharing") — D1 below; backend also drops the track server-side (`updateCapabilities` → LiveKit) | — |
 | 5 | Removal / room deletion / duplicate identity / remote disconnect | unit + real-E2E (connect path) | yes | `livekit_disconnect_reason_test` mapping; `live_media_controller_test` terminal-reason + roomDeleted-rejoin; panel shows each reason + an explicit rejoin; adapter filters our own `clientInitiated` | a remote kick / duplicate-identity is not *forced* in the E2E (single participant); mapping + handling are unit-verified |
 | 6 | Network interruption → reconnecting/reconnected → UI | unit + widget | yes | adapter maps `RoomReconnecting`/`Reconnected`→signals; controller propagates; panel disables controls while reconnecting and **preserves** mic/screen across the transient | a real mid-call network drop is not injected in CI; the SDK-event→state path is unit-verified |
@@ -60,10 +60,13 @@ claim is made that the harness cannot support.
 
 ## Known limitations & next steps
 
-- **Real screen capture (path 3).** Not verifiable in the current CI harness
-  (headless Chrome provides a fake mic via `--use-fake-device-for-media-stream`
-  but no `getDisplayMedia` source). Verified instead by the browser-manual steps
-  below. No automated test asserts a published screen track.
+- **Real screen capture (path 3) — RESOLVED in Sprint 13.** Now verified
+  end-to-end: the screen-share harness runs in HEADED Chrome on an Xvfb virtual
+  display (a real X framebuffer Chrome's screen-capture pipeline can capture),
+  with `--auto-select-desktop-capture-source` so `getDisplayMedia()` resolves to
+  the whole screen without a picker. A real screen track is published by one
+  client and received by a second. The browser-manual steps below remain the
+  check for the interactive picker / cancel path. See the Sprint 13 section.
 - **Mid-session presenter grant (D3) — RESOLVED in Sprint 9.** The adapter no
   longer trusts only the join ticket: it listens to the SDK's
   `ParticipantPermissionsUpdatedEvent` for the local participant and relays the
@@ -257,10 +260,87 @@ subscription and remote events are REAL. The provisioning fixture
 (`provision-live-session.ts`) is unit-tested (`provisionParticipant`), and the
 workflow runs the whole `app/test/e2e/` directory (single-client + two-client).
 
-**Still not E2E-verified (honest).** Remote screen CAPTURE (headless Chrome has
-no `getDisplayMedia` source — unit-tested + manual B1), and per-participant
-RECONNECT (the SDK exposes no reliable per-remote reconnecting signal — not
-asserted).
+**Still not E2E-verified at Sprint 12 (both addressed in Sprint 13 below).**
+Remote screen CAPTURE (headless Chrome has no `getDisplayMedia` source), and
+per-participant RECONNECT. Sprint 13 resolves screen capture end-to-end; it
+investigated reconnect and keeps it as deterministic unit coverage with an
+honest "not E2E-verified" status (the SDK exposes no reliable per-remote
+reconnecting signal, and a true transport partition cannot be induced
+deterministically in the harness).
+
+## Sprint 13 — real browser screen sharing (the path-3 gap closed)
+
+The one gap the whole media programme kept open and documented — "real screen
+CAPTURE is NOT verified; headless Chrome has no `getDisplayMedia` source" — is
+now closed with a genuine capture, published through the production SDK path and
+received by a second independent client, against the real pinned LiveKit 1.13.7.
+
+**The harness (how a real source is obtained).** `getDisplayMedia()` has no
+source in headless Chrome, so the screen-share harness runs in its OWN workflow
+step in HEADED Chrome on an **Xvfb virtual display** — a real X framebuffer that
+Chrome's screen-capture pipeline can actually capture. A CI-only Chrome wrapper
+STRIPS flutter's `--headless` (so Chrome runs headed on the Xvfb `DISPLAY`) and
+adds `--auto-select-desktop-capture-source="Entire screen"` with
+`--use-fake-ui-for-media-stream`, so `getDisplayMedia()` resolves to the whole
+virtual screen with no interactive picker. This is **NOT**
+`--use-fake-device-for-media-stream` (that fakes a *camera*, never the display):
+the published track is a real screen-capture track off Chrome's own pipeline. If
+no source is acquired the SDK publish throws and the test FAILS — it never passes
+on a fake. The proven connect/audio harnesses are unchanged (still headless) so
+there is zero regression risk to them; the screen step is separate and its
+execution is independently evidenced in the workflow log.
+
+**Topology.** `app/test/e2e/livekit_two_client_screenshare_e2e_test.dart` — two
+independent production clients, one real room, distinct backend identities:
+- Client A = the owner/host. It CLAIMS the presenter slot through the real
+  backend (`POST /live/sessions/:id/screen-share`, which requires `live.moderate`
+  + `live.speak` — the owner holds both), so LiveKit pushes it
+  `canPublishSources:[screen]` via `updateParticipant` →
+  `ParticipantPermissionsUpdatedEvent` (live, no reconnect). No permission is
+  invented and no authorization bypassed — the same path the single-client E2E
+  already proves.
+- Client B = the second STUDENT (the Sprint 12 fixture). It only OBSERVES.
+
+**The six states are asserted separately and never collapsed:**
+
+| # | State | Where asserted |
+|---|---|---|
+| 1 | presenter authority | `clientA.screenAuthorized` after claim |
+| 2 | server screen capability | the same live SDK permission |
+| 3 | a real capture source obtained | implied by (4): publish succeeds only if a source was acquired |
+| 4 | a screen track actually published | `clientA.publication.screenShareOn` (local, SDK-reconciled) |
+| 5 | the remote receives the track | `clientB.remoteParticipants[A].screenSharing` |
+| 6 | remote app state reflects start AND stop | the same, re-checked false after stop |
+
+Explicit anti-conflation assertions: authority alone leaves `screenShareOn` and
+the remote `screenSharing` BOTH false (states 1/2 ≠ 3/4/5); A's local share is
+never B's local publication, and never surfaces as B's own remote share
+(local ≠ remote). Stop reconciles both sides to inactive while A stays connected;
+a presenter revoke withdraws authorization with no stale active-share left.
+
+| Behavior | Kind | Ran? | Evidence |
+|---|---|---|---|
+| Real browser display capture → a real published screen track | real-E2E | yes (dispatched, headed+Xvfb) | `livekit_two_client_screenshare_e2e_test` — `clientA.publication.screenShareOn` true |
+| A second independent client receives the real remote screen track | real-E2E | yes | same — `clientB.remoteParticipants[A].screenSharing` true |
+| Authority alone does NOT imply an active share (local or remote) | real-E2E | yes | same |
+| Stop → remote track ends, both sides reconcile inactive, A stays connected | real-E2E | yes | same |
+| Presenter revoke withdraws authorization, no stale active-share | real-E2E | yes | same |
+| Local vs remote screen-share state never conflated | unit + real-E2E | yes | `livekit_live_media_client_test` ("local/remote screen-share state separation") + the E2E |
+| Presenter authority without publication; publication active vs inactive | unit + widget | yes | Sprints 9/10 groups (capability sync, publication reconciliation, panel) |
+| Cancel / failure cleanup; revoke-while-sharing stops + hides | widget | yes | `live_media_panel_test` (Sprints 8/10) |
+| Duplicate / out-of-order / stale remote + capability events | unit | yes | `livekit_live_media_client_test` (Sprints 9/11) |
+
+**Secondary objective — remote reconnection (investigated, NOT E2E-verified).**
+`livekit_client` 2.13.0 exposes room-level `RoomReconnecting`/`RoomReconnected`
+events (mapped and unit-verified, path 6 of the matrix) but **no reliable
+per-remote-participant reconnecting flag**, and a true transport partition cannot
+be induced deterministically in a single-runner Docker harness without making the
+test flaky. The deterministic contract that matters IS covered as unit tests:
+reconnect does not duplicate a participant (reconcile-from-snapshot), a departed
+participant is dropped and never revived by a stale event, the remote set is
+cleared on connect/disconnect so a new session inherits no stale media, and a
+local reconnect opens a fresh room without a duplicate. Per-participant reconnect
+as a real E2E is **not claimed**; it stays an honest limitation.
 
 ## Manual verification (NOT executed in CI)
 

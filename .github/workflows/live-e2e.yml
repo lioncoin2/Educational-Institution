@@ -14,7 +14,8 @@
 #
 # Topology (all on one GitHub-hosted Ubuntu runner):
 #
-#   runner ── Chrome (headless, fake media devices)
+#   runner ── Chrome (headless for connect/audio; headed on an Xvfb virtual
+#             display for the real screen-capture harness, fake media devices)
 #          ── Flutter 3.47.5  ── flutter test --platform chrome
 #          └─ Docker Compose (infra/compose.yaml + infra/compose.data.yaml)
 #                ├─ db        Postgres 16            (127.0.0.1:5432, CI-only)
@@ -296,7 +297,13 @@ jobs:
       # and contained. The fake-media flags let headless Chrome satisfy
       # getUserMedia without a device. Production CORS is untouched; defines come
       # from a file, so no secret is on the command line.
-      - name: Flutter Web → LiveKit E2E
+      #
+      # These two harnesses need no real display (a fake microphone device is
+      # enough), so they keep running in the proven HEADLESS Chrome. The
+      # screen-share harness needs a real getDisplayMedia source and runs in its
+      # OWN step below (headed on Xvfb) — kept separate so its execution is
+      # independently evidenced and the proven harnesses never change.
+      - name: Flutter Web → LiveKit E2E (connect + remote audio, headless)
         working-directory: app
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
@@ -307,12 +314,48 @@ jobs:
             echo "exec \"$CHROME_BIN\" \"\$@\" --disable-web-security --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --autoplay-policy=no-user-gesture-required"
           } > "$wrapper"
           chmod +x "$wrapper"
-          # The whole test/e2e/ directory: the single-client harness
-          # (livekit_web_e2e_test.dart) AND the two-client remote-media harness
-          # (livekit_two_client_e2e_test.dart). Both are @TestOn('browser').
-          CHROME_EXECUTABLE="$wrapper" flutter test test/e2e/ \
+          # The single-client harness (livekit_web_e2e_test.dart) AND the
+          # two-client remote-media harness (livekit_two_client_e2e_test.dart);
+          # both @TestOn('browser'). The screen-share harness runs below.
+          CHROME_EXECUTABLE="$wrapper" flutter test \
+            test/e2e/livekit_web_e2e_test.dart \
+            test/e2e/livekit_two_client_e2e_test.dart \
             --platform chrome \
             --dart-define-from-file="$E2E_DEFINES_FILE"
+
+      # REAL browser screen capture (Sprint 13). getDisplayMedia() has no source
+      # in headless Chrome, so this one harness runs in HEADED Chrome on an Xvfb
+      # virtual display — a real X framebuffer Chrome's screen-capture pipeline
+      # can actually capture. This is NOT --use-fake-device-for-media-stream
+      # (that fakes a CAMERA, never the display). The wrapper STRIPS flutter's
+      # --headless (so Chrome runs headed on the Xvfb DISPLAY) and adds
+      # --auto-select-desktop-capture-source, so getDisplayMedia resolves to the
+      # whole virtual screen with no interactive picker. If no source is acquired
+      # the SDK publish throws and the test FAILS — it never passes on a fake.
+      - name: Flutter Web → LiveKit screen-share E2E (real display via Xvfb)
+        working-directory: app
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          command -v xvfb-run >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y xvfb; }
+          wrapper="$RUNNER_TEMP/chrome-e2e-screen"
+          {
+            echo '#!/usr/bin/env bash'
+            echo 'args=()'
+            echo 'for a in "$@"; do'
+            echo '  if [ "$a" = "--headless" ]; then continue; fi'
+            echo '  args+=("$a")'
+            echo 'done'
+            echo "exec \"$CHROME_BIN\" \"\${args[@]}\" --disable-web-security --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --autoplay-policy=no-user-gesture-required --auto-select-desktop-capture-source=\"Entire screen\""
+          } > "$wrapper"
+          chmod +x "$wrapper"
+          # Headed Chrome on a virtual display; flutter drives it via the debug
+          # port exactly as in headless. The screen harness is @TestOn('browser').
+          export CHROME_EXECUTABLE="$wrapper"
+          xvfb-run -a --server-args="-screen 0 2400x1800x24 -ac +extension RANDR" \
+            flutter test test/e2e/livekit_two_client_screenshare_e2e_test.dart \
+              --platform chrome \
+              --dart-define-from-file="$E2E_DEFINES_FILE"
 
       # Diagnostics on failure, secrets excluded: status, the two health
       # endpoints (non-secret), and bounded log tails. The env, the fixture

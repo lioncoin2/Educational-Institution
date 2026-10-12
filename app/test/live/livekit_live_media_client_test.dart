@@ -558,6 +558,44 @@ void main() {
     });
   });
 
+  // Sprint 13 — the LOCAL publication state and the REMOTE participant state are
+  // independent facts, carried by different signals. A signal about our OWN
+  // tracks must never alter the remote set, and a signal about REMOTE
+  // participants must never alter our own publication. (The real two-client
+  // screen-share E2E proves the same separation against a live server; this is
+  // the fast deterministic guard for it.)
+  group('local/remote screen-share state separation (Sprint 13)', () {
+    LiveRemoteParticipants remoteSet(Map<String, LiveRemoteParticipant> m) =>
+        LiveRemoteParticipants(Map.unmodifiable(m));
+
+    test('a local screen-share signal never touches the remote set', () async {
+      await connected(screen: true);
+      port.emit(
+        const LiveKitLocalTracks(microphoneOn: false, screenShareOn: true),
+      );
+      expect(client.publication.screenShareOn, isTrue);
+      // Our own share is a LOCAL fact — the remote set stays empty.
+      expect(client.remoteParticipants, LiveRemoteParticipants.empty);
+    });
+
+    test('a remote screen-share signal never touches our own publication', () async {
+      await connected(screen: true);
+      port.emit(
+        LiveKitRemoteParticipants(
+          remoteSet({
+            'u-remote': const LiveRemoteParticipant(
+              identity: 'u-remote',
+              screenSharing: true,
+            ),
+          }),
+        ),
+      );
+      expect(client.remoteParticipants['u-remote']?.screenSharing, isTrue);
+      // A remote participant sharing is NOT us sharing.
+      expect(client.publication.screenShareOn, isFalse);
+    });
+  });
+
   group('security & resources', () {
     test('a failure never leaks the token into the exception', () async {
       port.failConnect = Exception('connect failed for token=super-secret-jwt');
