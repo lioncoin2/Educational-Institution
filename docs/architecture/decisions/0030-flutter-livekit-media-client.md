@@ -281,7 +281,10 @@ Resolved since this ADR was accepted:
   the production SDK path and RECEIVED by a second independent client; start,
   stop and presenter-revoke are all reconciled, and local vs remote screen state
   is asserted separate. The six states (authority → capability → capture source →
-  publication → remote reception → remote state) are kept distinct.
+  publication → remote reception → remote state) are kept distinct. (One test-only
+  fix was needed: `flutter test` defaults `defaultTargetPlatform` to `android`,
+  so the SDK's web-mobile guard refused capture; the test overrides it to a
+  desktop platform to match a real desktop-web browser — no production change.)
   (`docs/p8-live-media-verification.md`, Sprint 13.)
 
 Genuinely unresolved:

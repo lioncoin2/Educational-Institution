@@ -63,12 +63,10 @@ import 'dart:async';
 // surfaces the RAW DOM error (before the SDK wraps it as TrackCreateException).
 // ignore: depend_on_referenced_packages
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
-// The SDK, imported ONLY for a diagnostic probe that calls its OWN
-// createScreenShareTrack (the exact production capture call) to surface the RAW
-// error the media client otherwise hides. Tests may import it directly (the
-// lib/ boundary test does not cover test/); production code must not.
-// ignore: depend_on_referenced_packages
-import 'package:livekit_client/livekit_client.dart' show LocalVideoTrack;
+// Flutter's platform signal. flutter_test reports defaultTargetPlatform as
+// `android` by default; this test overrides it to a DESKTOP platform (below) so
+// the SDK's web-mobile guard does not refuse screen share — see the note in main.
+import 'package:flutter/foundation.dart' show debugDefaultTargetPlatformOverride, TargetPlatform;
 
 // connectivity_plus's official web implementation entry point — see the note in
 // livekit_web_e2e_test.dart: `flutter test --platform chrome` does not run the
@@ -176,33 +174,24 @@ Future<int> _probeDisplayMediaTrackCount() async {
   }
 }
 
-/// DIAGNOSTIC-only (logged, never asserted): calls the SDK's OWN
-/// [LocalVideoTrack.createScreenShareTrack] — the EXACT production capture call —
-/// and prints its RAW error and stack. The media client wraps any failure as an
-/// opaque `media_error (TrackCreateException)`, hiding the message; this surfaces
-/// it, so when a getDisplayMedia probe succeeds but the SDK path fails, the real
-/// cause is visible. Stops/disposes the probe track on success.
-Future<void> _logSdkScreenCaptureProbe() async {
-  try {
-    final track = await LocalVideoTrack.createScreenShareTrack();
-    // ignore: avoid_print
-    print('LKDIAG screen-probe[sdk-createScreenShareTrack]: OK (${track.runtimeType})');
-    await track.stop();
-    await track.dispose();
-  } catch (error, stack) {
-    // ignore: avoid_print
-    print('LKDIAG screen-probe[sdk-createScreenShareTrack]: FAILED ${error.runtimeType}: $error');
-    // ignore: avoid_print
-    print('LKDIAG screen-probe[sdk-createScreenShareTrack] stack: '
-        '${stack.toString().split('\n').take(8).join(' || ')}');
-  }
-}
-
 void main() {
   // The browser E2E needs a live Flutter binding before livekit_client touches
   // Flutter state during Room.connect (as in livekit_web_e2e_test.dart).
   TestWidgetsFlutterBinding.ensureInitialized();
   ConnectivityPlusWebPlugin.registerWith(webPluginRegistrar);
+
+  // flutter_test reports defaultTargetPlatform as `android` by default. The
+  // LiveKit SDK's screen-share guard refuses capture on web-MOBILE
+  // (`createScreenShareTrack` throws "Screen sharing is not supported on mobile
+  // devices" when defaultTargetPlatform is android/iOS). A REAL desktop web
+  // browser — the only platform ADR 0030 ships — reports a desktop platform and
+  // is allowed. Override to a desktop platform so this test faithfully exercises
+  // the DESKTOP-web screen-share path it is meant to verify. This is a test-only
+  // correction of a flutter_test environment default; it changes no production
+  // behaviour, authorization, or browser security, and the capture itself is
+  // still a real getDisplayMedia track (proven by the probe below).
+  debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+  tearDownAll(() => debugDefaultTargetPlatformOverride = null);
 
   test('real browser screen capture publishes to a second client and reconciles on stop', () async {
     if (_baseUrl.isEmpty ||
@@ -314,13 +303,6 @@ void main() {
       reason: 'no real display-capture source in this environment '
           '(getDisplayMedia returned no video track)',
     );
-
-    // Diagnostic (logged, not asserted): a direct getDisplayMedia with the SDK's
-    // exact constraints already succeeds in this environment (confirmed), so the
-    // production failure is NOT the raw capture. Call the SDK's OWN
-    // createScreenShareTrack to surface the real error it raises (the client
-    // hides it as an opaque media_error).
-    await _logSdkScreenCaptureProbe();
 
     // 4. REAL browser display capture → the production publish path. With a real
     //    display + auto-selected source this acquires a genuine screen-capture

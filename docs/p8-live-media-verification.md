@@ -286,7 +286,15 @@ virtual screen with no interactive picker. This is **NOT**
 `--use-fake-device-for-media-stream` (that fakes a *camera*, never the display):
 the published track is a real screen-capture track off Chrome's own pipeline. If
 no source is acquired the SDK publish throws and the test FAILS — it never passes
-on a fake. The proven connect/audio harnesses are unchanged (still headless) so
+on a fake. One further, test-only correction is needed: `flutter test` reports
+`defaultTargetPlatform` as `android` by default, which makes the SDK's guard
+treat the browser as web-**mobile** and refuse screen share ("Screen sharing is
+not supported on mobile devices"); a real DESKTOP web browser — the only platform
+ADR 0030 ships — reports a desktop platform and is allowed, so the test overrides
+`debugDefaultTargetPlatformOverride` to `TargetPlatform.linux` to match. This
+changes no production behaviour, authorization or browser security, and the
+capture is still a genuine getDisplayMedia track (asserted on its own). The
+proven connect/audio harnesses are unchanged (still headless) so
 there is zero regression risk to them; the screen step is separate and its
 execution is independently evidenced in the workflow log.
 
