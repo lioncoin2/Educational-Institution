@@ -14,7 +14,7 @@ import 'community_write.dart';
 import 'membership_reconcile.dart';
 
 /// A change to the community itself, on its way to the server.
-enum CommunityWrite { lock, unlock, leave }
+enum CommunityWrite { lock, unlock, leave, linkHalaqa, unlinkHalaqa }
 
 class CommunityDetailState {
   const CommunityDetailState({
@@ -179,6 +179,21 @@ class CommunityController extends AsyncNotifier<CommunityDetailState> {
   Future<WriteOutcome<void>> unlock() => _write(
     CommunityWrite.unlock,
     (repository) => repository.unlock(communityId),
+  );
+
+  /// Associates the community with academic halaqa [halaqaId] — one request,
+  /// reconciled and shown as [lock] is. Oversight only; the link mutates no
+  /// membership. A refusal (e.g. the halaqa does not exist) reads the
+  /// community again.
+  Future<WriteOutcome<void>> linkHalaqa(String halaqaId) => _write(
+    CommunityWrite.linkHalaqa,
+    (repository) => repository.linkHalaqa(communityId, halaqaId),
+  );
+
+  /// Clears the community's academic halaqa association, as [linkHalaqa] sets it.
+  Future<WriteOutcome<void>> unlinkHalaqa() => _write(
+    CommunityWrite.unlinkHalaqa,
+    (repository) => repository.unlinkHalaqa(communityId),
   );
 
   /// Ends the viewer's own membership: one request. Once confirmed the

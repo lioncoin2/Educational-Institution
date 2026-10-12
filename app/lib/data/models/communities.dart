@@ -122,6 +122,7 @@ class CommunityMe {
     this.capabilities = const {},
     this.participation = const {},
     this.operations = const {},
+    this.canManageHalaqa = false,
   });
 
   /// `standing: null` is the server saying "not a member: reading on the
@@ -147,6 +148,7 @@ class CommunityMe {
       CommunityOperation.fromWire,
       CommunityOperation.unknown,
     ),
+    canManageHalaqa: json['canManageHalaqa'] == true,
   );
 
   /// Null only for oversight (see [isOversight]).
@@ -164,6 +166,11 @@ class CommunityMe {
   /// Allowed now — never containing [CommunityOperation.unknown]. Missing
   /// from an older server's answer: then nothing is allowed.
   final Set<CommunityOperation> operations;
+
+  /// Whether the server offers this viewer the halaqa-link control (Q50) —
+  /// institutional oversight (`communities.manage`), not membership. False on
+  /// an older server's answer. A UI courtesy only; the server decides again.
+  final bool canManageHalaqa;
 
   bool has(CommunityCapability capability) =>
       capability != CommunityCapability.unknown &&

@@ -68,6 +68,14 @@ describe('the academic relationships contract', () => {
     expect(await h.relationships.isTeaching('teacher', halaqa.id)).toBe(false);
   });
 
+  it('answers "halaqa exists" by existence alone — a real halaqa, not a dangling id', async () => {
+    // Existence only: the answer is a boolean, so a referencing module (a
+    // community's optional link, Q50) can reject a dangling id without ever
+    // learning who is in the halaqa.
+    expect(await h.relationships.halaqaExists(halaqa.id)).toBe(true);
+    expect(await h.relationships.halaqaExists('no-such-halaqa')).toBe(false);
+  });
+
   it('lists a halaqa’s ACTIVE students in enrollment order, a page at a time, each once', async () => {
     for (let i = 0; i < 7; i++) {
       h.person(`s${i}`, ['STUDENT']);

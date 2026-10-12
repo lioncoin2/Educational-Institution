@@ -15,6 +15,10 @@ import {
   type Result,
 } from '../../../shared';
 import {
+  ACADEMIC_RELATIONSHIPS,
+  type AcademicRelationships,
+} from '../../academic/contracts/relationships';
+import {
   AUTHORIZATION_SERVICE,
   type AuthorizationService,
 } from '../../identity/contracts/authorization';
@@ -350,6 +354,9 @@ export class ChangeCommunityStatusUseCase {
   }
 }
 
+/** A link named a halaqa that academic does not have. */
+const HALAQA_NOT_FOUND = failure('not_found', 'communities.halaqa_not_found', 'No such halaqa.');
+
 /**
  * Associates a community with an academic halaqa, or clears the association
  * (Q50). Institutional oversight — `communities.manage`, held by the owner and
@@ -358,14 +365,19 @@ export class ChangeCommunityStatusUseCase {
  * invented. The association is inert metadata: it creates and removes no
  * membership, grants and revokes no capability, and derives no messaging,
  * attendance or academic authorization. A repeat with the same value changes
- * nothing. The referenced halaqa is not validated against academic here —
- * Communities depends on no other business module (§17), and the link derives
- * nothing, so a stale reference is inert (ADR 0033).
+ * nothing.
+ *
+ * A link's target is validated through academic's read-only
+ * `ACADEMIC_RELATIONSHIPS` contract — existence only, revealing no enrollment,
+ * teaching or roster — so a dangling reference is refused before it is stored
+ * (ADR 0033). Communities reaches academic through that contract alone and
+ * never its internals or tables; unlinking (null) needs no validation.
  */
 @Injectable()
 export class SetCommunityHalaqaUseCase {
   constructor(
     @Inject(AUTHORIZATION_SERVICE) private readonly identity: AuthorizationService,
+    @Inject(ACADEMIC_RELATIONSHIPS) private readonly academic: AcademicRelationships,
     private readonly authorization: CommunityAuthorizationService,
     @Inject(COMMUNITY_STORE) private readonly store: CommunityStore,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -384,6 +396,11 @@ export class SetCommunityHalaqaUseCase {
       resourceId: communityId,
     });
     if (!oversees.ok) return oversees;
+
+    // Reject a dangling reference before persisting (unlinking needs no check).
+    if (command.halaqaId !== null && !(await this.academic.halaqaExists(command.halaqaId))) {
+      return err(HALAQA_NOT_FOUND);
+    }
 
     const at = this.clock.now();
     const actor = actorOf(principal);

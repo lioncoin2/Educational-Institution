@@ -768,6 +768,46 @@ staff communication.
 
 ---
 
+## 18. Q50 halaqa link — validation and management UI completed (Sprint 29)
+
+Sprint 28 (§17) shipped the optional link as inert metadata but **deferred** two
+things: cross-module existence validation and the Flutter management control.
+Sprint 29 completed both; everything else in §17 stands (still inert — no
+membership, capability, messaging or attendance is derived; ADR 0023 untouched).
+
+- **Existence validation — now real (ADR 0033 update).** A link's target is
+  validated server-side before it is stored, through a new read-only
+  `halaqaExists(halaqaId)` on academic's **public** `ACADEMIC_RELATIONSHIPS`
+  contract (existence only — no enrollment, teaching, name or roster).
+  `SetCommunityHalaqaUseCase` refuses a dangling reference with
+  `communities.halaqa_not_found` (404) before persisting; unlinking needs no
+  check. This is **architecture-legal** (the cross-module rule has always made a
+  module's `contracts/` public; communities touches academic through that
+  contract alone, never its internals or tables) and **acyclic**. The
+  module-specific `communities-boundaries.spec` — stricter than the rule, and
+  premised on the now-reversed "no halaqa link" — was amended **surgically** to
+  allow exactly that one edge; every other isolation assertion still holds. The
+  §17 "deferred / shape-validated only" note is superseded.
+- **Management UI — now built.** The server surfaces the authority as
+  `me.canManageHalaqa` (from `communities.manage`; owner/admin only) — a UI
+  courtesy, never the authorization. The community management surface shows the
+  current association (resolved to the halaqa's name via the academic catalogue)
+  and offers, to that viewer only, a link/change control (a halaqa picker reusing
+  the catalogue — structure only) and an unlink control (after confirming). The
+  §17 "deferred UI entry point" note is superseded. `canManageHalaqa` is additive
+  to `me`; it is not a community operation, so the operation/capability counts are
+  unchanged.
+- **Tests:** backend `relationships-contract.spec` (halaqaExists true/false, no
+  data revealed), `communities.api.spec` (real halaqa linked; nonexistent → 404;
+  oversight-only; no membership/lifecycle change; cardinality; `me.canManageHalaqa`
+  admin-yes/member-no), `communities-boundaries`/`academic-boundaries`/`arch:index`
+  green with the one new edge; Flutter `community_halaqa_link_test` (presentation
+  gated, link via picker, unlink, refusal) + `community_models` (parse).
+- **Still OPEN (unchanged):** Q50's enrollment-sourced membership and derived
+  capabilities — still not built, by design.
+
+---
+
 > This register is advisory and reversible. Closing a question means: record an ADR in `decisions/`,
 > make the (usually small) change, and delete the entry from `open-questions.md` with the ADR number —
 > per that file's "How to close one."

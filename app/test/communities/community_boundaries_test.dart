@@ -324,4 +324,6 @@ const _allowedCalls = [
   r"post '${_community(communityId)}/grants'",
   r"delete '${_community(communityId)}/grants/${_segment(grantId)}'",
   r"put '${_community(communityId)}/owner'",
+  r"put '${_community(communityId)}/halaqa'",
+  r"delete '${_community(communityId)}/halaqa'",
 ];

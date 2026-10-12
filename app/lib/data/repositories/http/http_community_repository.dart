@@ -214,6 +214,25 @@ class HttpCommunityRepository implements CommunityRepository {
         ),
       );
 
+  @override
+  Future<Community> linkHalaqa(String communityId, String halaqaId) => _call(
+    () async => Community.fromJson(
+      await _api.put(
+        '${_community(communityId)}/halaqa',
+        body: {'halaqaId': halaqaId},
+      ),
+      origin: DataOrigin.records,
+    ),
+  );
+
+  @override
+  Future<Community> unlinkHalaqa(String communityId) => _call(
+    () async => Community.fromJson(
+      await _api.delete('${_community(communityId)}/halaqa'),
+      origin: DataOrigin.records,
+    ),
+  );
+
   static const _unreadable = CommunityException(
     'communities.unreadable',
     'The server sent something this app cannot read.',

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { APP_CONFIG, type AppConfig } from '../../platform/config/app-config';
 import { DATABASE, type Database } from '../../platform/database';
+import { AcademicModule } from '../academic/academic.module';
 import { IdentityModule } from '../identity/identity.module';
 import { CommunitiesController } from './api/communities.controller';
 import { CommunityGrantsController } from './api/community-grants.controller';
@@ -60,8 +61,12 @@ import { InMemoryCommunityStore } from './infrastructure/in-memory-community-sto
  * capabilities the owner delegates to members, and ownership transfer.
  *
  * It depends on identity's contracts (may this principal…? who is this
- * account, and may it take part?) and on nothing else — no chat, no live
- * session, no attendance: those modules ask Communities, never the reverse.
+ * account, and may it take part?) and — since the owner approved the optional
+ * halaqa link (Q50) — on academic's read-only `ACADEMIC_RELATIONSHIPS` contract
+ * for one thing only: confirming a referenced halaqa EXISTS before a link is
+ * stored (ADR 0033). It learns nothing else of academic — no enrollment, no
+ * teaching, no roster — and no other module: no chat, no live session, no
+ * attendance; those modules ask Communities, never the reverse.
  * It exports its four contracts only:
  *
  *   COMMUNITY_AUTHORIZATION       may this principal do this act in this community?
@@ -73,7 +78,7 @@ import { InMemoryCommunityStore } from './infrastructure/in-memory-community-sto
  * Postgres, on the Drizzle adapters.
  */
 @Module({
-  imports: [IdentityModule],
+  imports: [IdentityModule, AcademicModule],
   controllers: [CommunitiesController, CommunityInvitationsController, CommunityGrantsController],
   providers: [
     // Without a database, one in-memory store serves both ports, so what is

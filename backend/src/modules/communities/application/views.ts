@@ -22,6 +22,13 @@ export interface MeView {
   readonly participation: readonly CommunityParticipationAct[];
   /** The operations that are not acts, decided by the same rules as their routes. */
   readonly operations: readonly CommunityOperation[];
+  /**
+   * Whether the caller may set or clear this community's academic halaqa link
+   * (Q50) — institutional oversight (`communities.manage`), not membership. A
+   * UI courtesy so an administration surface can show the control to exactly
+   * who the server would permit; the server decides again on every request.
+   */
+  readonly canManageHalaqa: boolean;
 }
 
 /**

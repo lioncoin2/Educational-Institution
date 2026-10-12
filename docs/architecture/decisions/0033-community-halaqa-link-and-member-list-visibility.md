@@ -74,16 +74,13 @@ all three as *not built in v1*.
   3. **Keep it unvalidated** (accept inert, possibly-stale references as the
      metadata-only cost of the boundary).
 
-  We did not pick for the owner; we shipped the inert link and documented the
-  decision. No communities→academic edge was introduced
-  (`communities-boundaries.spec.ts` stays green).
+  In Sprint 28 we did not pick for the owner; we shipped the inert link and
+  documented the decision. **Sprint 29 resolved it by option 1** — see the
+  update below.
 
-- **Client.** Flutter's `Community` model carries `halaqaId` (inspect). The
-  link/unlink **UI control is a documented deferred entry point**: because the
-  authority (`communities.manage`) is intentionally absent from the `me` block,
-  there is no server-authorized client signal to gate a control without either
-  reintroducing a community operation (the ripple this design avoids) or
-  modelling institution-admin standing in the app. The server
+- **Client.** Flutter's `Community` model carries `halaqaId` (inspect). In
+  Sprint 28 the link/unlink UI control was a documented deferred entry point.
+  **Sprint 29 built it** (see the update below); the server
   (`PUT`/`DELETE …/halaqa`, `communities.manage`) remains the single enforcement
   point regardless.
 
@@ -128,6 +125,8 @@ statuses and invents no enrollment rule.
   *not built*, by design.
 - Communities remains isolated from academic at the module boundary; the
   existence-validation decision is deferred and explicit, not silently resolved.
+  *(Superseded by the Sprint 29 update below: now validated through academic's
+  read-only relationships contract.)*
 - The conversation member list is an administrative view; normal messaging
   (reading, sending, managing participants) is unaffected.
 - Teachers see current students; administrators retain the full historical view.
@@ -136,7 +135,53 @@ This ADR **supersedes none** of [0016](0016-communities-module.md),
 [0017](0017-community-scoped-authorization.md),
 [0023](0023-attendance-authorization-and-policy.md) (attendance — untouched), or
 [0032](0032-discovery-membership-attendance-separation.md). It refines
-[0016](0016-communities-module.md) dec. 11 by recording that the anticipated
-`ACADEMIC_RELATIONSHIPS` validation is subordinate to the §17 isolation boundary.
-No role grant, `people.read`, messaging capability, or attendance rule was
-changed.
+[0016](0016-communities-module.md) dec. 11 by recording how the anticipated
+`ACADEMIC_RELATIONSHIPS` validation is realised. No role grant, `people.read`,
+messaging capability, or attendance rule was changed.
+
+## Update — Sprint 29 (2026-10-13): existence validation and the management UI
+
+Sprint 28 left two things open for this ADR: cross-module existence validation
+(deferred) and the Flutter management control (deferred). Sprint 29 completed
+both, keeping everything else above true.
+
+**Existence validation — resolved by option 1 (the port contract).** A link's
+target is now validated server-side before it is stored: a new read-only
+`halaqaExists(halaqaId)` on academic's **public** `ACADEMIC_RELATIONSHIPS`
+contract (implemented in academic from its own repository) answers existence
+only — never an enrollment, a teaching assignment, a name or a roster.
+`SetCommunityHalaqaUseCase` calls it and refuses a dangling reference with
+`communities.halaqa_not_found` (404) before persisting; unlinking (null) needs
+no check.
+
+This is the brief's preferred design and is **architecture-legal**: the
+cross-module dependency rule (`dependency-rules.md`, `.dependency-cruiser.cjs`)
+has always held that *only* a module's `contracts/` directory is public, and
+communities now depends on academic through that contract **alone** — never its
+internals, its `application`, or its tables. It is **acyclic** (academic depends
+on identity only; nothing in academic imports communities). The module-specific
+`communities-boundaries.spec.ts` was the only thing stricter than the
+architecture rule — it asserted communities knew *no* other business module,
+a statement whose premise ("no halaqa link, Q50") the owner reversed by approving
+the link. That test was amended **surgically** to permit exactly the one edge
+(`academic/contracts/relationships` + wiring `AcademicModule`) and nothing more;
+every other isolation assertion (no academic tables, no internals, pure domain)
+still holds. Options 2 (a dependency-inversion seam) and 3 (leave unvalidated)
+were not taken: option 1 is simpler, uses the repository's standard
+consumer-imports-provider DI, and makes the now-approved coupling honest and
+visible rather than hiding a real runtime dependency behind an inverted port.
+
+**Management UI — built.** The server now surfaces the authority as
+`me.canManageHalaqa` (computed from `communities.manage`, true for the owner and
+admins alone) — a UI courtesy, never the authorization. The community management
+surface shows the current association (resolved to the halaqa's name through the
+academic catalogue), and, to a holder of `me.canManageHalaqa`, a link/change
+control (a halaqa picker that reuses the existing catalogue — sections →
+programs → halaqat, structure only, no student or teacher) and an unlink control
+(after confirming). The link mutates no membership; the server decides again on
+every request. `me.canManageHalaqa` is additive to the `me` block — it is **not**
+a community operation, so `COMMUNITY_OPERATIONS` and the capability/operation
+counts stay unchanged.
+
+Still **not built**, by design and still OPEN: enrollment-sourced membership and
+derived capabilities. Migration 0021 is unchanged; no new migration was needed.

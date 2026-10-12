@@ -4,10 +4,12 @@ import { cruise, edgesFrom, reachableFrom, type CruiseOutput } from '../support/
  * The shape of Communities, asserted (communities.md §17) — each property as
  * its own test, so a failure says which one broke:
  *
- *   - Communities knows identity only through identity's contracts, and no
- *     other business module at all — not messaging, live, attendance,
- *     academic, realtime, notifications or files; its module file wires
- *     identity in and nothing else;
+ *   - Communities knows identity through identity's contracts, and — since the
+ *     owner approved the optional halaqa link (Q50, ADR 0033) — academic
+ *     through its read-only `academic/contracts/relationships` contract alone
+ *     (to confirm a referenced halaqa EXISTS, nothing more). No other business
+ *     module at all — not messaging, live, attendance, realtime, notifications
+ *     or files; its module file wires in only identity and academic;
  *   - no other module reaches Communities' internals: its contracts (and the
  *     module file, for the composition root) are the way in;
  *   - Communities never reads another module's tables, and only its own
@@ -26,6 +28,10 @@ const COMMUNITIES = 'src/modules/communities/';
 const MODULE_FILE = 'src/modules/communities/communities.module.ts';
 const SCHEMA = 'src/modules/communities/infrastructure/schema.ts';
 const PERMISSIONS = 'src/modules/identity/contracts/permissions.ts';
+// The single academic edge the owner approved (Q50, ADR 0033): a read-only
+// existence check for a referenced halaqa, through academic's public contract.
+const ACADEMIC_RELATIONSHIPS_CONTRACT = 'src/modules/academic/contracts/relationships.ts';
+const ACADEMIC_MODULE = 'src/modules/academic/academic.module.ts';
 const isCommunitiesCode = (source: string) =>
   source.startsWith(COMMUNITIES) && source !== MODULE_FILE;
 
@@ -71,18 +77,21 @@ describe('communities boundaries', () => {
     expect(otherSchemas().length).toBeGreaterThanOrEqual(4);
   });
 
-  it('knows identity only through its contracts, and no other module at all', () => {
+  it('knows identity through its contracts, and academic only through its relationships contract', () => {
     const intrusions = edgesFrom(output, isCommunitiesCode)
       .filter((edge) => edge.resolved.startsWith('src/modules/'))
       .filter((edge) => !edge.resolved.startsWith(COMMUNITIES))
       .filter((edge) => !edge.resolved.startsWith('src/modules/identity/contracts/'))
+      // Q50 (ADR 0033): the one approved academic edge — existence validation
+      // for a referenced halaqa, through academic's read-only public contract.
+      .filter((edge) => edge.resolved !== ACADEMIC_RELATIONSHIPS_CONTRACT)
       .map((edge) => `${edge.source} -> ${edge.resolved}`);
     expect(intrusions).toEqual([]);
     // `reachableFrom` skips module files, so the wiring is checked edge by edge.
     const wiring = edgesFrom(output, (source) => source === MODULE_FILE)
       .map((edge) => edge.resolved)
       .filter((path) => path.startsWith('src/modules/') && !path.startsWith(COMMUNITIES));
-    expect(wiring).toEqual(['src/modules/identity/identity.module.ts']);
+    expect(wiring.sort()).toEqual([ACADEMIC_MODULE, 'src/modules/identity/identity.module.ts']);
   });
 
   it('is reached by other modules only through its contracts', () => {

@@ -23,6 +23,10 @@ export class AcademicRelationshipsService implements AcademicRelationships {
     @Inject(ACADEMIC_READ_MODEL) private readonly readModel: AcademicReadModel,
   ) {}
 
+  async halaqaExists(halaqaId: string): Promise<boolean> {
+    return (await this.repository.findHalaqa(halaqaId)) !== null;
+  }
+
   isEnrolled(studentUserId: string, halaqaId: string): Promise<boolean> {
     return this.repository.isEnrolled(studentUserId, halaqaId);
   }

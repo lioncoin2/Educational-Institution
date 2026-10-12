@@ -190,6 +190,18 @@ class ScriptedCommunities extends MockCommunityRepository {
         () => super.transferOwnership(communityId, userId),
       );
 
+  @override
+  Future<Community> linkHalaqa(String communityId, String halaqaId) => _write(
+    'linkHalaqa $communityId $halaqaId',
+    () => super.linkHalaqa(communityId, halaqaId),
+  );
+
+  @override
+  Future<Community> unlinkHalaqa(String communityId) => _write(
+    'unlinkHalaqa $communityId',
+    () => super.unlinkHalaqa(communityId),
+  );
+
   /// Ends the viewer's membership everywhere: an empty list.
   void leaveAll() {
     for (final id in seededIds) {
@@ -500,12 +512,15 @@ Map<String, Object?> communityJson({
     'community.live.raise_hand',
   ],
   List<String> operations = const [],
+  String? halaqaId,
+  bool canManageHalaqa = false,
 }) => {
   'id': id,
   'title': title,
   'status': status,
   'lifecycleVersion': lifecycleVersion,
   'memberCount': memberCount,
+  'halaqaId': halaqaId,
   'createdAt': '2026-09-01T08:00:00.000Z',
   'me': {
     'standing': standing,
@@ -513,6 +528,7 @@ Map<String, Object?> communityJson({
     'capabilities': capabilities,
     'participation': participation,
     'operations': operations,
+    'canManageHalaqa': canManageHalaqa,
   },
 };
 

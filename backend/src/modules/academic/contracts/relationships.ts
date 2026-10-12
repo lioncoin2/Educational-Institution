@@ -18,6 +18,15 @@ export const ACADEMIC_RELATIONSHIPS_MAX_PAGE = 1000;
  * checks the structure itself — `isTeaching` is not "this halaqa is open".
  */
 export interface AcademicRelationships {
+  /**
+   * Whether a halaqa with this id exists — existence only, nothing about who
+   * is in it or whether it is running. For a module that may reference a
+   * halaqa it does not own (a community's optional link, Q50) and must reject a
+   * dangling reference without reaching into academic's tables. Reveals no
+   * enrollment, teaching assignment, name or status.
+   */
+  halaqaExists(halaqaId: string): Promise<boolean>;
+
   /** Whether the account is enrolled in the halaqa now. */
   isEnrolled(studentUserId: string, halaqaId: string): Promise<boolean>;
 

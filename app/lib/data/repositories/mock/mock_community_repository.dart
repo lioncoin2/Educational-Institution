@@ -451,6 +451,31 @@ class MockCommunityRepository implements CommunityRepository {
     return c.view();
   }
 
+  // ── Academic halaqa link (Q50) ──────────────────────────────────────────
+
+  @override
+  Future<Community> linkHalaqa(String communityId, String halaqaId) =>
+      _setHalaqa(communityId, halaqaId);
+
+  @override
+  Future<Community> unlinkHalaqa(String communityId) =>
+      _setHalaqa(communityId, null);
+
+  Future<Community> _setHalaqa(String communityId, String? halaqaId) async {
+    await _wait();
+    final c = _find(communityId);
+    // The server decides on `communities.manage`; the demo approximates it
+    // with `me.canManageHalaqa` (the owner). The link mutates nothing else.
+    if (!c.view().me.canManageHalaqa) {
+      throw const CommunityException(
+        'identity.permission_denied',
+        'Only institutional oversight may manage the halaqa link.',
+      );
+    }
+    c.halaqaId = halaqaId;
+    return c.view();
+  }
+
   // ── Delegated capabilities and ownership ────────────────────────────────
 
   @override
@@ -1113,6 +1138,10 @@ class _MockCommunity {
   int lifecycleVersion;
   _Stint stint;
 
+  /// The optional academic halaqa link (Q50) — inert metadata, set and cleared
+  /// by the demo's owner. The real server gates it on `communities.manage`.
+  String? halaqaId;
+
   /// Every row the roster ever had, by position, oldest first — computed on
   /// request, never stored: those gone are only remembered as positions.
   int rowCount;
@@ -1190,7 +1219,7 @@ class _MockCommunity {
     status: status,
     lifecycleVersion: lifecycleVersion,
     memberCount: memberCount,
-    createdAt: createdAt,
+    halaqaId: halaqaId,
     me: CommunityMe(
       standing: owned ? CommunityStanding.owner : CommunityStanding.member,
       joinedAt: joinedAt,
@@ -1212,7 +1241,11 @@ class _MockCommunity {
         if (transfers) CommunityOperation.ownershipTransfer,
         if (mayLeave) CommunityOperation.leave,
       },
+      // The real server offers this to `communities.manage` (owner/admin
+      // oversight); the demo approximates it with the community's own owner.
+      canManageHalaqa: owned,
     ),
+    createdAt: createdAt,
     origin: DataOrigin.mock,
   );
 }

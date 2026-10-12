@@ -40,6 +40,22 @@ void main() {
       expect(community.origin, DataOrigin.records);
     });
 
+    test('reads the optional halaqa link and the canManageHalaqa flag (Q50)', () {
+      final linked = Community.fromJson(
+        communityJson(halaqaId: 'halaqa-7', canManageHalaqa: true),
+      );
+      expect(linked.halaqaId, 'halaqa-7');
+      expect(linked.me.canManageHalaqa, isTrue);
+      // Null halaqaId means "not linked"; the flag defaults false.
+      final bare = Community.fromJson(communityJson());
+      expect(bare.halaqaId, isNull);
+      expect(bare.me.canManageHalaqa, isFalse);
+      // An older server that omits the flag: the control is not offered.
+      final json = communityJson();
+      (json['me']! as Map).remove('canManageHalaqa');
+      expect(Community.fromJson(json).me.canManageHalaqa, isFalse);
+    });
+
     test('ignores keys it does not know', () {
       final json = communityJson()
         ..['archivedAt'] = '2027-01-01T00:00:00.000Z'

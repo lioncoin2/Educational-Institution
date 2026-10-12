@@ -169,6 +169,30 @@ abstract final class CommunityCopy {
   static String leaveQuestion(Community community) =>
       'مغادرة «${community.title}»؟';
 
+  // ── Academic halaqa link (Q50) ──
+  // Shown on the management surface to institutional oversight only
+  // (`me.canManageHalaqa`); the link is inert metadata and the server decides
+  // again on every request.
+
+  static const halaqaTitle = 'الحلقة الأكاديمية';
+  static const halaqaNone = 'هذا المجتمع غير مرتبط بأي حلقة.';
+  static const linkHalaqa = 'ربط بحلقة';
+  static const changeHalaqa = 'تغيير الحلقة';
+  static const unlinkHalaqa = 'إلغاء ربط الحلقة';
+  static const confirmUnlinkHalaqa = 'إلغاء الربط';
+  static const unlinkHalaqaQuestion = 'إلغاء ربط هذا المجتمع بالحلقة؟';
+
+  /// The current association when its halaqa's name is known; otherwise the
+  /// neutral line, never a bare id.
+  static String halaqaLinked(String name) => 'مرتبط بحلقة: $name';
+  static const halaqaLinkedUnnamed = 'مرتبط بحلقة.';
+
+  // The halaqa picker — reuses the academic catalogue (sections → programs →
+  // halaqat); it shows structure only, never a student or a teacher.
+  static const halaqaPickerTitle = 'اختر حلقة';
+  static const halaqaPickerEmpty = 'لا توجد حلقات متاحة.';
+  static const halaqaPickerError = 'تعذّر تحميل الحلقات. حاول مرة أخرى.';
+
   /// Why a change did not go through, by the server's code — said without
   /// its reason.
   static String writeFailed(String code) => switch (code) {
@@ -194,6 +218,7 @@ abstract final class CommunityCopy {
     'communities.capability_required' ||
     'identity.permission_denied' ||
     'communities.not_community_owner' => 'هذا غير متاح لك في هذا المجتمع.',
+    'communities.halaqa_not_found' => 'الحلقة المحدّدة غير موجودة.',
     'communities.unreadable' =>
       'وصلت من الخادم بيانات لا يقرؤها هذا الإصدار من التطبيق.',
     _ => 'تعذّر إتمام الطلب. حاول مرة أخرى.',

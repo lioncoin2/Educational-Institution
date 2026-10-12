@@ -345,6 +345,21 @@ abstract interface class CommunityRepository {
   /// Hands the community to [userId]. The answer is the community as the
   /// VIEWER now stands in it, not as the new owner does.
   Future<Community> transferOwnership(String communityId, String userId);
+
+  // ── Academic halaqa link (Q50) ──
+
+  /// Associates the community with academic halaqa [halaqaId] — institutional
+  /// oversight only (the server gates it on `communities.manage`, surfaced as
+  /// `me.canManageHalaqa`). The link is inert metadata: it adds and removes no
+  /// member and confers no capability. The server validates that the halaqa
+  /// exists; a missing one throws [CommunityException]
+  /// (`communities.halaqa_not_found`). The answer is the community as it now
+  /// stands, with its `halaqaId` set.
+  Future<Community> linkHalaqa(String communityId, String halaqaId);
+
+  /// Clears the community's academic halaqa association. Idempotent; the
+  /// answer is the community with `halaqaId` null.
+  Future<Community> unlinkHalaqa(String communityId);
 }
 
 /// People discovery — finding an account by name. [search] is the OWNER/ADMIN

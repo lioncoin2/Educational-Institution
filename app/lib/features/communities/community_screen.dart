@@ -14,7 +14,9 @@ import '../../core/widgets/foundations/section_header.dart';
 import '../../core/widgets/foundations/stat_badge.dart';
 import '../../core/widgets/layout/app_screen.dart';
 import '../../core/widgets/patterns/info_row.dart';
+import '../../data/models/academic.dart';
 import '../../data/models/communities.dart';
+import '../../providers/app_providers.dart';
 import '../messaging/widgets/connection_banner.dart';
 import 'community_copy.dart';
 import 'state/community_chat_opener.dart';
@@ -22,6 +24,7 @@ import 'state/community_controller.dart';
 import 'state/community_write.dart';
 import 'widgets/community_change.dart';
 import 'widgets/community_states.dart';
+import 'widgets/halaqa_picker.dart';
 
 /// One community, as the viewer may see it now: whether it is locked, how
 /// many are in it, where the viewer stands, and what the server says they
@@ -326,7 +329,10 @@ class _Management extends ConsumerWidget {
           label: const Text(CommunityCopy.leave),
         ),
     ];
-    if (buttons.isEmpty) return const SizedBox.shrink();
+    // The halaqa link is institutional oversight (Q50), offered on the
+    // server's `me.canManageHalaqa` alone — never a membership capability.
+    final showHalaqa = me.canManageHalaqa;
+    if (buttons.isEmpty && !showHalaqa) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -335,6 +341,10 @@ class _Management extends ConsumerWidget {
         for (final button in buttons) ...[
           const SizedBox(height: Insets.md),
           button,
+        ],
+        if (showHalaqa) ...[
+          const SizedBox(height: Insets.lg),
+          _HalaqaManagement(community: community, writing: writing),
         ],
       ],
     );
@@ -404,6 +414,151 @@ class _Management extends ConsumerWidget {
       router.go(Routes.communities);
     }
     sayWriteOutcome(messenger, outcome, refresh: refresh, confirmed: true);
+  }
+}
+
+/// The optional academic halaqa link (Q50), shown only when the server's `me`
+/// holds `canManageHalaqa` (institutional oversight, `communities.manage`).
+/// The current association is shown — resolved to the halaqa's name, never a
+/// bare id — and the manager may link, change or unlink it. The link mutates
+/// no membership; the server decides again on every request, and refuses an
+/// unauthorized caller or a halaqa it does not have.
+class _HalaqaManagement extends ConsumerWidget {
+  const _HalaqaManagement({required this.community, required this.writing});
+
+  final Community community;
+  final CommunityWrite? writing;
+
+  CommunityController _controller(WidgetRef ref) =>
+      ref.read(communityProvider(community.id).notifier);
+
+  VoidCallback _refreshOf(BuildContext context) {
+    final container = ProviderScope.containerOf(context, listen: false);
+    final provider = communityProvider(community.id);
+    return () {
+      if (container.exists(provider)) {
+        unawaited(container.read(provider.notifier).refresh());
+      }
+    };
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final linked = community.halaqaId != null;
+    final idle = writing == null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          CommunityCopy.halaqaTitle,
+          style: Theme.of(context).textTheme.labelLarge,
+        ),
+        const SizedBox(height: Insets.sm),
+        _HalaqaStatus(halaqaId: community.halaqaId),
+        const SizedBox(height: Insets.md),
+        OutlinedButton.icon(
+          onPressed: idle ? () => _link(context, ref) : null,
+          icon: writing == CommunityWrite.linkHalaqa
+              ? const BusyIndicator()
+              : const Icon(Icons.school_outlined),
+          label: Text(
+            linked ? CommunityCopy.changeHalaqa : CommunityCopy.linkHalaqa,
+          ),
+        ),
+        if (linked) ...[
+          const SizedBox(height: Insets.md),
+          OutlinedButton.icon(
+            onPressed: idle ? () => _unlink(context, ref) : null,
+            icon: writing == CommunityWrite.unlinkHalaqa
+                ? const BusyIndicator()
+                : const Icon(Icons.link_off_rounded),
+            label: const Text(CommunityCopy.unlinkHalaqa),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _link(BuildContext context, WidgetRef ref) async {
+    final halaqa = await showHalaqaPicker(context);
+    if (halaqa == null || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final refresh = _refreshOf(context);
+    sayWriteOutcome(
+      messenger,
+      await _controller(ref).linkHalaqa(halaqa.id),
+      refresh: refresh,
+      confirmed: true,
+    );
+  }
+
+  Future<void> _unlink(BuildContext context, WidgetRef ref) async {
+    final yes = await confirmCommunityChange(
+      context,
+      question: CommunityCopy.unlinkHalaqaQuestion,
+      confirmLabel: CommunityCopy.confirmUnlinkHalaqa,
+    );
+    if (!yes || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final refresh = _refreshOf(context);
+    sayWriteOutcome(
+      messenger,
+      await _controller(ref).unlinkHalaqa(),
+      refresh: refresh,
+      confirmed: true,
+    );
+  }
+}
+
+/// The current halaqa association, resolved to the halaqa's name through the
+/// academic catalogue (structure only). While it resolves, or if it cannot be
+/// read, a neutral line stands in — never a bare id; when nothing is linked,
+/// it says so.
+class _HalaqaStatus extends ConsumerStatefulWidget {
+  const _HalaqaStatus({required this.halaqaId});
+
+  final String? halaqaId;
+
+  @override
+  ConsumerState<_HalaqaStatus> createState() => _HalaqaStatusState();
+}
+
+class _HalaqaStatusState extends ConsumerState<_HalaqaStatus> {
+  Future<AcademicHalaqaDetail?>? _detail;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(_HalaqaStatus old) {
+    super.didUpdateWidget(old);
+    if (old.halaqaId != widget.halaqaId) _resolve();
+  }
+
+  void _resolve() {
+    final id = widget.halaqaId;
+    _detail = id == null
+        ? null
+        : ref.read(academicRepositoryProvider).halaqa(id);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.halaqaId == null) return const Text(CommunityCopy.halaqaNone);
+    return FutureBuilder<AcademicHalaqaDetail?>(
+      future: _detail,
+      builder: (context, snapshot) {
+        final name = snapshot.data?.halaqa.name;
+        return Text(
+          name == null
+              ? CommunityCopy.halaqaLinkedUnnamed
+              : CommunityCopy.halaqaLinked(name),
+        );
+      },
+    );
   }
 }
 

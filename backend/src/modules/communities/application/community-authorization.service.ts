@@ -6,7 +6,7 @@ import {
   type AuthorizationContext,
   type AuthorizationService,
 } from '../../identity/contracts/authorization';
-import type { Permission } from '../../identity/contracts/permissions';
+import { Permissions, type Permission } from '../../identity/contracts/permissions';
 import {
   COMMUNITY_CAPABILITIES,
   COMMUNITY_OPERATIONS,
@@ -309,6 +309,13 @@ export class CommunityAuthorizationService implements CommunityAuthorization {
       capabilities: COMMUNITY_CAPABILITIES.filter(permits),
       participation: COMMUNITY_PARTICIPATION.filter(permits),
       operations: COMMUNITY_OPERATIONS.filter(allows),
+      // Q50: setting/clearing the halaqa link is institutional oversight
+      // (`communities.manage`), decided by identity alone — never membership,
+      // so it is not a community operation and rests on no stint.
+      canManageHalaqa: this.identity.can(principal, Permissions.communities.manage, {
+        resourceType: COMMUNITY_RESOURCE,
+        resourceId: communityId,
+      }),
     };
   }
 

@@ -1858,14 +1858,15 @@ be scheduled) and, for a notification, a translator
 
 ## Q50 — Communities and the academic structure
 
-> **RESOLVED in part (Sprint 28 — [ADR 0033](decisions/0033-community-halaqa-link-and-member-list-visibility.md),
-> [register §17](../owner-decision-register.md)).** A community MAY carry an optional
+> **RESOLVED in part (Sprint 28 + Sprint 29 — [ADR 0033](decisions/0033-community-halaqa-link-and-member-list-visibility.md),
+> [register §17–§18](../owner-decision-register.md)).** A community MAY carry an optional
 > `halaqa_id` association — **inert metadata** set by `communities.manage` oversight,
 > deriving no membership, capability or authorization (migration 0021). Cardinality:
-> community → 0..1 halaqa, halaqa → 0..n communities (no rule imposed). **Still open:**
-> enrollment-sourced membership and derived capabilities (deliberately not built); and
-> cross-module halaqa-existence validation (deferred — the link is validated for shape
-> only, to preserve the communities↔academic isolation boundary; options in ADR 0033).
+> community → 0..1 halaqa, halaqa → 0..n communities (no rule imposed). Sprint 29 added
+> real server-side existence validation (via academic's read-only `ACADEMIC_RELATIONSHIPS`
+> contract — a nonexistent halaqa is refused) and the Flutter management UI (link/unlink,
+> gated on `me.canManageHalaqa`). **Still open:** enrollment-sourced membership and derived
+> capabilities (deliberately not built).
 
 **Question.**
 

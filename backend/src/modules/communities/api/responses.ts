@@ -37,6 +37,7 @@ export interface CommunityResponse {
     readonly capabilities: readonly CommunityCapability[];
     readonly participation: readonly CommunityParticipationAct[];
     readonly operations: readonly CommunityOperation[];
+    readonly canManageHalaqa: boolean;
   };
 }
 
@@ -55,6 +56,7 @@ export function toCommunityResponse(view: CommunityView): CommunityResponse {
       capabilities: view.me.capabilities,
       participation: view.me.participation,
       operations: view.me.operations,
+      canManageHalaqa: view.me.canManageHalaqa,
     },
   };
 }

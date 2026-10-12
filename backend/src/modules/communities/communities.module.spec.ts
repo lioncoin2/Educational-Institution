@@ -1,5 +1,6 @@
 import { MODULE_METADATA } from '@nestjs/common/constants';
 
+import { AcademicModule } from '../academic/academic.module';
 import { IdentityModule } from '../identity/identity.module';
 import { CommunitiesModule } from './communities.module';
 import {
@@ -10,9 +11,10 @@ import {
 } from './contracts';
 
 describe('the Communities module', () => {
-  it('imports identity and nothing else — no chat, no live, no attendance', () => {
+  it('imports identity, and academic for the Q50 halaqa-existence check — no chat, no live, no attendance', () => {
     expect(Reflect.getMetadata(MODULE_METADATA.IMPORTS, CommunitiesModule)).toEqual([
       IdentityModule,
+      AcademicModule,
     ]);
   });
 
