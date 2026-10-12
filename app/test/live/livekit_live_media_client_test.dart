@@ -23,6 +23,9 @@ class _FakePort implements LiveKitRoomPort {
   Object? failDisconnect;
   Object? failScreen;
   Object? failMicrophone;
+  /// When set, [setMicrophoneEnabled] awaits this before returning — so a test
+  /// can leave/disconnect while a publish command is still in flight.
+  Completer<void>? gateMic;
 
   void emit(LiveKitRoomSignal signal) => _signals.add(signal);
 
@@ -38,6 +41,7 @@ class _FakePort implements LiveKitRoomPort {
   @override
   Future<void> setMicrophoneEnabled(bool enabled) async {
     microphone.add(enabled);
+    if (gateMic != null) await gateMic!.future;
     if (failMicrophone != null) throw failMicrophone!;
   }
 
@@ -749,6 +753,69 @@ void main() {
         ),
       );
       expect(client.remoteParticipants['u-1']?.audio, LiveRemoteAudio.live);
+    });
+  });
+
+  // Sprint 17 — production-readiness lifecycle. REPEATED join→media→leave→join
+  // cycles must never leak a previous session's state into the next, and leaving
+  // while a publish command is still in flight must not resurrect it. (No looped
+  // multi-cycle test existed before — prior coverage was single session-change.)
+  group('repeated-session & pending-op lifecycle (Sprint 17)', () {
+    test('repeated connect → media → disconnect cycles never leak between sessions', () async {
+      for (var i = 0; i < 5; i++) {
+        final authorized = i.isEven; // vary authority so a leak would show
+        await client.connect(_grant(screen: authorized));
+        port.emit(const LiveKitConnected());
+        expect(client.state, const LiveMediaConnected());
+        // A fresh session starts CLEAN — no remote/publication from the prior cycle.
+        expect(
+          client.remoteParticipants,
+          LiveRemoteParticipants.empty,
+          reason: 'cycle $i started with a stale remote set',
+        );
+        expect(
+          client.publication,
+          LiveMediaPublication(screenAuthorized: authorized),
+          reason: 'cycle $i started with a stale publication',
+        );
+
+        // Exercise this session's media (distinct per cycle).
+        await client.setMicrophoneEnabled(true);
+        port.emit(const LiveKitLocalTracks(microphoneOn: true, screenShareOn: false));
+        port.emit(
+          LiveKitRemoteParticipants(
+            LiveRemoteParticipants(
+              Map.unmodifiable({
+                'u-$i': LiveRemoteParticipant(identity: 'u-$i', audio: LiveRemoteAudio.live),
+              }),
+            ),
+          ),
+        );
+        expect(client.publication.microphoneOn, isTrue);
+        expect(client.remoteParticipants.length, 1);
+        expect(client.remoteParticipants['u-$i'], isNotNull);
+
+        // Leave — everything clears before the next cycle.
+        await client.disconnect();
+        expect(client.state, const LiveMediaIdle());
+        expect(client.remoteParticipants, LiveRemoteParticipants.empty);
+        expect(client.publication, const LiveMediaPublication());
+      }
+    });
+
+    test('leaving while a mic publish is in flight does not resurrect it', () async {
+      await connected();
+      port.gateMic = Completer<void>();
+      final pending = client.setMicrophoneEnabled(true); // hangs on the gate
+      await client.disconnect(); // the viewer leaves while the publish is pending
+      expect(client.state, const LiveMediaIdle());
+      expect(client.publication, const LiveMediaPublication());
+
+      port.gateMic!.complete(); // the publish command now completes, post-leave
+      await pending;
+      // A late command completion is signal-free and cannot resurrect state.
+      expect(client.publication, const LiveMediaPublication());
+      expect(client.state, const LiveMediaIdle());
     });
   });
 

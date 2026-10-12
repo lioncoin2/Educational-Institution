@@ -333,6 +333,20 @@ Resolved since this ADR was accepted:
   sanitized diagnostic contract were re-confirmed correct and left unchanged. The
   SDK INTERNAL network reconnect stays NOT-VERIFIED E2E (same deterministic-induction
   blocker). (`docs/p8-live-media-verification.md`, Sprint 16.)
+- **Production-readiness consolidation (P17 / Sprint 17).** No new production
+  defect. Added the previously-missing repeated-session lifecycle test (5 cycles
+  of connect → media → leave → connect with no cross-session leak, and
+  leave-while-publish-pending), and consolidated two records that did not exist as
+  a single source: a browser/platform CAPABILITY MATRIX (each capability tagged
+  VERIFIED AUTOMATED / MANUAL / UNIT ONLY / NOT VERIFIED / UNSUPPORTED BY CONTRACT)
+  and a per-RESOURCE ownership/cleanup table (owner / creation / release / failure
+  cleanup / observable test), with the session-isolation invariant (one singleton
+  port owns one room at a time; concurrent independent sessions are not supported).
+  Diagnostics re-confirmed adequate (4 codes + typed reason + no-leak tests),
+  unchanged. Transient SDK INTERNAL reconnect remains NOT-VERIFIED E2E: `docker
+  compose pause` would preserve the room (feasible in principle, SDK give-up window
+  ≈50 s) but the trigger timing can't be validated in this sandbox, so no flaky
+  gate was added. (`docs/p8-live-media-verification.md`, Sprint 17.)
 
 Genuinely unresolved:
 

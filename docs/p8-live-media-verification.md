@@ -535,6 +535,90 @@ the documented blocker). What IS verified end-to-end remains: room-reset recover
 (Sprint 15), terminal end (Sprint 14), multi-participant and screen-share
 (Sprints 12–14). Internal reconnect is not claimed as end-to-end verified.
 
+## Sprint 17 — production-readiness: capability matrix, ownership, repeated sessions
+
+Sprint 17 consolidates the evidence for production use. The audit found no new
+production defect (Sprints 15–16 closed the stale-state gaps; the concurrency
+guards, teardown and diagnostics are correct and tested), so the deliverables are
+a repeated-session lifecycle test that was genuinely missing, and the two records
+below that previously did not exist as a single source.
+
+### Browser / platform capability matrix (evidence-based)
+
+Targeted platform contract (ADR 0030): **web-first, Chrome desktop**, microphone
++ screen share only. Status codes: VERIFIED AUTOMATED / VERIFIED MANUAL / UNIT
+ONLY / NOT VERIFIED / UNSUPPORTED BY CONTRACT.
+
+| Capability (web) | Status | Evidence |
+|---|---|---|
+| Chrome desktop — mic publish / mute / unmute | VERIFIED AUTOMATED | `livekit_web_e2e_test` + two/three-client E2E (real LiveKit; the audio INPUT is a fake device, but connect/publish/subscribe/mute are real) |
+| Chrome desktop — screen capture → publish → remote reception → stop | VERIFIED AUTOMATED | `livekit_two_client_screenshare_e2e_test` (headed Chrome on Xvfb, `--auto-select-desktop-capture-source`; genuine capture, not a fake device) |
+| Chrome desktop — remote presence / audio / screen reconciliation (2 & 3 clients) | VERIFIED AUTOMATED | `livekit_two_client_e2e_test`, `livekit_three_client_e2e_test` |
+| Chrome desktop — room-reset recovery & session-end terminal drop | VERIFIED AUTOMATED | `livekit_session_reset_e2e_test`, `livekit_session_end_e2e_test` |
+| Mic permission DENIAL / missing device | UNIT ONLY + VERIFIED MANUAL | widget "denied → recoverable, stays off"; `livekit_live_media_client_test` mic-publish-failure; manual B2. CI auto-accepts (`--use-fake-ui-for-media-stream`), so denial is NOT exercised automated. |
+| Interactive screen PICKER (choose window / cancel) | VERIFIED MANUAL | manual B1. The automated E2E deliberately bypasses the picker via auto-select; the picker/cancel path has NO automated coverage. |
+| Transient SDK INTERNAL reconnect (`Reconnecting`→`Reconnected`, same room) | UNIT ONLY | mapping + reconnecting-preserve/converge + stale-signal guard are unit-tested; **NOT VERIFIED E2E** (see below). |
+| Other desktop browsers (Firefox / Safari / Edge) | NOT VERIFIED | CI runs Chrome only; ADR 0030 is Chrome-first and makes no contract claim beyond Chrome. |
+| Mobile web browsers (Android / iOS web) | UNSUPPORTED BY CONTRACT | ADR 0030 (native mobile is a separate future phase); the SDK refuses screen share on web-mobile (`lkPlatformIsWebMobile`). |
+| Camera / remote video | UNSUPPORTED BY CONTRACT | ADR 0030 — explicitly out of scope. |
+
+"Compilation succeeds" is NOT treated as support for any row above.
+
+### Resource ownership & cleanup (single table)
+
+| Resource | Owner | Created | Normal release | Failure cleanup | Observable test |
+|---|---|---|---|---|---|
+| LiveKit `Room` | `SdkLiveKitRoomPort` (`_openSdkRoom`) | `connect()` | `_teardownRoom` on disconnect / replace / dispose (cleared FIRST) | half-open room released on connect failure; the connect error (not a teardown error) propagates | `livekit_room_port_test` (teardown order; connect-failure leaves no room) |
+| Room `EventsListener` | `_SdkLiveRoom` | `_openSdkRoom` | `disposeListener` in `_teardownResources` | attempted even if a later step throws; FIRST error rethrown (never masked) | `livekit_room_port_test` (throwing-listener-disposal; dispose rethrows after close) |
+| Local mic / screen tracks | SDK (`room.localParticipant`) | `set{Microphone,ScreenShare}Enabled` | SDK releases on room disconnect / stop; app reflects via `LiveKitLocalTracks` | — | publication-reconciliation unit tests; screenshare E2E stop |
+| Remote track subscriptions | SDK | `TrackSubscribed` | SDK releases on unsubscribe / disconnect; app reflects via reconcile-from-snapshot | — | remote-reconciliation unit tests; 3-client E2E departure |
+| Port signal `StreamController` | `SdkLiveKitRoomPort` | construction | closed in `dispose()` (even if teardown throws) | — | `livekit_room_port_test` ("dispose closes the signal controller even when teardown throws") |
+| Client state / publication / remote streams | `LiveKitLiveMediaClient` | construction | closed in `dispose()` | reset on connect + disconnect + terminal drop (S15); late signals ignored off-connection (S16) | client tests (terminal-clear, stale-signal guard, repeated-session S17) |
+| Client signal subscription | `LiveKitLiveMediaClient` | construction | cancelled in `dispose()` (NOT `disconnect()`) | — | client "dispose releases the port and the subscription" |
+| `LiveMediaController` + its client-state subscription | Riverpod `autoDispose.family` by sessionId | `build()` | `onDispose`: `_generation++`, cancel subscription, `disconnect()` the client | `_isCurrent` stale-guard ignores a late connect/rejoin result | controller tests (dispose disconnects; stale join; roomDeleted rejoin) |
+| Pending connect / rejoin futures | `LiveMediaController` | `connect()` / `_rejoinIfLive` | generation-guarded; single-flight `_rejoining` | `_isCurrent(gen)` drops a stale result | controller tests (stale-join; duplicate-connect ignored) |
+
+**Session-isolation invariant.** The production client is a singleton with ONE
+`SdkLiveKitRoomPort` owning ONE room at a time (`connect()` tears the previous
+room down first), and each session has its OWN `autoDispose.family` controller.
+So there is no concurrent "newer session's room" that an older controller could
+accidentally dispose — the single port serializes rooms, and a disposed
+controller only disconnects the one shared client it was watching. Concurrent
+independent media sessions are NOT a supported configuration.
+
+### Repeated-session lifecycle (new coverage)
+
+No looped multi-cycle test existed (prior coverage was single session-change).
+`livekit_live_media_client_test` now runs 5 cycles of connect → (mic on, remote
+appears) → disconnect, asserting each cycle starts CLEAN (no remote/publication
+from the prior cycle; authority re-seeded from the new grant) and ends clean —
+and that leaving while a mic publish is in flight does not resurrect it.
+
+### Diagnostics (re-confirmed adequate, unchanged)
+
+Media failures surface as one of four `LiveMediaException` codes — `invalid_grant`,
+`screen_not_permitted`, `not_connected`, `media_error` — plus the typed
+`LiveMediaDisconnectReason` (roomDeleted / participantRemoved / duplicateIdentity
+/ other). `media_error` carries only the error's runtime TYPE, never a token, URL
+or body; three unit tests assert no token/secret leaks. Left unchanged.
+
+### Transient reconnect — investigated, remains NOT VERIFIED E2E
+
+The one capability still unverified end-to-end. Findings this sprint: the SDK's
+reconnect window is generous (`defaultRetryDelaysInMs` ≈ 50 s before giving up),
+and `docker compose pause livekit` (SIGSTOP) would freeze the server while
+PRESERVING the room — unlike restart/stop, which delete it (`roomDeleted`, a
+different path). A pause of ~20 s is, in principle, within the give-up window and
+long enough for ICE/ping loss detection, so a genuine `Reconnecting`→`Reconnected`
+of the SAME room is feasible in principle. The blocker to adding it as a gate:
+the trigger timing depends on SDK-internal ICE/ping thresholds that cannot be
+validated in this sandbox (no local Chrome), so an unvalidated timing-dependent
+test risks flakiness, which is worse than an honest gap. What would close it: a
+validated pause-timing run (ideally first in a dedicated, non-blocking diagnostic
+job) confirming the `Reconnecting`→`Reconnected` lifecycle on the same room. The
+deterministic contract — reconnecting preserves/converges state, a terminal drop
+clears it, late signals are ignored off-connection — IS unit-verified.
+
 ## Manual verification (NOT executed in CI)
 
 These are the checks the automated harness cannot perform. They require a real
