@@ -27,6 +27,9 @@ dependencies:
   # ADR change. Consumed ONLY by the future lib/data/media/livekit/ adapter; no
   # other Dart file may import it (test/live/live_boundaries_test.dart enforces).
   livekit_client: 2.13.0
+  file_picker: ^13.1.0
+  record: ^7.1.2
+  just_audio: ^0.10.6
 
 dev_dependencies:
   flutter_test:

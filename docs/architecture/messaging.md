@@ -560,15 +560,36 @@ shows their buttons disabled with an explanatory tooltip:
 
 | Seam | Evaluated package | Status |
 | --- | --- | --- |
-| `AttachmentPicker` | `file_picker` 13.1 (MIT, all platforms) | not added |
-| `VoiceRecorder` | `record` 7.1 (BSD-3, all platforms; web records Opus/WebM) | not added |
-| `VoicePlayer` | `just_audio` 0.10 (Apache-2.0/MIT; Android, iOS, macOS, web) | not added |
+| `AttachmentPicker` | `file_picker` 13.1 (MIT, all platforms) | **added (Sprint 21)** — picks images (jpg/png/webp) and PDFs on web; Unavailable off-web |
+| `VoiceRecorder` | `record` 7.1 (BSD-3, all platforms; web records Opus/WebM) | **added (Sprint 21)** — records a voice note on web (Opus→WebM); Unavailable off-web |
+| `VoicePlayer` | `just_audio` 0.10 (Apache-2.0/MIT; Android, iOS, macOS, web) | **added (Sprint 21)** — plays a voice note from the signed link on web; Unavailable off-web |
 | `TokenStore` | `flutter_secure_storage` 11.2 (BSD-3, all platforms) | **added (Sprint 19)** — backend-mode sessions persist in the platform keystore; the demo build stays in memory |
 
-The first three were not added because their native builds (Android SDK,
-Xcode, a browser for web recording) cannot be verified in this environment,
-and a dependency is not added blind. Binding each is one class implementing
-the seam and one provider line.
+The first three were bound in Sprint 21, web-first. Each is one class behind its
+seam, confining its plugin import to a single adapter
+(`test/messaging/attachment_boundaries_test.dart` enforces this, as the LiveKit
+and secure-storage adapters are confined):
+
+- `FilePickerAttachmentPicker` (`lib/data/media/pickers/`) picks only the kinds
+  the upload policy accepts — images jpg/jpeg/png/webp, documents PDF — reads the
+  bytes web-safely (`PlatformFile.readAsBytes`, never `dart:io` or a fabricated
+  path), and returns an `OutgoingFile`.
+- `RecordVoiceRecorder` (`lib/data/media/voice/`) records Opus into WebM
+  (`audio/webm`), which the VOICE policy accepts and whose EBML magic the upload
+  completion verifies; a generation guard keeps a cancel from being overtaken by
+  an in-flight stop, and the microphone is released on dispose.
+- `JustAudioVoicePlayer` (`lib/data/media/voice/`) plays a voice note from the
+  short-lived signed download link; starting a new playback stops the previous.
+
+`deviceMediaSupportedProvider` binds all three only on web (`kIsWeb`), the
+shipped and CI-verified target; off web — and in every VM widget test — they
+fall closed to the Unavailable defaults, so the composer shows a disabled,
+explained affordance. The whole upload → send → render → signed-download path
+was already implemented and tested (`HttpMessagingRepository`); Sprint 21 only
+supplied the device implementations. Their Dart logic is unit-tested at the seam
+against fakes and the web build proves they compile; ACTUAL file selection,
+microphone capture and audio playback need a browser/device and are a manual
+check, not CI-verified.
 
 `TokenStore` is the exception, bound in Sprint 19: `SecureTokenStore`
 (`lib/data/api/secure_token_store.dart`) keeps the two session tokens in the

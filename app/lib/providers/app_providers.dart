@@ -13,6 +13,9 @@ import '../data/api/token_store.dart';
 import '../data/media/live_media_seams.dart';
 import '../data/media/livekit/livekit_live_media_client.dart';
 import '../data/media/media_seams.dart';
+import '../data/media/pickers/file_picker_attachment_picker.dart';
+import '../data/media/voice/just_audio_voice_player.dart';
+import '../data/media/voice/record_voice_recorder.dart';
 import '../data/models/auth.dart';
 
 import '../data/models/certificate.dart';
@@ -297,16 +300,43 @@ final pushTokenSourceProvider = Provider<PushTokenSource>(
 /// "Now", for relative times ("قبل 5 دقائق") — a provider so tests can fix it.
 final clockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
 
-/// Device capabilities, unbound in this milestone (see media_seams.dart).
+/// Whether this target supports the device-media capabilities — picking a
+/// file, recording a voice note, playing one back. Web-first (Sprint 21): the
+/// `file_picker` / `record` / `just_audio` plugins ship a web implementation
+/// and web is the shipped, CI-verified target; native iOS/Android stays a
+/// separate slice (as live media does, ADR 0030). A provider, so a test
+/// exercises both the supported and the unsupported policy without a device.
+final deviceMediaSupportedProvider = Provider<bool>((ref) => kIsWeb);
+
+/// Device capabilities (Sprint 21). The real, plugin-backed implementations are
+/// bound only where [deviceMediaSupportedProvider] holds; everywhere else — a
+/// non-web target, and every VM widget test — they fall closed to the
+/// Unavailable defaults, so the composer shows a disabled, explained affordance.
+/// Each real implementation confines its plugin import to one adapter file; the
+/// upload, send and authorization all stay the HTTP repository's and the
+/// server's. The recorder and player own a device resource and are released
+/// with the provider.
 final attachmentPickerProvider = Provider<AttachmentPicker>(
-  (ref) => const UnavailableAttachmentPicker(),
+  (ref) => ref.watch(deviceMediaSupportedProvider)
+      ? const FilePickerAttachmentPicker()
+      : const UnavailableAttachmentPicker(),
 );
-final voiceRecorderProvider = Provider<VoiceRecorder>(
-  (ref) => const UnavailableVoiceRecorder(),
-);
-final voicePlayerProvider = Provider<VoicePlayer>(
-  (ref) => const UnavailableVoicePlayer(),
-);
+final voiceRecorderProvider = Provider<VoiceRecorder>((ref) {
+  if (!ref.watch(deviceMediaSupportedProvider)) {
+    return const UnavailableVoiceRecorder();
+  }
+  final recorder = RecordVoiceRecorder();
+  ref.onDispose(() => unawaited(recorder.dispose()));
+  return recorder;
+});
+final voicePlayerProvider = Provider<VoicePlayer>((ref) {
+  if (!ref.watch(deviceMediaSupportedProvider)) {
+    return const UnavailableVoicePlayer();
+  }
+  final player = JustAudioVoicePlayer();
+  ref.onDispose(() => unawaited(player.dispose()));
+  return player;
+});
 
 /// Whether the build explicitly enabled live media (`LIVE_MEDIA_ENABLED`). A
 /// provider — mirroring [backendModeProvider] — so a test exercises both the
