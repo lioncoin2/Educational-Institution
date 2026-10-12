@@ -642,11 +642,32 @@ never make the normal CI flaky. Timing rationale: the freeze is long enough for
 the SDK to detect loss (ICE/ping) and well within its ~50 s give-up window
 (`defaultRetryDelaysInMs`), so the SAME room recovers.
 
-**Result of this sprint's dispatched run:** recorded in the Sprint 18 engineering
-report and the capability-matrix row below (set to VERIFIED E2E only if that run
-genuinely showed `Reconnecting`→`Reconnected`; otherwise it stays NOT VERIFIED
-E2E with the diagnostic evidence). A green regression pipeline does NOT by itself
-prove transient reconnection.
+**Result of this sprint's dispatched run (real evidence).** The diagnostic
+genuinely induced a transient reconnect and advanced the long-standing gap:
+
+- **VERIFIED E2E:** a `docker compose pause livekit` (room preserved) made the
+  real SDK enter the reconnecting lifecycle — the run logged
+  `RoomReconnectingEvent()` on BOTH clients and `SignalReconnectedEvent()` (the
+  signal transport reconnected). This is a GENUINE transient interruption of the
+  SAME room, NOT a terminal `roomDeleted` drop. Prior sprints could not even
+  induce this; it is now proven real. The adapter surfaced it as
+  `LiveMediaReconnecting` (state preserved across the blip, per the contract).
+- **NOT VERIFIED E2E:** full room recovery — `RoomReconnectedEvent` →
+  `LiveMediaConnected` — did NOT complete within the window. The signal
+  reconnected but the media/ICE (peer-connection) path did not fully re-establish
+  in this HEADLESS, no-TURN CI harness, so the client did not return to connected.
+  The test records `fullRoomRecovery=false` and does not fake a recovery that did
+  not occur.
+
+So the test asserts only the reliably-real facts (interruption + reconnecting
+entry, no terminal drop) and RECORDS the recovery outcome; it is a GREEN, honest,
+non-flaky diagnostic of what is genuinely verified. The remaining blocker for
+full-recovery verification is the media/ICE re-establishment after a freeze in a
+headless, TURN-less browser — not the room lifecycle (the room was preserved and
+reconnecting was entered). Closing it would need a harness with working media
+reconnection (e.g. a TURN relay or a headed browser with a stable media path).
+A green regression pipeline does NOT by itself prove transient reconnection; this
+row is the authoritative status.
 
 ### New race coverage (deterministic unit — fills real gaps)
 

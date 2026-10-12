@@ -356,9 +356,14 @@ Resolved since this ADR was accepted:
   `RoomReconnected` through the adapter; it fails loudly rather than fake-passing,
   and is kept out of the regression pipeline so it can't make CI flaky. Added the
   two missing deterministic race tests (screen publish-start vs. revoke; terminal
-  drop while reconnecting). Whether internal reconnect is VERIFIED E2E or stays
-  NOT-VERIFIED is set by the dispatched run (see
-  `docs/p8-live-media-verification.md`, Sprint 18).
+  drop while reconnecting). Result of the dispatched diagnostic: a transient
+  interruption of the SAME room was GENUINELY induced — the real SDK logged
+  `RoomReconnectingEvent` + `SignalReconnectedEvent` (VERIFIED E2E: reconnecting
+  entry on the same room, not a terminal drop — a first across the programme).
+  FULL room recovery (`RoomReconnected`→connected) did NOT complete in the
+  headless/no-TURN harness (media/ICE did not re-establish), so it stays NOT
+  VERIFIED E2E; the test records `fullRoomRecovery=false` and never fakes it.
+  (See `docs/p8-live-media-verification.md`, Sprint 18.)
 
 Genuinely unresolved:
 
