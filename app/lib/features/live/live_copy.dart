@@ -83,6 +83,14 @@ abstract final class LiveCopy {
   static const mediaConnected = 'متصل';
   static const mediaNotConnected = 'غير متصل';
 
+  // ── Live remote media (Sprint 11) ───────────────────────────────────────
+  // What the moderator's OWN client actually hears/sees for a roster member
+  // right now, matched by user id. A publication fact — NEVER speaking
+  // detection, and never the presenter slot (authority).
+  static const liveAudioOn = 'الميكروفون مفتوح';
+  static const liveAudioMuted = 'الصوت مكتوم';
+  static const liveScreenSharing = 'يشارك الشاشة الآن';
+
   /// That this person holds a screen-share (presenter) slot now (Q56). The
   /// capture itself is media, unavailable in this build.
   static const presenterBadge = 'مُقدّم عرض';

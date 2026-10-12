@@ -223,3 +223,16 @@ final liveMediaPublicationProvider =
       yield client.publication;
       yield* client.publications;
     });
+
+/// The REMOTE participants the media client currently sees in the active room —
+/// presence + reconciled audio/screen state, keyed by identity (the backend
+/// user id). The roster watches this to show a live media indicator per hand,
+/// matched by `userId`. Transport state only: it never overrides the server's
+/// identity, moderation or attendance. Seeded with the current snapshot;
+/// autoDispose, so the subscription lives only while a live screen watches it.
+final liveRemoteParticipantsProvider =
+    StreamProvider.autoDispose<LiveRemoteParticipants>((ref) async* {
+      final client = ref.watch(liveMediaClientProvider);
+      yield client.remoteParticipants;
+      yield* client.remoteParticipantChanges;
+    });

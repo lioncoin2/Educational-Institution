@@ -458,6 +458,106 @@ void main() {
     });
   });
 
+  // Sprint 11 — remote participants reconciled from the port's
+  // LiveKitRemoteParticipants signal (itself read from the room snapshot).
+  // Deterministic fakes — NOT a real second participant.
+  group('remote participant reconciliation (Sprint 11)', () {
+    LiveRemoteParticipants remoteSet(Map<String, LiveRemoteParticipant> m) =>
+        LiveRemoteParticipants(Map.unmodifiable(m));
+
+    test('a remote signal updates the remote set', () async {
+      await connected(screen: false);
+      expect(client.remoteParticipants.length, 0);
+
+      port.emit(
+        LiveKitRemoteParticipants(
+          remoteSet({
+            'u-1': const LiveRemoteParticipant(
+              identity: 'u-1',
+              audio: LiveRemoteAudio.live,
+            ),
+          }),
+        ),
+      );
+      expect(client.remoteParticipants.length, 1);
+      expect(client.remoteParticipants['u-1']?.audio, LiveRemoteAudio.live);
+    });
+
+    test('the stream emits each real change; a no-change is not churned', () async {
+      await connected(screen: false);
+      final seen = <LiveRemoteParticipants>[];
+      final sub = client.remoteParticipantChanges.listen(seen.add);
+
+      final a = remoteSet({
+        'u-1': const LiveRemoteParticipant(
+          identity: 'u-1',
+          audio: LiveRemoteAudio.muted,
+        ),
+      });
+      port.emit(LiveKitRemoteParticipants(a));
+      port.emit(LiveKitRemoteParticipants(a)); // identical snapshot → no churn
+      await pumpEventQueue();
+
+      expect(seen, [a]);
+      await sub.cancel();
+    });
+
+    test('a departed participant is dropped by the reconciled snapshot', () async {
+      await connected(screen: false);
+      port.emit(
+        LiveKitRemoteParticipants(
+          remoteSet({
+            'u-1': const LiveRemoteParticipant(identity: 'u-1'),
+            'u-2': const LiveRemoteParticipant(
+              identity: 'u-2',
+              screenSharing: true,
+            ),
+          }),
+        ),
+      );
+      expect(client.remoteParticipants.length, 2);
+
+      // u-1 left: the next snapshot simply omits them — never a ghost.
+      port.emit(
+        LiveKitRemoteParticipants(
+          remoteSet({
+            'u-2': const LiveRemoteParticipant(
+              identity: 'u-2',
+              screenSharing: true,
+            ),
+          }),
+        ),
+      );
+      expect(client.remoteParticipants.length, 1);
+      expect(client.remoteParticipants['u-1'], isNull);
+      expect(client.remoteParticipants['u-2']?.screenSharing, isTrue);
+    });
+
+    test('disconnect clears the remote set', () async {
+      await connected(screen: false);
+      port.emit(
+        LiveKitRemoteParticipants(
+          remoteSet({'u-1': const LiveRemoteParticipant(identity: 'u-1')}),
+        ),
+      );
+      expect(client.remoteParticipants.length, 1);
+      await client.disconnect();
+      expect(client.remoteParticipants, LiveRemoteParticipants.empty);
+    });
+
+    test('a fresh connect starts with an empty remote set (session change)', () async {
+      await connected(screen: false);
+      port.emit(
+        LiveKitRemoteParticipants(
+          remoteSet({'u-1': const LiveRemoteParticipant(identity: 'u-1')}),
+        ),
+      );
+      await client.disconnect();
+      await client.connect(_grant(screen: false));
+      expect(client.remoteParticipants, LiveRemoteParticipants.empty);
+    });
+  });
+
   group('security & resources', () {
     test('a failure never leaks the token into the exception', () async {
       port.failConnect = Exception('connect failed for token=super-secret-jwt');

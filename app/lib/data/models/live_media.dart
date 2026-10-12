@@ -214,6 +214,89 @@ class LiveMediaPublication {
       'microphoneOn: $microphoneOn, screenShareOn: $screenShareOn)';
 }
 
+/// A REMOTE participant's audio as the local SDK observes it. NEVER a speaking
+/// indicator — an unmuted track is a publication, not speech.
+enum LiveRemoteAudio {
+  /// No microphone track is published.
+  none,
+
+  /// Published, but this device is not subscribed — nothing to hear.
+  unsubscribed,
+
+  /// Subscribed but muted.
+  muted,
+
+  /// Subscribed and unmuted — an active audio publication (NOT "speaking").
+  live,
+}
+
+/// A remote participant's media as the LOCAL SDK observes it right now:
+/// presence, what we can hear ([audio]) and whether they are sharing a screen.
+/// Keyed by [identity] — the backend user id — so the roster can match a hand
+/// to it. Never inferred from presenter authority; only what the media plane
+/// reports.
+class LiveRemoteParticipant {
+  const LiveRemoteParticipant({
+    required this.identity,
+    this.audio = LiveRemoteAudio.none,
+    this.screenSharing = false,
+  });
+
+  final String identity;
+  final LiveRemoteAudio audio;
+
+  /// A screen-share video track is published and unmuted — a publication fact,
+  /// never the presenter slot (authority).
+  final bool screenSharing;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LiveRemoteParticipant &&
+      other.identity == identity &&
+      other.audio == audio &&
+      other.screenSharing == screenSharing;
+
+  @override
+  int get hashCode => Object.hash(identity, audio, screenSharing);
+
+  @override
+  String toString() =>
+      'LiveRemoteParticipant($identity, audio: ${audio.name}, '
+      'screenSharing: $screenSharing)';
+}
+
+/// The remote participants the SDK currently sees in the ACTIVE room, keyed by
+/// identity. Reconciled from the room snapshot, so a duplicate, out-of-order or
+/// stale event never leaves a ghost or a double, and a departed participant is
+/// simply absent (never shown as connected). This is transport state, not a
+/// second source of identity, moderation or attendance — those stay the
+/// server's.
+class LiveRemoteParticipants {
+  const LiveRemoteParticipants(this.byIdentity);
+
+  final Map<String, LiveRemoteParticipant> byIdentity;
+
+  static const empty = LiveRemoteParticipants(<String, LiveRemoteParticipant>{});
+
+  LiveRemoteParticipant? operator [](String identity) => byIdentity[identity];
+
+  Iterable<LiveRemoteParticipant> get values => byIdentity.values;
+  int get length => byIdentity.length;
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! LiveRemoteParticipants) return false;
+    if (other.byIdentity.length != byIdentity.length) return false;
+    for (final entry in byIdentity.entries) {
+      if (other.byIdentity[entry.key] != entry.value) return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hashAllUnordered(byIdentity.values);
+}
+
 /// A refusal from the media seam — kept apart from [LiveException], which is
 /// the HTTP/authority refusal. Minimal on purpose; the real media provider's
 /// error surface is a later slice.

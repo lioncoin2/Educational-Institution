@@ -191,6 +191,13 @@ void main() {
       reason: 'the LiveKit room did not reach connected',
     );
 
+    // Sprint 11: the remote-participant layer initialises against real LiveKit.
+    // This single-client harness creates NO second participant, so the only
+    // truthful assertion is that the remote set is empty — a genuine remote
+    // join/leave is NOT claimed here (it is covered by deterministic fakes, and
+    // noted as a harness limitation in docs/p8-live-media-verification.md).
+    expect(client.remoteParticipants.length, 0);
+
     // 3. Publish controls, gated by the LIVE server authorization.
     if (grant.microphone) {
       // Sprint 10 — the microphone publish state reconciles from the SDK's own

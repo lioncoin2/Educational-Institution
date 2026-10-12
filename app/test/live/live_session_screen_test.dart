@@ -694,4 +694,87 @@ void main() {
       expect(find.byKey(const Key('live-audio-join')), findsNothing);
     });
   });
+
+  group('live remote media chips (Sprint 11)', () {
+    _FakeLive rosterRepo() =>
+        fake(_session(canModerate: true))
+          ..handsResult = LiveHandsPage(
+            items: [
+              _hand(id: 'h1', userId: 'u-1', state: SpeakerRequestState.granted),
+            ],
+            nextCursor: null,
+          );
+
+    testWidgets('a matched member shows live mic + screen-share indicators', (
+      tester,
+    ) async {
+      final client = FakeLiveMediaClient();
+      addTearDown(client.dispose);
+      await pump(tester, rosterRepo(), media: client);
+      await tester.pumpAndSettle();
+      // Nothing live yet — the client sees no remote participants.
+      expect(find.byKey(const Key('live-audio-on-u-1')), findsNothing);
+
+      client.emitRemote(
+        LiveRemoteParticipants(
+          Map.unmodifiable({
+            'u-1': const LiveRemoteParticipant(
+              identity: 'u-1',
+              audio: LiveRemoteAudio.live,
+              screenSharing: true,
+            ),
+          }),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('live-audio-on-u-1')), findsOneWidget);
+      expect(find.byKey(const Key('live-screen-sharing-u-1')), findsOneWidget);
+      expect(find.text(LiveCopy.liveAudioOn), findsOneWidget);
+    });
+
+    testWidgets('a muted member shows the muted indicator, not mic-on', (
+      tester,
+    ) async {
+      final client = FakeLiveMediaClient();
+      addTearDown(client.dispose);
+      await pump(tester, rosterRepo(), media: client);
+      await tester.pumpAndSettle();
+      client.emitRemote(
+        LiveRemoteParticipants(
+          Map.unmodifiable({
+            'u-1': const LiveRemoteParticipant(
+              identity: 'u-1',
+              audio: LiveRemoteAudio.muted,
+            ),
+          }),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('live-audio-muted-u-1')), findsOneWidget);
+      expect(find.byKey(const Key('live-audio-on-u-1')), findsNothing);
+      expect(find.byKey(const Key('live-screen-sharing-u-1')), findsNothing);
+    });
+
+    testWidgets('an unmatched room member adds no indicators to this hand', (
+      tester,
+    ) async {
+      final client = FakeLiveMediaClient();
+      addTearDown(client.dispose);
+      await pump(tester, rosterRepo(), media: client);
+      await tester.pumpAndSettle();
+      // A different identity is in the room — never this hand (u-1).
+      client.emitRemote(
+        LiveRemoteParticipants(
+          Map.unmodifiable({
+            'u-other': const LiveRemoteParticipant(
+              identity: 'u-other',
+              audio: LiveRemoteAudio.live,
+            ),
+          }),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('live-audio-on-u-1')), findsNothing);
+    });
+  });
 }

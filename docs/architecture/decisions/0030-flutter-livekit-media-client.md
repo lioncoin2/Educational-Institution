@@ -279,10 +279,12 @@ Genuinely unresolved:
   immediate, event-driven re-join and no timers).
 - The mobile CI provider (GitHub Actions matrix vs Codemagic).
 - The exact per-platform / per-browser availability matrix.
-- The future REMOTE participant-roster/speaking contract. (The LOCAL
-  participant's own track publish/mute is now reconciled live from the SDK —
-  P10 / Sprint 10, `LiveMediaPublication` + `LiveKitLocalTracks` — so this
-  remaining item is about REMOTE participants' state.)
+- Remote participant SPEAKING detection and remote VIDEO / camera. (Remote
+  participant PRESENCE + audio (none/unsubscribed/muted/live) + screen-share
+  publication are now reconciled live — P11 / Sprint 11, `LiveRemoteParticipant`
+  + `LiveKitRemoteParticipants`, surfaced in the roster. Speaking detection and
+  camera stay out of scope — no approved contract — and a real second
+  participant is not yet in the E2E harness.)
 
 The LiveKit provider choice, the `livekit_client` version, the media
 architecture, and the Slice A/B contracts are **decided** and are not reopened

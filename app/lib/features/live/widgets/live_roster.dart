@@ -8,8 +8,10 @@ import '../../../core/widgets/foundations/async_view.dart';
 import '../../../core/widgets/foundations/empty_state.dart';
 import '../../../core/widgets/foundations/section_header.dart';
 import '../../../data/models/live.dart';
+import '../../../data/models/live_media.dart';
 import '../live_copy.dart';
 import '../state/live_hands_controller.dart';
+import '../state/live_media_controller.dart';
 import '../state/live_moderation_controller.dart';
 import 'live_moderation_actions.dart';
 
@@ -124,7 +126,7 @@ class _LiveRosterState extends ConsumerState<LiveRoster> {
 /// they are (a raised hand or the floor) and, for the floor, their last-observed
 /// connection — with the commands a moderator may run on them. The host is never
 /// a target, so their row carries no commands.
-class _HandCard extends StatelessWidget {
+class _HandCard extends ConsumerWidget {
   const _HandCard({
     super.key,
     required this.session,
@@ -137,7 +139,7 @@ class _HandCard extends StatelessWidget {
   final Future<void> Function() onActed;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isHost = hand.userId == session.hostUserId;
     final isPresenter = session.presenterUserIds.contains(hand.userId);
     final name = (hand.displayName != null && hand.displayName!.isNotEmpty)
@@ -147,6 +149,13 @@ class _HandCard extends StatelessWidget {
     final subtitle = media == null
         ? _stateLabel(hand.state)
         : '${_stateLabel(hand.state)} · $media';
+    // The LIVE remote media the moderator's own client sees for this member,
+    // matched by user id (= the LiveKit identity). Null when not media-connected
+    // or the member is not in the room — an additive, live indicator only; it
+    // overrides no server authority, moderation or attendance.
+    final remote = ref
+        .watch(liveRemoteParticipantsProvider)
+        .value?[hand.userId];
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -167,6 +176,10 @@ class _HandCard extends StatelessWidget {
               color: context.colors.onSurfaceVariant,
             ),
           ),
+          if (remote != null) ...[
+            const SizedBox(height: Insets.sm),
+            _LiveMediaChips(remote: remote),
+          ],
           if (!isHost) ...[
             const SizedBox(height: Insets.md),
             Wrap(
@@ -244,6 +257,68 @@ class _PresenterBadge extends StatelessWidget {
           color: context.colors.onSecondaryContainer,
         ),
       ),
+    );
+  }
+}
+
+/// The live media the moderator's own client observes for this member: whether
+/// their microphone is open or muted, and whether they are actually sharing a
+/// screen. Additive and purely informational — a publication fact, never a
+/// speaking indicator and never the presenter slot. Shows nothing when there is
+/// nothing live to say (no audio we can hear, no screen).
+class _LiveMediaChips extends StatelessWidget {
+  const _LiveMediaChips({required this.remote});
+
+  final LiveRemoteParticipant remote;
+
+  @override
+  Widget build(BuildContext context) {
+    final chips = <Widget>[
+      if (remote.audio == LiveRemoteAudio.live)
+        _LiveChip(
+          key: Key('live-audio-on-${remote.identity}'),
+          icon: Icons.mic_rounded,
+          label: LiveCopy.liveAudioOn,
+        ),
+      if (remote.audio == LiveRemoteAudio.muted)
+        _LiveChip(
+          key: Key('live-audio-muted-${remote.identity}'),
+          icon: Icons.mic_off_rounded,
+          label: LiveCopy.liveAudioMuted,
+        ),
+      if (remote.screenSharing)
+        _LiveChip(
+          key: Key('live-screen-sharing-${remote.identity}'),
+          icon: Icons.screen_share_rounded,
+          label: LiveCopy.liveScreenSharing,
+        ),
+    ];
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Wrap(spacing: Insets.md, runSpacing: Insets.xs, children: chips);
+  }
+}
+
+/// A compact icon + label for one live-media fact.
+class _LiveChip extends StatelessWidget {
+  const _LiveChip({super.key, required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: context.colors.onSurfaceVariant),
+        const SizedBox(width: Insets.xs),
+        Text(
+          label,
+          style: context.text.labelSmall?.copyWith(
+            color: context.colors.onSurfaceVariant,
+          ),
+        ),
+      ],
     );
   }
 }

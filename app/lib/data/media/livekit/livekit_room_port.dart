@@ -84,6 +84,17 @@ final class LiveKitLocalTracks extends LiveKitRoomSignal {
   final bool screenShareOn;
 }
 
+/// The remote participants in the room changed — someone joined or left, or a
+/// remote audio/screen track was (un)published, (un)subscribed, muted or
+/// unmuted. Carries the reconciled snapshot (keyed by identity), read from the
+/// room each time rather than from the event payload, so a duplicate,
+/// out-of-order or stale event cannot corrupt the set.
+final class LiveKitRemoteParticipants extends LiveKitRoomSignal {
+  const LiveKitRemoteParticipants(this.participants);
+
+  final LiveRemoteParticipants participants;
+}
+
 /// Translates a LiveKit `DisconnectReason` into the app's own reason. Only the
 /// three meaningful cases map across; everything else — `unknown`,
 /// `serverShutdown`, `stateMismatch`, `joinFailure`, `disconnected`,
@@ -145,6 +156,48 @@ LiveKitLocalTracks _localTracksOf(Room room) {
   return LiveKitLocalTracks(
     microphoneOn: local?.isMicrophoneEnabled() ?? false,
     screenShareOn: local?.isScreenShareEnabled() ?? false,
+  );
+}
+
+/// The 4-state remote audio reading — SDK-free, so it is unit-tested directly.
+/// [hasMic] is whether a microphone track is published; [subscribed]/[muted]
+/// are that track's state. Precedence: no track → none; else not subscribed →
+/// unsubscribed; else muted → muted; else live.
+LiveRemoteAudio remoteAudioState({
+  required bool hasMic,
+  required bool subscribed,
+  required bool muted,
+}) {
+  if (!hasMic) return LiveRemoteAudio.none;
+  if (!subscribed) return LiveRemoteAudio.unsubscribed;
+  if (muted) return LiveRemoteAudio.muted;
+  return LiveRemoteAudio.live;
+}
+
+/// Reconciles the room's REMOTE participants into the app's own model, keyed by
+/// identity (= the backend user id). Read from the snapshot every time, so the
+/// set never carries a ghost, a double, or a departed participant. SDK-coupled;
+/// the per-participant audio reasoning is the pure [remoteAudioState].
+LiveKitRemoteParticipants _remoteParticipantsOf(Room room) {
+  final byIdentity = <String, LiveRemoteParticipant>{};
+  for (final participant in room.remoteParticipants.values) {
+    final mics = participant.audioTrackPublications.where(
+      (pub) => pub.source == TrackSource.microphone,
+    );
+    final mic = mics.isEmpty ? null : mics.first;
+    byIdentity[participant.identity] = LiveRemoteParticipant(
+      identity: participant.identity,
+      audio: remoteAudioState(
+        hasMic: mic != null,
+        subscribed: mic?.subscribed ?? false,
+        muted: mic?.muted ?? false,
+      ),
+      // Published AND unmuted (the SDK's own rule) — never presenter authority.
+      screenSharing: participant.isScreenShareEnabled(),
+    );
+  }
+  return LiveKitRemoteParticipants(
+    LiveRemoteParticipants(Map.unmodifiable(byIdentity)),
   );
 }
 
@@ -335,11 +388,28 @@ Future<LiveKitLiveRoom> _openSdkRoom(
     ..on<LocalTrackPublishedEvent>((_) => emit(_localTracksOf(room)))
     ..on<LocalTrackUnpublishedEvent>((_) => emit(_localTracksOf(room)))
     ..on<TrackMutedEvent>((event) {
-      if (event.participant is LocalParticipant) emit(_localTracksOf(room));
+      if (event.participant is LocalParticipant) {
+        emit(_localTracksOf(room));
+      } else {
+        emit(_remoteParticipantsOf(room));
+      }
     })
     ..on<TrackUnmutedEvent>((event) {
-      if (event.participant is LocalParticipant) emit(_localTracksOf(room));
-    });
+      if (event.participant is LocalParticipant) {
+        emit(_localTracksOf(room));
+      } else {
+        emit(_remoteParticipantsOf(room));
+      }
+    })
+    // Remote participants: join/leave, and remote (un)publish / (un)subscribe —
+    // each reconciled from the room snapshot, never from the event payload, so
+    // a departed participant is dropped and a stale event cannot revive one.
+    ..on<ParticipantConnectedEvent>((_) => emit(_remoteParticipantsOf(room)))
+    ..on<ParticipantDisconnectedEvent>((_) => emit(_remoteParticipantsOf(room)))
+    ..on<TrackPublishedEvent>((_) => emit(_remoteParticipantsOf(room)))
+    ..on<TrackUnpublishedEvent>((_) => emit(_remoteParticipantsOf(room)))
+    ..on<TrackSubscribedEvent>((_) => emit(_remoteParticipantsOf(room)))
+    ..on<TrackUnsubscribedEvent>((_) => emit(_remoteParticipantsOf(room)));
   try {
     await room.connect(url, token);
   } catch (_) {
@@ -358,6 +428,8 @@ Future<LiveKitLiveRoom> _openSdkRoom(
     emit(_capabilitiesOf(local.permissions));
     emit(_localTracksOf(room));
   }
+  // Seed the remote set too (usually empty at join).
+  emit(_remoteParticipantsOf(room));
   return _SdkLiveRoom(room, listener);
 }
 

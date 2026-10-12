@@ -170,6 +170,60 @@ no separate capture-vs-publish callback; documented) → published (reconciled
 `getDisplayMedia` source). Microphone publish/mute IS now verified for real (the
 fake mic device supports it). Screen capture stays the manual check B1.
 
+## Sprint 11 — remote participant state
+
+The REMOTE participant/media gap ADR 0030 deferred is now covered for presence
++ audio + screen, on the existing reconcile-from-snapshot pattern, integrated
+into the roster and matched by identity (= the backend user id —
+`rtc-provider.ts`: "Stable per-account identity: the platform user id").
+
+**Model.** `LiveRemoteParticipant { identity, audio, screenSharing }` +
+`LiveRemoteParticipants` (keyed by identity), exposed by the client
+(`remoteParticipants` + `remoteParticipantChanges`) and watched via
+`liveRemoteParticipantsProvider` — DISTINCT from the local `publication`, and
+never a second source of identity / moderation / attendance.
+
+**Reconciliation.** The adapter reads `room.remoteParticipants` on every
+`ParticipantConnected`/`Disconnected`, `TrackPublished`/`Unpublished`,
+`TrackSubscribed`/`Unsubscribed` and (remote) `TrackMuted`/`TrackUnmuted`, and
+emits a `LiveKitRemoteParticipants` snapshot. Reading the snapshot, not the
+event payload, makes duplicate / out-of-order / stale events harmless: a
+departed participant is simply absent, a reconnect snapshot replaces the set,
+and the set is cleared on connect and disconnect so a previous room never
+lingers. The one SDK listener is disposed on room replacement / disposal
+(Sprints 6/10 teardown).
+
+**States exposed (only what the SDK establishes truthfully).**
+- Audio (4-state): none / unsubscribed / muted / live — NEVER "speaking" (an
+  unmuted track is a publication, not speech).
+- Screen: published-and-unmuted (`isScreenShareEnabled()`), NEVER inferred from
+  presenter authority.
+- Presence: in the set = present; absent = gone.
+- NOT exposed: per-remote "reconnecting" (the SDK gives a connection-quality
+  metric, not a reliable flag); camera / remote video (no approved contract);
+  speaking detection (out of scope).
+
+**Roster integration.** `_HandCard` shows additive live chips — "mic open" /
+"muted" / "sharing screen" — for a hand whose `userId` matches a live remote
+participant. The presenter badge (authority) and the backend observed-media
+hint are unchanged and kept separate.
+
+| Scenario | Kind | Ran? | Evidence |
+|---|---|---|---|
+| Participant join/leave; a departed one is never shown | unit | yes | `livekit_live_media_client_test` |
+| Duplicate / no-change snapshot is not churned | unit | yes | same |
+| Audio none/unsubscribed/muted/live rule | unit | yes | `livekit_room_port_test` (`remoteAudioState`) |
+| A remote signal surfaces on the port stream | unit | yes | `livekit_room_port_test` |
+| Session change / disconnect clears the set | unit | yes | `livekit_live_media_client_test` |
+| Roster shows live mic/muted/screen for a matched hand | widget | yes | `live_session_screen_test` |
+| Remote set initialises empty over real LiveKit | real-E2E | yes | `livekit_web_e2e_test` — `remoteParticipants.length == 0` (one participant) |
+
+**Harness limitation (honest).** The real E2E has ONE participant; it does NOT
+create a second, so a real remote join/leave/track event is NOT verified
+against a real peer. Those paths are covered by deterministic fakes. A real
+second participant (a second bootstrapped user + a second LiveKit connection) is
+the next harness step.
+
 ## Manual verification (NOT executed in CI)
 
 These are the checks the automated harness cannot perform. They require a real

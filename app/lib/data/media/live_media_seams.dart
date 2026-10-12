@@ -44,6 +44,16 @@ abstract interface class LiveMediaClient {
   /// Every change of [publication].
   Stream<LiveMediaPublication> get publications;
 
+  /// The remote participants the SDK currently sees in the active room — their
+  /// presence and reconciled audio/screen state, keyed by identity (the backend
+  /// user id). Transport state only, kept DISTINCT from the local [publication]
+  /// and never a second source of identity, moderation or attendance. Always
+  /// safe to read.
+  LiveRemoteParticipants get remoteParticipants;
+
+  /// Every change of [remoteParticipants].
+  Stream<LiveRemoteParticipants> get remoteParticipantChanges;
+
   /// Joins the session's media room with the server's credential. The grant is
   /// consumed here and not kept; nothing above this seam holds the token.
   Future<void> connect(LiveMediaGrant grant);
@@ -86,6 +96,13 @@ class UnavailableLiveMediaClient implements LiveMediaClient {
   @override
   Stream<LiveMediaPublication> get publications =>
       Stream<LiveMediaPublication>.value(const LiveMediaPublication());
+
+  @override
+  LiveRemoteParticipants get remoteParticipants => LiveRemoteParticipants.empty;
+
+  @override
+  Stream<LiveRemoteParticipants> get remoteParticipantChanges =>
+      Stream<LiveRemoteParticipants>.value(LiveRemoteParticipants.empty);
 
   @override
   Future<void> connect(LiveMediaGrant grant) async => throw _unavailable;

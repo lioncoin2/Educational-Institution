@@ -35,6 +35,11 @@ class FakeLiveMediaClient implements LiveMediaClient {
   final _publications =
       StreamController<LiveMediaPublication>.broadcast(sync: true);
 
+  /// The remote participants the test drives.
+  LiveRemoteParticipants _remote = LiveRemoteParticipants.empty;
+  final _remoteChanges =
+      StreamController<LiveRemoteParticipants>.broadcast(sync: true);
+
   /// Drives the state and notifies [states].
   void emit(LiveMediaState state) {
     _state = state;
@@ -45,6 +50,12 @@ class FakeLiveMediaClient implements LiveMediaClient {
   void emitPublication(LiveMediaPublication publication) {
     _publication = publication;
     _publications.add(publication);
+  }
+
+  /// Drives the remote-participant set and notifies [remoteParticipantChanges].
+  void emitRemote(LiveRemoteParticipants participants) {
+    _remote = participants;
+    _remoteChanges.add(participants);
   }
 
   @override
@@ -61,6 +72,13 @@ class FakeLiveMediaClient implements LiveMediaClient {
 
   @override
   Stream<LiveMediaPublication> get publications => _publications.stream;
+
+  @override
+  LiveRemoteParticipants get remoteParticipants => _remote;
+
+  @override
+  Stream<LiveRemoteParticipants> get remoteParticipantChanges =>
+      _remoteChanges.stream;
 
   @override
   Future<void> connect(LiveMediaGrant grant) async {
@@ -99,5 +117,6 @@ class FakeLiveMediaClient implements LiveMediaClient {
   Future<void> dispose() async {
     await _states.close();
     await _publications.close();
+    await _remoteChanges.close();
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quran_institution_app/data/media/livekit/livekit_room_port.dart';
+import 'package:quran_institution_app/data/models/live_media.dart';
 
 /// A [LiveKitLiveRoom] the test drives in place of a real LiveKit room: it
 /// records each teardown call and its order, and can be told to throw on any
@@ -371,6 +372,64 @@ void main() {
       expect(tracks.microphoneOn, isTrue);
       expect(tracks.screenShareOn, isFalse);
       await port.dispose();
+    });
+
+    test('a remote-participants signal surfaces on the port stream', () async {
+      late void Function(LiveKitRoomSignal) emit;
+      final port = SdkLiveKitRoomPort(
+        openRoom: (url, token, e) async {
+          emit = e;
+          return _FakeLiveRoom();
+        },
+      );
+      final events = <LiveKitRoomSignal>[];
+      port.signals.listen(events.add);
+
+      await port.connect('wss://x', 'tok');
+      emit(
+        LiveKitRemoteParticipants(
+          LiveRemoteParticipants(
+            Map.unmodifiable({
+              'u-1': const LiveRemoteParticipant(
+                identity: 'u-1',
+                audio: LiveRemoteAudio.live,
+              ),
+            }),
+          ),
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(events.single, isA<LiveKitRemoteParticipants>());
+      final sig = events.single as LiveKitRemoteParticipants;
+      expect(sig.participants['u-1']?.audio, LiveRemoteAudio.live);
+      await port.dispose();
+    });
+  });
+
+  group('remoteAudioState (SDK-free rule)', () {
+    test('no track → none; unsubscribed → unsubscribed; muted → muted; else live', () {
+      expect(
+        remoteAudioState(hasMic: false, subscribed: false, muted: false),
+        LiveRemoteAudio.none,
+      );
+      expect(
+        remoteAudioState(hasMic: false, subscribed: true, muted: true),
+        LiveRemoteAudio.none,
+        reason: 'no mic track overrides everything',
+      );
+      expect(
+        remoteAudioState(hasMic: true, subscribed: false, muted: false),
+        LiveRemoteAudio.unsubscribed,
+      );
+      expect(
+        remoteAudioState(hasMic: true, subscribed: true, muted: true),
+        LiveRemoteAudio.muted,
+      );
+      expect(
+        remoteAudioState(hasMic: true, subscribed: true, muted: false),
+        LiveRemoteAudio.live,
+      );
     });
   });
 }

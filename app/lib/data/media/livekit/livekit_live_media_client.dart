@@ -40,6 +40,12 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
   final StreamController<LiveMediaPublication> _publications =
       StreamController<LiveMediaPublication>.broadcast();
 
+  /// The remote participants the SDK sees in the active room (transport state,
+  /// distinct from the local publication), reconciled from the room snapshot.
+  LiveRemoteParticipants _remote = LiveRemoteParticipants.empty;
+  final StreamController<LiveRemoteParticipants> _remoteChanges =
+      StreamController<LiveRemoteParticipants>.broadcast();
+
   @override
   bool get isAvailable => true;
 
@@ -54,6 +60,13 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
 
   @override
   Stream<LiveMediaPublication> get publications => _publications.stream;
+
+  @override
+  LiveRemoteParticipants get remoteParticipants => _remote;
+
+  @override
+  Stream<LiveRemoteParticipants> get remoteParticipantChanges =>
+      _remoteChanges.stream;
 
   /// The latest server-authorized screen-share capability — the SDK's live
   /// participant permission, updated as the backend grants or revokes a
@@ -77,6 +90,7 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
     // authorization, no tracks published yet. The SDK's live signals (capability
     // and local-track events) update it from here.
     _setPublication(LiveMediaPublication(screenAuthorized: grant.screen));
+    _setRemote(LiveRemoteParticipants.empty);
     _set(const LiveMediaConnecting());
     try {
       await _port.connect(grant.url, grant.token);
@@ -131,6 +145,7 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
       // the connection it belonged to.
       _screenAllowed = false;
       _setPublication(const LiveMediaPublication());
+      _setRemote(LiveRemoteParticipants.empty);
       _set(const LiveMediaIdle());
     }
   }
@@ -143,6 +158,7 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
     await _port.dispose();
     if (!_states.isClosed) await _states.close();
     if (!_publications.isClosed) await _publications.close();
+    if (!_remoteChanges.isClosed) await _remoteChanges.close();
   }
 
   void _onSignal(LiveKitRoomSignal signal) {
@@ -178,6 +194,11 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
             screenShareOn: screenShareOn,
           ),
         );
+      case LiveKitRemoteParticipants(:final participants):
+        // The reconciled remote set (presence + audio/screen), keyed by
+        // identity — scoped to THIS room; cleared on connect/disconnect, so a
+        // previous room's participants never linger.
+        _setRemote(participants);
     }
   }
 
@@ -205,6 +226,14 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
     if (next == _publication) return;
     _publication = next;
     if (!_publications.isClosed) _publications.add(next);
+  }
+
+  /// Publishes a remote-set change only when it actually changed, so a
+  /// reconcile that yields the same snapshot (a no-op event) does not churn.
+  void _setRemote(LiveRemoteParticipants next) {
+    if (next == _remote) return;
+    _remote = next;
+    if (!_remoteChanges.isClosed) _remoteChanges.add(next);
   }
 
   void _requireConnected() {
