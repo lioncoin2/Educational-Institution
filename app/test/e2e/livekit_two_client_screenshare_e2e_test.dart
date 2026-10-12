@@ -170,6 +170,27 @@ Future<int> _probeDisplayMediaTrackCount() async {
   }
 }
 
+/// DIAGNOSTIC-only (logged, never asserted): tries one labelled getDisplayMedia
+/// constraint shape and reports OK (with the track count) or the exact DOM
+/// error. Used to isolate WHICH element of the SDK's constraint set the headless
+/// capture rejects (plain video vs. the exact width/height/frameRate the SDK
+/// sends), so a capture failure is diagnosed in a single run rather than guessed.
+Future<void> _logProbe(String label, Map<String, dynamic> constraints) async {
+  try {
+    final stream = await rtc.navigator.mediaDevices.getDisplayMedia(constraints);
+    final tracks = stream.getVideoTracks();
+    // ignore: avoid_print
+    print('LKDIAG screen-probe[$label]: OK videoTracks=${tracks.length}');
+    for (final track in tracks) {
+      await track.stop();
+    }
+    await stream.dispose();
+  } catch (error) {
+    // ignore: avoid_print
+    print('LKDIAG screen-probe[$label]: FAILED ${error.runtimeType}: $error');
+  }
+}
+
 void main() {
   // The browser E2E needs a live Flutter binding before livekit_client touches
   // Flutter state during Room.connect (as in livekit_web_e2e_test.dart).
@@ -279,13 +300,30 @@ void main() {
     // precise reason (never a false pass downstream).
     final probeTracks = await _probeDisplayMediaTrackCount();
     // ignore: avoid_print
-    print('LKDIAG screen-probe: getDisplayMedia videoTracks=$probeTracks');
+    print('LKDIAG screen-probe[video:true]: videoTracks=$probeTracks');
     expect(
       probeTracks,
       greaterThanOrEqualTo(1),
       reason: 'no real display-capture source in this environment '
           '(getDisplayMedia returned no video track)',
     );
+
+    // Diagnostic (logged, not asserted): does the SDK's EXACT web constraint set
+    // succeed here? The SDK sends, on web, screenShareH1080FPS15 →
+    // {audio:false, video:{width:1920, height:1080, frameRate:15}} (verified in
+    // livekit_client 2.13.0: ScreenShareCaptureOptions/VideoParameters). These
+    // probes isolate which element (if any) the headless capture rejects, so a
+    // production-path capture failure is pinpointed in this single run.
+    await _logProbe('sdk-exact', <String, dynamic>{
+      'audio': false,
+      'video': <String, dynamic>{'width': 1920, 'height': 1080, 'frameRate': 15},
+    });
+    await _logProbe('wh-only', <String, dynamic>{
+      'video': <String, dynamic>{'width': 1920, 'height': 1080},
+    });
+    await _logProbe('framerate-only', <String, dynamic>{
+      'video': <String, dynamic>{'frameRate': 15},
+    });
 
     // 4. REAL browser display capture → the production publish path. With a real
     //    display + auto-selected source this acquires a genuine screen-capture
