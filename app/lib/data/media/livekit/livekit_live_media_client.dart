@@ -168,6 +168,18 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
       case LiveKitReconnecting():
         _set(const LiveMediaReconnecting());
       case LiveKitDisconnected(:final reason):
+        // A TERMINAL drop (roomDeleted / participantRemoved / duplicateIdentity /
+        // other): the room is gone, so no remote participant is present and no
+        // local track is publishing. Clear the media state — exactly as an
+        // explicit disconnect() does — so a stale roster chip or a stale
+        // publication indicator cannot outlive the connection it belonged to
+        // (until some later connect/disconnect happened to reset it). A transient
+        // LiveKitReconnecting is NOT terminal and deliberately preserves state
+        // across the blip; only this terminal case clears. The next connect()
+        // reseeds from the new room.
+        _screenAllowed = false;
+        _setPublication(const LiveMediaPublication());
+        _setRemote(LiveRemoteParticipants.empty);
         _set(LiveMediaDisconnected(reason));
       case LiveKitCapabilities(:final canPublishScreen):
         // The server's live authorization — the only thing that un-blocks (or

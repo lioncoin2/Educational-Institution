@@ -403,14 +403,34 @@ media) is unit-covered. Reconnect is **not** claimed as end-to-end verified.
 
 ## Sprint 15 — failure recovery & room-reset recovery
 
-Sprint 15 audits the failure-recovery and resource-lifecycle paths and adds the
-verification they still lacked. The audit confirmed the ownership model already
-correct and observably tested — the adapter port tears down each resource
-best-effort and rethrows the FIRST error (never masking the original),
-reconnect never reuses an orphaned room, the client resets local + remote state
-on connect AND disconnect, and the controller's `_generation` stale-guard stops
-a superseded connect/callback from touching the active session — so **no
-production code changed**. Two gaps are closed.
+Sprint 15 audits the failure-recovery and resource-lifecycle paths. The adapter
+port cleanup (best-effort, rethrows the FIRST error without masking; reconnect
+never reuses an orphaned room) and the controller `_generation` stale-guard are
+confirmed correct and observably tested. But a new real-LiveKit room-reset test
+exposed **one genuine defect**, now fixed.
+
+**DEFECT FIXED — stale media state survived a terminal drop
+(`livekit_live_media_client.dart`).** The client reset its remote-participant set
+and publication on an explicit `connect()` and `disconnect()`, but NOT on a
+TERMINAL SDK-driven drop (`LiveKitDisconnected` — a room reset deleting the room,
+a kick, a duplicate identity): `_onSignal` set the state but left `_remote`,
+`_publication` and `_screenAllowed` stale until some later connect/disconnect
+happened to reset them. So after a `roomDeleted`, the roster could still show a
+participant (and a mic/screen chip) from a room that no longer existed —
+violating the invariant that media state is valid only while connected. The
+room-reset E2E reproduced it (`remoteParticipants[B]` was non-null right after
+`roomDeleted`); a deterministic unit test reproduces it too. Fix: the terminal
+`LiveKitDisconnected` case now clears the remote set, the publication and the
+authorization — exactly as `disconnect()` does — while a transient
+`LiveKitReconnecting` still PRESERVES state across the blip. Correct layer: the
+client owns the media state; the invariant restored is "a terminal drop converges
+to clean media state, no stale roster/publication outliving the connection."
+
+| Scenario | Kind | Ran? | Evidence |
+|---|---|---|---|
+| A terminal drop clears the remote set, publication and authorization | unit | yes | `livekit_live_media_client_test` ("terminal disconnect clears media state (Sprint 15)") |
+| A transient reconnecting PRESERVES the remote set and publication | unit | yes | same |
+| (integration) `roomDeleted` on reset → the client no longer tracks the departed peer | real-E2E | yes | `livekit_session_reset_e2e_test` (the regression that exposed the defect) |
 
 **Microphone publish failure (unit).** The screen path already proved a refused
 publish surfaces a sanitized `media_error` without faking an "on"; the symmetric

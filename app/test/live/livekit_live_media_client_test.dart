@@ -622,6 +622,61 @@ void main() {
     });
   });
 
+  // Sprint 15 — a TERMINAL media drop (the SDK's LiveKitDisconnected) must leave
+  // NO stale media state. An explicit disconnect() already clears, but a
+  // server-/SDK-driven terminal drop (a room reset deleting the room, a kick, a
+  // duplicate identity) was leaving the remote set and the publication stale
+  // until some later connect/disconnect — a stale roster chip / publication
+  // indicator outliving its connection. A transient reconnecting must NOT clear.
+  group('terminal disconnect clears media state (Sprint 15)', () {
+    LiveRemoteParticipants remoteSet(Map<String, LiveRemoteParticipant> m) =>
+        LiveRemoteParticipants(Map.unmodifiable(m));
+
+    test('a terminal drop clears the remote set, the publication and authorization', () async {
+      await connected(screen: true);
+      port.emit(const LiveKitLocalTracks(microphoneOn: true, screenShareOn: true));
+      port.emit(
+        LiveKitRemoteParticipants(
+          remoteSet({
+            'u-1': const LiveRemoteParticipant(identity: 'u-1', audio: LiveRemoteAudio.live),
+          }),
+        ),
+      );
+      expect(client.remoteParticipants.length, 1);
+      expect(client.publication.microphoneOn, isTrue);
+      expect(client.screenAuthorized, isTrue);
+
+      // The room drops (e.g. a reset deleted it). No explicit disconnect() ran,
+      // yet the media state must still converge to clean — no stale roster, no
+      // stale publication, authorization withdrawn.
+      port.emit(const LiveKitDisconnected(LiveMediaDisconnectReason.roomDeleted));
+      expect(
+        client.state,
+        const LiveMediaDisconnected(LiveMediaDisconnectReason.roomDeleted),
+      );
+      expect(client.remoteParticipants, LiveRemoteParticipants.empty);
+      expect(client.publication, const LiveMediaPublication());
+      expect(client.screenAuthorized, isFalse);
+    });
+
+    test('a transient reconnecting preserves the remote set and the publication', () async {
+      await connected(screen: true);
+      port.emit(const LiveKitLocalTracks(microphoneOn: true, screenShareOn: false));
+      port.emit(
+        LiveKitRemoteParticipants(
+          remoteSet({'u-1': const LiveRemoteParticipant(identity: 'u-1')}),
+        ),
+      );
+
+      // A blip is NOT a terminal drop: it returns on reconnected, so the media
+      // state is deliberately preserved across it.
+      port.emit(const LiveKitReconnecting());
+      expect(client.state, const LiveMediaReconnecting());
+      expect(client.remoteParticipants.length, 1);
+      expect(client.publication.microphoneOn, isTrue);
+    });
+  });
+
   // Sprint 13 — the LOCAL publication state and the REMOTE participant state are
   // independent facts, carried by different signals. A signal about our OWN
   // tracks must never alter the remote set, and a signal about REMOTE
