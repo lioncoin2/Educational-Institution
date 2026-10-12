@@ -298,6 +298,19 @@ Resolved since this ADR was accepted:
   join is refused `live.session_not_live`). Per-participant RECONNECT stays NOT
   E2E-verified (same honest limitation as P13). (`docs/p8-live-media-verification.md`,
   Sprint 14.)
+- **Failure recovery & room-reset recovery (P15 / Sprint 15).** The audit
+  confirmed the failure/cleanup ownership model already correct and observably
+  tested (adapter rethrows the FIRST teardown error without masking; reconnect
+  never reuses an orphaned room; client resets local+remote state on connect and
+  disconnect; controller `_generation` stale-guard), so NO production code
+  changed. Added: a symmetric microphone-publish-failure unit test (a refused
+  publish surfaces `media_error`, publication stays off), and a real-LiveKit
+  room-reset RECOVERY E2E (a moderator reset → connected clients observe
+  `roomDeleted` → both recover to the NEW room via a fresh join, clean, no stale
+  participant, no duplicate). The SDK's INTERNAL network reconnect
+  (`RoomReconnecting`→`RoomReconnected` on a transient blip) stays NOT-VERIFIED
+  E2E — unit-covered only — because a partition that keeps the room alive cannot
+  be induced deterministically here. (`docs/p8-live-media-verification.md`, Sprint 15.)
 
 Genuinely unresolved:
 

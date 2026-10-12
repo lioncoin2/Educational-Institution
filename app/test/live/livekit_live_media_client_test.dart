@@ -22,6 +22,7 @@ class _FakePort implements LiveKitRoomPort {
   Object? failConnect;
   Object? failDisconnect;
   Object? failScreen;
+  Object? failMicrophone;
 
   void emit(LiveKitRoomSignal signal) => _signals.add(signal);
 
@@ -35,8 +36,10 @@ class _FakePort implements LiveKitRoomPort {
   }
 
   @override
-  Future<void> setMicrophoneEnabled(bool enabled) async =>
-      microphone.add(enabled);
+  Future<void> setMicrophoneEnabled(bool enabled) async {
+    microphone.add(enabled);
+    if (failMicrophone != null) throw failMicrophone!;
+  }
 
   @override
   Future<void> setScreenShareEnabled(
@@ -216,6 +219,34 @@ void main() {
         ),
       );
       expect(port.microphone, isEmpty);
+    });
+
+    // Sprint 15 — a publish FAILURE (the SDK/device refuses) is surfaced as a
+    // sanitized media_error, not swallowed into a false "on": the publication
+    // stays off because it is driven by the SDK's own track signal, never by the
+    // command returning. Symmetric to the screen-share refusal path. The token
+    // never reaches the exception (the port holds it).
+    test('a microphone publish failure surfaces media_error; publication stays off', () async {
+      await connected();
+      port.failMicrophone = Exception('mic publish refused for token=super-secret');
+      final seen = <LiveMediaPublication>[];
+      final sub = client.publications.listen(seen.add);
+
+      LiveMediaException? thrown;
+      try {
+        await client.setMicrophoneEnabled(true);
+      } on LiveMediaException catch (e) {
+        thrown = e;
+      }
+      await pumpEventQueue();
+
+      expect(thrown, isNotNull);
+      expect(thrown!.code, 'media_error');
+      expect(thrown.toString(), isNot(contains('super-secret')));
+      // No LocalTrackPublished signal ever came, so the publication is unchanged.
+      expect(client.publication.microphoneOn, isFalse);
+      expect(seen, isEmpty);
+      await sub.cancel();
     });
   });
 

@@ -378,6 +378,31 @@ jobs:
               --platform chrome \
               --dart-define-from-file="$E2E_DEFINES_FILE"
 
+      # Session RESET recovery (Sprint 15) — headless, its OWN step (a reset
+      # drops every connected client, so it is isolated from the harnesses above
+      # that keep clients connected). A moderator resets the media room (a new
+      # room is ensured, the old deleted, the session stays LIVE); connected
+      # clients observe roomDeleted and RECOVER to the new room via a fresh join
+      # with clean state. This is the one reconnection scenario inducible
+      # deterministically here (the SDK's internal network reconnect is not, and
+      # stays NOT-VERIFIED). It does not end the session, so the step below still
+      # fresh-joins the (new) room. @TestOn('browser').
+      - name: Flutter Web → LiveKit session-reset recovery E2E (headless)
+        working-directory: app
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          wrapper="$RUNNER_TEMP/chrome-e2e"
+          {
+            echo '#!/usr/bin/env bash'
+            echo "exec \"$CHROME_BIN\" \"\$@\" --disable-web-security --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --autoplay-policy=no-user-gesture-required"
+          } > "$wrapper"
+          chmod +x "$wrapper"
+          CHROME_EXECUTABLE="$wrapper" flutter test \
+            test/e2e/livekit_session_reset_e2e_test.dart \
+            --platform chrome \
+            --dart-define-from-file="$E2E_DEFINES_FILE"
+
       # Session TERMINATION (Sprint 14) — runs LAST on purpose: it ENDS the
       # shared session, and every harness above has already finished with it, so
       # ending it here disturbs nothing. Headless (no screen capture): the owner

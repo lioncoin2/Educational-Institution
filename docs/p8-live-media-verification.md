@@ -401,6 +401,57 @@ idempotency that matters (reconnect/rejoin never duplicates a participant, a
 departed one is dropped and never revived, a new session inherits no stale
 media) is unit-covered. Reconnect is **not** claimed as end-to-end verified.
 
+## Sprint 15 — failure recovery & room-reset recovery
+
+Sprint 15 audits the failure-recovery and resource-lifecycle paths and adds the
+verification they still lacked. The audit confirmed the ownership model already
+correct and observably tested — the adapter port tears down each resource
+best-effort and rethrows the FIRST error (never masking the original),
+reconnect never reuses an orphaned room, the client resets local + remote state
+on connect AND disconnect, and the controller's `_generation` stale-guard stops
+a superseded connect/callback from touching the active session — so **no
+production code changed**. Two gaps are closed.
+
+**Microphone publish failure (unit).** The screen path already proved a refused
+publish surfaces a sanitized `media_error` without faking an "on"; the symmetric
+microphone case was untested (the fake port had no mic-failure injection).
+`livekit_live_media_client_test` now drives `failMicrophone`:
+
+| Scenario | Kind | Ran? | Evidence |
+|---|---|---|---|
+| A refused mic publish surfaces `media_error`; publication stays off; no token leak | unit | yes | `livekit_live_media_client_test` ("a microphone publish failure surfaces media_error …") |
+
+**Room-reset recovery (real-E2E).** The one RECONNECTION scenario this harness
+can induce deterministically: a moderator resets the media room (a new room is
+ensured, the old deleted, the session stays LIVE), a connected client observes
+the real `roomDeleted` drop, and both clients RECOVER to the NEW room via a
+fresh join with clean state. `app/test/e2e/livekit_session_reset_e2e_test.dart`:
+
+| Behavior | Kind | Ran? | Evidence |
+|---|---|---|---|
+| A + B connect; A observes B | real-E2E | yes | `livekit_session_reset_e2e_test` |
+| `resetRoom` deletes the old room; BOTH clients observe `roomDeleted` | real-E2E | yes | same (real SDK `RoomDisconnectedEvent roomDeleted`) |
+| The old room's remote state is dropped (no ghost) | real-E2E | yes | same (A no longer tracks B) |
+| Both RECOVER to the NEW room via a fresh join, CLEAN (connect resets state) | real-E2E | yes | same |
+| A re-observes EXACTLY B (once, no duplicate, no stale); B re-observes A | real-E2E | yes | same |
+
+This runs in its own headless workflow step (a reset drops every connected
+client, so it is isolated); it does not end the session, so the session-end step
+after it still fresh-joins the new room.
+
+**Reconnect — explicitly NOT VERIFIED E2E (unchanged, honest).** The SDK's
+INTERNAL network reconnect — `RoomReconnecting` → `RoomReconnected` on a
+transient signal blip without losing the room — is mapped and UNIT-verified
+(`livekit_room_port` / `live_media_controller`), but a genuine transient network
+partition that keeps the room alive cannot be induced deterministically in a
+single-runner Docker harness (restarting / pausing LiveKit loses the room, which
+is `roomDeleted`, a different path). It is **not** claimed as end-to-end
+verified. What IS verified end-to-end is the application-level RECOVERY after a
+room-level drop (reset → roomDeleted → recover to the new room, above) and the
+terminal end path (Sprint 14). The deterministic idempotency/stale-state
+cleanup that matters (no duplicate on rejoin, departed dropped, connect/disconnect
+reset the local + remote set) is unit-covered.
+
 ## Manual verification (NOT executed in CI)
 
 These are the checks the automated harness cannot perform. They require a real
