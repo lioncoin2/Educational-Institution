@@ -63,6 +63,12 @@ import 'dart:async';
 // surfaces the RAW DOM error (before the SDK wraps it as TrackCreateException).
 // ignore: depend_on_referenced_packages
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
+// The SDK, imported ONLY for a diagnostic probe that calls its OWN
+// createScreenShareTrack (the exact production capture call) to surface the RAW
+// error the media client otherwise hides. Tests may import it directly (the
+// lib/ boundary test does not cover test/); production code must not.
+// ignore: depend_on_referenced_packages
+import 'package:livekit_client/livekit_client.dart' show LocalVideoTrack;
 
 // connectivity_plus's official web implementation entry point — see the note in
 // livekit_web_e2e_test.dart: `flutter test --platform chrome` does not run the
@@ -170,24 +176,25 @@ Future<int> _probeDisplayMediaTrackCount() async {
   }
 }
 
-/// DIAGNOSTIC-only (logged, never asserted): tries one labelled getDisplayMedia
-/// constraint shape and reports OK (with the track count) or the exact DOM
-/// error. Used to isolate WHICH element of the SDK's constraint set the headless
-/// capture rejects (plain video vs. the exact width/height/frameRate the SDK
-/// sends), so a capture failure is diagnosed in a single run rather than guessed.
-Future<void> _logProbe(String label, Map<String, dynamic> constraints) async {
+/// DIAGNOSTIC-only (logged, never asserted): calls the SDK's OWN
+/// [LocalVideoTrack.createScreenShareTrack] — the EXACT production capture call —
+/// and prints its RAW error and stack. The media client wraps any failure as an
+/// opaque `media_error (TrackCreateException)`, hiding the message; this surfaces
+/// it, so when a getDisplayMedia probe succeeds but the SDK path fails, the real
+/// cause is visible. Stops/disposes the probe track on success.
+Future<void> _logSdkScreenCaptureProbe() async {
   try {
-    final stream = await rtc.navigator.mediaDevices.getDisplayMedia(constraints);
-    final tracks = stream.getVideoTracks();
+    final track = await LocalVideoTrack.createScreenShareTrack();
     // ignore: avoid_print
-    print('LKDIAG screen-probe[$label]: OK videoTracks=${tracks.length}');
-    for (final track in tracks) {
-      await track.stop();
-    }
-    await stream.dispose();
-  } catch (error) {
+    print('LKDIAG screen-probe[sdk-createScreenShareTrack]: OK (${track.runtimeType})');
+    await track.stop();
+    await track.dispose();
+  } catch (error, stack) {
     // ignore: avoid_print
-    print('LKDIAG screen-probe[$label]: FAILED ${error.runtimeType}: $error');
+    print('LKDIAG screen-probe[sdk-createScreenShareTrack]: FAILED ${error.runtimeType}: $error');
+    // ignore: avoid_print
+    print('LKDIAG screen-probe[sdk-createScreenShareTrack] stack: '
+        '${stack.toString().split('\n').take(8).join(' || ')}');
   }
 }
 
@@ -308,22 +315,12 @@ void main() {
           '(getDisplayMedia returned no video track)',
     );
 
-    // Diagnostic (logged, not asserted): does the SDK's EXACT web constraint set
-    // succeed here? The SDK sends, on web, screenShareH1080FPS15 →
-    // {audio:false, video:{width:1920, height:1080, frameRate:15}} (verified in
-    // livekit_client 2.13.0: ScreenShareCaptureOptions/VideoParameters). These
-    // probes isolate which element (if any) the headless capture rejects, so a
-    // production-path capture failure is pinpointed in this single run.
-    await _logProbe('sdk-exact', <String, dynamic>{
-      'audio': false,
-      'video': <String, dynamic>{'width': 1920, 'height': 1080, 'frameRate': 15},
-    });
-    await _logProbe('wh-only', <String, dynamic>{
-      'video': <String, dynamic>{'width': 1920, 'height': 1080},
-    });
-    await _logProbe('framerate-only', <String, dynamic>{
-      'video': <String, dynamic>{'frameRate': 15},
-    });
+    // Diagnostic (logged, not asserted): a direct getDisplayMedia with the SDK's
+    // exact constraints already succeeds in this environment (confirmed), so the
+    // production failure is NOT the raw capture. Call the SDK's OWN
+    // createScreenShareTrack to surface the real error it raises (the client
+    // hides it as an opaque media_error).
+    await _logSdkScreenCaptureProbe();
 
     // 4. REAL browser display capture → the production publish path. With a real
     //    display + auto-selected source this acquires a genuine screen-capture
