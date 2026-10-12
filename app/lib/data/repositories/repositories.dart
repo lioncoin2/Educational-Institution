@@ -347,15 +347,18 @@ abstract interface class CommunityRepository {
   Future<Community> transferOwnership(String communityId, String userId);
 }
 
-/// People discovery — finding an account by name, for a staff member who may
-/// read the human record (the server gates `GET /people` on `people.read`; the
-/// app offers the search only where the server would allow it). Not an open
-/// directory: a result discloses only {userId, displayName}, and the server
-/// decides whom the caller may find. A refusal throws [PeopleException].
+/// People discovery — finding an account by name. [search] is the OWNER/ADMIN
+/// institution-wide directory (`GET /people`, `people.read`); the student-facing
+/// teacher directory ([searchTeachers]) is separate. Community add-member
+/// discovery is NOT here — it is `CommunityRepository.memberCandidates`, scoped
+/// to the community. Not an open directory: a result discloses only
+/// {userId, displayName}, and the server decides whom the caller may find
+/// (finding an account is not adding it anywhere — ADR 0032). A refusal throws
+/// [PeopleException].
 abstract interface class PeopleRepository {
   /// Accounts whose display name begins with [query] (a blank query is an
   /// empty page), a keyset page at a time by an opaque [cursor]. Gated on the
-  /// server by `people.read` (staff only).
+  /// server by `people.read` (OWNER/ADMIN only since migration 0020).
   Future<PeopleSearchPage> search(String query, {String? cursor});
 
   /// Eligible TEACHERS whose display name begins with [query] — the

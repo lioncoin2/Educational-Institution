@@ -190,9 +190,11 @@ final communityRepositoryProvider = Provider<CommunityRepository>(
       : MockCommunityRepository(),
 );
 
-/// People discovery — the display-name search for adding a member (the server
-/// gates `GET /people` on `people.read`; the app offers it only where it is
-/// allowed). HTTP against the backend, the invented set in the demo.
+/// People discovery — the OWNER/ADMIN institution-wide directory (`GET /people`,
+/// `people.read`) and the student-facing teacher directory (`GET /people/teachers`).
+/// Community add-member discovery is NOT here (it is the community-scoped
+/// `CommunityRepository.memberCandidates`). HTTP against the backend, the
+/// invented set in the demo.
 final peopleRepositoryProvider = Provider<PeopleRepository>(
   (ref) => ref.watch(backendModeProvider)
       ? HttpPeopleRepository(ref.watch(apiClientProvider))

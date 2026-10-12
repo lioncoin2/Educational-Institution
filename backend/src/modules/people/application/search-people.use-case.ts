@@ -11,9 +11,11 @@ import {
 } from '../../identity/contracts';
 
 /**
- * Finds people by display-name prefix, for a staff member who may read the
- * human record (`people.read`) — adding a member, or starting a conversation
- * with someone whose id they do not already hold.
+ * Finds people by display-name prefix, for an OWNER/ADMIN who may read the human
+ * record (`people.read`; not teachers or supervisors, since migration 0020) —
+ * the institution-wide membership-management directory. Community add-member
+ * discovery is the community-scoped candidate search instead (ADR 0032); finding
+ * an account here is not adding it anywhere.
  *
  * The right to search is decided HERE and re-checked even when an HTTP guard
  * already ran (a use case may be called by a job or an event handler, which do

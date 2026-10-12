@@ -60,7 +60,9 @@ silently invent institutional rules — record unknowns as deferred.
 - **Open questions (answers inline):** `docs/architecture/open-questions.md`.
 - **ADRs:** `docs/architecture/decisions/` — esp. **0015** (academic reconciliation), **0016** (Q40),
   **0023** (attendance authorization), **0024/0025** (P10 notifications), **0026–0029** (P12 live/moderation
-  policy), **0030** (Flutter LiveKit media client), **0031** (architecture index). Table: `.../decisions/README.md`.
+  policy), **0030** (Flutter LiveKit media client), **0031** (architecture index), **0032** (discovery ≠
+  membership ≠ authorization ≠ attendance — owner/admin-only `GET /people`, community-scoped member search).
+  Table: `.../decisions/README.md`.
 - **Live-media verification log:** [`docs/p8-live-media-verification.md`](p8-live-media-verification.md).
   **Messaging/attachments + client dependencies:** [`docs/architecture/messaging.md`](architecture/messaging.md),
   [`docs/architecture/live.md`](architecture/live.md) §17.
@@ -77,7 +79,7 @@ unverified on target platform** · **Mock/stub** · **Owner-decision-gated** · 
 | --- | --- | --- |
 | Authentication & identity; persistent sessions | **Implemented+verified** (native keystore unverified) | Sprint 19 — see below |
 | Communities & membership | **Implemented+verified** | lists, roster, keyset pagination, lock/unlock, join-by-link, leave, invitations, remove, grant/revoke/transfer, server-authoritative `me` |
-| People directory & member add/re-add; student↔student & student↔teacher DMs | **Implemented+verified** | GROUP A (register §12–§14); `people.read`, `community.members.invite`, `messaging.start_direct_peer`/`_teacher` (migrations 0018/0019) |
+| People directory & member add/re-add; student↔student & student↔teacher DMs | **Implemented+verified** | GROUP A (register §12–§15; ADR 0032); `people.read` (owner/admin only, migration 0020), community-scoped `member-candidates` on `community.members.invite`, `messaging.start_direct_peer`/`_teacher` (migrations 0018/0019) |
 | Text messaging, moderation, cross-client delete | **Implemented+verified** | send/history/pagination/read-unread/catch-up; moderation delete + 7-day review (ADR 0029); the `messaging.message.deleted` realtime hint |
 | Message attachments & voice notes (image/PDF/voice) | **Implemented, partially verified** (web; native/real-device unverified) | Sprint 21 — see below |
 | Live-session control plane (hands, moderation roster, presenter grants, kick, reset) | **Implemented+verified** | P12; HTTP control plane, server-authoritative |

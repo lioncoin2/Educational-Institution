@@ -21,12 +21,15 @@ export const ELIGIBLE_TEACHER: { readonly holds: Permission; readonly notHolds: 
 
 /**
  * Identity's answer to "which accounts' names begin with this?" — the one way
- * another module may enumerate accounts by name, for a staff member adding a
- * member or starting a conversation with someone they do not already hold an id
- * for.
+ * another module may enumerate accounts by name: the owner/admin directory
+ * (People's `GET /people`), the community add-member candidate search
+ * (Communities' `GET /communities/:id/member-candidates`), and the student
+ * teacher directory (`GET /people/teachers`).
  *
  * It only FINDS; the caller's RIGHT to search is the caller's, decided above
- * this port (People gates `GET /people` on `people.read`). The result is the
+ * this port (People gates `GET /people` on `people.read`; Communities gates
+ * candidate search on `community.members.invite` in the target community). The
+ * result is the
  * same deliberately-minimal {userId, displayName, active} shape as
  * [AccountDirectory] — never an email, a role or any security state — so a
  * searchable account discloses nothing a batch lookup would not.

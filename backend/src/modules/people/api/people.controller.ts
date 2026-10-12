@@ -11,17 +11,22 @@ import { SearchPeopleQuery } from './dto/search-people.dto';
 import { toPeopleSearchResponse } from './responses';
 
 /**
- * /people — the human record behind a login (ADR-less until a policy names
- * more; Owner Decision A1/A4, and Q6 for the teacher directory).
+ * /people — the human record behind a login (Owner Decision A1/A4, and Q6 for
+ * the teacher directory; the discovery/membership/attendance separation is
+ * ADR 0032).
  *
  * Two display-name searches, each its own gate; both answer the same minimal
  * {userId, displayName} — never an email, a role or any security state — and
  * each use case re-asks its permission, so a caller that is not an HTTP request
  * (a job, an event handler) is exactly as safe:
  *
- *   GET /people          `people.read` (staff — teacher, supervisor, admin,
- *                         owner; never a student): anyone, to add to a community
- *                         or message.
+ *   GET /people          `people.read` (OWNER/ADMIN only — not a teacher,
+ *                         supervisor or student, since migration 0020): the
+ *                         institution-wide membership-management directory.
+ *                         Community add-member discovery is the community-scoped
+ *                         `GET /communities/:id/member-candidates` instead
+ *                         (gated per community on `community.members.invite`);
+ *                         finding an account is not adding it (ADR 0032).
  *   GET /people/teachers `messaging.start_direct_teacher` (a student): ELIGIBLE
  *                         TEACHERS ONLY, to find one to message (Q6). It is a
  *                         teacher directory, not a general people search — a

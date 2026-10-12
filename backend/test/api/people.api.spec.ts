@@ -238,9 +238,9 @@ describe('people API — GET /people', () => {
   });
 
   // GET /people/teachers — the student-facing teacher directory (Q6). Gated on
-  // `messaging.start_direct_teacher` (a student holds it; a teacher, holding
-  // only people.read, does not), returns ONLY eligible teachers, same minimal
-  // projection. It is a teacher directory, never a general people search.
+  // `messaging.start_direct_teacher` (a student holds it; a teacher does not),
+  // returns ONLY eligible teachers, same minimal projection. It is a teacher
+  // directory, never a general people search.
   describe('GET /people/teachers', () => {
     it('401 — refuses an unauthenticated search', async () => {
       const res = await api.call('GET', '/people/teachers?q=سا');

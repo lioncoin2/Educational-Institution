@@ -146,10 +146,18 @@ testable meanwhile, and it is kept in one file so nobody mistakes it for policy.
 | --- | --- |
 | OWNER | all 30 |
 | ADMIN | all except `settings.manage` and `messaging.manage` (28) |
-| SUPERVISOR | read access: `users`, `people`, `academic`, `attendance`, `assignments`, `reports`, `messaging.read/send/start_direct/create_group`, `live.join`, `files.read` |
-| TEACHER | `people.read`, `academic.read/teach`, `attendance.*`, `assignments.read/manage`, `messaging.read/send/start_direct/create_group`, `live.join/speak/moderate`, `files.*` |
+| SUPERVISOR | read access: `users`, `academic`, `attendance`, `assignments`, `reports`, `messaging.read/send/start_direct/create_group`, `live.join`, `files.read` |
+| TEACHER | `academic.read/teach`, `attendance.*`, `assignments.read/manage`, `messaging.read/send/start_direct/create_group`, `live.join/speak/moderate`, `files.*` |
 | ASSISTANT_TEACHER | `academic.read/teach`, `attendance.read`, `assignments.read`, `messaging.read/send`, `live.join`, `files.read` |
 | STUDENT | `academic.read/study`, `assignments.read/submit`, `messaging.read/send`, `live.join/raise_hand`, `files.*` |
+
+`people.read` is held by **OWNER/ADMIN only** (migration `0020`, Sprint 24):
+`GET /people` is the institution-wide membership-management directory, not a
+general staff directory. Supervisors and teachers no longer hold it; community
+add-member discovery is the community-scoped `GET /communities/:id/member-candidates`,
+authorized per community on `community.members.invite`. Finding a person is not
+adding them, and confers nothing — see
+[ADR 0032](decisions/0032-discovery-membership-attendance-separation.md).
 
 Two **technical** constraints shaped it. These are not policy choices:
 

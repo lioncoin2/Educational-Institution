@@ -1,5 +1,7 @@
-/// People discovery — the display-name search a staff member uses to find
-/// someone to add to a community (`GET /people`, Owner Decision A1/A4).
+/// People discovery — the display-name search results, shared by the owner/admin
+/// institution-wide directory (`GET /people`, Owner Decision A1/A4) and the
+/// community-scoped add-member candidate search
+/// (`GET /communities/:id/member-candidates`); the server decides who may search.
 ///
 /// Parsed defensively, as communities are: an id that cannot be read fails the
 /// parse; a missing name is simply absent (a neutral fallback is shown). The
