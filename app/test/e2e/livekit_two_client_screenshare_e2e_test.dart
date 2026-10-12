@@ -57,6 +57,13 @@ library;
 
 import 'dart:async';
 
+// The WebRTC media API — the SAME package (and the SAME
+// `navigator.mediaDevices.getDisplayMedia`) the LiveKit SDK calls internally, so
+// the diagnostic probe below replicates the production capture call exactly and
+// surfaces the RAW DOM error (before the SDK wraps it as TrackCreateException).
+// ignore: depend_on_referenced_packages
+import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
+
 // connectivity_plus's official web implementation entry point — see the note in
 // livekit_web_e2e_test.dart: `flutter test --platform chrome` does not run the
 // generated web plugin registrant, so the SDK's connectivity check would hang.
@@ -134,6 +141,32 @@ Future<void> _awaitConnected(LiveKitLiveMediaClient client, LiveMediaGrant grant
     expect(result, isA<LiveMediaConnected>(), reason: 'the client did not reach connected');
   } finally {
     await sub.cancel();
+  }
+}
+
+/// DIAGNOSTIC + state-3 probe: calls the browser's getDisplayMedia DIRECTLY so
+/// the exact capture outcome (a real video track, or a precise DOM error such as
+/// NotFoundError / NotReadableError / NotAllowedError) is visible in the log, and
+/// so "a real display-capture source exists" is checked on its own — separate
+/// from an actually-published track (the production path below does the real
+/// publish). Returns the video-track count; prints and rethrows the exact error
+/// on failure so a capture problem is self-diagnosing in CI. Stops the probe's
+/// own tracks immediately (it is not the track the SDK publishes).
+Future<int> _probeDisplayMediaTrackCount() async {
+  try {
+    final stream = await rtc.navigator.mediaDevices.getDisplayMedia(
+      <String, dynamic>{'video': true},
+    );
+    final tracks = stream.getVideoTracks();
+    for (final track in tracks) {
+      await track.stop();
+    }
+    await stream.dispose();
+    return tracks.length;
+  } catch (error) {
+    // ignore: avoid_print
+    print('LKDIAG screen-probe: getDisplayMedia threw ${error.runtimeType}: $error');
+    rethrow;
   }
 }
 
@@ -237,6 +270,21 @@ void main() {
       clientB.remoteParticipants[aIdentity]?.screenSharing,
       isFalse,
       reason: 'presenter authority must not imply an active REMOTE screen share',
+    );
+
+    // State 3 — a REAL display-capture source must be obtainable here. Probed
+    // DIRECTLY (diagnostic) so the exact DOM outcome is logged and this fact is
+    // asserted on its own, before — and distinct from — an actually-published
+    // track. If capture is impossible in this environment, it fails HERE with a
+    // precise reason (never a false pass downstream).
+    final probeTracks = await _probeDisplayMediaTrackCount();
+    // ignore: avoid_print
+    print('LKDIAG screen-probe: getDisplayMedia videoTracks=$probeTracks');
+    expect(
+      probeTracks,
+      greaterThanOrEqualTo(1),
+      reason: 'no real display-capture source in this environment '
+          '(getDisplayMedia returned no video track)',
     );
 
     // 4. REAL browser display capture → the production publish path. With a real

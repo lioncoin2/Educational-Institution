@@ -338,21 +338,28 @@ jobs:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
         run: |
           command -v xvfb-run >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y xvfb; }
+          "$CHROME_BIN" --version || true
           wrapper="$RUNNER_TEMP/chrome-e2e-screen"
           {
             echo '#!/usr/bin/env bash'
+            # Drop flutter's --headless (any form) so Chrome runs HEADED on the
+            # Xvfb DISPLAY — a real framebuffer the screen-capturer can read.
             echo 'args=()'
             echo 'for a in "$@"; do'
-            echo '  if [ "$a" = "--headless" ]; then continue; fi'
+            echo '  case "$a" in --headless|--headless=*) continue ;; esac'
             echo '  args+=("$a")'
             echo 'done'
-            echo "exec \"$CHROME_BIN\" \"\${args[@]}\" --disable-web-security --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --autoplay-policy=no-user-gesture-required --auto-select-desktop-capture-source=\"Entire screen\""
+            # Software GL (ANGLE+SwiftShader): with no GPU on the runner, this is
+            # what lets Chrome composite the page so the desktop capturer produces
+            # real frames instead of an empty track. The screen-capture flags
+            # auto-accept getDisplayMedia and pick the whole virtual screen.
+            echo "exec \"$CHROME_BIN\" \"\${args[@]}\" --disable-web-security --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --autoplay-policy=no-user-gesture-required --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --auto-select-desktop-capture-source=\"Entire screen\""
           } > "$wrapper"
           chmod +x "$wrapper"
           # Headed Chrome on a virtual display; flutter drives it via the debug
           # port exactly as in headless. The screen harness is @TestOn('browser').
           export CHROME_EXECUTABLE="$wrapper"
-          xvfb-run -a --server-args="-screen 0 2400x1800x24 -ac +extension RANDR" \
+          xvfb-run -a --server-args="-screen 0 2400x1800x24 -ac +extension RANDR +extension GLX +extension Composite" \
             flutter test test/e2e/livekit_two_client_screenshare_e2e_test.dart \
               --platform chrome \
               --dart-define-from-file="$E2E_DEFINES_FILE"
