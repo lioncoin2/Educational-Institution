@@ -26,6 +26,10 @@ class _FakePort implements LiveKitRoomPort {
   /// When set, [setMicrophoneEnabled] awaits this before returning — so a test
   /// can leave/disconnect while a publish command is still in flight.
   Completer<void>? gateMic;
+  /// When set, a screen-share START (enabled: true) awaits this before returning
+  /// — so a test can revoke/stop while a screen publish is still in flight. The
+  /// stop path (enabled: false) is never gated, so a revoke's quiet-stop runs.
+  Completer<void>? gateScreenStart;
 
   void emit(LiveKitRoomSignal signal) => _signals.add(signal);
 
@@ -51,6 +55,7 @@ class _FakePort implements LiveKitRoomPort {
     bool captureScreenAudio = false,
   }) async {
     screen.add((enabled: enabled, audio: captureScreenAudio));
+    if (enabled && gateScreenStart != null) await gateScreenStart!.future;
     if (failScreen != null) throw failScreen!;
   }
 
@@ -816,6 +821,62 @@ void main() {
       // A late command completion is signal-free and cannot resurrect state.
       expect(client.publication, const LiveMediaPublication());
       expect(client.state, const LiveMediaIdle());
+    });
+  });
+
+  // Sprint 18 — two race orderings not previously covered: a screen-share
+  // publish START racing a permission REVOKE, and a TERMINAL drop arriving WHILE
+  // reconnecting. Both assert the final state reflects the authoritative truth,
+  // never a stale/false-active one.
+  group('publish-vs-revoke and terminal-while-reconnecting races (Sprint 18)', () {
+    LiveRemoteParticipants remoteSet(Map<String, LiveRemoteParticipant> m) =>
+        LiveRemoteParticipants(Map.unmodifiable(m));
+
+    test('a revoke while a screen publish is STARTING leaves it not-active', () async {
+      await connected(screen: true);
+      port.gateScreenStart = Completer<void>();
+      final pending = client.setScreenShareEnabled(true); // hangs on the start gate
+
+      // Authorization is revoked mid-start (the server pushes canPublishScreen
+      // false); this drops authority and best-effort stops capture.
+      port.emit(const LiveKitCapabilities(canPublishScreen: false));
+      expect(client.screenAuthorized, isFalse);
+
+      port.gateScreenStart!.complete(); // the start command now returns, post-revoke
+      await pending;
+      // The late start success cannot leave screen share falsely active — the
+      // publication is signal-driven and no "on" local-track signal arrived.
+      expect(client.screenAuthorized, isFalse);
+      expect(client.publication.screenAuthorized, isFalse);
+      expect(client.publication.screenShareOn, isFalse);
+    });
+
+    test('a terminal drop WHILE reconnecting clears state and goes disconnected', () async {
+      await connected(screen: true);
+      port.emit(const LiveKitLocalTracks(microphoneOn: true, screenShareOn: false));
+      port.emit(
+        LiveKitRemoteParticipants(
+          remoteSet({
+            'u-1': const LiveRemoteParticipant(identity: 'u-1', audio: LiveRemoteAudio.live),
+          }),
+        ),
+      );
+
+      // A transient reconnect begins — state preserved across the blip.
+      port.emit(const LiveKitReconnecting());
+      expect(client.state, const LiveMediaReconnecting());
+      expect(client.remoteParticipants.length, 1);
+
+      // ...but the reconnect ends terminally (the room is gone). The media state
+      // must converge to clean + disconnected, not stay stuck in reconnecting.
+      port.emit(const LiveKitDisconnected(LiveMediaDisconnectReason.roomDeleted));
+      expect(
+        client.state,
+        const LiveMediaDisconnected(LiveMediaDisconnectReason.roomDeleted),
+      );
+      expect(client.remoteParticipants, LiveRemoteParticipants.empty);
+      expect(client.publication, const LiveMediaPublication());
+      expect(client.screenAuthorized, isFalse);
     });
   });
 

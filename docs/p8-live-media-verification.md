@@ -619,6 +619,56 @@ job) confirming the `Reconnecting`→`Reconnected` lifecycle on the same room. T
 deterministic contract — reconnecting preserves/converges state, a terminal drop
 clears it, late signals are ignored off-connection — IS unit-verified.
 
+## Sprint 18 — reconnect diagnostic & remaining race closure
+
+Sprint 18 builds a genuine transient-reconnect experiment and fills the last two
+untested race orderings. No new production defect was found; the production code
+is unchanged (the Sprints 15–16 guards cover these orderings — this adds the
+missing deterministic tests and a real reconnect diagnostic).
+
+### Transient reconnect — real experiment (dedicated, non-blocking diagnostic)
+
+A new browser E2E (`app/test/e2e/livekit_reconnect_e2e_test.dart`) and a SEPARATE
+dispatch-only workflow (`.github/workflows/live-reconnect-diagnostic.yml`) induce
+a GENUINE transient interruption of the SAME room: two real clients join, then
+the LiveKit container is FROZEN with `docker compose pause livekit` (SIGSTOP
+preserves the room in memory — unlike restart/stop, which delete it →
+`roomDeleted`, a different path) for ~25 s, then resumed. The test observes the
+REAL `RoomReconnecting` → `RoomReconnected` lifecycle through the production
+adapter and FAILS loudly if reconnecting is never entered or recovery never
+occurs — it never falls back to a fake. The workflow is kept OUT of the
+regression pipeline (`live-e2e.yml`) on purpose: its timing sensitivity must
+never make the normal CI flaky. Timing rationale: the freeze is long enough for
+the SDK to detect loss (ICE/ping) and well within its ~50 s give-up window
+(`defaultRetryDelaysInMs`), so the SAME room recovers.
+
+**Result of this sprint's dispatched run:** recorded in the Sprint 18 engineering
+report and the capability-matrix row below (set to VERIFIED E2E only if that run
+genuinely showed `Reconnecting`→`Reconnected`; otherwise it stays NOT VERIFIED
+E2E with the diagnostic evidence). A green regression pipeline does NOT by itself
+prove transient reconnection.
+
+### New race coverage (deterministic unit — fills real gaps)
+
+| Scenario | Kind | Ran? | Evidence |
+|---|---|---|---|
+| A revoke while a screen publish is STARTING leaves it not-active (no false-active from the late start) | unit | yes | `livekit_live_media_client_test` ("publish-vs-revoke and terminal-while-reconnecting races (Sprint 18)") |
+| A TERMINAL drop WHILE reconnecting clears state and goes disconnected (not stuck reconnecting) | unit | yes | same |
+
+These complement the already-covered orderings (session replacement / stale
+connect via the controller `_generation` guard; late signals after a drop via the
+Sprint 16 guard; leave-while-mic-pending + repeated sessions via Sprint 17);
+those were NOT duplicated.
+
+### Phases 4–5 re-confirmed (no change)
+
+The Sprint 17 capability matrix, the per-resource ownership table, the
+session-isolation invariant (one singleton port → one room at a time; concurrent
+independent sessions unsupported) and the sanitized diagnostic contract (four
+`LiveMediaException` codes + typed `LiveMediaDisconnectReason`, no token leak)
+remain accurate; no production change. The one capability matrix row that changes
+is transient internal reconnect, per the diagnostic run above.
+
 ## Manual verification (NOT executed in CI)
 
 These are the checks the automated harness cannot perform. They require a real

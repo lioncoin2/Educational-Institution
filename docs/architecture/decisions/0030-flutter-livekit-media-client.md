@@ -347,6 +347,18 @@ Resolved since this ADR was accepted:
   compose pause` would preserve the room (feasible in principle, SDK give-up window
   ≈50 s) but the trigger timing can't be validated in this sandbox, so no flaky
   gate was added. (`docs/p8-live-media-verification.md`, Sprint 17.)
+- **Reconnect diagnostic & remaining race closure (P18 / Sprint 18).** No new
+  production defect; production code unchanged. Built a real transient-reconnect
+  experiment as a SEPARATE dispatch-only diagnostic workflow
+  (`live-reconnect-diagnostic.yml` + `livekit_reconnect_e2e_test.dart`): two real
+  clients, `docker compose pause livekit` (SIGSTOP freezes the server, PRESERVES
+  the room) for a bounded window, observe the real `RoomReconnecting`→
+  `RoomReconnected` through the adapter; it fails loudly rather than fake-passing,
+  and is kept out of the regression pipeline so it can't make CI flaky. Added the
+  two missing deterministic race tests (screen publish-start vs. revoke; terminal
+  drop while reconnecting). Whether internal reconnect is VERIFIED E2E or stays
+  NOT-VERIFIED is set by the dispatched run (see
+  `docs/p8-live-media-verification.md`, Sprint 18).
 
 Genuinely unresolved:
 
