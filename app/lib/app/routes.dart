@@ -29,6 +29,10 @@ abstract final class Routes {
   static String academicProgram(String programId) =>
       '$academicStructure/programs/${Uri.encodeComponent(programId)}';
 
+  /// Administering a halaqa's students and teachers (`academic.manage`).
+  static String academicHalaqaPeople(String halaqaId) =>
+      '$academicStructure/halaqat/${Uri.encodeComponent(halaqaId)}/people';
+
   static String program(String programId) => '$programs/$programId';
 
   static String levels(String programId) => '$programs/$programId/levels';

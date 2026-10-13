@@ -197,6 +197,94 @@ class HttpAcademicRepository implements AcademicRepository {
     ),
   );
 
+  // ── Relationships (academic.manage) ──
+  // Rosters are keyset pages; enrol/assign carry only an id (and a role); the
+  // server re-authorises, confirms eligibility and chooses 200/201. Refusals
+  // (not-eligible, already-ended, …) flow through [_call] keeping their code.
+
+  static String _enrollment(String id) =>
+      '/academic/enrollments/${Uri.encodeComponent(id)}';
+  static String _assignment(String id) =>
+      '/academic/teacher-assignments/${Uri.encodeComponent(id)}';
+
+  @override
+  Future<AcademicPage<HalaqaRosterEntry>> halaqaStudents(
+    String halaqaId, {
+    String? status,
+    String? cursor,
+  }) => _call(
+    () async => AcademicPage.fromJson(
+      await _api.get(
+        '${_halaqa(halaqaId)}/students',
+        query: {'status': ?status, 'cursor': ?cursor},
+      ),
+      HalaqaRosterEntry.fromJson,
+    ),
+  );
+
+  @override
+  Future<EnrollmentRecord> enrollStudent(
+    String halaqaId, {
+    required String studentUserId,
+  }) => _call(() async {
+    final json = await _api.post(
+      '${_halaqa(halaqaId)}/enrollments',
+      body: {'studentUserId': studentUserId},
+    );
+    return EnrollmentRecord.fromJson(
+      (json['enrollment']! as Map).cast<String, Object?>(),
+    );
+  });
+
+  @override
+  Future<EnrollmentRecord> endEnrollment(
+    String enrollmentId, {
+    required EnrollmentOutcome outcome,
+  }) => _call(
+    () async => EnrollmentRecord.fromJson(
+      await _api.post(
+        '${_enrollment(enrollmentId)}/end',
+        body: {'outcome': outcome.wire},
+      ),
+    ),
+  );
+
+  @override
+  Future<AcademicPage<HalaqaTeacherEntry>> halaqaTeachers(
+    String halaqaId, {
+    String? status,
+    String? cursor,
+  }) => _call(
+    () async => AcademicPage.fromJson(
+      await _api.get(
+        '${_halaqa(halaqaId)}/teachers',
+        query: {'status': ?status, 'cursor': ?cursor},
+      ),
+      HalaqaTeacherEntry.fromJson,
+    ),
+  );
+
+  @override
+  Future<AssignmentRecord> assignTeacher(
+    String halaqaId, {
+    required String teacherUserId,
+    required TeachingRole role,
+  }) => _call(
+    () async => AssignmentRecord.fromJson(
+      await _api.post(
+        '${_halaqa(halaqaId)}/teachers',
+        body: {'teacherUserId': teacherUserId, 'role': role.wire},
+      ),
+    ),
+  );
+
+  @override
+  Future<AssignmentRecord> endAssignment(String assignmentId) => _call(
+    () async => AssignmentRecord.fromJson(
+      await _api.post('${_assignment(assignmentId)}/end'),
+    ),
+  );
+
   static const _unreadable = AcademicException(
     'academic.unreadable',
     'The server sent something this app cannot read.',

@@ -238,6 +238,47 @@ class MockAcademicRepository implements AcademicRepository {
     required bool active,
   }) async => throw _unsupported;
 
+  // ── Relationships ──
+  // The demo has no people directory and no roster beyond the single placeholder
+  // learner, so there is nothing to list and nothing to change; these refuse
+  // honestly rather than show an empty roster as if it were a real halaqa's.
+  @override
+  Future<AcademicPage<HalaqaRosterEntry>> halaqaStudents(
+    String halaqaId, {
+    String? status,
+    String? cursor,
+  }) async => throw _unsupported;
+
+  @override
+  Future<EnrollmentRecord> enrollStudent(
+    String halaqaId, {
+    required String studentUserId,
+  }) async => throw _unsupported;
+
+  @override
+  Future<EnrollmentRecord> endEnrollment(
+    String enrollmentId, {
+    required EnrollmentOutcome outcome,
+  }) async => throw _unsupported;
+
+  @override
+  Future<AcademicPage<HalaqaTeacherEntry>> halaqaTeachers(
+    String halaqaId, {
+    String? status,
+    String? cursor,
+  }) async => throw _unsupported;
+
+  @override
+  Future<AssignmentRecord> assignTeacher(
+    String halaqaId, {
+    required String teacherUserId,
+    required TeachingRole role,
+  }) async => throw _unsupported;
+
+  @override
+  Future<AssignmentRecord> endAssignment(String assignmentId) async =>
+      throw _unsupported;
+
   static AcademicSection _withoutPrograms(AcademicSection section) =>
       AcademicSection(
         id: section.id,

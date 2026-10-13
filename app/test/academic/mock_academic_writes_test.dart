@@ -68,4 +68,25 @@ void main() {
       throwsUnsupported(),
     );
   });
+
+  test(
+    'refuses every relationship read and write — the demo has no roster',
+    () async {
+      await expectLater(repo.halaqaStudents('h'), throwsUnsupported());
+      await expectLater(
+        repo.enrollStudent('h', studentUserId: 'u'),
+        throwsUnsupported(),
+      );
+      await expectLater(
+        repo.endEnrollment('e', outcome: EnrollmentOutcome.completed),
+        throwsUnsupported(),
+      );
+      await expectLater(repo.halaqaTeachers('h'), throwsUnsupported());
+      await expectLater(
+        repo.assignTeacher('h', teacherUserId: 'u', role: TeachingRole.teacher),
+        throwsUnsupported(),
+      );
+      await expectLater(repo.endAssignment('a'), throwsUnsupported());
+    },
+  );
 }

@@ -21,6 +21,7 @@ abstract final class AcademicAdminCopy {
   static const activate = 'تفعيل';
   static const deactivate = 'إيقاف';
   static const manageHalaqat = 'إدارة الحلقات';
+  static const managePeople = 'الطلاب والمعلّمون';
 
   static const created = 'تم الإنشاء.';
   static const saved = 'تم حفظ التعديل.';

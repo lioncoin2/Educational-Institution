@@ -464,6 +464,157 @@ class MyAcademic {
       teaching.where((entry) => entry.assignment.isActive).toList();
 }
 
+/// How an administrator ends an enrollment: `COMPLETED` or `WITHDRAWN` — a
+/// subset of [EnrollmentStatus]. There is no "move" (that awaits Q37); a change
+/// is an end followed by a new enrollment.
+enum EnrollmentOutcome {
+  completed('COMPLETED'),
+  withdrawn('WITHDRAWN');
+
+  const EnrollmentOutcome(this.wire);
+
+  final String wire;
+}
+
+/// A person as a roster refers to them: an id to act on, a name to show, and
+/// whether the account is still active. The server discloses nothing richer —
+/// never an email, a role or any security state.
+class AcademicPerson {
+  const AcademicPerson({
+    required this.userId,
+    this.displayName,
+    required this.active,
+  });
+
+  factory AcademicPerson.fromJson(Map<String, Object?> json) => AcademicPerson(
+    userId: _required(json, 'userId'),
+    displayName: _optional(json['displayName']),
+    active: json['active'] == true,
+  );
+
+  final String userId;
+
+  /// The name to show; null when the server resolved none (a neutral fallback
+  /// is shown, never the id).
+  final String? displayName;
+
+  /// Whether the underlying account is still active.
+  final bool active;
+}
+
+/// An enrollment as the administrative endpoints return it — carrying the
+/// student's id, unlike the student's own [AcademicEnrollment] view.
+class EnrollmentRecord {
+  const EnrollmentRecord({
+    required this.id,
+    required this.studentUserId,
+    required this.halaqaId,
+    required this.status,
+    required this.enrolledAt,
+    this.endedAt,
+  });
+
+  factory EnrollmentRecord.fromJson(Map<String, Object?> json) =>
+      EnrollmentRecord(
+        id: _required(json, 'id'),
+        studentUserId: _required(json, 'studentUserId'),
+        halaqaId: _required(json, 'halaqaId'),
+        status: EnrollmentStatus.fromWire(json['status']),
+        enrolledAt: _instant(json, 'enrolledAt'),
+        endedAt: _optionalInstant(json['endedAt']),
+      );
+
+  final String id;
+  final String studentUserId;
+  final String halaqaId;
+  final EnrollmentStatus status;
+  final DateTime enrolledAt;
+  final DateTime? endedAt;
+
+  bool get isActive => status == EnrollmentStatus.active;
+}
+
+/// A teaching assignment as the administrative endpoints return it — carrying
+/// the teacher's id.
+class AssignmentRecord {
+  const AssignmentRecord({
+    required this.id,
+    required this.halaqaId,
+    required this.teacherUserId,
+    required this.role,
+    required this.status,
+    required this.startedAt,
+    this.endedAt,
+  });
+
+  factory AssignmentRecord.fromJson(Map<String, Object?> json) =>
+      AssignmentRecord(
+        id: _required(json, 'id'),
+        halaqaId: _required(json, 'halaqaId'),
+        teacherUserId: _required(json, 'teacherUserId'),
+        role: TeachingRole.fromWire(json['role']),
+        status: AssignmentStatus.fromWire(json['status']),
+        startedAt: _instant(json, 'startedAt'),
+        endedAt: _optionalInstant(json['endedAt']),
+      );
+
+  final String id;
+  final String halaqaId;
+  final String teacherUserId;
+  final TeachingRole role;
+  final AssignmentStatus status;
+  final DateTime startedAt;
+  final DateTime? endedAt;
+
+  bool get isActive => status == AssignmentStatus.active;
+}
+
+/// One row of a halaqa's student roster: the enrollment and who it is for.
+class HalaqaRosterEntry {
+  const HalaqaRosterEntry({required this.enrollment, required this.student});
+
+  factory HalaqaRosterEntry.fromJson(Map<String, Object?> json) =>
+      HalaqaRosterEntry(
+        enrollment: EnrollmentRecord.fromJson(_map(json['enrollment'])),
+        student: AcademicPerson.fromJson(_map(json['student'])),
+      );
+
+  final EnrollmentRecord enrollment;
+  final AcademicPerson student;
+}
+
+/// One row of a halaqa's teaching list: the assignment and who holds it.
+class HalaqaTeacherEntry {
+  const HalaqaTeacherEntry({required this.assignment, required this.teacher});
+
+  factory HalaqaTeacherEntry.fromJson(Map<String, Object?> json) =>
+      HalaqaTeacherEntry(
+        assignment: AssignmentRecord.fromJson(_map(json['assignment'])),
+        teacher: AcademicPerson.fromJson(_map(json['teacher'])),
+      );
+
+  final AssignmentRecord assignment;
+  final AcademicPerson teacher;
+}
+
+/// A keyset page of administrative relationship rows (`{items, nextCursor}`).
+/// `nextCursor` is opaque — pass it back for the next page; null on the last.
+/// Rows that cannot be read are skipped, never fatal to the page.
+class AcademicPage<T> {
+  const AcademicPage({required this.items, this.nextCursor});
+
+  factory AcademicPage.fromJson(
+    Map<String, Object?> json,
+    T Function(Map<String, Object?> json) parse,
+  ) => AcademicPage(
+    items: _list(json['items'], parse),
+    nextCursor: _optional(json['nextCursor']),
+  );
+
+  final List<T> items;
+  final String? nextCursor;
+}
+
 /// A refusal from `/academic`, with the server's stable code
 /// (`academic.halaqa_access_denied`, `identity.authentication_required`, …).
 class AcademicException implements Exception {

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../app/routes.dart';
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/foundations/app_card.dart';
@@ -142,6 +144,9 @@ class _HalaqaCard extends ConsumerWidget {
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert),
               onSelected: (value) => switch (value) {
+                'people' => context.push(
+                  Routes.academicHalaqaPeople(halaqa.id),
+                ),
                 'edit' => _editHalaqa(context, ref, programId, halaqa),
                 _ => _setHalaqaActive(
                   context,
@@ -152,6 +157,10 @@ class _HalaqaCard extends ConsumerWidget {
                 ),
               },
               itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'people',
+                  child: Text(AcademicAdminCopy.managePeople),
+                ),
                 const PopupMenuItem(
                   value: 'edit',
                   child: Text(AcademicAdminCopy.edit),

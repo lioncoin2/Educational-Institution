@@ -140,6 +140,43 @@ class CountingAcademic implements AcademicRepository {
     String halaqaId, {
     required bool active,
   }) => inner.setHalaqaActive(halaqaId, active: active);
+
+  @override
+  Future<AcademicPage<HalaqaRosterEntry>> halaqaStudents(
+    String halaqaId, {
+    String? status,
+    String? cursor,
+  }) => inner.halaqaStudents(halaqaId, status: status, cursor: cursor);
+
+  @override
+  Future<EnrollmentRecord> enrollStudent(
+    String halaqaId, {
+    required String studentUserId,
+  }) => inner.enrollStudent(halaqaId, studentUserId: studentUserId);
+
+  @override
+  Future<EnrollmentRecord> endEnrollment(
+    String enrollmentId, {
+    required EnrollmentOutcome outcome,
+  }) => inner.endEnrollment(enrollmentId, outcome: outcome);
+
+  @override
+  Future<AcademicPage<HalaqaTeacherEntry>> halaqaTeachers(
+    String halaqaId, {
+    String? status,
+    String? cursor,
+  }) => inner.halaqaTeachers(halaqaId, status: status, cursor: cursor);
+
+  @override
+  Future<AssignmentRecord> assignTeacher(
+    String halaqaId, {
+    required String teacherUserId,
+    required TeachingRole role,
+  }) => inner.assignTeacher(halaqaId, teacherUserId: teacherUserId, role: role);
+
+  @override
+  Future<AssignmentRecord> endAssignment(String assignmentId) =>
+      inner.endAssignment(assignmentId);
 }
 
 void main() {

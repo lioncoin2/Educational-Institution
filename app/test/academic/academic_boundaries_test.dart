@@ -14,9 +14,11 @@ import 'package:flutter_test/flutter_test.dart';
 ///     (MockData): a real screen cannot show a placeholder as fact;
 ///   - only the provider wiring decides which implementation runs;
 ///   - the app may manage academic STRUCTURE (sections/programs/halaqat) for a
-///     holder of academic.manage (Sprint 45), through the repository seam; it
-///     still does NOT enrol students or assign teachers — those remain staff
-///     acts on the server, gated on the unresolved people-discovery policy.
+///     holder of academic.manage (Sprint 45), and — owner-approved (Sprint 46)
+///     — administer RELATIONSHIPS (enrol/assign/end) for the same holder,
+///     through the repository seam; the server re-authorises every write. People
+///     are found through the people directory (PeopleRepository, `people.read`,
+///     OWNER/ADMIN), never the academic repository: discovery is not a mutation.
 void main() {
   final sources = {
     for (final file
@@ -95,22 +97,26 @@ void main() {
     expect(constructing, ['lib/providers/app_providers.dart']);
   });
 
-  test('writes only academic STRUCTURE — never enrolment or teacher assignment', () {
-    final http =
-        sources['lib/data/repositories/http/http_academic_repository.dart']!;
-    // Structure management (sections/programs/halaqat) is an approved staff
-    // tool (Sprint 45), gated on academic.manage and re-authorised server-side.
-    expect(RegExp(r'_api\.(post|patch)\(').hasMatch(http), isTrue);
-    // Enrolment and teacher assignment are NOT offered — they need the
-    // unresolved people-discovery policy (Q6/Q22/Q31).
-    for (final forbidden in const [
-      '/enrollments',
-      '/teachers',
-      '/teacher-assignments',
-    ]) {
-      expect(http.contains(forbidden), isFalse, reason: forbidden);
-    }
-    // The reads are still exactly the four GETs.
-    expect(RegExp(r'_api\.get\(').allMatches(http), hasLength(4));
-  });
+  test(
+    'stays within /academic — structure and relationships, not discovery',
+    () {
+      final http =
+          sources['lib/data/repositories/http/http_academic_repository.dart']!;
+      // Structure management (Sprint 45) and relationship administration
+      // (Sprint 46, owner-approved) are both staff tools, gated on
+      // academic.manage and re-authorised server-side.
+      expect(RegExp(r'_api\.(post|patch)\(').hasMatch(http), isTrue);
+      // Relationships ARE now administered here (enrol / assign / end).
+      expect(http.contains('/enrollments'), isTrue);
+      expect(http.contains('/teachers'), isTrue);
+      expect(http.contains('/teacher-assignments'), isTrue);
+      // But finding people is PeopleRepository's job (people.read), never the
+      // academic repository's; and it touches no other module.
+      for (final foreign in const ['/people', '/communities', '/messaging']) {
+        expect(http.contains(foreign), isFalse, reason: foreign);
+      }
+      // The reads are the four structure GETs plus the two roster GETs.
+      expect(RegExp(r'_api\.get\(').allMatches(http), hasLength(6));
+    },
+  );
 }

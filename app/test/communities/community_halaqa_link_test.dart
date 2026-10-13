@@ -284,4 +284,41 @@ class _FakeAcademic implements AcademicRepository {
     String halaqaId, {
     required bool active,
   }) => throw UnimplementedError();
+
+  @override
+  Future<AcademicPage<HalaqaRosterEntry>> halaqaStudents(
+    String halaqaId, {
+    String? status,
+    String? cursor,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<EnrollmentRecord> enrollStudent(
+    String halaqaId, {
+    required String studentUserId,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<EnrollmentRecord> endEnrollment(
+    String enrollmentId, {
+    required EnrollmentOutcome outcome,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<AcademicPage<HalaqaTeacherEntry>> halaqaTeachers(
+    String halaqaId, {
+    String? status,
+    String? cursor,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<AssignmentRecord> assignTeacher(
+    String halaqaId, {
+    required String teacherUserId,
+    required TeachingRole role,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<AssignmentRecord> endAssignment(String assignmentId) =>
+      throw UnimplementedError();
 }

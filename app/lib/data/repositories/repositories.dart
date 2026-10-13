@@ -149,6 +149,57 @@ abstract interface class AcademicRepository {
     String halaqaId, {
     required bool active,
   });
+
+  // ── Relationships (academic.manage; OWNER/ADMIN) ──
+  // Enrolling a student and assigning a teacher are administrators' acts. The
+  // student/teacher is found through the people directory (PeopleRepository,
+  // `people.read`); the server re-authorises every write and confirms, on its
+  // own, that the account is an ACTIVE, eligible student (`academic.study`) or
+  // teacher (`academic.teach`) — this app never infers eligibility from a name
+  // or a client claim (a refusal carries `academic.student_not_eligible` /
+  // `academic.teacher_not_eligible`). Ending preserves history; there is no
+  // move (Q37). These never enrol anyone automatically from community
+  // membership, and never the reverse.
+
+  /// A halaqa's current students (keyset page). [status] filters by enrollment
+  /// status (e.g. `ACTIVE`); omit for all.
+  Future<AcademicPage<HalaqaRosterEntry>> halaqaStudents(
+    String halaqaId, {
+    String? status,
+    String? cursor,
+  });
+
+  /// Enrols [studentUserId] in the halaqa. Returns the enrollment (existing if
+  /// already enrolled). Throws [AcademicException] on refusal (nothing added).
+  Future<EnrollmentRecord> enrollStudent(
+    String halaqaId, {
+    required String studentUserId,
+  });
+
+  /// Ends an enrollment with [outcome]; the record is never deleted or reopened.
+  Future<EnrollmentRecord> endEnrollment(
+    String enrollmentId, {
+    required EnrollmentOutcome outcome,
+  });
+
+  /// A halaqa's teachers (keyset page). [status] filters by assignment status.
+  Future<AcademicPage<HalaqaTeacherEntry>> halaqaTeachers(
+    String halaqaId, {
+    String? status,
+    String? cursor,
+  });
+
+  /// Assigns [teacherUserId] to the halaqa in [role]. Returns the assignment
+  /// (existing if already assigned in that role). Assigning the same teacher in
+  /// a different role is refused (`academic.teacher_already_assigned`).
+  Future<AssignmentRecord> assignTeacher(
+    String halaqaId, {
+    required String teacherUserId,
+    required TeachingRole role,
+  });
+
+  /// Ends a teaching assignment; the record is never deleted or reopened.
+  Future<AssignmentRecord> endAssignment(String assignmentId);
 }
 
 abstract interface class LearningRepository {
