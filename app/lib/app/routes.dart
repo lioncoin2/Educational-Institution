@@ -19,6 +19,10 @@ abstract final class Routes {
   /// halaqat), for a holder of `academic.manage`.
   static const String academicStructure = '/admin/academic';
 
+  /// The teacher's own workspace: the halaqat they actively teach
+  /// (`academic.teach`). The server answers by the authenticated identity.
+  static const String teacherWorkspace = '/teaching';
+
   static const String signIn = '/sign-in';
 
   /// Where an invitation link opens. Its token is never in this path, a
@@ -29,6 +33,10 @@ abstract final class Routes {
   /// One account's detail and lifecycle administration (OWNER/ADMIN).
   static String adminAccount(String userId) =>
       '$adminAccounts/${Uri.encodeComponent(userId)}';
+
+  /// One of the teacher's own halaqat' student roster (read-only).
+  static String teacherHalaqaRoster(String halaqaId) =>
+      '$teacherWorkspace/halaqat/${Uri.encodeComponent(halaqaId)}/students';
 
   static String academicProgram(String programId) =>
       '$academicStructure/programs/${Uri.encodeComponent(programId)}';

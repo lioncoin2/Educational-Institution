@@ -21,6 +21,7 @@ import '../academic_admin/academic_admin_copy.dart';
 import '../admin/admin_copy.dart';
 import '../communities/community_copy.dart';
 import '../notifications/state/unread_count_controller.dart';
+import '../teacher/teacher_copy.dart';
 import 'widgets/about_institution_section.dart';
 
 /// The learner's account, appearance settings, and the institution's own
@@ -46,6 +47,14 @@ class ProfileScreen extends ConsumerWidget {
     final canManageAcademic = ref.watch(
       sessionUserProvider.select(
         (session) => session.value?.can('academic.manage') ?? false,
+      ),
+    );
+    // A teacher (or assistant teacher) may open their own teaching workspace;
+    // `academic.teach` marks an eligible teacher. The server answers by the
+    // authenticated identity and scopes every roster per halaqa.
+    final isTeacher = ref.watch(
+      sessionUserProvider.select(
+        (session) => session.value?.can('academic.teach') ?? false,
       ),
     );
 
@@ -173,6 +182,14 @@ class ProfileScreen extends ConsumerWidget {
                         icon: Icons.manage_accounts_outlined,
                         label: AdminCopy.screenTitle,
                         onTap: () => context.push(Routes.adminAccounts),
+                      ),
+                    ],
+                    if (isTeacher) ...[
+                      const Divider(indent: Insets.giant),
+                      _NavRow(
+                        icon: Icons.menu_book_outlined,
+                        label: TeacherCopy.workspaceTitle,
+                        onTap: () => context.push(Routes.teacherWorkspace),
                       ),
                     ],
                     if (canManageAcademic) ...[

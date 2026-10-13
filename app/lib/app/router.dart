@@ -35,6 +35,8 @@ import '../features/programs/program_detail_screen.dart';
 import '../features/programs/programs_screen.dart';
 import '../features/progress/progress_screen.dart';
 import '../features/splash/splash_screen.dart';
+import '../features/teacher/teacher_roster_screen.dart';
+import '../features/teacher/teacher_workspace_screen.dart';
 import 'routes.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -85,6 +87,22 @@ GoRouter buildRouter() {
             parentNavigatorKey: _rootNavigatorKey,
             builder: (context, state) =>
                 AccountDetailScreen(userId: state.pathParameters['userId']!),
+          ),
+        ],
+      ),
+      GoRoute(
+        path: Routes.teacherWorkspace,
+        name: 'teacher-workspace',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const TeacherWorkspaceScreen(),
+        routes: [
+          GoRoute(
+            path: 'halaqat/:halaqaId/students',
+            name: 'teacher-halaqa-roster',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) => TeacherRosterScreen(
+              halaqaId: state.pathParameters['halaqaId']!,
+            ),
           ),
         ],
       ),
