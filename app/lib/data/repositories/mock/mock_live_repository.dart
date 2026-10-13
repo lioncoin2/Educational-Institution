@@ -15,15 +15,42 @@ class MockLiveRepository implements LiveRepository {
     this.latency = AppConfig.fakeLatency,
     this.clock = DateTime.now,
     Set<String>? liveCommunityIds,
-  }) : _live = liveCommunityIds ?? const {'mock-community-live'};
+  }) : _live = {
+         ...(liveCommunityIds ?? const {'mock-community-live'}),
+       };
 
   final Duration latency;
 
   /// "Now", for when a demo session started. A test may fix it.
   final DateTime Function() clock;
 
-  /// The communities the demo shows as having a session running now.
+  /// The communities the demo shows as having a session running now. Mutable:
+  /// [start] adds to it, so a started session is then discoverable.
   final Set<String> _live;
+
+  @override
+  Future<LiveSession> start(String communityId) async {
+    await Future<void>.delayed(latency);
+    // The caller becomes the host; from now on the community has a running
+    // session, so currentSession answers it.
+    _live.add(communityId);
+    return LiveSession(
+      id: 'mock-session-$communityId',
+      communityId: communityId,
+      state: LiveSessionState.live,
+      hostUserId: 'mock-teacher',
+      startedAt: clock(),
+      speakerCount: 1,
+      me: const LiveMe(
+        role: LiveParticipantRole.moderator,
+        isHost: true,
+        canModerate: true,
+        canEnd: true,
+        canPresent: true,
+      ),
+      origin: DataOrigin.mock,
+    );
+  }
 
   @override
   Future<LiveSession?> currentSession(String communityId) async {

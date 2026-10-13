@@ -535,6 +535,53 @@ void main() {
     return (client, seen);
   }
 
+  group('HttpLiveRepository.start', () {
+    test(
+      'POSTs …/communities/:id/sessions, encodes the id, decodes the session',
+      () async {
+        final (client, seen) = recording(201, sessionBody());
+        final repo = HttpLiveRepository(await api(client));
+
+        final session = await repo.start('c/1');
+        expect(session.id, 's-1');
+        expect(session.isLive, isTrue);
+        expect(session.origin, DataOrigin.records);
+        expect(seen.single.method, 'POST');
+        expect(seen.single.url.path, '/live/communities/c%2F1/sessions');
+        expect(seen.single.headers['authorization'], 'Bearer a1');
+      },
+    );
+
+    test('accepts a 200 (already running) and returns that session', () async {
+      final (client, _) = recording(200, sessionBody());
+      final repo = HttpLiveRepository(await api(client));
+      expect((await repo.start('c-1')).id, 's-1');
+    });
+
+    test(
+      'maps 503 live.media_unavailable to LiveException by its code',
+      () async {
+        final repo = HttpLiveRepository(
+          await api(
+            serving(503, {
+              'error': {'code': 'live.media_unavailable', 'message': 'no room'},
+            }),
+          ),
+        );
+        await expectLater(
+          repo.start('c-1'),
+          throwsA(
+            isA<LiveException>().having(
+              (e) => e.code,
+              'code',
+              'live.media_unavailable',
+            ),
+          ),
+        );
+      },
+    );
+  });
+
   group('HttpLiveRepository.endSession', () {
     test(
       'POSTs …/end, encodes the id, sends the bearer, decodes the session',

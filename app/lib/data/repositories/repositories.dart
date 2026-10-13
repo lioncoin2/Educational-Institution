@@ -404,6 +404,13 @@ abstract interface class LiveRepository {
   /// The community's running session, or null when none is live now.
   Future<LiveSession?> currentSession(String communityId);
 
+  /// Starts a live session for [communityId] and returns it — for a holder of
+  /// `community.live.start` here (the server re-authorises). Idempotent: when a
+  /// session is already running, that one is returned (the caller need not tell
+  /// the cases apart). Throws [LiveException] on refusal, or when the media room
+  /// cannot be made (`live.media_unavailable`).
+  Future<LiveSession> start(String communityId);
+
   /// One session by id — running or ended. Throws [LiveException] when it is
   /// not the viewer's to see (`live.session_not_found`, a 404 all the same).
   Future<LiveSession> getSession(String sessionId);

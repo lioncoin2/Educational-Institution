@@ -29,6 +29,9 @@ class _FakeLive implements LiveRepository {
   // Session-by-id, the hand queue and the moderator commands are not
   // exercised here.
   @override
+  Future<LiveSession> start(String communityId) => throw UnimplementedError();
+
+  @override
   Future<LiveSession> getSession(String sessionId) =>
       throw UnimplementedError();
 

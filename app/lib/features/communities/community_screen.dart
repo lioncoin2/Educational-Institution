@@ -16,6 +16,7 @@ import '../../core/widgets/layout/app_screen.dart';
 import '../../core/widgets/patterns/info_row.dart';
 import '../../data/models/academic.dart';
 import '../../data/models/communities.dart';
+import '../../data/models/live.dart';
 import '../../providers/app_providers.dart';
 import '../messaging/widgets/connection_banner.dart';
 import 'community_copy.dart';
@@ -186,6 +187,7 @@ class _Details extends StatelessWidget {
         if (community.canOpenChat ||
             community.canViewMembers ||
             me.takesPart(CommunityParticipation.liveJoin) ||
+            me.has(CommunityCapability.liveStart) ||
             me.has(CommunityCapability.attendanceRecord) ||
             me.has(CommunityCapability.liveModerate) ||
             me.has(CommunityCapability.attendanceView)) ...[
@@ -212,6 +214,18 @@ class _Details extends StatelessWidget {
               label: const Text(CommunityCopy.viewLive),
             ),
           ],
+          // Start a live session, when the server says the viewer may start one
+          // here (community.live.start). On success the live room opens (it
+          // reads the now-running session); a refusal is said in words. The one
+          // mutating action here — a bodyless start the server re-authorises;
+          // it touches no live transport or media.
+          if (me.has(CommunityCapability.liveStart)) ...[
+            if (community.canOpenChat ||
+                community.canViewMembers ||
+                me.takesPart(CommunityParticipation.liveJoin))
+              const SizedBox(height: Insets.md),
+            _StartLiveButton(communityId: community.id),
+          ],
           // The attendance record screen, when the server says the viewer may
           // record here (the record capability or a session moderator's).
           // Navigation only — that screen consumes the live session and the
@@ -220,7 +234,8 @@ class _Details extends StatelessWidget {
               me.has(CommunityCapability.liveModerate)) ...[
             if (community.canOpenChat ||
                 community.canViewMembers ||
-                me.takesPart(CommunityParticipation.liveJoin))
+                me.takesPart(CommunityParticipation.liveJoin) ||
+                me.has(CommunityCapability.liveStart))
               const SizedBox(height: Insets.md),
             OutlinedButton.icon(
               onPressed: () =>
@@ -236,6 +251,7 @@ class _Details extends StatelessWidget {
             if (community.canOpenChat ||
                 community.canViewMembers ||
                 me.takesPart(CommunityParticipation.liveJoin) ||
+                me.has(CommunityCapability.liveStart) ||
                 me.has(CommunityCapability.attendanceRecord) ||
                 me.has(CommunityCapability.liveModerate))
               const SizedBox(height: Insets.md),
@@ -597,6 +613,54 @@ class _OpenChatButtonState extends ConsumerState<_OpenChatButton> {
       onPressed: _opening ? null : _open,
       icon: _opening ? const BusyIndicator() : const Icon(Icons.forum_outlined),
       label: const Text(CommunityCopy.openChat),
+    );
+  }
+}
+
+/// Starts a live session, then opens the live room; disabled while it asks, so
+/// one tap is one request. A refusal — not allowed, the media room could not be
+/// made, the community gone — is said in words and nothing opens. The start is
+/// idempotent on the server (an already-running session is returned), so this
+/// opens the room either way. It reads no live state and touches no media: the
+/// room it opens loads the now-running session itself.
+class _StartLiveButton extends ConsumerStatefulWidget {
+  const _StartLiveButton({required this.communityId});
+
+  final String communityId;
+
+  @override
+  ConsumerState<_StartLiveButton> createState() => _StartLiveButtonState();
+}
+
+class _StartLiveButtonState extends ConsumerState<_StartLiveButton> {
+  bool _starting = false;
+
+  Future<void> _start() async {
+    if (_starting) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _starting = true);
+    try {
+      await ref.read(liveRepositoryProvider).start(widget.communityId);
+    } on LiveException catch (error) {
+      if (!mounted) return;
+      setState(() => _starting = false);
+      messenger.toast(CommunityCopy.liveStartFailed(error.code));
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _starting = false);
+    context.push(Routes.communityLive(widget.communityId));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      key: const Key('community-start-live'),
+      onPressed: _starting ? null : _start,
+      icon: _starting
+          ? const BusyIndicator()
+          : const Icon(Icons.sensors_rounded),
+      label: const Text(CommunityCopy.startLive),
     );
   }
 }

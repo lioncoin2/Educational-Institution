@@ -989,6 +989,9 @@ class _JoinOnlyLive implements LiveRepository {
   Future<LiveSession?> currentSession(String communityId) =>
       throw UnimplementedError();
   @override
+  Future<LiveSession> start(String communityId) => throw UnimplementedError();
+
+  @override
   Future<LiveSession> getSession(String sessionId) =>
       throw UnimplementedError();
   @override

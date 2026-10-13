@@ -30,6 +30,17 @@ class HttpLiveRepository implements LiveRepository {
   });
 
   @override
+  Future<LiveSession> start(String communityId) => _call(() async {
+    // Bodyless POST; 201 (new) and 200 (already running) both carry the
+    // session, and a 503 `live.media_unavailable` or a refusal flows through
+    // [_call] as a [LiveException] with the server's code.
+    final json = await _api.post(
+      '/live/communities/${Uri.encodeComponent(communityId)}/sessions',
+    );
+    return LiveSession.fromJson(json, origin: DataOrigin.records);
+  });
+
+  @override
   Future<LiveSession> getSession(String sessionId) => _call(() async {
     final json = await _api.get(
       '/live/sessions/${Uri.encodeComponent(sessionId)}',

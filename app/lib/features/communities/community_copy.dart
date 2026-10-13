@@ -44,6 +44,9 @@ abstract final class CommunityCopy {
   static const viewLive = 'الجلسة المباشرة';
   static const openAttendance = 'جمع حضور الجلسة';
   static const viewAttendance = 'سجلّات الحضور';
+  // Distinct from the `liveStart` capability chip ('بدء جلسة مباشرة'): the chip
+  // names the ability, this button is the action on this community.
+  static const startLive = 'بدء الجلسة المباشرة';
 
   /// The viewer was in it, and no longer is.
   static const removed = 'لم تعد عضوًا في هذا المجتمع.';
@@ -108,6 +111,21 @@ abstract final class CommunityCopy {
       'طلبات كثيرة متتابعة. حاول بعد قليل.',
     'identity.authentication_required' => 'انتهت الجلسة. سجّل الدخول من جديد.',
     _ => 'تعذّر فتح المحادثة الآن. حاول لاحقًا.',
+  };
+
+  /// Why starting a live session did not go through — live's codes, said
+  /// without a reason. The community initiates the start; the server decides.
+  static String liveStartFailed(String code) => switch (code) {
+    'network.unreachable' => 'تعذّر الاتصال بالخادم. تحقّق من الاتصال.',
+    'identity.authentication_required' => 'انتهت الجلسة. سجّل الدخول من جديد.',
+    'unavailable' || 'live.media_unavailable' || 'live.media_misconfigured' =>
+      'الجلسة المباشرة غير متاحة الآن. حاول بعد قليل.',
+    'communities.capability_required' ||
+    'identity.permission_denied' ||
+    'live.not_a_moderator' => 'بدء جلسة مباشرة غير متاح لك.',
+    'communities.community_locked' || 'live.community_locked' => lockedNotice,
+    'communities.community_not_found' || 'live.community_not_found' => gone,
+    _ => 'تعذّر بدء الجلسة. حاول مرة أخرى.',
   };
 
   /// "N members", with the number agreeing as Arabic needs it to.

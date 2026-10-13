@@ -55,6 +55,9 @@ class _FakeLive implements LiveRepository {
   }
 
   @override
+  Future<LiveSession> start(String communityId) => throw UnimplementedError();
+
+  @override
   Future<LiveSession> getSession(String sessionId) async {
     getSessionCalls += 1;
     if (getSessionError != null) throw getSessionError!;

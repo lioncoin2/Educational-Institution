@@ -83,6 +83,9 @@ class _FakeLive implements LiveRepository {
       _run('revokePresenter:$sessionId:$userId', _session());
 
   @override
+  Future<LiveSession> start(String communityId) => throw UnimplementedError();
+
+  @override
   Future<LiveSession> getSession(String sessionId) =>
       throw UnimplementedError();
 

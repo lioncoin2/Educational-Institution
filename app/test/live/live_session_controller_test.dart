@@ -35,6 +35,9 @@ class _FakeLive implements LiveRepository {
   }
 
   @override
+  Future<LiveSession> start(String communityId) => throw UnimplementedError();
+
+  @override
   Future<LiveSession> getSession(String sessionId) {
     getCalls += 1;
     getIds.add(sessionId);

@@ -82,6 +82,28 @@ void main() {
     });
   });
 
+  group('MockLiveRepository.start', () {
+    test(
+      'starts a session the caller hosts, then it is discoverable',
+      () async {
+        final r = repo();
+        expect(await r.currentSession('q-new'), isNull);
+
+        final started = await r.start('q-new');
+        expect(started.communityId, 'q-new');
+        expect(started.isLive, isTrue);
+        expect(started.me.isHost, isTrue);
+        expect(started.me.canModerate, isTrue);
+        expect(started.origin, DataOrigin.mock);
+
+        // From now on the community has a running session.
+        final current = await r.currentSession('q-new');
+        expect(current, isNotNull);
+        expect(current!.isLive, isTrue);
+      },
+    );
+  });
+
   group('MockLiveRepository moderator commands', () {
     test(
       'endSession answers an ended, mock-flagged session for the id',
