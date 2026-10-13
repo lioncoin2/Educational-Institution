@@ -47,6 +47,29 @@ void main() {
     expect(pages, 3);
   });
 
+  test('creates a community the viewer owns, and lists it first', () async {
+    final created = await repo.create('  حلقة جديدة  ');
+    expect(created.title, 'حلقة جديدة'); // trimmed, as the server normalises
+    expect(created.me.standing, CommunityStanding.owner);
+    expect(created.memberCount, 1);
+    expect(created.status, CommunityStatus.open);
+    expect(created.me.canManageHalaqa, isTrue);
+    final page = await repo.communities();
+    expect(page.items.first.id, created.id); // most recently joined first
+    expect(page.items.first.me.standing, CommunityStanding.owner);
+  });
+
+  test('refuses an empty or over-long title as the server does', () async {
+    await expectLater(
+      repo.create('   '),
+      refusedWith('communities.title_invalid'),
+    );
+    await expectLater(
+      repo.create('ق' * 101),
+      refusedWith('communities.title_invalid'),
+    );
+  });
+
   test(
     'answers each seeded community as the server would for the viewer',
     () async {
@@ -60,10 +83,7 @@ void main() {
       // Every capability — the two P9 attendance acts and the P12 message
       // moderation capability (ADR 0029) among them.
       expect(owned.me.capabilities, hasLength(10));
-      expect(
-        owned.me.has(CommunityCapability.messagesModerate),
-        isTrue,
-      );
+      expect(owned.me.has(CommunityCapability.messagesModerate), isTrue);
 
       final delegated = await repo.community(
         MockCommunityRepository.delegatedId,

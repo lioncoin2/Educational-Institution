@@ -13,8 +13,11 @@ import 'package:quran_institution_app/features/communities/state/pending_invitat
 ///   - no community screen, widget or state reaches HTTP, the socket, the
 ///     API client or a repository implementation: only the contracts, the
 ///     providers, and the live connection as an abstraction;
-///   - what someone may do in a community is the server's `me` — nothing
-///     here reads an account's permissions or roles;
+///   - what someone may do IN a community is the server's `me`; the one
+///     institution-level action — creating a community, which has no `me`
+///     yet — is gated on the identity permission `communities.create` (as
+///     messaging gates its start-a-conversation permissions), and nothing
+///     here reads any other account permission or role;
 ///   - only the provider wiring decides which implementation runs;
 ///   - the real repository makes exactly the calls listed here, and adds
 ///     nobody by id;
@@ -114,12 +117,19 @@ void main() {
     );
   });
 
-  test('never reads an account’s permissions or roles', () {
+  test('reads no account permission or role except the create gate', () {
+    // In-community actions follow the server's `me`. The one institution-level
+    // action — creating a community, which has no `me` yet — is gated on the
+    // identity permission `communities.create`, exactly as messaging gates its
+    // start-a-conversation permissions; the server still re-authorises. That
+    // single read is the only account-permission read allowed here.
+    final allowed = RegExp(r"\.can\('communities\.create'\)");
+    final forbidden = RegExp(r'\.permissions\b|\.roles\b|\.can\(');
     final offenders = [
       for (final path in community)
-        if (RegExp(r'\.permissions\b|\.roles\b|\.can\(')
-            .hasMatch(sources[path]!))
-          path,
+        for (final line in sources[path]!.split('\n'))
+          if (forbidden.hasMatch(line) && !allowed.hasMatch(line))
+            '$path: ${line.trim()}',
     ];
     expect(offenders, isEmpty);
   });
@@ -308,6 +318,7 @@ void main() {
 /// grants and ownership. Never `POST …/members`: no one is added by id.
 const _allowedCalls = [
   "get '/communities'",
+  "post '/communities'",
   'get _community(communityId)',
   r"get '${_community(communityId)}/members'",
   r"get '${_community(communityId)}/member-candidates'",

@@ -107,6 +107,9 @@ class MockCommunityRepository implements CommunityRepository {
   /// Numbers links and grants, in the order they were made.
   int _serial = 0;
 
+  /// Numbers communities made through [create], for unique ids.
+  int _created = 0;
+
   /// How many roster rows this repository has ever built. Rows are built
   /// per page, on request — never a whole roster.
   int get membersBuilt => _membersBuilt;
@@ -139,6 +142,29 @@ class MockCommunityRepository implements CommunityRepository {
   Future<Community> community(String communityId) async {
     await _wait();
     return _find(communityId).view();
+  }
+
+  @override
+  Future<Community> create(String title) async {
+    await _wait();
+    // The server normalises and validates the title; the demo mirrors the
+    // reachable rules (trimmed, 1–100 code points) so a widget test and the
+    // demo see the same `communities.title_invalid` the backend sends. The
+    // real server re-authorises `communities.create`; this stand-in models no
+    // identity permissions, so it simulates the owner's success path.
+    final normalized = title.trim();
+    if (normalized.isEmpty) throw _titleInvalid('empty');
+    if (normalized.runes.length > 100) throw _titleInvalid('length');
+    final community = _MockCommunity(
+      id: 'mock-community-new-${++_created}',
+      title: normalized,
+      memberCount: 1,
+      createdAt: _now(),
+      joinedAt: _now(),
+      owned: true,
+    );
+    _communities[community.id] = community;
+    return community.view();
   }
 
   @override
@@ -340,7 +366,8 @@ class MockCommunityRepository implements CommunityRepository {
     return PeopleSearchPage(
       items: [
         for (final person in _candidates)
-          if ((person.displayName ?? '').toLowerCase().startsWith(needle)) person,
+          if ((person.displayName ?? '').toLowerCase().startsWith(needle))
+            person,
       ],
       origin: DataOrigin.mock,
     );
@@ -957,6 +984,12 @@ class MockCommunityRepository implements CommunityRepository {
         'This community is locked.',
         details: {'act': capability.wire},
       );
+
+  static CommunityException _titleInvalid(String reason) => CommunityException(
+    'communities.title_invalid',
+    'A community title must be 1 to 100 characters.',
+    details: {'field': 'title', 'reason': reason},
+  );
 
   /// Malformed, unknown, or its creator no longer standing behind it: one
   /// answer for all, never saying which (Q48).

@@ -125,6 +125,10 @@ class ScriptedCommunities extends MockCommunityRepository {
   }
 
   @override
+  Future<Community> create(String title) =>
+      _write('create $title', () => super.create(title));
+
+  @override
   Future<CreatedInvitation> createInvitation(String communityId) => _write(
     'createInvitation $communityId',
     () => super.createInvitation(communityId),

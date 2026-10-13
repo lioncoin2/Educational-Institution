@@ -8,6 +8,7 @@ import '../../../data/realtime/realtime_client.dart';
 import '../../../data/realtime/realtime_frames.dart';
 import '../../../providers/app_providers.dart';
 import 'community_viewer.dart';
+import 'community_write.dart';
 
 class CommunityListState {
   const CommunityListState({
@@ -95,6 +96,9 @@ class CommunityListController extends AsyncNotifier<CommunityListState> {
   /// extends — the first page replaced, or a community taken out — so a
   /// next page asked for before is dropped rather than spliced on.
   int _generation = 0;
+
+  /// A create request is on its way: a second tap sends nothing.
+  bool _creating = false;
 
   @override
   Future<CommunityListState> build() async {
@@ -231,6 +235,33 @@ class CommunityListController extends AsyncNotifier<CommunityListState> {
   Future<void> refresh() async {
     ref.invalidateSelf();
     await future;
+  }
+
+  /// Creates a community the viewer will own, with [title]; on success the
+  /// first page is read again, where the new community belongs at the top
+  /// (most recently joined first). One request, sent once — a tap while it is
+  /// on its way sends nothing. A refusal changes nothing: no community was
+  /// made, so there is none to reconcile. The request is kept alive so it
+  /// finishes and the list still reconciles even if the sheet that asked for
+  /// it has closed.
+  Future<WriteOutcome<Community>> create(String title) async {
+    if (_creating) return const WriteNotSent();
+    final owner = ref;
+    final alive = owner.keepAlive();
+    _creating = true;
+    try {
+      final Community created;
+      try {
+        created = await ref.read(communityRepositoryProvider).create(title);
+      } on CommunityException catch (error) {
+        return WriteFailed(error);
+      }
+      if (ref.mounted) await reconcileJoined(created.id);
+      return WriteDone(created);
+    } finally {
+      _creating = false;
+      if (owner.mounted) alive.close();
+    }
   }
 
   // ── The live connection ─────────────────────────────────────────────────

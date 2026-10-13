@@ -15,6 +15,7 @@ import 'community_copy.dart';
 import 'state/community_list_controller.dart';
 import 'widgets/community_states.dart';
 import 'widgets/community_tile.dart';
+import 'widgets/create_community_sheet.dart';
 
 /// مجتمعاتي — the communities the signed-in person belongs to, most recently
 /// joined first, kept current live while it is open.
@@ -27,6 +28,14 @@ class CommunitiesScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final backend = ref.watch(backendModeProvider);
+    // OWNER/ADMIN only — the holders of `communities.create`. A hidden button
+    // is a courtesy; the server re-authorises the create regardless. Resolves
+    // to false while the session loads, or for anyone else (the demo student).
+    final canCreate = ref.watch(
+      sessionUserProvider.select(
+        (session) => session.value?.can('communities.create') ?? false,
+      ),
+    );
     return Scaffold(
       appBar: AppBar(
         title: const Text(CommunityCopy.screenTitle),
@@ -39,6 +48,14 @@ class CommunitiesScreen extends ConsumerWidget {
           const SizedBox(width: Insets.sm),
         ],
       ),
+      floatingActionButton: canCreate
+          ? FloatingActionButton.extended(
+              key: const Key('create-community-fab'),
+              onPressed: () => showCreateCommunity(context),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text(CommunityCopy.createCommunity),
+            )
+          : null,
       body: SafeArea(
         top: false,
         child: backend

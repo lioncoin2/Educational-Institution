@@ -368,6 +368,51 @@ void main() {
       expectNoBody(server.requests.single);
     });
 
+    test(
+      'creates a community: POST /communities with the title, returns it',
+      () async {
+        final server = CommunityServer({
+          'POST /communities': (_) => jsonResponse(
+            201,
+            communityJson(
+              id: 'c-9',
+              title: 'حلقة التجويد',
+              standing: 'OWNER',
+              memberCount: 1,
+              capabilities: ['community.lock'],
+              operations: ['community.ownership.transfer'],
+            ),
+          ),
+        });
+        final repo = HttpCommunityRepository(await api(server.client));
+        final created = await repo.create('حلقة التجويد');
+        expect(created.id, 'c-9');
+        expect(created.title, 'حلقة التجويد');
+        expect(created.me.standing, CommunityStanding.owner);
+        expect(created.origin, DataOrigin.records);
+        expect(server.calls, ['POST /communities']);
+        expect(jsonDecode(server.requests.single.body), {
+          'title': 'حلقة التجويد',
+        });
+        expect(server.requests.single.headers['authorization'], 'Bearer a1');
+      },
+    );
+
+    test('a refused create keeps the server’s code', () async {
+      final server = CommunityServer({
+        'POST /communities': (_) => refusal(
+          422,
+          'communities.title_invalid',
+          details: {'field': 'title', 'reason': 'length'},
+        ),
+      });
+      final repo = HttpCommunityRepository(await api(server.client));
+      await expectLater(
+        repo.create('x'),
+        refusedWith('communities.title_invalid'),
+      );
+    });
+
     test('leaves, locks and unlocks, sending no body at all', () async {
       final server = CommunityServer({
         'POST /communities/c-1/leave': (_) => http.Response('', 204),

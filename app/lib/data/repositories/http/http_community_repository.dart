@@ -44,6 +44,14 @@ class HttpCommunityRepository implements CommunityRepository {
   );
 
   @override
+  Future<Community> create(String title) => _call(
+    () async => Community.fromJson(
+      await _api.post('/communities', body: {'title': title}),
+      origin: DataOrigin.records,
+    ),
+  );
+
+  @override
   Future<CommunityMemberPage> members(String communityId, {String? cursor}) =>
       _call(
         () async => CommunityMemberPage.fromJson(
@@ -132,7 +140,10 @@ class HttpCommunityRepository implements CommunityRepository {
 
   @override
   Future<void> addMembers(String communityId, List<String> userIds) => _call(
-    () => _api.post('${_community(communityId)}/members', body: {'userIds': userIds}),
+    () => _api.post(
+      '${_community(communityId)}/members',
+      body: {'userIds': userIds},
+    ),
   );
 
   @override

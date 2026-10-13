@@ -70,6 +70,16 @@ abstract final class CommunityCopy {
   static const addMemberAction = 'إضافة';
   static const memberAdded = 'تمت إضافة العضو.';
 
+  // ── Creating a community (OWNER/ADMIN in-app creation) ────────────────
+  // The entry point is shown only to a holder of `communities.create`
+  // (OWNER/ADMIN); the server re-authorises the create on the request.
+  static const createCommunity = 'إنشاء مجتمع';
+  static const createCommunityTitle = 'إنشاء مجتمع جديد';
+  static const communityTitleLabel = 'اسم المجتمع';
+  static const communityTitleHint = 'اكتب اسمًا للمجتمع';
+  static const createCommunityAction = 'إنشاء';
+  static const communityCreated = 'تم إنشاء المجتمع.';
+
   /// A person the directory has no name for — never their id.
   static const personFallback = 'حساب';
 
@@ -219,6 +229,7 @@ abstract final class CommunityCopy {
     'identity.permission_denied' ||
     'communities.not_community_owner' => 'هذا غير متاح لك في هذا المجتمع.',
     'communities.halaqa_not_found' => 'الحلقة المحدّدة غير موجودة.',
+    'communities.title_invalid' => 'اسم المجتمع غير صالح (من حرف إلى 100 حرف).',
     'communities.unreadable' =>
       'وصلت من الخادم بيانات لا يقرؤها هذا الإصدار من التطبيق.',
     _ => 'تعذّر إتمام الطلب. حاول مرة أخرى.',

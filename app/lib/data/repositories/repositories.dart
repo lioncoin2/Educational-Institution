@@ -258,6 +258,14 @@ abstract interface class CommunityRepository {
 
   Future<Community> community(String communityId);
 
+  /// Creates a community the viewer will own and be the first member of, with
+  /// [title] — for a holder of `communities.create` (OWNER/ADMIN). The server
+  /// normalises and validates the title (1–100 characters) and decides afresh
+  /// on every request; a refusal throws [CommunityException]
+  /// (`identity.permission_denied`, `communities.title_invalid`, a rate limit).
+  /// Not idempotent — each call makes a new community.
+  Future<Community> create(String title);
+
   /// The roster, a page at a time — for a viewer whose `me.capabilities`
   /// holds `community.members.view`; anyone else is refused.
   Future<CommunityMemberPage> members(String communityId, {String? cursor});
