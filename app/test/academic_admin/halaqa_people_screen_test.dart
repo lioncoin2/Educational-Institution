@@ -41,7 +41,12 @@ class _FakePeople implements PeopleRepository {
 }
 
 class _FakeAcademic implements AcademicRepository {
-  _FakeAcademic({this.failRelationWith});
+  _FakeAcademic({this.failRelationWith, bool seeded = true}) {
+    if (!seeded) {
+      _students.clear();
+      _teachers.clear();
+    }
+  }
 
   String? failRelationWith;
   final List<String> writes = [];
@@ -255,6 +260,20 @@ void main() {
       expect(find.text('الأستاذة عائشة'), findsOneWidget);
     },
   );
+
+  testWidgets('a halaqa with no students shows the empty state, not a crash', (
+    tester,
+  ) async {
+    await open(
+      tester,
+      repo: _FakeAcademic(seeded: false),
+      user: _user({'academic.manage'}),
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text(AcademicPeopleCopy.noStudents), findsOneWidget);
+    // The enrol action is still reachable for the first student.
+    expect(enroll, findsOneWidget);
+  });
 
   testWidgets('withholds every control from a viewer without academic.manage', (
     tester,
