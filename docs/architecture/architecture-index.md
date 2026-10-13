@@ -303,3 +303,4 @@ responsibility and what each module must not know live in
 - [0032 — People discovery is not membership, authorization, or attendance](decisions/0032-discovery-membership-attendance-separation.md)
 - [0033 — Optional community–halaqa link, conversation member-list visibility, and the current-student roster](decisions/0033-community-halaqa-link-and-member-list-visibility.md)
 - [0034 — Q50: enrollment-sourced community membership and derived capabilities](decisions/0034-q50-enrollment-sourced-membership-and-derived-capabilities.md)
+- [0035 — Community membership governance: enrollment, membership and capabilities stay separate (owner decision)](decisions/0035-community-membership-governance-separation.md)

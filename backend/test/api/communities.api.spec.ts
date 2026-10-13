@@ -778,7 +778,7 @@ describe('communities API', () => {
       expect([unknown.status, code(unknown)]).toEqual([404, 'communities.community_not_found']);
     });
 
-    it('is inert: enrolling a student in the linked halaqa creates no membership (Q50 remains open)', async () => {
+    it('is inert: enrolling a student in the linked halaqa creates no membership (Policy A, ADR 0035)', async () => {
       // Link the community to the halaqa, then enroll an outsider in that halaqa
       // through academic. Enrollment-sourced membership is Q50 and NOT built
       // (ADR 0016 dec 11, ADR 0032, ADR 0034): the link derives nothing.
@@ -800,6 +800,31 @@ describe('communities API', () => {
         404,
         'communities.community_not_found',
       ]);
+    });
+
+    it('does not remove an explicit membership when the student’s enrollment ends (Policy A, ADR 0035)', async () => {
+      // student is an explicit member of linkId (added in beforeAll). Link the
+      // community to the halaqa, enroll the student in it, then END the enrollment.
+      // Academic lifecycle and community membership are independent: the membership
+      // survives, because nothing connects enrollment ending to membership removal.
+      await call('PUT', `/communities/${linkId}/halaqa`, admin, { halaqaId });
+      const enrolled = await call('POST', `/academic/halaqat/${halaqaId}/enrollments`, admin, {
+        studentUserId: student.id,
+      });
+      expect(enrolled.status).toBe(201);
+      const before = await call('GET', `/communities/${linkId}`, admin);
+      const ended = await call(
+        'POST',
+        `/academic/enrollments/${(enrolled.body.enrollment as { id: string }).id}/end`,
+        admin,
+        { outcome: 'COMPLETED' },
+      );
+      expect([ended.status, ended.body.status]).toEqual([200, 'COMPLETED']);
+      // The explicit membership is untouched: the count is unchanged and the
+      // student is still a member (a non-member would be told it does not exist).
+      const after = await call('GET', `/communities/${linkId}`, admin);
+      expect(after.body.memberCount).toBe(before.body.memberCount);
+      expect((await call('GET', `/communities/${linkId}`, student)).status).toBe(200);
     });
   });
 

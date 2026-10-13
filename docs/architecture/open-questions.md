@@ -1858,24 +1858,27 @@ be scheduled) and, for a notification, a translator
 
 ## Q50 — Communities and the academic structure
 
-> **RESOLVED in part (Sprint 28 + Sprint 29 — [ADR 0033](decisions/0033-community-halaqa-link-and-member-list-visibility.md),
-> [register §17–§18](../owner-decision-register.md)).** A community MAY carry an optional
+> **RESOLVED (Sprint 28/29 link + Sprint 32 membership policy — [ADR 0033](decisions/0033-community-halaqa-link-and-member-list-visibility.md),
+> [ADR 0035](decisions/0035-community-membership-governance-separation.md),
+> [register §17–§20](../owner-decision-register.md)).** All three Q50 sub-questions are answered:
+> a community *may* link to a halaqa (yes, inert metadata); membership *may not* come from enrollment
+> automatically (**no**, owner decision ADR 0035); capabilities *may not* follow from academic
+> relationships automatically (**no**, ADR 0035). A community MAY carry an optional
 > `halaqa_id` association — **inert metadata** set by `communities.manage` oversight,
 > deriving no membership, capability or authorization (migration 0021). Cardinality:
 > community → 0..1 halaqa, halaqa → 0..n communities (no rule imposed). Sprint 29 added
 > real server-side existence validation (via academic's read-only `ACADEMIC_RELATIONSHIPS`
 > contract — a nonexistent halaqa is refused) and the Flutter management UI (link/unlink,
-> gated on `me.canManageHalaqa`). **Still open (investigated Sprint 30 —
-> [ADR 0034](decisions/0034-q50-enrollment-sourced-membership-and-derived-capabilities.md),
-> [register §19](../owner-decision-register.md)):** enrollment-sourced membership and derived
-> capabilities remain NOT built. The policy is not owner-approved (building it would invent the
-> institutional policy ADR 0032 forbids), and two additive model gaps block safe implementation even
-> if approved — membership has no derived `source` (one ACTIVE stint per person); capability grants
-> allow one active owner-delegated grant per stint+capability with no `source`, so derived and manual
-> sources cannot be told apart or revoked independently. The propagation pattern (`CommunityChatSync`:
-> wake→pull-contract→idempotent-apply→sweeper) is ready, so no new infrastructure is needed when
-> answered. Exact owner decisions + the ready design are in ADR 0034; the inert link + enrollment are
-> regression-tested.
+> gated on `me.canManageHalaqa`). **Enrollment-sourced membership and derived capabilities: NOT built,
+> by owner decision (Sprint 32, [ADR 0035](decisions/0035-community-membership-governance-separation.md)).**
+> The owner decided (Policy A–E) that academic enrollment neither creates nor removes community
+> membership, membership stays explicit (`source` ∈ `{ADDED, INVITATION}`), and ordinary membership
+> grants no capabilities — enrollment, membership, invitations, capability grants, attendance and
+> messaging stay separate. The existing implementation already enforces this; it is regression-tested
+> (enrolling a student in a linked halaqa adds no member, and *ending* the enrollment removes no explicit
+> member). [ADR 0034](decisions/0034-q50-enrollment-sourced-membership-and-derived-capabilities.md)
+> (the Sprint 30 investigation + the "if ever reopened" design) is superseded in *status* by ADR 0035;
+> reopening would need a new owner decision + ADR.
 
 **Question.**
 

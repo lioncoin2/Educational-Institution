@@ -860,6 +860,36 @@ no membership or capability side effect.
 
 ---
 
+## 20. Community membership governance — owner decision, Q50 fully resolved (Sprint 32)
+
+The owner approved the membership/capability policy direction (Policy A–E). This
+**answers** the Q50 question ADR 0034 §19 left open — in the direction the existing
+design already assumes — and is recorded in
+[ADR 0035](architecture/decisions/0035-community-membership-governance-separation.md)
+(Accepted; supersedes ADR 0034's open/deferred *status*). **No product code, schema,
+migration, contract, role or capability changed** — the implementation already enforces
+it; one regression test was added (enrollment *ending* removes no explicit membership).
+
+| Policy | Decision | Already enforced by |
+| --- | --- | --- |
+| **A** enrollment ↔ membership | Enrollment neither **creates** nor **removes** community membership; linking a halaqa adds/removes no member | `academic` imports no `communities`; `communities.api.spec` (enroll adds no member; *end* removes none) |
+| **B** who may add members | Unchanged — explicit `community.members.invite` / invitation / `communities.manage`; **not broadened** | `AddMembers`/`Redeem`/member-candidates re-authorize (ADR 0032); no new route |
+| **C** membership source | Stays explicit `{ADDED, INVITATION}`; **no** academic/`SYSTEM`/derived source; never merged | `MEMBERSHIP_SOURCES`; `community_members_source_valid` CHECK |
+| **D** membership ≠ admin capabilities | Ordinary membership grants nothing; removal ends only that stint's grants (`membership_ended`), per-community; another community's membership/grants untouched; **no independent grant revoked** | `memberStint` (MEMBER, no grants); grant composite-FK per stint+community; `delegation.spec` ("gives nothing in another community"); `communities.api.spec:174` (MEMBER `capabilities: []`) |
+| **E** module separation | enrollment / membership / invitations / grants / attendance / messaging stay separate; no new coupling, abstraction, flag or job | CI module-boundary specs; the one approved edge (communities→`academic/contracts/relationships`, read-only, ADR 0033) |
+
+**Policy D data-model check (ADR 0034 §Policy-D caveat resolved):** every grant is bound
+to exactly one stint in one community; there is **no independent-of-membership grant**
+concept, so ending a membership can only end that stint's own grants — the model *can*
+distinguish, so **no new revocation rule was invented** and none is needed.
+
+**Q50 status: RESOLVED** (link = ADR 0033; membership/capability separation = ADR 0035).
+No conflict with any immutable ADR (0016 dec 11, 0032, 0033, 0034 all preserved the
+separation this makes permanent). **Still owner-gated elsewhere (unchanged):** the
+educational product loop (groups C/D/G), parent messaging/quiet-hours (Q6), Q28 residue.
+
+---
+
 > This register is advisory and reversible. Closing a question means: record an ADR in `decisions/`,
 > make the (usually small) change, and delete the entry from `open-questions.md` with the ADR number —
 > per that file's "How to close one."

@@ -10,11 +10,11 @@ detailed sources rather than copying them.
 sequencing*; it does not make product-policy or engineering decisions — those live in the
 ADRs (immutable) and the owner-decision register.
 
-**Last updated.** 2026-10-13 (Sprint 31 — roadmap reconciliation; no product code changed).
-**Current verified HEAD.** `144ab15143b1fc119886d1d3e10e812cfe10e154` (Sprint 30), branch
-`claude/quranic-education-app-prototype-gkzle8`, in sync with origin. Always re-verify with
-`git rev-parse HEAD` / `git status` — this file is a reversible snapshot, not a substitute for
-git.
+**Last updated.** 2026-10-13 (Sprint 32 — owner membership/capability policy recorded, ADR 0035;
+Q50 fully resolved; one regression test; no product feature code changed). Prior reconciliation: Sprint 31.
+**Current verified HEAD.** `2140a4d` (Sprint 31) at the start of Sprint 32; this Sprint 32 update commits
+on top of it. Branch `claude/quranic-education-app-prototype-gkzle8`, in sync with origin. Always re-verify
+with `git rev-parse HEAD` / `git status` — this file is a reversible snapshot, not a substitute for git.
 
 ---
 
@@ -53,8 +53,11 @@ and is owner-policy-gated by design.**
   (ADRs 0026–0029), and the optional community→halaqa link (ADR 0033).
 - **Implemented but validation-pending / mock:** LiveKit server deployment (configured, not
   operationally verified); real push delivery (logging provider only); web attachments (no device).
+- **Resolved by owner decision (Sprint 32, ADR 0035):** Q50 enrollment-sourced membership & derived
+  capabilities — decided **NO** (enrollment, membership and capabilities stay separate); nothing built,
+  the existing separation is permanent policy and regression-tested. **Q50 is now fully resolved.**
 - **Deferred by decision:** the P8 off-box capacity ladder (harness built, **no rung executed**);
-  EXPLAIN-at-scale benchmark; Q50 enrollment-sourced membership & derived capabilities (ADR 0034).
+  EXPLAIN-at-scale benchmark.
 - **Not started / blocked:** native (iOS/Android) media; P11 horizontal scaling (blocked on P8
   evidence); every educational product loop (owner-policy-gated — must not be invented).
 
@@ -118,7 +121,7 @@ dispatch/scoped-PR only (not on-push), last run for `76e8e48`.
 | P12 | Policy-governed live features | COMPLETE-VERIFIED | ADR 0026 (kick/reset), 0027 (no hidden listeners), 0028 (two presenters + delegated student share), 0029 (message moderation); migration 0017; live-e2e web | — (for the four slices) | — | met |
 | P12-open | Screen **audio** share; webhook accelerators | NOT-STARTED (owner-policy) | §25 "still deferred"; ADR 0028 keeps screen audio off (Q56) | — | an explicit owner decision | an approved policy + ADR |
 | Q50-link | Optional community→halaqa link | COMPLETE-VERIFIED | ADR 0033; migration 0021; existence validation via `ACADEMIC_RELATIONSHIPS`; Flutter link/unlink on `me.canManageHalaqa`; inert (regression-tested) | — | — | met |
-| Q50-derive | Enrollment-sourced membership + derived capabilities | DEFERRED-BY-DECISION / BLOCKED | ADR 0034 (Deferred); register §19 | owner decisions A–E; then two additive migrations (membership `source`, grant `source`) + a `CommunityAcademicSync` | **owner policy A–E (unapproved)** — governance gates Q40/Q36/ADR 0015 are RESOLVED | A–E answered; migrations + idempotent projection; manual sources preserved |
+| Q50-derive | Enrollment-sourced membership + derived capabilities | COMPLETE-VERIFIED (resolved as **NO**) | **ADR 0035** (owner decision, Sprint 32): enrollment ↔ membership/capabilities stay separate; register §20; regression-tested (enroll adds no member; *end* removes none) | — (not built, by owner decision; reopening needs a new owner decision + ADR) | — | met: the separation is enforced + regression-tested |
 | PROD | Educational product loop (progress, assessment, mastery/promotion, certificates, assignments, announcements/feed, owner operations) | NOT-STARTED (BLOCKED: owner policy) | register groups C/D/G; Q37/Q9/Q38/Q70/Q71/Q72 | — (must NOT be invented) | explicit owner decisions | approved policy per group + ADRs |
 
 ---
@@ -143,11 +146,11 @@ whether the next action is engineering / owner-decision / external-op / testing 
    Next action: **blocked** (needs P8 first). The `EventPublisher`/`EventSubscriber` seam is ready; the mechanism is not.
 5. **P9 EXPLAIN-at-scale benchmark** — remaining: run on a large seeded dataset. Blocker: external dataset.
    Source: `attendance.md §21/§22`. Next action: **external/testing**. Non-blocking.
-6. **Q50 enrollment-membership + derived capabilities** — remaining: owner decisions A–E, then two
-   additive migrations + a `CommunityAcademicSync` (reusing the `CommunityChatSync` pattern). Blocker:
-   **owner policy A–E unapproved**; model gaps (no derived `source` on membership or grants). Governance
-   prerequisites (Q40, Q36/Q35, ADR 0015, Q69) are **RESOLVED**. Source: ADR 0034, register §19.
-   Next action: **owner-decision** (decision sheet below), then engineering.
+6. **Q50 enrollment-membership + derived capabilities** — **RESOLVED (Sprint 32, ADR 0035):** the owner
+   decided **NO** — enrollment neither creates nor removes membership, membership stays explicit, and
+   membership grants no capabilities. Nothing built (by decision); the existing separation is permanent
+   policy and regression-tested. Source: ADR 0035, register §20. No remaining action unless a future owner
+   decision reopens it.
 7. **Q50 halaqa-existence staleness note** — the committed `communities-live-attendance.md §25` and
    `attendance.md`/`academic-reconciliation.md` headers are stale (see §12); not a product gap. Next action: **doc** (this sprint).
 8. **Educational product loop (GROUP C/D/G)** — remaining: owner policy for progress, assessment,
@@ -167,14 +170,13 @@ whether the next action is engineering / owner-decision / external-op / testing 
 
 ## 7. Critical path (ordered dependencies)
 
-1. **Owner decisions** (no engineering prerequisite; highest unlock): Q50 A–E; GROUP C/D/G product
-   policy; GROUP A residue (Q6); Q28 residue; P12 screen-audio. These gate every new product loop.
-2. **Q50 enrollment-membership** (engineering, *after* A–E): two additive migrations → `CommunityAcademicSync`.
-   All governance gates already cleared.
-3. **P8 capacity evidence** (external-operational; owner lifts the "until real users" deferral): execute
+1. **Owner decisions** (no engineering prerequisite; highest unlock): GROUP C/D/G product policy; GROUP A
+   residue (Q6); Q28 residue; P12 screen-audio. These gate every new product loop. *(Q50 A–E is now
+   decided — ADR 0035 — and needs no further action.)*
+2. **P8 capacity evidence** (external-operational; owner lifts the "until real users" deferral): execute
    the ladder on real hardware → **unblocks P11**.
-4. **P11 horizontal scaling** (engineering, *after* P8 evidence + a load trigger).
-5. **External-resource tracks** (independent, whenever resources exist): P7b-native (devices + mobile CI);
+3. **P11 horizontal scaling** (engineering, *after* P8 evidence + a load trigger).
+4. **External-resource tracks** (independent, whenever resources exist): P7b-native (devices + mobile CI);
    real push (Firebase/Apple + device); EXPLAIN-at-scale (large dataset).
 
 Nothing in (2)–(5) should start before its prerequisite. No completed phase should be reopened without
@@ -195,15 +197,14 @@ new defect evidence.
 | Q37 / Q9 / Q38 — assessment, mastery, «ضخ», certificates | **OPEN** — must NOT be invented | register GROUP C |
 | Q70 / Q71 / Q72 — attendance operations/automation/reporting | **OPEN** | register GROUP G |
 | Q6 — parent messaging, quiet hours | **OPEN** | register GROUP A |
-| **Q50 A** — enrollment states conferring membership; completion/withdrawal | **OPEN** (owner) | ADR 0034, register §19 |
-| **Q50 B** — target community when a halaqa backs 0/1/many communities | **OPEN** (owner) | ADR 0034 |
-| **Q50 C** — derived membership is a distinct, coexisting source | **OPEN** (owner) → model migration | ADR 0034 |
-| **Q50 D** — capability↔relationship mapping + independent-grant survival | **OPEN** (owner) → model migration | ADR 0034 |
-| **Q50 E** — asynchronous projection acceptable | **OPEN** (owner; recommended yes) | ADR 0034 |
+| **Q50 Policy A–E** — enrollment ↔ membership & derived capabilities | **RESOLVED (as NO)** — owner decided enrollment neither creates nor removes membership; membership stays explicit; membership ≠ admin capabilities; modules stay separate (Sprint 32) | **ADR 0035**; register §20 |
 
-Reconciliation note: ADR 0034 cited Q36/ADR 0015/Q40 as Q50 prerequisites; those are now **resolved**,
-so the operative blocker for Q50-derive is the owner policy A–E (+ the two model migrations), not the
-governance gates. (ADR 0034's decision — defer — is unchanged; see register §19.)
+Reconciliation note: the Q50 enrollment-membership / derived-capability question (ADR 0034, deferred
+pending owner decisions A–E) is now **answered** — the owner decided to keep the concepts separate
+(**no** auto-membership, **no** derived capabilities): ADR 0035 supersedes ADR 0034's open status. The
+governance gates ADR 0034 cited (Q40/Q36/Q35/Q69, ADR 0015/0016) were already resolved. Nothing was
+built; the existing design already enforces the decision and is regression-tested. **Q50 is now fully
+resolved** (link = ADR 0033; separation = ADR 0035).
 
 ---
 
@@ -244,10 +245,10 @@ Q50-derive — is implementable without inventing policy, which is forbidden. En
 either external-resource-gated (native, push, P8 hardware) or blocked on P8 evidence (P11).
 
 **Decision sheet to put to the owner (smallest set, greatest unlock):**
-- **Q50 A–E** (enrollment→membership & derived capabilities) — the single feature closest to ready: all
-  governance gates cleared; only policy + two additive migrations remain. (Detail: ADR 0034 / register §19.)
-- **GROUP C/D/G** product policy and **GROUP A** residue (Q6) — gate the educational loop and parent messaging.
+- **GROUP C/D/G** product policy and **GROUP A** residue (Q6) — gate the educational loop (progress,
+  assessment, mastery, assignments, operations) and parent messaging. This is now the highest unlock.
 - **P8 deferral** — decide whether to lift "defer until real users" and authorize a capacity run (operational, needs hardware).
+- *(Q50 A–E is now decided — ADR 0035 / register §20 — and is off the list.)*
 
 If instead an **operational** test is wanted next, the only CI-executable one is re-dispatching
 `live-e2e.yml` (web, real LiveKit); the P8 ladder and native media need real hardware/devices and must not
@@ -256,9 +257,17 @@ evidence-grounded, and the checkpoint/register are consistent with HEAD — no p
 
 ---
 
-## 12. Change log & reconciled discrepancies (Sprint 31)
+## 12. Change log & reconciled discrepancies
 
-Created this file. Synchronized `project-checkpoint.md` (stale HEAD/CI block) and
+**Sprint 32.** Recorded the owner's membership/capability policy (A–E) in
+[ADR 0035](architecture/decisions/0035-community-membership-governance-separation.md) (supersedes ADR
+0034's open status) and register §20; marked **Q50 fully resolved** (enrollment-sourced membership &
+derived capabilities decided **NO** — not built, by owner decision). Added one regression test
+(enrollment *ending* removes no explicit membership). No product feature code / schema / migration /
+contract / capability changed — the existing design already enforces the policy. No governance conflict
+found (ADR 0016 dec 11, 0032, 0033, 0034 all preserved this separation).
+
+**Sprint 31.** Created this file. Synchronized `project-checkpoint.md` (stale HEAD/CI block) and
 `owner-decision-register.md` (compiled line + Q50 gate reconciliation). Recorded, and where the file is
 not protected, corrected, these discrepancies found between planning docs:
 

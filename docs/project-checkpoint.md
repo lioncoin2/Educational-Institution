@@ -21,16 +21,19 @@ in-memory). Product scope is the owner's; engineering never invents institutiona
 ## Repository state (verify before trusting)
 
 - **Branch:** `claude/quranic-education-app-prototype-gkzle8`
-- **HEAD:** `144ab15` — `Sprint 30: Q50 enrollment-sourced membership & derived capabilities — investigated,
-  stays OPEN`. **In sync with `origin`** (0 ahead / 0 behind at the time of writing).
-- **Latest work, newest first:** Sprint 30 Q50 enrollment-membership/derived-caps investigated → deferred,
-  ADR 0034 (`144ab15`); Sprint 29 Q50 halaqa existence validation + Flutter link/unlink UI (`c6f48e9`);
+- **HEAD:** `2140a4d` (Sprint 31 — master roadmap reconciliation) at the start of Sprint 32; Sprint 32
+  commits the owner membership policy on top (re-verify with `git rev-parse HEAD`). **In sync with `origin`.**
+- **Latest work, newest first:** Sprint 32 owner membership/capability policy (Policy A–E) recorded, ADR
+  0035, **Q50 fully resolved** (enrollment→membership/derived-caps decided NO); Sprint 31 master roadmap
+  `docs/project-roadmap.md` (`2140a4d`); Sprint 30 Q50 enrollment-membership/derived-caps investigated →
+  deferred, ADR 0034 (`144ab15`); Sprint 29 Q50 halaqa existence validation + Flutter link/unlink UI (`c6f48e9`);
   Sprint 28 Q50 link / Q22 member-list / Q31 roster (`54204f9`); Sprints 24–27 people discovery + ADR 0032
   (`42507b3`…`03fd925`); Sprint 22 checkpoint (`f67c4f6`); Sprint 21 attachments/voice (`8b88f92`); Sprint 20
   LiveKit web activation (`76e8e48`); Sprint 19 secure sessions (`89a8879`); before that the live-media
   programme. Full verified ledger (SHAs + CI run IDs): [`docs/project-roadmap.md §4`](project-roadmap.md).
   Use `git log --oneline` for the authoritative history, not this file.
-- **Date reconciled:** 2026-10-13 (Sprint 31 — documentation-only roadmap reconciliation; no product code changed).
+- **Date reconciled:** 2026-10-13 (Sprint 32 — owner membership/capability policy recorded, ADR 0035, Q50
+  fully resolved; one regression test; no product feature code changed. Prior: Sprint 31 roadmap).
 - **Preserved local working-tree changes (do NOT overwrite):** four owner-maintained files remain modified
   and intentionally uncommitted — `backend/src/platform/health/health.controller.ts` (+ its new
   `health.controller.spec.ts`, a DB-readiness probe, observability.md §3), `docs/architecture/observability.md`,
@@ -71,8 +74,11 @@ silently invent institutional rules — record unknowns as deferred.
   membership ≠ authorization ≠ attendance — owner/admin-only `GET /people`, community-scoped member search),
   **0033** (Sprint 28: optional community–halaqa link as inert metadata; conversation member-list is
   owner/admin-only; teacher roster is current students only),
-  **0034** (Sprint 30, **Deferred**: Q50 enrollment-sourced membership & derived capabilities stay
-  OPEN — policy unapproved + two model gaps; design ready). Table: `.../decisions/README.md`.
+  **0034** (Sprint 30, **Deferred**: Q50 enrollment-sourced membership & derived capabilities — the
+  investigation; status superseded by 0035),
+  **0035** (Sprint 32, **owner decision**: enrollment, membership and capabilities stay separate —
+  enrollment never creates/removes membership, source stays explicit, membership ≠ admin capabilities;
+  **Q50 fully resolved**). Table: `.../decisions/README.md`.
 - **Live-media verification log:** [`docs/p8-live-media-verification.md`](p8-live-media-verification.md).
   **Messaging/attachments + client dependencies:** [`docs/architecture/messaging.md`](architecture/messaging.md),
   [`docs/architecture/live.md`](architecture/live.md) §17.
@@ -88,7 +94,10 @@ unverified on target platform** · **Mock/stub** · **Owner-decision-gated** · 
 | Area | Status | Notes |
 | --- | --- | --- |
 | Authentication & identity; persistent sessions | **Implemented+verified** (native keystore unverified) | Sprint 19 — see below |
-| Communities & membership | **Implemented+verified** | lists, roster, keyset pagination, lock/unlock, join-by-link, leave, invitations, remove, grant/revoke/transfer, server-authoritative `me`; optional academic `halaqa_id` link (Sprint 28 inert metadata + Sprint 29 real cross-module existence validation via academic's `ACADEMIC_RELATIONSHIPS` contract and Flutter link/unlink UI gated on `me.canManageHalaqa`; `communities.manage` oversight; migration 0021; ADR 0033 / register §17–§18) |
+| Communities & membership | **Implemented+verified** | lists, roster, keyset pagination, lock/unlock, join-by-link, leave, invitations, remove, grant/revoke/transfer, server-authoritative `me`; optional academic `halaqa_id` link (Sprint 28 inert metadata + Sprint 29 real cross-module existence validation via academic's `ACADEMIC_RELATIONSHIPS` contract and Flutter link/unlink UI gated on `me.canManageHalaqa`; `communities.manage` oversight; migration 0021; ADR 0033 / register §17–§18). **Q50 fully resolved
+(Sprint 32, ADR 0035 / register §20):** enrollment never creates/removes membership, membership source
+stays `{ADDED,INVITATION}`, membership ≠ admin capabilities — regression-tested; no derived membership
+or capabilities (by owner decision) |
 | Conversation member-list visibility | **Implemented+verified** | Sprint 28 — owner/admin-only (`users.manage`), server-side in `ListParticipantsUseCase`, all conversation types (Q22; ADR 0033) |
 | Teacher roster = current students | **Implemented+verified** | Sprint 28 — `ListHalaqaStudentsUseCase` refuses non-ACTIVE status without `academic.manage`; admins keep history (Q31; ADR 0033) |
 | People directory & member add/re-add; student↔student & student↔teacher DMs | **Implemented+verified** | GROUP A (register §12–§16; ADR 0032); `people.read` (owner/admin only, migration 0020), community-scoped `member-candidates` on `community.members.invite`, `messaging.start_direct_peer`/`_teacher` (migrations 0018/0019) |
