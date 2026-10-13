@@ -148,3 +148,108 @@ export const notificationDevices = pgTable(
     ),
   ],
 );
+
+/**
+ * The institution-wide quiet-hours policy: one row, ever. Quiet hours hold back
+ * PUSH in the window; the record is still stored and realtime is untouched. The
+ * window is a wall-clock policy, so it carries its own IANA timezone (validated
+ * in the application — SQL cannot know the zone database). A person may override
+ * it for themselves (`user_notification_settings`).
+ *
+ *   institution_notification_settings_singleton  at most one policy row exists
+ */
+export const institutionNotificationSettings = pgTable(
+  'institution_notification_settings',
+  {
+    id: text('id').primaryKey(),
+    quietHoursEnabled: boolean('quiet_hours_enabled').notNull(),
+    quietHoursStart: text('quiet_hours_start').notNull(),
+    quietHoursEnd: text('quiet_hours_end').notNull(),
+    timezone: text('timezone').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    /** Who last changed it — an account id, NOT a foreign key. Null for a seed. */
+    updatedBy: text('updated_by'),
+  },
+  (table) => [
+    check('institution_notification_settings_singleton', sql`${table.id} = 'institution'`),
+    check(
+      'institution_notification_settings_window_shape',
+      sql`${table.quietHoursStart} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' and ${table.quietHoursEnd} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'`,
+    ),
+    check(
+      'institution_notification_settings_window_nonempty',
+      sql`${table.quietHoursStart} <> ${table.quietHoursEnd}`,
+    ),
+    check(
+      'institution_notification_settings_timezone_length',
+      sql`char_length(${table.timezone}) between 1 and 64`,
+    ),
+  ],
+);
+
+/**
+ * A person's own notification settings: the timezone their quiet hours are read
+ * in, and their quiet-hours choice. One row per person, absent until they
+ * change something (then the defaults — `domain/quiet-hours.ts`).
+ *
+ *   INHERIT    follow the institution window (null start/end)
+ *   DISABLED   no quiet hours for me (null start/end)
+ *   CUSTOM     my own window (start/end required, and of non-zero length)
+ */
+export const userNotificationSettings = pgTable(
+  'user_notification_settings',
+  {
+    userId: text('user_id').primaryKey(),
+    /** An IANA zone, or null when the user has set none (then the institution's is used). */
+    timezone: text('timezone'),
+    quietHoursMode: text('quiet_hours_mode').notNull(),
+    quietHoursStart: text('quiet_hours_start'),
+    quietHoursEnd: text('quiet_hours_end'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    check(
+      'user_notification_settings_mode_valid',
+      sql`${table.quietHoursMode} in ('INHERIT', 'DISABLED', 'CUSTOM')`,
+    ),
+    check(
+      'user_notification_settings_timezone_length',
+      sql`${table.timezone} is null or char_length(${table.timezone}) between 1 and 64`,
+    ),
+    // A custom window needs both bounds, of non-zero length; any other mode has none.
+    check(
+      'user_notification_settings_custom_window',
+      sql`(${table.quietHoursMode} = 'CUSTOM' and ${table.quietHoursStart} is not null and ${table.quietHoursEnd} is not null and ${table.quietHoursStart} <> ${table.quietHoursEnd}) or (${table.quietHoursMode} <> 'CUSTOM' and ${table.quietHoursStart} is null and ${table.quietHoursEnd} is null)`,
+    ),
+    check(
+      'user_notification_settings_window_shape',
+      sql`(${table.quietHoursStart} is null or ${table.quietHoursStart} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$') and (${table.quietHoursEnd} is null or ${table.quietHoursEnd} ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$')`,
+    ),
+  ],
+);
+
+/**
+ * Per-person, per-conversation mutes. A muted conversation's PUSH is held; the
+ * record is still stored and realtime is untouched. The conversation id is
+ * opaque — stored as a notification's target carries it — and is NOT a foreign
+ * key: notifications holds no constraint on messaging's tables.
+ *
+ *   conversation_mutes_pkey  one mute per person and conversation
+ */
+export const conversationMutes = pgTable(
+  'conversation_mutes',
+  {
+    userId: text('user_id').notNull(),
+    conversationId: text('conversation_id').notNull(),
+    mutedAt: timestamp('muted_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.conversationId] }),
+    // "What has this person muted?" — newest first.
+    index('conversation_mutes_user_idx').on(table.userId, table.mutedAt),
+    check(
+      'conversation_mutes_conversation_id_length',
+      sql`char_length(${table.conversationId}) between 1 and 128`,
+    ),
+  ],
+);

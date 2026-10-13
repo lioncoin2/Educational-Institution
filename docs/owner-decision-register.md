@@ -896,6 +896,31 @@ educational product loop (groups C/D/G), parent messaging/quiet-hours (Q6), Q28 
 
 ---
 
+## 21. Q6 quiet hours & conversation mute — owner decisions, implemented (Sprint 35)
+
+The owner approved building the quiet-hours and per-conversation-mute parts of Q6/Q24 and
+answered the two policy points existing governance did not settle. Recorded in
+[ADR 0036](architecture/decisions/0036-quiet-hours-and-conversation-mute.md) (Accepted) and
+built additively (migration 0022). Academic enrollment, community membership and every
+authorization policy are **unchanged**; no new permission was minted.
+
+| Point | Owner decision | How built |
+| --- | --- | --- |
+| **Override direction** (was unsettled) | **Full override** — a user's own setting replaces the institution window for them: inherit, disable, or set a custom window | `UserQuietHoursPreference` INHERIT/DISABLED/CUSTOM; `quietHoursSuppressesPush` resolves the user's window over the institution's (`domain/quiet-hours.ts`) |
+| **Missing/invalid user timezone** (was unsettled; Q12 only covers attendance) | **Fall back to the institution timezone**; a guessed/hard-coded zone is never used; no institution zone → quiet hours do not apply | `evaluationZone` = valid user tz → valid institution tz → none; validated IANA-only (offsets rejected) |
+| Suppression scope | **Push only** — the in-app record is always stored, realtime untouched | decided in the dispatcher, recorded in `channels.push`; `store` unconditional, `realtime` unchanged |
+| Urgent / always-deliver | **None** — no bypass until a separate explicit policy | suppression never branches on the notification; pinned by test |
+| Mute identity/scope | Keyed on a notification's stable `conversation` target; one conversation, one person; never touches membership, capabilities, access, categories, other conversations, or in-app storage | `conversation-mute.ts`; `conversation_mutes` table (opaque id, no FK out) |
+| Authorization | Institution policy = `settings.manage` (owner-only); user settings & mutes self-scoped; **no admin reach widened, no new permission** | `InstitutionNotificationSettingsController` (`@RequirePermission`); user routes `@Authenticated()` on `NotificationsController` |
+
+**Push stays a stub** (ADR 0013 / Q24 unchanged): `LoggingPushProvider` sends nothing; a real
+provider will read the same `channels.push` decision. **Still open (not resolved by this):** the
+push *provider* and lock-screen *preview* (Q24), the messaging-permission and parent parts of Q6,
+and any urgent-notification policy. The institution's actual schedule was **not** invented — the
+institution configures its own window.
+
+---
+
 > This register is advisory and reversible. Closing a question means: record an ADR in `decisions/`,
 > make the (usually small) change, and delete the entry from `open-questions.md` with the ADR number —
 > per that file's "How to close one."

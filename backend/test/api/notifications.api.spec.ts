@@ -74,6 +74,13 @@ describe('notifications API', () => {
       ['POST', '/notifications/read-all'],
       ['GET', '/notifications/preferences'],
       ['PATCH', '/notifications/preferences'],
+      ['GET', '/notifications/settings'],
+      ['PATCH', '/notifications/settings'],
+      ['GET', '/notifications/mutes'],
+      ['PUT', '/notifications/mutes/c-1'],
+      ['DELETE', '/notifications/mutes/c-1'],
+      ['GET', '/notifications/institution-settings'],
+      ['PUT', '/notifications/institution-settings'],
       ['POST', '/notifications/devices'],
       ['DELETE', '/notifications/devices/some-id'],
     ] as const) {
@@ -272,6 +279,157 @@ describe('notifications API', () => {
           })
         ).status,
       ).toBe(400);
+    });
+  });
+
+  describe('institution quiet-hours settings', () => {
+    it('are managed only by an administrator, and validated', async () => {
+      // A student may not read or change the institution policy.
+      expect(
+        (await r.api.call('GET', '/notifications/institution-settings', { token: bilal.token }))
+          .status,
+      ).toBe(403);
+      expect(
+        (
+          await r.api.call('PUT', '/notifications/institution-settings', {
+            token: bilal.token,
+            body: { enabled: true, start: '21:00', end: '07:00', timezone: 'Asia/Baghdad' },
+          })
+        ).status,
+      ).toBe(403);
+      // Nor the teacher — settings.manage is owner-only, and is not widened here.
+      expect(
+        (await r.api.call('GET', '/notifications/institution-settings', { token: teacher.token }))
+          .status,
+      ).toBe(403);
+
+      // The owner reads it (none yet), sets it, and reads it back.
+      const empty = await r.api.call('GET', '/notifications/institution-settings', {
+        token: r.owner.token,
+      });
+      expect(empty.status).toBe(200);
+      expect(empty.body).toEqual({ settings: null });
+
+      const put = await r.api.call('PUT', '/notifications/institution-settings', {
+        token: r.owner.token,
+        body: { enabled: true, start: '21:00', end: '07:00', timezone: 'Asia/Baghdad' },
+      });
+      expect(put.status).toBe(200);
+      expect(put.body).toEqual({
+        settings: { enabled: true, start: '21:00', end: '07:00', timezone: 'Asia/Baghdad' },
+      });
+      const read = await r.api.call('GET', '/notifications/institution-settings', {
+        token: r.owner.token,
+      });
+      expect(read.body).toEqual(put.body);
+
+      // A malformed time is rejected at the edge (400); a well-formed but
+      // non-IANA timezone, and a zero-length window, in the use case (422).
+      expect(
+        (
+          await r.api.call('PUT', '/notifications/institution-settings', {
+            token: r.owner.token,
+            body: { enabled: true, start: '9:00', end: '07:00', timezone: 'UTC' },
+          })
+        ).status,
+      ).toBe(400);
+      const badZone = await r.api.call('PUT', '/notifications/institution-settings', {
+        token: r.owner.token,
+        body: { enabled: true, start: '21:00', end: '07:00', timezone: '+03:00' },
+      });
+      expect(badZone.status).toBe(422);
+      expect(badZone.body).toMatchObject({ error: { code: 'notifications.timezone_invalid' } });
+    });
+  });
+
+  describe('a person’s own settings', () => {
+    it('are read and changed only for oneself, and validated', async () => {
+      const initial = await r.api.call('GET', '/notifications/settings', { token: khalid.token });
+      expect(initial.status).toBe(200);
+      expect(initial.body).toEqual({
+        timezone: null,
+        quietHoursMode: 'INHERIT',
+        quietHoursStart: null,
+        quietHoursEnd: null,
+      });
+
+      const changed = await r.api.call('PATCH', '/notifications/settings', {
+        token: khalid.token,
+        body: {
+          timezone: 'Asia/Baghdad',
+          quietHoursMode: 'CUSTOM',
+          quietHoursStart: '22:00',
+          quietHoursEnd: '06:00',
+        },
+      });
+      expect(changed.status).toBe(200);
+      expect(changed.body).toEqual({
+        timezone: 'Asia/Baghdad',
+        quietHoursMode: 'CUSTOM',
+        quietHoursStart: '22:00',
+        quietHoursEnd: '06:00',
+      });
+
+      // Another person is unaffected.
+      expect(
+        (await r.api.call('GET', '/notifications/settings', { token: bilal.token })).body,
+      ).toMatchObject({ timezone: null, quietHoursMode: 'INHERIT' });
+
+      // CUSTOM without a window is a use-case validation error (422).
+      const noWindow = await r.api.call('PATCH', '/notifications/settings', {
+        token: khalid.token,
+        body: { quietHoursMode: 'CUSTOM' },
+      });
+      expect(noWindow.status).toBe(422);
+      expect(noWindow.body).toMatchObject({
+        error: { code: 'notifications.quiet_hours_window_required' },
+      });
+      // A nonsense mode is rejected at the edge (400).
+      expect(
+        (
+          await r.api.call('PATCH', '/notifications/settings', {
+            token: khalid.token,
+            body: { quietHoursMode: 'WHENEVER' },
+          })
+        ).status,
+      ).toBe(400);
+    });
+  });
+
+  describe('conversation mutes', () => {
+    it('mute and unmute one’s own conversations, scoped to the caller', async () => {
+      const group = await r.group(teacher, [bilal], 'مجموعة الكتم');
+
+      const muted = await r.api.call('PUT', `/notifications/mutes/${group}`, {
+        token: bilal.token,
+      });
+      expect(muted.status).toBe(200);
+      expect(muted.body).toEqual({ conversationId: group, muted: true });
+
+      const list = await r.api.call('GET', '/notifications/mutes', { token: bilal.token });
+      expect(list.body.conversations).toEqual([
+        { conversationId: group, mutedAt: expect.any(String) },
+      ]);
+      // Idempotent.
+      expect(
+        (await r.api.call('PUT', `/notifications/mutes/${group}`, { token: bilal.token })).status,
+      ).toBe(200);
+
+      // Another person’s mute list is their own.
+      expect(
+        (await r.api.call('GET', '/notifications/mutes', { token: khalid.token })).body
+          .conversations,
+      ).toEqual([]);
+
+      const unmuted = await r.api.call('DELETE', `/notifications/mutes/${group}`, {
+        token: bilal.token,
+      });
+      expect(unmuted.status).toBe(200);
+      expect(unmuted.body).toEqual({ conversationId: group, muted: false });
+      expect(
+        (await r.api.call('GET', '/notifications/mutes', { token: bilal.token })).body
+          .conversations,
+      ).toEqual([]);
     });
   });
 

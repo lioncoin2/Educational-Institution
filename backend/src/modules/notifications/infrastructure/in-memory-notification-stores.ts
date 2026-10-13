@@ -1,15 +1,23 @@
 import { Injectable } from '@nestjs/common';
 
 import type { NotificationCategory } from '../contracts/vocabulary';
+import type { ConversationMute } from '../domain/conversation-mute';
 import type { Device, DeviceId, DeviceRegistration } from '../domain/device';
 import type { Notification } from '../domain/notification';
 import type {
+  ConversationMuteRepository,
   DeviceRepository,
   NotificationCursor,
   NotificationRepository,
+  NotificationSettingsRepository,
   PreferenceRepository,
 } from '../domain/ports';
 import type { ChannelPreferences, StoredPreferences } from '../domain/preferences';
+import {
+  DEFAULT_USER_NOTIFICATION_SETTINGS,
+  type InstitutionQuietHours,
+  type UserNotificationSettings,
+} from '../domain/quiet-hours';
 
 /** Newest first, ties by id — the order every list and boundary uses. */
 function newestFirst(a: NotificationCursor, b: NotificationCursor): number {
@@ -152,6 +160,91 @@ export class InMemoryPreferenceRepository implements PreferenceRepository {
     const stored = this.rows.get(userId) ?? new Map<NotificationCategory, ChannelPreferences>();
     stored.set(category, { ...preferences });
     this.rows.set(userId, stored);
+  }
+}
+
+@Injectable()
+export class InMemoryNotificationSettingsRepository implements NotificationSettingsRepository {
+  private institutionRow: InstitutionQuietHours | null = null;
+  private readonly users = new Map<string, UserNotificationSettings>();
+
+  async institution(): Promise<InstitutionQuietHours | null> {
+    return this.institutionRow;
+  }
+
+  async saveInstitution(settings: InstitutionQuietHours): Promise<void> {
+    this.institutionRow = {
+      enabled: settings.enabled,
+      window: { ...settings.window },
+      timezone: settings.timezone,
+    };
+  }
+
+  async settingsForUsers(
+    userIds: readonly string[],
+  ): Promise<ReadonlyMap<string, UserNotificationSettings>> {
+    const found = new Map<string, UserNotificationSettings>();
+    for (const userId of userIds) {
+      const stored = this.users.get(userId);
+      if (stored !== undefined) found.set(userId, stored);
+    }
+    return found;
+  }
+
+  async getUserSettings(userId: string): Promise<UserNotificationSettings> {
+    return this.users.get(userId) ?? DEFAULT_USER_NOTIFICATION_SETTINGS;
+  }
+
+  async saveUserSettings(userId: string, settings: UserNotificationSettings): Promise<void> {
+    this.users.set(userId, settings);
+  }
+}
+
+@Injectable()
+export class InMemoryConversationMuteRepository implements ConversationMuteRepository {
+  /** userId -> conversationId -> mutedAt */
+  private readonly rows = new Map<string, Map<string, Date>>();
+
+  async mutedConversationsForUsers(
+    userIds: readonly string[],
+  ): Promise<ReadonlyMap<string, ReadonlySet<string>>> {
+    const found = new Map<string, ReadonlySet<string>>();
+    for (const userId of userIds) {
+      const stored = this.rows.get(userId);
+      if (stored !== undefined && stored.size > 0) found.set(userId, new Set(stored.keys()));
+    }
+    return found;
+  }
+
+  async listMuted(userId: string): Promise<readonly ConversationMute[]> {
+    const stored = this.rows.get(userId);
+    if (stored === undefined) return [];
+    return [...stored.entries()]
+      .map(([conversationId, mutedAt]) => ({ conversationId, mutedAt }))
+      .sort(
+        (a, b) =>
+          b.mutedAt.getTime() - a.mutedAt.getTime() ||
+          (a.conversationId < b.conversationId ? 1 : a.conversationId > b.conversationId ? -1 : 0),
+      );
+  }
+
+  async mute(
+    userId: string,
+    conversationId: string,
+    at: Date,
+  ): Promise<{ readonly created: boolean }> {
+    const stored = this.rows.get(userId) ?? new Map<string, Date>();
+    this.rows.set(userId, stored);
+    if (stored.has(conversationId)) return { created: false };
+    stored.set(conversationId, at);
+    return { created: true };
+  }
+
+  async unmute(userId: string, conversationId: string): Promise<{ readonly removed: boolean }> {
+    const stored = this.rows.get(userId);
+    if (stored === undefined || !stored.has(conversationId)) return { removed: false };
+    stored.delete(conversationId);
+    return { removed: true };
   }
 }
 

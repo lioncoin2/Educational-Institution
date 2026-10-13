@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 
@@ -16,6 +17,11 @@ import { CurrentPrincipal } from '../../../platform/http/current-principal.decor
 import { unwrap } from '../../../platform/http/http-failure';
 import type { CallMetadata, Principal } from '../../../shared';
 import { Authenticated } from '../../identity/contracts/route-access';
+import {
+  ListMutedConversationsUseCase,
+  MuteConversationUseCase,
+  UnmuteConversationUseCase,
+} from '../application/conversation-mute.use-cases';
 import { RegisterDeviceUseCase, UnregisterDeviceUseCase } from '../application/devices.use-cases';
 import {
   CountUnreadNotificationsUseCase,
@@ -28,19 +34,28 @@ import {
   UpdateNotificationPreferencesUseCase,
 } from '../application/preferences.use-cases';
 import {
+  GetUserNotificationSettingsUseCase,
+  UpdateUserNotificationSettingsUseCase,
+} from '../application/user-notification-settings.use-cases';
+import {
   ListNotificationsQuery,
   MarkAllReadDto,
   RegisterDeviceDto,
   UpdatePreferencesDto,
+  UpdateUserNotificationSettingsDto,
 } from './dto/notifications.dto';
 import {
   toDeviceResponse,
+  toMutedConversationsResponse,
   toNotificationResponse,
   toPreferencesResponse,
   toUnreadCountResponse,
+  toUserNotificationSettingsResponse,
   type DeviceResponse,
+  type MutedConversationsResponse,
   type NotificationResponse,
   type PreferencesResponse,
+  type UserNotificationSettingsResponse,
 } from './responses';
 
 /**
@@ -63,6 +78,11 @@ export class NotificationsController {
     private readonly markAllRead: MarkAllNotificationsReadUseCase,
     private readonly getPreferences: GetNotificationPreferencesUseCase,
     private readonly updatePreferences: UpdateNotificationPreferencesUseCase,
+    private readonly getSettings: GetUserNotificationSettingsUseCase,
+    private readonly updateSettings: UpdateUserNotificationSettingsUseCase,
+    private readonly listMuted: ListMutedConversationsUseCase,
+    private readonly muteConversation: MuteConversationUseCase,
+    private readonly unmuteConversation: UnmuteConversationUseCase,
     private readonly registerDevice: RegisterDeviceUseCase,
     private readonly unregisterDevice: UnregisterDeviceUseCase,
   ) {}
@@ -140,6 +160,66 @@ export class NotificationsController {
         }),
       ),
     );
+  }
+
+  /** The caller's own timezone and quiet-hours choice. */
+  @Get('settings')
+  @Authenticated()
+  async settings(
+    @CurrentPrincipal() principal: Principal,
+  ): Promise<UserNotificationSettingsResponse> {
+    return toUserNotificationSettingsResponse(
+      unwrap(await this.getSettings.execute({ principal })),
+    );
+  }
+
+  /** Changes the caller's own timezone and/or quiet-hours choice. */
+  @Patch('settings')
+  @Authenticated()
+  async changeSettings(
+    @CurrentPrincipal() principal: Principal,
+    @Body() dto: UpdateUserNotificationSettingsDto,
+  ): Promise<UserNotificationSettingsResponse> {
+    return toUserNotificationSettingsResponse(
+      unwrap(
+        await this.updateSettings.execute({
+          principal,
+          timezone: dto.timezone,
+          quietHoursMode: dto.quietHoursMode as 'INHERIT' | 'DISABLED' | 'CUSTOM' | undefined,
+          quietHoursStart: dto.quietHoursStart,
+          quietHoursEnd: dto.quietHoursEnd,
+        }),
+      ),
+    );
+  }
+
+  /** The caller's own muted conversations, newest first. */
+  @Get('mutes')
+  @Authenticated()
+  async mutes(@CurrentPrincipal() principal: Principal): Promise<MutedConversationsResponse> {
+    return toMutedConversationsResponse(unwrap(await this.listMuted.execute({ principal })));
+  }
+
+  /** Mutes a conversation's push for the caller. Idempotent. */
+  @Put('mutes/:conversationId')
+  @Authenticated()
+  @HttpCode(HttpStatus.OK)
+  async mute(
+    @CurrentPrincipal() principal: Principal,
+    @Param('conversationId') conversationId: string,
+  ): Promise<{ conversationId: string; muted: boolean }> {
+    return unwrap(await this.muteConversation.execute({ principal, conversationId }));
+  }
+
+  /** Unmutes a conversation for the caller. Idempotent. */
+  @Delete('mutes/:conversationId')
+  @Authenticated()
+  @HttpCode(HttpStatus.OK)
+  async unmute(
+    @CurrentPrincipal() principal: Principal,
+    @Param('conversationId') conversationId: string,
+  ): Promise<{ conversationId: string; muted: boolean }> {
+    return unwrap(await this.unmuteConversation.execute({ principal, conversationId }));
   }
 
   /** Registers (or refreshes) this device for the caller. The token is never echoed back. */

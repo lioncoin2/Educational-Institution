@@ -10,9 +10,10 @@ detailed sources rather than copying them.
 sequencing*; it does not make product-policy or engineering decisions — those live in the
 ADRs (immutable) and the owner-decision register.
 
-**Last updated.** 2026-10-13 (Sprint 32 — owner membership/capability policy recorded, ADR 0035;
-Q50 fully resolved; one regression test; no product feature code changed). Prior reconciliation: Sprint 31.
-**Current verified HEAD.** `2140a4d` (Sprint 31) at the start of Sprint 32; this Sprint 32 update commits
+**Last updated.** 2026-10-13 (Sprint 35 — Q6 quiet hours & per-conversation mute implemented, ADR 0036,
+register §21; migration 0022; backend feature, push stays a stub). Prior: Sprint 34 (read-only Q6 decision
+sheet, no commit); Sprint 33 owner decision brief; Sprint 32 ADR 0035 (Q50 resolved).
+**Current verified HEAD.** `3396f77` (Sprint 33) at the start of Sprint 35; this Sprint 35 update commits
 on top of it. Branch `claude/quranic-education-app-prototype-gkzle8`, in sync with origin. Always re-verify
 with `git rev-parse HEAD` / `git status` — this file is a reversible snapshot, not a substitute for git.
 
@@ -160,7 +161,9 @@ whether the next action is engineering / owner-decision / external-op / testing 
 9. **P12 screen-audio share / webhook accelerators** — remaining: an owner policy decision. Source: §25, ADR 0028. Next: **owner-decision**.
 10. **Q28 residue** — academic/future notification categories, parent-of-child visibility, collapsing specifics,
     guaranteed delivery (outbox T2). Source: ADR 0024 "deferred sub-decisions". Next: **owner-decision** + (delivery → P11).
-11. **GROUP A residue** — parent messaging, quiet hours (Q6). Source: register §A. Next: **owner-decision**.
+11. **GROUP A residue** — parent messaging and the messaging-permission parts of Q6 stay **owner-decision**.
+    Quiet hours + per-conversation mute are **BUILT** (Sprint 35, ADR 0036, register §21): institution
+    window + full per-user override, push-only, no urgent bypass. Source: register §A/§21.
 12. **Q68 attendance observation rule** — `NEEDS-REAUDIT`: the open-questions Q68 banner still reads
     "open/provisional" while attendance landed under ADR 0023; confirm whether the provisional rule is the
     accepted one or a decision is outstanding. Source: open-questions Q68, `attendance.md §23`, ADR 0023.
@@ -171,8 +174,8 @@ whether the next action is engineering / owner-decision / external-op / testing 
 ## 7. Critical path (ordered dependencies)
 
 1. **Owner decisions** (no engineering prerequisite; highest unlock): GROUP C/D/G product policy; GROUP A
-   residue (Q6); Q28 residue; P12 screen-audio. These gate every new product loop. *(Q50 A–E is now
-   decided — ADR 0035 — and needs no further action.)*
+   residue (Q6 — parent/messaging-permission parts only; quiet hours + mute now decided & built, ADR 0036);
+   Q28 residue; P12 screen-audio. These gate every new product loop. *(Q50 A–E is decided — ADR 0035.)*
 2. **P8 capacity evidence** (external-operational; owner lifts the "until real users" deferral): execute
    the ladder on real hardware → **unblocks P11**.
 3. **P11 horizontal scaling** (engineering, *after* P8 evidence + a load trigger).
@@ -196,7 +199,8 @@ new defect evidence.
 | Q68 — what counts as present | **NEEDS-REAUDIT** (banner reads open; attendance landed under ADR 0023) | open-questions Q68 |
 | Q37 / Q9 / Q38 — assessment, mastery, «ضخ», certificates | **OPEN** — must NOT be invented | register GROUP C |
 | Q70 / Q71 / Q72 — attendance operations/automation/reporting | **OPEN** | register GROUP G |
-| Q6 — parent messaging, quiet hours | **OPEN** | register GROUP A |
+| Q6 — quiet hours & conversation mute | **RESOLVED & BUILT** (Sprint 35, ADR 0036): institution window + full per-user override, push-only, no urgent bypass; migration 0022 | **ADR 0036**; register §21 |
+| Q6 — parent messaging & messaging-permission residue | **OPEN** | register GROUP A |
 | **Q50 Policy A–E** — enrollment ↔ membership & derived capabilities | **RESOLVED (as NO)** — owner decided enrollment neither creates nor removes membership; membership stays explicit; membership ≠ admin capabilities; modules stay separate (Sprint 32) | **ADR 0035**; register §20 |
 
 Reconciliation note: the Q50 enrollment-membership / derived-capability question (ADR 0034, deferred
@@ -263,6 +267,20 @@ evidence-grounded, and the checkpoint/register are consistent with HEAD — no p
 ---
 
 ## 12. Change log & reconciled discrepancies
+
+**Sprint 35.** Implemented the quiet-hours and per-conversation-mute parts of Q6/Q24
+([ADR 0036](architecture/decisions/0036-quiet-hours-and-conversation-mute.md), register §21). A
+mandatory governance gate first established: no immutable-ADR conflict (ADR 0013 lossless inbox +
+best-effort delivery preserved, realtime untouched), no existing per-user timezone, and a stable
+conversation identity for mute (the notification target). The owner then answered the two unsettled
+policy points — **full** user override and **institution-timezone fallback** for a missing/invalid
+user zone. Built additively: migration 0022 (institution settings singleton, per-user settings,
+conversation mutes — all opaque ids, no FK out); push-only suppression decided in the dispatcher and
+carried on `channels.push`; `settings.manage` (owner-only) for institution policy, self-scoped user
+settings/mutes, **no new permission**. Push remains a stub (no provider integrated). Academic
+enrollment, community membership and authorization policy unchanged. Full test suite added (domain
+DST/overnight/override/fallback, dispatcher push-only, mute scoping, API authz/validation, Postgres
+schema + concurrency + migration). **Sprint 34** was a read-only Q6 decision sheet (no commit).
 
 **Sprint 32.** Recorded the owner's membership/capability policy (A–E) in
 [ADR 0035](architecture/decisions/0035-community-membership-governance-separation.md) (supersedes ADR

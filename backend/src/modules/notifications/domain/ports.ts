@@ -1,7 +1,9 @@
 import type { NotificationCategory } from '../contracts/vocabulary';
+import type { ConversationMute } from './conversation-mute';
 import type { Device, DeviceId, DeviceRegistration } from './device';
 import type { Notification, NotificationId } from './notification';
 import type { ChannelPreferences, StoredPreferences } from './preferences';
+import type { InstitutionQuietHours, UserNotificationSettings } from './quiet-hours';
 
 /** A position in one person's list: newest first, ties broken by id. */
 export interface NotificationCursor {
@@ -103,8 +105,54 @@ export interface DeviceRepository {
   disable(id: DeviceId, at: Date): Promise<void>;
 }
 
+/**
+ * The institution-wide quiet-hours policy and each person's own settings
+ * (their timezone and quiet-hours override). The institution row is a
+ * singleton; a person with no row uses the defaults
+ * (`DEFAULT_USER_NOTIFICATION_SETTINGS`), so a new account costs nothing here.
+ */
+export interface NotificationSettingsRepository {
+  /** The institution policy, or null when none has been configured. */
+  institution(): Promise<InstitutionQuietHours | null>;
+  /** Stores the institution policy (one row), recording who last changed it. */
+  saveInstitution(
+    settings: InstitutionQuietHours,
+    at: Date,
+    updatedBy: string | null,
+  ): Promise<void>;
+  /** Settings of each person among `userIds`; people with none are absent. */
+  settingsForUsers(
+    userIds: readonly string[],
+  ): Promise<ReadonlyMap<string, UserNotificationSettings>>;
+  /** One person's settings, the defaults when they have set none. */
+  getUserSettings(userId: string): Promise<UserNotificationSettings>;
+  saveUserSettings(userId: string, settings: UserNotificationSettings, at: Date): Promise<void>;
+}
+
+/**
+ * Per-person, per-conversation mutes. Every read and write is scoped to ONE
+ * person — there is no method that reads or changes another's. A mute is
+ * opaque: the conversation id is stored as given, exactly as a notification's
+ * target carries it, and notifications holds no constraint on messaging's
+ * tables.
+ */
+export interface ConversationMuteRepository {
+  /** The set of conversation ids each person has muted; people with none are absent. */
+  mutedConversationsForUsers(
+    userIds: readonly string[],
+  ): Promise<ReadonlyMap<string, ReadonlySet<string>>>;
+  /** One person's muted conversations, newest first. */
+  listMuted(userId: string): Promise<readonly ConversationMute[]>;
+  /** Mutes a conversation for a person; idempotent. `created` false if already muted. */
+  mute(userId: string, conversationId: string, at: Date): Promise<{ readonly created: boolean }>;
+  /** Unmutes; `removed` false when it was not muted. */
+  unmute(userId: string, conversationId: string): Promise<{ readonly removed: boolean }>;
+}
+
 export const NOTIFICATION_REPOSITORY = Symbol('NOTIFICATION_REPOSITORY');
 export const PREFERENCE_REPOSITORY = Symbol('PREFERENCE_REPOSITORY');
 export const DEVICE_REPOSITORY = Symbol('DEVICE_REPOSITORY');
+export const NOTIFICATION_SETTINGS_REPOSITORY = Symbol('NOTIFICATION_SETTINGS_REPOSITORY');
+export const CONVERSATION_MUTE_REPOSITORY = Symbol('CONVERSATION_MUTE_REPOSITORY');
 
 export type { NotificationId };

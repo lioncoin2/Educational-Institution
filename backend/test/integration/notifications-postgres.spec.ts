@@ -2,8 +2,10 @@ import { sql } from 'drizzle-orm';
 
 import { asId, type Principal } from '../../src/shared';
 import type { NotificationRequest } from '../../src/modules/notifications/domain/notification';
+import { DrizzleConversationMuteRepository } from '../../src/modules/notifications/infrastructure/drizzle-conversation-mute-repository';
 import { DrizzleDeviceRepository } from '../../src/modules/notifications/infrastructure/drizzle-device-repository';
 import { DrizzleNotificationRepository } from '../../src/modules/notifications/infrastructure/drizzle-notification-repository';
+import { DrizzleNotificationSettingsRepository } from '../../src/modules/notifications/infrastructure/drizzle-notification-settings-repository';
 import { DrizzlePreferenceRepository } from '../../src/modules/notifications/infrastructure/drizzle-preference-repository';
 import { expectOk } from '../support/identity-harness';
 import {
@@ -41,12 +43,15 @@ describeWithPostgres('notifications on Postgres', () => {
 
   beforeEach(async () => {
     await scratch.db.execute(
-      sql`truncate notifications, notification_preferences, notification_devices`,
+      sql`truncate notifications, notification_preferences, notification_devices,
+          institution_notification_settings, user_notification_settings, conversation_mutes`,
     );
     h = await notificationsHarness({
       notifications: new DrizzleNotificationRepository(scratch.db),
       preferences: new DrizzlePreferenceRepository(scratch.db),
       devices: new DrizzleDeviceRepository(scratch.db),
+      settings: new DrizzleNotificationSettingsRepository(scratch.db),
+      mutes: new DrizzleConversationMuteRepository(scratch.db),
     });
     ali = h.messaging.person('STUDENT', 'علي');
     sara = h.messaging.person('STUDENT', 'سارة');
@@ -292,6 +297,155 @@ describeWithPostgres('notifications on Postgres', () => {
       expect(h.eventsNamed('notifications.notification.created')[0]?.payload).toMatchObject({
         channels: { realtime: false, push: false },
       });
+    });
+  });
+
+  describe('quiet hours and mutes on Postgres', () => {
+    /** 'HH:MM' for a minute-of-day, wrapping across midnight. */
+    const hhmm = (totalMinutes: number): string => {
+      const m = ((totalMinutes % 1440) + 1440) % 1440;
+      return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    };
+    const nowUtc = () => {
+      const now = h.clock.now();
+      return now.getUTCHours() * 60 + now.getUTCMinutes();
+    };
+
+    it('has the settings and mute constraints the design relies on, and no foreign key out', async () => {
+      const constraints = await rows<{ conname: string }>(sql`
+        select conname from pg_constraint
+        where conrelid in ('institution_notification_settings'::regclass,
+                           'user_notification_settings'::regclass, 'conversation_mutes'::regclass)`);
+      expect(constraints.map((c) => c.conname)).toEqual(
+        expect.arrayContaining([
+          'institution_notification_settings_singleton',
+          'institution_notification_settings_window_nonempty',
+          'user_notification_settings_mode_valid',
+          'user_notification_settings_custom_window',
+          'conversation_mutes_user_id_conversation_id_pk',
+          'conversation_mutes_conversation_id_length',
+        ]),
+      );
+      const foreign = await rows<{ conname: string }>(sql`
+        select conname from pg_constraint where contype = 'f'
+          and conrelid in ('institution_notification_settings'::regclass,
+                           'user_notification_settings'::regclass, 'conversation_mutes'::regclass)`);
+      expect(foreign).toEqual([]);
+    });
+
+    it('refuses what the domain would never write', async () => {
+      const violated = async (statement: ReturnType<typeof sql>): Promise<string | null> => {
+        try {
+          await scratch.db.execute(statement);
+          return null;
+        } catch (error) {
+          for (let e: unknown = error; e !== undefined && e !== null;) {
+            const candidate = e as { constraint?: string; cause?: unknown };
+            if (typeof candidate.constraint === 'string') return candidate.constraint;
+            e = candidate.cause;
+          }
+          throw error;
+        }
+      };
+      // A second institution row is impossible — only id 'institution' is allowed.
+      expect(
+        await violated(sql`insert into institution_notification_settings
+          (id, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, timezone, updated_at)
+          values ('other', true, '21:00', '07:00', 'UTC', now())`),
+      ).toBe('institution_notification_settings_singleton');
+      // A custom window must carry both bounds.
+      expect(
+        await violated(sql`insert into user_notification_settings
+          (user_id, timezone, quiet_hours_mode, quiet_hours_start, quiet_hours_end, updated_at)
+          values ('u', null, 'CUSTOM', null, null, now())`),
+      ).toBe('user_notification_settings_custom_window');
+      // An unknown mode is refused.
+      expect(
+        await violated(sql`insert into user_notification_settings
+          (user_id, timezone, quiet_hours_mode, updated_at) values ('u2', null, 'WHENEVER', now())`),
+      ).toBe('user_notification_settings_mode_valid');
+    });
+
+    it('keeps one institution row and one row per person, changed in place', async () => {
+      expectOk(
+        await h.updateInstitutionSettings.execute({
+          principal: ali,
+          enabled: true,
+          start: '21:00',
+          end: '07:00',
+          timezone: 'Asia/Baghdad',
+        }),
+      );
+      expectOk(
+        await h.updateInstitutionSettings.execute({
+          principal: ali,
+          enabled: false,
+          start: '22:00',
+          end: '06:00',
+          timezone: 'UTC',
+        }),
+      );
+      const institution = await rows(
+        sql`select id, quiet_hours_enabled, quiet_hours_start, timezone from institution_notification_settings`,
+      );
+      expect(institution).toEqual([
+        {
+          id: 'institution',
+          quiet_hours_enabled: false,
+          quiet_hours_start: '22:00',
+          timezone: 'UTC',
+        },
+      ]);
+
+      expectOk(await h.updateSettings.execute({ principal: ali, timezone: 'UTC' }));
+      expectOk(await h.updateSettings.execute({ principal: ali, quietHoursMode: 'DISABLED' }));
+      const user = await rows(
+        sql`select user_id, timezone, quiet_hours_mode from user_notification_settings`,
+      );
+      expect(user).toEqual([
+        { user_id: ali.userId, timezone: 'UTC', quiet_hours_mode: 'DISABLED' },
+      ]);
+    });
+
+    it('suppresses push through the real adapters inside the institution window, keeping the record', async () => {
+      expectOk(
+        await h.updateInstitutionSettings.execute({
+          principal: ali,
+          enabled: true,
+          start: hhmm(nowUtc() - 60),
+          end: hhmm(nowUtc() + 60),
+          timezone: 'UTC',
+        }),
+      );
+      await h.dispatcher.dispatch([messageRequest(sara.userId, 'm-1')]);
+      expect(h.eventsNamed('notifications.notification.created')[0]?.payload).toMatchObject({
+        channels: { realtime: true, push: false },
+      });
+      const [count] = await rows<{ n: number }>(
+        sql`select count(*)::int as n from notifications where recipient_user_id = ${sara.userId}`,
+      );
+      expect(count?.n).toBe(1); // stored regardless
+    });
+
+    it('mutes one conversation concurrently into exactly one row, and unmutes it', async () => {
+      await Promise.all(
+        Array.from({ length: 10 }, () => h.mute.execute({ principal: ali, conversationId: 'c-1' })),
+      );
+      const [count] = await rows<{ n: number }>(
+        sql`select count(*)::int as n from conversation_mutes where user_id = ${ali.userId}`,
+      );
+      expect(count?.n).toBe(1);
+
+      await h.dispatcher.dispatch([messageRequest(ali.userId, 'm-1', 'c-1')]);
+      expect(h.eventsNamed('notifications.notification.created')[0]?.payload).toMatchObject({
+        channels: { realtime: true, push: false },
+      });
+
+      expectOk(await h.unmute.execute({ principal: ali, conversationId: 'c-1' }));
+      const [after] = await rows<{ n: number }>(
+        sql`select count(*)::int as n from conversation_mutes where user_id = ${ali.userId}`,
+      );
+      expect(after?.n).toBe(0);
     });
   });
 

@@ -21,10 +21,15 @@ in-memory). Product scope is the owner's; engineering never invents institutiona
 ## Repository state (verify before trusting)
 
 - **Branch:** `claude/quranic-education-app-prototype-gkzle8`
-- **HEAD:** `f13f09c` (Sprint 32 — owner membership policy / ADR 0035) at the start of Sprint 33; Sprint 33
-  commits the owner **decision brief** (docs only, no product code) on top (re-verify with `git rev-parse HEAD`).
+- **HEAD:** `3396f77` (Sprint 33 — owner decision brief) at the start of Sprint 35; Sprint 35 commits the
+  **Q6 quiet-hours + conversation-mute implementation** (backend feature + migration 0022 + ADR 0036) on
+  top (re-verify with `git rev-parse HEAD`). Sprint 34 was a read-only Q6 decision sheet (no commit).
   **In sync with `origin`.**
-- **Latest work, newest first:** Sprint 33 owner decision brief for the gated product loop
+- **Latest work, newest first:** Sprint 35 Q6 quiet hours & per-conversation mute — institution window +
+  **full** per-user override + per-user timezone, **push-only** suppression (in-app lossless, realtime
+  untouched, no urgent bypass), ADR 0036, register §21, migration 0022; push stays a stub; `settings.manage`
+  (owner-only) for institution policy, self-scoped user settings/mutes, no new permission. Sprint 34 read-only
+  Q6 decision sheet (no commit); Sprint 33 owner decision brief for the gated product loop
   `docs/owner-decision-brief-product-loop.md` (GROUP C/D/G + Q6 + Q28; **recommendations pending owner
   approval**, nothing resolved); Sprint 32 owner membership/capability policy (Policy A–E) recorded, ADR
   0035, **Q50 fully resolved** (enrollment→membership/derived-caps decided NO); Sprint 31 master roadmap
@@ -35,8 +40,8 @@ in-memory). Product scope is the owner's; engineering never invents institutiona
   LiveKit web activation (`76e8e48`); Sprint 19 secure sessions (`89a8879`); before that the live-media
   programme. Full verified ledger (SHAs + CI run IDs): [`docs/project-roadmap.md §4`](project-roadmap.md).
   Use `git log --oneline` for the authoritative history, not this file.
-- **Date reconciled:** 2026-10-13 (Sprint 33 — owner decision brief for GROUP C/D/G + Q6 + Q28, docs only,
-  recommendations pending approval, nothing resolved. Prior: Sprint 32 membership policy / ADR 0035).
+- **Date reconciled:** 2026-10-13 (Sprint 35 — Q6 quiet hours & conversation mute implemented, ADR 0036,
+  migration 0022; backend feature, push stub. Prior: Sprint 34 read-only Q6 sheet; Sprint 33 decision brief).
 - **Preserved local working-tree changes (do NOT overwrite):** four owner-maintained files remain modified
   and intentionally uncommitted — `backend/src/platform/health/health.controller.ts` (+ its new
   `health.controller.spec.ts`, a DB-readiness probe, observability.md §3), `docs/architecture/observability.md`,
@@ -81,7 +86,11 @@ silently invent institutional rules — record unknowns as deferred.
   investigation; status superseded by 0035),
   **0035** (Sprint 32, **owner decision**: enrollment, membership and capabilities stay separate —
   enrollment never creates/removes membership, source stays explicit, membership ≠ admin capabilities;
-  **Q50 fully resolved**). Table: `.../decisions/README.md`.
+  **Q50 fully resolved**),
+  **0036** (Sprint 35, **owner decision**: Q6 quiet hours & per-conversation mute — institution window +
+  **full** per-user override, evaluated DST-aware in the user's timezone or the institution's as fallback;
+  **push only**, no urgent bypass; `settings.manage` for institution policy, self-scoped user settings/mutes;
+  migration 0022; push stays a stub). Table: `.../decisions/README.md`.
 - **Live-media verification log:** [`docs/p8-live-media-verification.md`](p8-live-media-verification.md).
   **Messaging/attachments + client dependencies:** [`docs/architecture/messaging.md`](architecture/messaging.md),
   [`docs/architecture/live.md`](architecture/live.md) §17.
@@ -109,7 +118,7 @@ or capabilities (by owner decision) |
 | Live-session control plane (hands, moderation roster, presenter grants, kick, reset) | **Implemented+verified** | P12; HTTP control plane, server-authoritative |
 | Live media (join/mic/screen on web) | **Implemented, partially verified** | Sprint 20 — activated on web; see below |
 | Attendance (record + view) | **Implemented+verified** (EXPLAIN-at-scale deferred) | backend write/view + full Flutter surface; ADR 0023 |
-| Notifications & preferences | **Implemented+verified** (push delivery external-gated) | list/read/badge/preferences/device-registration; P10 translators (ADRs 0024/0025) |
+| Notifications & preferences | **Implemented+verified** (push delivery external-gated) | list/read/badge/preferences/device-registration; P10 translators (ADRs 0024/0025); **quiet hours + per-conversation mute** (Sprint 35, ADR 0036): institution window + full per-user override + per-user timezone, push-only suppression decided in the dispatcher (`channels.push`), self-scoped settings/mutes + `settings.manage` institution policy, migration 0022 — push itself still a stub |
 | Academic **read** stack | **Implemented+verified** | catalog/profile read surfaces only — NOT the learning loop |
 | Progress, assessment, mastery/promotion, certificates, assignments, announcements/feed, owner operations | **Owner-decision-gated** | NOT implemented as a product loop; policy must not be invented — register groups C/D/G |
 

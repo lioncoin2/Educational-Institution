@@ -5,6 +5,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -67,6 +68,58 @@ export class UpdatePreferencesDto {
   @IsOptional()
   @IsBoolean()
   push?: boolean;
+}
+
+/** 'HH:MM', 24-hour — the wire shape of a quiet-hours boundary. */
+const TIME_OF_DAY = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+const QUIET_HOURS_MODES = ['INHERIT', 'DISABLED', 'CUSTOM'] as const;
+
+/**
+ * The institution quiet-hours policy. The window and timezone are always
+ * carried, even when disabled, so they are not lost when it is turned off.
+ */
+export class UpdateInstitutionSettingsDto {
+  @IsBoolean()
+  enabled!: boolean;
+
+  @IsString()
+  @Matches(TIME_OF_DAY, { message: 'start must be HH:MM, 24-hour' })
+  start!: string;
+
+  @IsString()
+  @Matches(TIME_OF_DAY, { message: 'end must be HH:MM, 24-hour' })
+  end!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  timezone!: string;
+}
+
+/**
+ * A person's own settings. A PATCH: every field is optional and an absent one
+ * is kept. `timezone: null` clears it; `quietHoursStart`/`End` are only for a
+ * CUSTOM mode.
+ */
+export class UpdateUserNotificationSettingsDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  timezone?: string | null;
+
+  @IsOptional()
+  @IsIn(QUIET_HOURS_MODES)
+  quietHoursMode?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(TIME_OF_DAY, { message: 'quietHoursStart must be HH:MM, 24-hour' })
+  quietHoursStart?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(TIME_OF_DAY, { message: 'quietHoursEnd must be HH:MM, 24-hour' })
+  quietHoursEnd?: string;
 }
 
 export class RegisterDeviceDto {

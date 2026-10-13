@@ -3,6 +3,11 @@ import { UuidIdGenerator } from '../../src/platform/primitives/uuid-id-generator
 import { InMemoryRateLimiter } from '../../src/platform/rate-limit/in-memory-rate-limiter';
 import type { DomainEvent, EventPublisher, Principal } from '../../src/shared';
 import {
+  ListMutedConversationsUseCase,
+  MuteConversationUseCase,
+  UnmuteConversationUseCase,
+} from '../../src/modules/notifications/application/conversation-mute.use-cases';
+import {
   RegisterDeviceUseCase,
   UnregisterDeviceUseCase,
 } from '../../src/modules/notifications/application/devices.use-cases';
@@ -12,6 +17,10 @@ import {
   MarkAllNotificationsReadUseCase,
   MarkNotificationReadUseCase,
 } from '../../src/modules/notifications/application/inbox.use-cases';
+import {
+  GetInstitutionNotificationSettingsUseCase,
+  UpdateInstitutionNotificationSettingsUseCase,
+} from '../../src/modules/notifications/application/institution-settings.use-cases';
 import { MessagingNotificationTranslator } from '../../src/modules/notifications/application/messaging-notification.translator';
 import { NotificationDispatcher } from '../../src/modules/notifications/application/notification-dispatcher';
 import { NotificationReaderService } from '../../src/modules/notifications/application/notification-reader.service';
@@ -23,11 +32,18 @@ import {
   PushDelivery,
   type PushDeliverySettings,
 } from '../../src/modules/notifications/application/push-delivery';
+import { PushSuppressionGate } from '../../src/modules/notifications/application/push-suppression';
+import {
+  GetUserNotificationSettingsUseCase,
+  UpdateUserNotificationSettingsUseCase,
+} from '../../src/modules/notifications/application/user-notification-settings.use-cases';
 import type { NotificationView } from '../../src/modules/notifications/application/views';
 import type { NotificationRequest } from '../../src/modules/notifications/domain/notification';
 import type {
+  ConversationMuteRepository,
   DeviceRepository,
   NotificationRepository,
+  NotificationSettingsRepository,
   PreferenceRepository,
 } from '../../src/modules/notifications/domain/ports';
 import type {
@@ -37,8 +53,10 @@ import type {
   PushProvider,
 } from '../../src/modules/notifications/domain/push';
 import {
+  InMemoryConversationMuteRepository,
   InMemoryDeviceRepository,
   InMemoryNotificationRepository,
+  InMemoryNotificationSettingsRepository,
   InMemoryPreferenceRepository,
 } from '../../src/modules/notifications/infrastructure/in-memory-notification-stores';
 import { RecordingAuditLog, RecordingEvents, expectOk } from './identity-harness';
@@ -117,6 +135,8 @@ export async function notificationsHarness(
     readonly notifications?: NotificationRepository;
     readonly preferences?: PreferenceRepository;
     readonly devices?: DeviceRepository;
+    readonly settings?: NotificationSettingsRepository;
+    readonly mutes?: ConversationMuteRepository;
     readonly push?: FakePushProvider;
   } = {},
 ) {
@@ -144,10 +164,13 @@ export async function notificationsHarness(
   const notifications = options.notifications ?? new InMemoryNotificationRepository();
   const preferences = options.preferences ?? new InMemoryPreferenceRepository();
   const devices = options.devices ?? new InMemoryDeviceRepository();
+  const settings = options.settings ?? new InMemoryNotificationSettingsRepository();
+  const mutes = options.mutes ?? new InMemoryConversationMuteRepository();
   const push = options.push ?? new FakePushProvider();
   const audit = new RecordingAuditLog();
   const limiter = new InMemoryRateLimiter(clock);
   const ids = new UuidIdGenerator();
+  const pushSuppression = new PushSuppressionGate(settings, mutes);
 
   const dispatcher = new NotificationDispatcher(
     notifications,
@@ -156,6 +179,7 @@ export async function notificationsHarness(
     events,
     clock,
     ids,
+    pushSuppression,
   );
   const translator = new MessagingNotificationTranslator(
     bus,
@@ -177,10 +201,13 @@ export async function notificationsHarness(
     notifications,
     preferences,
     devices,
+    settings,
+    mutes,
     push,
     audit,
     limiter,
     dispatcher,
+    pushSuppression,
     translator,
     pushDelivery,
     reader: new NotificationReaderService(notifications),
@@ -190,6 +217,13 @@ export async function notificationsHarness(
     markAllRead: new MarkAllNotificationsReadUseCase(notifications, events, clock),
     getPreferences: new GetNotificationPreferencesUseCase(preferences),
     updatePreferences: new UpdateNotificationPreferencesUseCase(preferences, clock),
+    getSettings: new GetUserNotificationSettingsUseCase(settings),
+    updateSettings: new UpdateUserNotificationSettingsUseCase(settings, clock),
+    getInstitutionSettings: new GetInstitutionNotificationSettingsUseCase(settings),
+    updateInstitutionSettings: new UpdateInstitutionNotificationSettingsUseCase(settings, clock),
+    listMuted: new ListMutedConversationsUseCase(mutes),
+    mute: new MuteConversationUseCase(mutes, clock),
+    unmute: new UnmuteConversationUseCase(mutes),
     registerDevice: new RegisterDeviceUseCase(devices, push, limiter, audit, clock, ids),
     unregisterDevice: new UnregisterDeviceUseCase(devices, push, audit, clock),
 

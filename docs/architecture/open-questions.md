@@ -191,7 +191,15 @@ reply in conversations staff place them in. Anyone ACTIVE with
 
 Still open: may students message each other or a teacher of their choosing?
 Should a teacher reach only *their own* students (an academic relationship the
-academic module does not model yet)? Quiet hours? Parents?
+academic module does not model yet)? Parents?
+
+The **quiet-hours** part of this question is answered and built (Sprint 35,
+[ADR 0036](decisions/0036-quiet-hours-and-conversation-mute.md)): an institution
+window with a full per-user override, evaluated in each person's timezone,
+suppressing push only. Per-conversation mute is built in the same sprint
+(tracked under [Q24](#q24--notifications-push-provider-lock-screen-previews-quiet-hours-mute)).
+The messaging-permission and parent parts above stay open, as does any urgent /
+always-deliver policy.
 
 Communities (P5.1): whom a community's manager may find and add by account
 turns on the same question. The app's direct add waits on a people-lookup
@@ -649,16 +657,27 @@ candidate packages were evaluated (versions, licences, platforms —
 none can be built or verified without a Firebase project, an Apple team and a
 device. **PROVISIONAL lock-screen policy:** a push says only what kind of thing
 happened — "رسالة جديدة" / "لديك رسالة جديدة." — with no sender and no text; the
-full notification is in the app, behind sign-in. There are no quiet hours and
-no mute.
+full notification is in the app, behind sign-in.
 
-**When answered.** One adapter implementing `PushProvider` in
+**Quiet hours and mute — built (Sprint 35, [ADR 0036](decisions/0036-quiet-hours-and-conversation-mute.md)).**
+An institution-level quiet-hours window + timezone, with a **full** per-user
+override (inherit / disable / custom) and a per-user timezone, evaluated
+DST-aware in the user's zone (or the institution's as fallback; a guessed zone
+is never used). Per-conversation mute keyed on a notification's stable
+`conversation` target. Both suppress **push only** — the in-app record is always
+stored and realtime is untouched — and there is **no urgent / always-deliver
+bypass** (a separate policy would define one). Institution policy is managed
+with `settings.manage` (owner-only); a person's own settings and mutes are
+self-scoped. Migration 0022; no new permission. **Still open here:** the push
+*provider* and the lock-screen *preview* policy.
+
+**When answered (provider/preview).** One adapter implementing `PushProvider` in
 `notifications/infrastructure/` and one line in `notifications.module.ts`, with
 credentials in configuration; in the app, `PushTokenSource` implemented with
 the chosen SDK, plus the platform project files. A preview, if allowed, is a
-different body key and arguments in `pushMessageFor` (`domain/push.ts`). Quiet
-hours and mute are filters in `PushDelivery`, which every source's
-notifications already pass through, plus a preference field.
+different body key and arguments in `pushMessageFor` (`domain/push.ts`). The
+provider reads the `channels.push` decision the dispatcher already records, so
+quiet hours and mute (now decided there) apply to it unchanged.
 
 ---
 

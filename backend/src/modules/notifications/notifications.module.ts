@@ -6,10 +6,20 @@ import { CommunitiesModule } from '../communities/communities.module';
 import { IdentityModule } from '../identity/identity.module';
 import { LiveModule } from '../live/live.module';
 import { MessagingModule } from '../messaging/messaging.module';
+import { InstitutionNotificationSettingsController } from './api/institution-notification-settings.controller';
 import { NotificationsController } from './api/notifications.controller';
 import { AttendanceNotificationTranslator } from './application/attendance-notification.translator';
 import { CommunityNotificationTranslator } from './application/community-notification.translator';
+import {
+  ListMutedConversationsUseCase,
+  MuteConversationUseCase,
+  UnmuteConversationUseCase,
+} from './application/conversation-mute.use-cases';
 import { RegisterDeviceUseCase, UnregisterDeviceUseCase } from './application/devices.use-cases';
+import {
+  GetInstitutionNotificationSettingsUseCase,
+  UpdateInstitutionNotificationSettingsUseCase,
+} from './application/institution-settings.use-cases';
 import {
   CountUnreadNotificationsUseCase,
   ListNotificationsUseCase,
@@ -29,22 +39,35 @@ import {
   PUSH_DELIVERY_SETTINGS,
   PushDelivery,
 } from './application/push-delivery';
+import { PushSuppressionGate } from './application/push-suppression';
+import {
+  GetUserNotificationSettingsUseCase,
+  UpdateUserNotificationSettingsUseCase,
+} from './application/user-notification-settings.use-cases';
 import { NOTIFICATION_READER } from './contracts/notification-reader';
 import {
+  CONVERSATION_MUTE_REPOSITORY,
   DEVICE_REPOSITORY,
   NOTIFICATION_REPOSITORY,
+  NOTIFICATION_SETTINGS_REPOSITORY,
   PREFERENCE_REPOSITORY,
+  type ConversationMuteRepository,
   type DeviceRepository,
   type NotificationRepository,
+  type NotificationSettingsRepository,
   type PreferenceRepository,
 } from './domain/ports';
 import { PUSH_PROVIDER } from './domain/push';
+import { DrizzleConversationMuteRepository } from './infrastructure/drizzle-conversation-mute-repository';
 import { DrizzleDeviceRepository } from './infrastructure/drizzle-device-repository';
 import { DrizzleNotificationRepository } from './infrastructure/drizzle-notification-repository';
+import { DrizzleNotificationSettingsRepository } from './infrastructure/drizzle-notification-settings-repository';
 import { DrizzlePreferenceRepository } from './infrastructure/drizzle-preference-repository';
 import {
+  InMemoryConversationMuteRepository,
   InMemoryDeviceRepository,
   InMemoryNotificationRepository,
+  InMemoryNotificationSettingsRepository,
   InMemoryPreferenceRepository,
 } from './infrastructure/in-memory-notification-stores';
 import { LoggingPushProvider } from './infrastructure/logging-push-provider';
@@ -70,7 +93,7 @@ import { LoggingPushProvider } from './infrastructure/logging-push-provider';
  */
 @Module({
   imports: [IdentityModule, MessagingModule, LiveModule, CommunitiesModule],
-  controllers: [NotificationsController],
+  controllers: [NotificationsController, InstitutionNotificationSettingsController],
   providers: [
     {
       provide: NOTIFICATION_REPOSITORY,
@@ -96,10 +119,27 @@ import { LoggingPushProvider } from './infrastructure/logging-push-provider';
           ? new DrizzleDeviceRepository(db)
           : new InMemoryDeviceRepository()) satisfies DeviceRepository,
     },
+    {
+      provide: NOTIFICATION_SETTINGS_REPOSITORY,
+      inject: [APP_CONFIG, DATABASE],
+      useFactory: (config: AppConfig, db: Database) =>
+        (config.database.configured
+          ? new DrizzleNotificationSettingsRepository(db)
+          : new InMemoryNotificationSettingsRepository()) satisfies NotificationSettingsRepository,
+    },
+    {
+      provide: CONVERSATION_MUTE_REPOSITORY,
+      inject: [APP_CONFIG, DATABASE],
+      useFactory: (config: AppConfig, db: Database) =>
+        (config.database.configured
+          ? new DrizzleConversationMuteRepository(db)
+          : new InMemoryConversationMuteRepository()) satisfies ConversationMuteRepository,
+    },
     // The one line a real push provider changes.
     { provide: PUSH_PROVIDER, useClass: LoggingPushProvider },
     { provide: PUSH_DELIVERY_SETTINGS, useValue: DEFAULT_PUSH_DELIVERY_SETTINGS },
 
+    PushSuppressionGate,
     NotificationDispatcher,
     MessagingNotificationTranslator,
     CommunityNotificationTranslator,
@@ -112,6 +152,13 @@ import { LoggingPushProvider } from './infrastructure/logging-push-provider';
     MarkAllNotificationsReadUseCase,
     GetNotificationPreferencesUseCase,
     UpdateNotificationPreferencesUseCase,
+    GetUserNotificationSettingsUseCase,
+    UpdateUserNotificationSettingsUseCase,
+    GetInstitutionNotificationSettingsUseCase,
+    UpdateInstitutionNotificationSettingsUseCase,
+    ListMutedConversationsUseCase,
+    MuteConversationUseCase,
+    UnmuteConversationUseCase,
     RegisterDeviceUseCase,
     UnregisterDeviceUseCase,
     { provide: NOTIFICATION_READER, useClass: NotificationReaderService },

@@ -107,6 +107,7 @@ describe('route authorization', () => {
       'modules/live/api/live.controller.ts#LiveController',
       'modules/messaging/api/community-chat.controller.ts#CommunityChatController',
       'modules/messaging/api/conversations.controller.ts#ConversationsController',
+      'modules/notifications/api/institution-notification-settings.controller.ts#InstitutionNotificationSettingsController',
       'modules/notifications/api/notifications.controller.ts#NotificationsController',
       'modules/people/api/people.controller.ts#PeopleController',
       'platform/health/health.controller.ts#HealthController',
@@ -166,15 +167,35 @@ describe('route authorization', () => {
     );
     expect(notificationRoutes.map((route) => route.name).sort()).toEqual([
       'NotificationsController.changePreferences',
+      'NotificationsController.changeSettings',
       'NotificationsController.device',
       'NotificationsController.forgetDevice',
       'NotificationsController.list',
+      'NotificationsController.mute',
+      'NotificationsController.mutes',
       'NotificationsController.preferences',
       'NotificationsController.read',
       'NotificationsController.readAll',
+      'NotificationsController.settings',
+      'NotificationsController.unmute',
       'NotificationsController.unread',
     ]);
     expect(notificationRoutes.filter((route) => !route.authenticated)).toEqual([]);
+  });
+
+  // The institution quiet-hours policy is the one notification setting that is
+  // not a person's own: reading and changing it both require settings.manage
+  // (owner-only), never mere authentication, and no new permission is minted.
+  it('puts the institution notification settings behind settings.manage', () => {
+    const institution = Object.fromEntries(
+      routes
+        .filter((route) => route.name.startsWith('InstitutionNotificationSettingsController.'))
+        .map((route) => [route.name, route.permission]),
+    );
+    expect(institution).toEqual({
+      'InstitutionNotificationSettingsController.get': 'settings.manage',
+      'InstitutionNotificationSettingsController.update': 'settings.manage',
+    });
   });
 
   // Reading is academic.read (and each use case narrows it further: a teacher

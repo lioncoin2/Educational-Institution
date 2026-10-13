@@ -28,6 +28,7 @@ import {
   type PreferenceRepository,
 } from '../domain/ports';
 import { effectiveChannels, preferencesFor } from '../domain/preferences';
+import { PushSuppressionGate } from './push-suppression';
 
 export interface DispatchOutcome {
   /** Stored now — each announced once by `notifications.notification.created`. */
@@ -74,6 +75,7 @@ export class NotificationDispatcher {
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
+    private readonly pushSuppression: PushSuppressionGate,
   ) {}
 
   async dispatch(
@@ -117,6 +119,9 @@ export class NotificationDispatcher {
     const accounts = await this.directory.describe(recipients);
     const active = new Set(accounts.filter((account) => account.active).map((a) => a.userId));
     const stored = await this.preferences.forUsers([...active]);
+    // Quiet hours and per-conversation mutes hold PUSH back — never the record,
+    // never realtime. Loaded once for the whole batch.
+    const pushGate = await this.pushSuppression.forUsers([...active], now);
 
     let inactive = 0;
     let optedOut = 0;
@@ -135,7 +140,11 @@ export class NotificationDispatcher {
         continue;
       }
       wanted.push(notification);
-      channels.set(notification.id, { realtime: decided.realtime, push: decided.push });
+      // `store` is unconditional above; realtime is the category decision; push
+      // is that decision AND not held by quiet hours or a mute for this target.
+      const push =
+        decided.push && !pushGate.suppressesPush(notification.recipientUserId, notification.target);
+      channels.set(notification.id, { realtime: decided.realtime, push });
     }
 
     const created = await this.notifications.insertMany(wanted);

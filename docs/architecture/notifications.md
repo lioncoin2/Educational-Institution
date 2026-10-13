@@ -653,9 +653,15 @@ empty, error and retry, mark all, live insertion, settings), boundaries.
 - **A push provider** (Q24): the adapter, credentials and platform setup
   (§12).
 - **Retention** (Q27): notifications are kept indefinitely.
-- **Collapsing** a busy conversation's notifications, quiet hours,
-  per-conversation mute, email, priority levels, announcement-style
-  notifications from staff (Q28).
+- **Quiet hours and per-conversation mute** are **built** (Sprint 35,
+  [ADR 0036](decisions/0036-quiet-hours-and-conversation-mute.md)): an
+  institution window + timezone with a full per-user override, and mute keyed on
+  a notification's conversation target, both suppressing **push only** (the
+  record is still stored, realtime untouched; no urgent bypass). The suppression
+  is decided in the dispatcher and recorded in the `channels.push` flag a real
+  provider will read — the push adapter above is still the only missing piece.
+- **Collapsing** a busy conversation's notifications, email, priority levels,
+  announcement-style notifications from staff (Q28).
 - **Several instances:** like realtime, delivery reaches the connections of
   the instance that handled the event; a broker-backed bus is the path
   (ADR 0012).

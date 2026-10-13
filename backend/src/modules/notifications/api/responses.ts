@@ -1,8 +1,11 @@
 import type {
   CategoryPreferencesView,
   DeviceView,
+  InstitutionQuietHoursView,
+  MutedConversationView,
   NotificationView,
   UnreadCountView,
+  UserNotificationSettingsView,
 } from '../application/views';
 
 /**
@@ -57,6 +60,60 @@ export function toPreferencesResponse(
       inApp: view.inApp,
       realtime: view.realtime,
       push: view.push,
+    })),
+  };
+}
+
+/** The institution quiet-hours policy, or null when none is configured. */
+export interface InstitutionSettingsResponse {
+  readonly settings: {
+    readonly enabled: boolean;
+    readonly start: string;
+    readonly end: string;
+    readonly timezone: string;
+  } | null;
+}
+
+export function toInstitutionSettingsResponse(
+  view: InstitutionQuietHoursView | null,
+): InstitutionSettingsResponse {
+  return {
+    settings:
+      view === null
+        ? null
+        : { enabled: view.enabled, start: view.start, end: view.end, timezone: view.timezone },
+  };
+}
+
+export interface UserNotificationSettingsResponse {
+  readonly timezone: string | null;
+  readonly quietHoursMode: 'INHERIT' | 'DISABLED' | 'CUSTOM';
+  readonly quietHoursStart: string | null;
+  readonly quietHoursEnd: string | null;
+}
+
+export function toUserNotificationSettingsResponse(
+  view: UserNotificationSettingsView,
+): UserNotificationSettingsResponse {
+  return {
+    timezone: view.timezone,
+    quietHoursMode: view.quietHoursMode,
+    quietHoursStart: view.quietHoursStart,
+    quietHoursEnd: view.quietHoursEnd,
+  };
+}
+
+export interface MutedConversationsResponse {
+  readonly conversations: readonly { readonly conversationId: string; readonly mutedAt: string }[];
+}
+
+export function toMutedConversationsResponse(
+  views: readonly MutedConversationView[],
+): MutedConversationsResponse {
+  return {
+    conversations: views.map((view) => ({
+      conversationId: view.conversationId,
+      mutedAt: view.mutedAt.toISOString(),
     })),
   };
 }
