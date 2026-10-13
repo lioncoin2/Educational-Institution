@@ -46,6 +46,100 @@ class CountingAcademic implements AcademicRepository {
     meCalls++;
     return inner.me();
   }
+
+  @override
+  Future<AcademicSection> createSection({
+    required String code,
+    required String name,
+    required int order,
+    required SectionKind kind,
+    String? description,
+  }) => inner.createSection(
+    code: code,
+    name: name,
+    order: order,
+    kind: kind,
+    description: description,
+  );
+
+  @override
+  Future<AcademicSection> updateSection(
+    String sectionId, {
+    required String name,
+    required int order,
+    String? description,
+  }) => inner.updateSection(
+    sectionId,
+    name: name,
+    order: order,
+    description: description,
+  );
+
+  @override
+  Future<AcademicSection> setSectionActive(
+    String sectionId, {
+    required bool active,
+  }) => inner.setSectionActive(sectionId, active: active);
+
+  @override
+  Future<AcademicProgram> createProgram({
+    required String sectionId,
+    required String code,
+    required String name,
+    required int order,
+    String? description,
+  }) => inner.createProgram(
+    sectionId: sectionId,
+    code: code,
+    name: name,
+    order: order,
+    description: description,
+  );
+
+  @override
+  Future<AcademicProgram> updateProgram(
+    String programId, {
+    required String name,
+    required int order,
+    String? description,
+  }) => inner.updateProgram(
+    programId,
+    name: name,
+    order: order,
+    description: description,
+  );
+
+  @override
+  Future<AcademicProgram> setProgramActive(
+    String programId, {
+    required bool active,
+  }) => inner.setProgramActive(programId, active: active);
+
+  @override
+  Future<AcademicHalaqa> createHalaqa({
+    required String programId,
+    required String code,
+    required String name,
+    required int order,
+  }) => inner.createHalaqa(
+    programId: programId,
+    code: code,
+    name: name,
+    order: order,
+  );
+
+  @override
+  Future<AcademicHalaqa> updateHalaqa(
+    String halaqaId, {
+    required String name,
+    required int order,
+  }) => inner.updateHalaqa(halaqaId, name: name, order: order);
+
+  @override
+  Future<AcademicHalaqa> setHalaqaActive(
+    String halaqaId, {
+    required bool active,
+  }) => inner.setHalaqaActive(halaqaId, active: active);
 }
 
 void main() {

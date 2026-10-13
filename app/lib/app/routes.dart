@@ -14,12 +14,20 @@ abstract final class Routes {
   static const String messages = '/messages';
   static const String communities = '/communities';
   static const String adminAccounts = '/admin/accounts';
+
+  /// Managing the institution's academic structure (sections → programs →
+  /// halaqat), for a holder of `academic.manage`.
+  static const String academicStructure = '/admin/academic';
+
   static const String signIn = '/sign-in';
 
   /// Where an invitation link opens. Its token is never in this path, a
   /// query or `extra`: it rides in the link's fragment, which the app takes
   /// out of the address bar before routing (lib/app/invite_link.dart).
   static const String invite = '/invite';
+
+  static String academicProgram(String programId) =>
+      '$academicStructure/programs/${Uri.encodeComponent(programId)}';
 
   static String program(String programId) => '$programs/$programId';
 

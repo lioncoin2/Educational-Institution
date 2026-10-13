@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/widgets/layout/adaptive_nav_shell.dart';
+import '../features/academic_admin/academic_structure_screen.dart';
+import '../features/academic_admin/program_halaqat_screen.dart';
 import '../features/admin/admin_accounts_screen.dart';
 import '../features/announcements/announcements_screen.dart';
 import '../features/attendance/record_attendance_screen.dart';
@@ -73,6 +75,22 @@ GoRouter buildRouter() {
         name: 'admin-accounts',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const AdminAccountsScreen(),
+      ),
+      GoRoute(
+        path: Routes.academicStructure,
+        name: 'academic-structure',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const AcademicStructureScreen(),
+        routes: [
+          GoRoute(
+            path: 'programs/:programId',
+            name: 'academic-program-halaqat',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) => ProgramHalaqatScreen(
+              programId: state.pathParameters['programId']!,
+            ),
+          ),
+        ],
       ),
       GoRoute(
         path: Routes.progress,

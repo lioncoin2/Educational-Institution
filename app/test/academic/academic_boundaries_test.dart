@@ -13,8 +13,10 @@ import 'package:flutter_test/flutter_test.dart';
 ///   - the adapters that serve real data never read the demo's invented data
 ///     (MockData): a real screen cannot show a placeholder as fact;
 ///   - only the provider wiring decides which implementation runs;
-///   - nothing in the app enrols, assigns or edits structure: those are staff
-///     acts on the server, and no self-enrollment is invented.
+///   - the app may manage academic STRUCTURE (sections/programs/halaqat) for a
+///     holder of academic.manage (Sprint 45), through the repository seam; it
+///     still does NOT enrol students or assign teachers — those remain staff
+///     acts on the server, gated on the unresolved people-discovery policy.
 void main() {
   final sources = {
     for (final file
@@ -93,16 +95,22 @@ void main() {
     expect(constructing, ['lib/providers/app_providers.dart']);
   });
 
-  test(
-    'writes nothing to /academic — enrolment and assignment are staff acts',
-    () {
-      final http =
-          sources['lib/data/repositories/http/http_academic_repository.dart']!;
-      expect(
-        RegExp(r'_api\.(post|patch|put|delete)\(').hasMatch(http),
-        isFalse,
-      );
-      expect(RegExp(r'_api\.get\(').allMatches(http), hasLength(4));
-    },
-  );
+  test('writes only academic STRUCTURE — never enrolment or teacher assignment', () {
+    final http =
+        sources['lib/data/repositories/http/http_academic_repository.dart']!;
+    // Structure management (sections/programs/halaqat) is an approved staff
+    // tool (Sprint 45), gated on academic.manage and re-authorised server-side.
+    expect(RegExp(r'_api\.(post|patch)\(').hasMatch(http), isTrue);
+    // Enrolment and teacher assignment are NOT offered — they need the
+    // unresolved people-discovery policy (Q6/Q22/Q31).
+    for (final forbidden in const [
+      '/enrollments',
+      '/teachers',
+      '/teacher-assignments',
+    ]) {
+      expect(http.contains(forbidden), isFalse, reason: forbidden);
+    }
+    // The reads are still exactly the four GETs.
+    expect(RegExp(r'_api\.get\(').allMatches(http), hasLength(4));
+  });
 }

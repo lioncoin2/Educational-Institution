@@ -217,4 +217,71 @@ class _FakeAcademic implements AcademicRepository {
 
   @override
   Future<MyAcademic> me() => throw UnimplementedError();
+
+  @override
+  Future<AcademicSection> createSection({
+    required String code,
+    required String name,
+    required int order,
+    required SectionKind kind,
+    String? description,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<AcademicSection> updateSection(
+    String sectionId, {
+    required String name,
+    required int order,
+    String? description,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<AcademicSection> setSectionActive(
+    String sectionId, {
+    required bool active,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<AcademicProgram> createProgram({
+    required String sectionId,
+    required String code,
+    required String name,
+    required int order,
+    String? description,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<AcademicProgram> updateProgram(
+    String programId, {
+    required String name,
+    required int order,
+    String? description,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<AcademicProgram> setProgramActive(
+    String programId, {
+    required bool active,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<AcademicHalaqa> createHalaqa({
+    required String programId,
+    required String code,
+    required String name,
+    required int order,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<AcademicHalaqa> updateHalaqa(
+    String halaqaId, {
+    required String name,
+    required int order,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<AcademicHalaqa> setHalaqaActive(
+    String halaqaId, {
+    required bool active,
+  }) => throw UnimplementedError();
 }

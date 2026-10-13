@@ -160,6 +160,84 @@ class MockAcademicRepository implements AcademicRepository {
   @override
   Future<MyAcademic> me() => _delayed(mine);
 
+  // ── Structure management ──
+  // The demo build is a read-only mirror of the printed profile; provisioning
+  // the structure is a staff act against the real server. Rather than fake an
+  // in-memory catalogue (which would pretend an operation the demo cannot
+  // honour), these refuse with a clear code. In the demo the signed-in person
+  // is a student without `academic.manage`, so these are never reached anyway.
+  static const _unsupported = AcademicException(
+    'academic.unsupported_in_demo',
+    'Managing the academic structure is not available in the demo build.',
+  );
+
+  @override
+  Future<AcademicSection> createSection({
+    required String code,
+    required String name,
+    required int order,
+    required SectionKind kind,
+    String? description,
+  }) async => throw _unsupported;
+
+  @override
+  Future<AcademicSection> updateSection(
+    String sectionId, {
+    required String name,
+    required int order,
+    String? description,
+  }) async => throw _unsupported;
+
+  @override
+  Future<AcademicSection> setSectionActive(
+    String sectionId, {
+    required bool active,
+  }) async => throw _unsupported;
+
+  @override
+  Future<AcademicProgram> createProgram({
+    required String sectionId,
+    required String code,
+    required String name,
+    required int order,
+    String? description,
+  }) async => throw _unsupported;
+
+  @override
+  Future<AcademicProgram> updateProgram(
+    String programId, {
+    required String name,
+    required int order,
+    String? description,
+  }) async => throw _unsupported;
+
+  @override
+  Future<AcademicProgram> setProgramActive(
+    String programId, {
+    required bool active,
+  }) async => throw _unsupported;
+
+  @override
+  Future<AcademicHalaqa> createHalaqa({
+    required String programId,
+    required String code,
+    required String name,
+    required int order,
+  }) async => throw _unsupported;
+
+  @override
+  Future<AcademicHalaqa> updateHalaqa(
+    String halaqaId, {
+    required String name,
+    required int order,
+  }) async => throw _unsupported;
+
+  @override
+  Future<AcademicHalaqa> setHalaqaActive(
+    String halaqaId, {
+    required bool active,
+  }) async => throw _unsupported;
+
   static AcademicSection _withoutPrograms(AcademicSection section) =>
       AcademicSection(
         id: section.id,

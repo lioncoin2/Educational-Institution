@@ -69,6 +69,86 @@ abstract interface class AcademicRepository {
 
   /// What the caller studies and teaches, now.
   Future<MyAcademic> me();
+
+  // ── Structure management (academic.manage; OWNER/ADMIN) ──
+  // Staff provisioning of the catalogue. The server gates these on
+  // `academic.manage` and re-authorises every call. A `code` and a section's
+  // `kind` are set at creation and never change; a parent (`sectionId` /
+  // `programId`) is fixed at creation — there is no reparenting route. Nothing
+  // is ever deleted: deactivating withholds new enrollment while history stays
+  // readable (`setSectionActive`/`setProgramActive`/`setHalaqaActive`). A
+  // refusal throws [AcademicException] with the server's code
+  // (`academic.code_taken`, `academic.code_invalid`, `academic.name_invalid`,
+  // `academic.order_invalid`, `academic.kind_invalid`,
+  // `academic.halaqa_has_active_enrollments`, `academic.too_many_*`,
+  // `identity.permission_denied`, …). Enrolment and teacher assignment are NOT
+  // here — they need the unresolved people-discovery policy (Q6/Q22/Q31).
+
+  Future<AcademicSection> createSection({
+    required String code,
+    required String name,
+    required int order,
+    required SectionKind kind,
+    String? description,
+  });
+
+  /// Edits a section's `name`, `order` and `description` (null clears it). The
+  /// code and kind cannot change.
+  Future<AcademicSection> updateSection(
+    String sectionId, {
+    required String name,
+    required int order,
+    String? description,
+  });
+
+  Future<AcademicSection> setSectionActive(
+    String sectionId, {
+    required bool active,
+  });
+
+  Future<AcademicProgram> createProgram({
+    required String sectionId,
+    required String code,
+    required String name,
+    required int order,
+    String? description,
+  });
+
+  /// Edits a program's `name`, `order` and `description` (null clears it). The
+  /// code and parent section cannot change.
+  Future<AcademicProgram> updateProgram(
+    String programId, {
+    required String name,
+    required int order,
+    String? description,
+  });
+
+  Future<AcademicProgram> setProgramActive(
+    String programId, {
+    required bool active,
+  });
+
+  Future<AcademicHalaqa> createHalaqa({
+    required String programId,
+    required String code,
+    required String name,
+    required int order,
+  });
+
+  /// Edits a halaqa's `name` and `order`. A halaqa has no description, and its
+  /// code and parent program cannot change.
+  Future<AcademicHalaqa> updateHalaqa(
+    String halaqaId, {
+    required String name,
+    required int order,
+  });
+
+  /// Deactivation is refused with `academic.halaqa_has_active_enrollments`
+  /// (412) while it still has active enrollments.
+  Future<AcademicHalaqa> setHalaqaActive(
+    String halaqaId, {
+    required bool active,
+  });
 }
 
 abstract interface class LearningRepository {

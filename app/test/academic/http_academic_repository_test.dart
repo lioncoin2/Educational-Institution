@@ -150,8 +150,12 @@ void main() {
   );
 
   test(
-    'offers nothing that writes: enrolment and assignment are staff acts',
+    'its reads are all GETs — the writes are covered in the writes test',
     () async {
+      // Reading never mutates. Structure management (create / edit / activate /
+      // deactivate) is a separate surface, asserted in
+      // http_academic_writes_test.dart; enrolment and teacher assignment are
+      // not offered at all (academic_boundaries_test.dart).
       await repository.catalogue();
       await repository.program('p:dep-literacy-program');
       await repository.halaqa('h:dep-literacy-h1');

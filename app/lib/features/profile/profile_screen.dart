@@ -17,6 +17,7 @@ import '../../core/widgets/layout/responsive_body.dart';
 import '../../core/widgets/patterns/info_row.dart';
 import '../../data/models/student.dart';
 import '../../providers/app_providers.dart';
+import '../academic_admin/academic_admin_copy.dart';
 import '../admin/admin_copy.dart';
 import '../communities/community_copy.dart';
 import '../notifications/state/unread_count_controller.dart';
@@ -38,6 +39,13 @@ class ProfileScreen extends ConsumerWidget {
     final canSeeAccounts = ref.watch(
       sessionUserProvider.select(
         (session) => session.value?.can('users.read') ?? false,
+      ),
+    );
+    // Managing the academic structure is offered only to a holder of
+    // `academic.manage` (OWNER/ADMIN); the server re-authorises every write.
+    final canManageAcademic = ref.watch(
+      sessionUserProvider.select(
+        (session) => session.value?.can('academic.manage') ?? false,
       ),
     );
 
@@ -165,6 +173,14 @@ class ProfileScreen extends ConsumerWidget {
                         icon: Icons.manage_accounts_outlined,
                         label: AdminCopy.screenTitle,
                         onTap: () => context.push(Routes.adminAccounts),
+                      ),
+                    ],
+                    if (canManageAcademic) ...[
+                      const Divider(indent: Insets.giant),
+                      _NavRow(
+                        icon: Icons.account_tree_outlined,
+                        label: AcademicAdminCopy.screenTitle,
+                        onTap: () => context.push(Routes.academicStructure),
                       ),
                     ],
                   ],

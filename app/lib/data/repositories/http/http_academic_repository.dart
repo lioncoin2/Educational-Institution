@@ -5,9 +5,12 @@ import '../repositories.dart';
 
 /// [AcademicRepository] against the real backend (`/academic`).
 ///
-/// Read-only: the app asks for the catalogue, one program, one halaqa and the
-/// caller's own record. Management routes exist on the server for staff
-/// tools; this app has none.
+/// Reads the catalogue, one program, one halaqa and the caller's own record;
+/// and — for a holder of `academic.manage` — provisions the structure
+/// (sections, programs, halaqat: create / edit / activate / deactivate). The
+/// server re-authorises every write. It does NOT enrol students or assign
+/// teachers (those need the unresolved people-discovery policy). Every
+/// transport failure becomes an [AcademicException], keeping the server's code.
 class HttpAcademicRepository implements AcademicRepository {
   HttpAcademicRepository(this._api);
 
@@ -41,6 +44,158 @@ class HttpAcademicRepository implements AcademicRepository {
   @override
   Future<MyAcademic> me() =>
       _call(() async => MyAcademic.fromJson(await _api.get('/academic/me')));
+
+  // ── Structure management (academic.manage) ──
+  // Bodyless POST for activate/deactivate; a `{...}` body for create/edit.
+  // The server re-authorises and validates; refusals flow through [_call].
+
+  static String _section(String id) =>
+      '/academic/sections/${Uri.encodeComponent(id)}';
+  static String _program(String id) =>
+      '/academic/programs/${Uri.encodeComponent(id)}';
+  static String _halaqa(String id) =>
+      '/academic/halaqat/${Uri.encodeComponent(id)}';
+
+  @override
+  Future<AcademicSection> createSection({
+    required String code,
+    required String name,
+    required int order,
+    required SectionKind kind,
+    String? description,
+  }) => _call(
+    () async => AcademicSection.fromJson(
+      await _api.post(
+        '/academic/sections',
+        body: {
+          'code': code,
+          'name': name,
+          'order': order,
+          'kind': kind.wire,
+          'description': ?description,
+        },
+      ),
+    ),
+  );
+
+  @override
+  Future<AcademicSection> updateSection(
+    String sectionId, {
+    required String name,
+    required int order,
+    String? description,
+  }) => _call(
+    () async => AcademicSection.fromJson(
+      await _api.patch(
+        _section(sectionId),
+        body: {'name': name, 'order': order, 'description': description},
+      ),
+    ),
+  );
+
+  @override
+  Future<AcademicSection> setSectionActive(
+    String sectionId, {
+    required bool active,
+  }) => _call(
+    () async => AcademicSection.fromJson(
+      await _api.post(
+        '${_section(sectionId)}/${active ? 'activate' : 'deactivate'}',
+      ),
+    ),
+  );
+
+  @override
+  Future<AcademicProgram> createProgram({
+    required String sectionId,
+    required String code,
+    required String name,
+    required int order,
+    String? description,
+  }) => _call(
+    () async => AcademicProgram.fromJson(
+      await _api.post(
+        '/academic/programs',
+        body: {
+          'sectionId': sectionId,
+          'code': code,
+          'name': name,
+          'order': order,
+          'description': ?description,
+        },
+      ),
+    ),
+  );
+
+  @override
+  Future<AcademicProgram> updateProgram(
+    String programId, {
+    required String name,
+    required int order,
+    String? description,
+  }) => _call(
+    () async => AcademicProgram.fromJson(
+      await _api.patch(
+        _program(programId),
+        body: {'name': name, 'order': order, 'description': description},
+      ),
+    ),
+  );
+
+  @override
+  Future<AcademicProgram> setProgramActive(
+    String programId, {
+    required bool active,
+  }) => _call(
+    () async => AcademicProgram.fromJson(
+      await _api.post(
+        '${_program(programId)}/${active ? 'activate' : 'deactivate'}',
+      ),
+    ),
+  );
+
+  @override
+  Future<AcademicHalaqa> createHalaqa({
+    required String programId,
+    required String code,
+    required String name,
+    required int order,
+  }) => _call(
+    () async => AcademicHalaqa.fromJson(
+      await _api.post(
+        '/academic/halaqat',
+        body: {
+          'programId': programId,
+          'code': code,
+          'name': name,
+          'order': order,
+        },
+      ),
+    ),
+  );
+
+  @override
+  Future<AcademicHalaqa> updateHalaqa(
+    String halaqaId, {
+    required String name,
+    required int order,
+  }) => _call(
+    () async => AcademicHalaqa.fromJson(
+      await _api.patch(_halaqa(halaqaId), body: {'name': name, 'order': order}),
+    ),
+  );
+
+  @override
+  Future<AcademicHalaqa> setHalaqaActive(
+    String halaqaId, {
+    required bool active,
+  }) => _call(
+    () async => AcademicHalaqa.fromJson(
+      await _api.post(
+        '${_halaqa(halaqaId)}/${active ? 'activate' : 'deactivate'}',
+      ),
+    ),
+  );
 
   static const _unreadable = AcademicException(
     'academic.unreadable',
