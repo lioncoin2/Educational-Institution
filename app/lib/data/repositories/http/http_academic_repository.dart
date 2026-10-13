@@ -285,6 +285,36 @@ class HttpAcademicRepository implements AcademicRepository {
     ),
   );
 
+  // ── Relationship history (academic.manage) — keyset-paged reads ──
+
+  @override
+  Future<AcademicPage<PlacedEnrollment>> studentEnrollments(
+    String userId, {
+    String? cursor,
+  }) => _call(
+    () async => AcademicPage.fromJson(
+      await _api.get(
+        '/academic/students/${Uri.encodeComponent(userId)}/enrollments',
+        query: {'cursor': ?cursor},
+      ),
+      PlacedEnrollment.fromJson,
+    ),
+  );
+
+  @override
+  Future<AcademicPage<PlacedAssignment>> teacherAssignments(
+    String userId, {
+    String? cursor,
+  }) => _call(
+    () async => AcademicPage.fromJson(
+      await _api.get(
+        '/academic/teachers/${Uri.encodeComponent(userId)}/assignments',
+        query: {'cursor': ?cursor},
+      ),
+      PlacedAssignment.fromJson,
+    ),
+  );
+
   static const _unreadable = AcademicException(
     'academic.unreadable',
     'The server sent something this app cannot read.',

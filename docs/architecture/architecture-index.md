@@ -151,7 +151,7 @@ responsibility and what each module must not know live in
 ### academic_admin
 
 - **Path:** `app/lib/features/academic_admin/`
-- **Controllers:** `academic_structure_controller.dart`, `halaqa_people_controller.dart`, `program_halaqat_controller.dart`
+- **Controllers:** `academic_history_controller.dart`, `academic_structure_controller.dart`, `halaqa_people_controller.dart`, `program_halaqat_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
 - **Static imports → features:** —
 
@@ -278,7 +278,7 @@ responsibility and what each module must not know live in
 
 - **Repository contracts (`data/repositories/repositories.dart`):** `AcademicRepository`, `AdminRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `InstitutionRepository`, `LearningRepository`, `LiveRepository`, `MessagingRepository`, `NotificationsRepository`, `PeopleRepository`, `ProgressRepository`
 - **Routes (`app/routes.dart`):** `academicStructure` → `/admin/academic`, `adminAccounts` → `/admin/accounts`, `announcements` → `/announcements`, `certificates` → `/certificates`, `communities` → `/communities`, `home` → `/home`, `invite` → `/invite`, `messages` → `/messages`, `notificationSettings` → `/notifications/settings`, `notifications` → `/notifications`, `path` → `/path`, `profile` → `/profile`, `programs` → `/programs`, `progress` → `/progress`, `signIn` → `/sign-in`, `splash` → `/splash`
-- **Route builders:** `academicHalaqaPeople`, `academicProgram`, `adminAccount`, `certificate`, `community`, `communityAttendance`, `communityAttendanceSnapshot`, `communityAttendanceSnapshots`, `communityInvitations`, `communityLive`, `communityMembers`, `conversation`, `episode`, `lesson`, `levels`, `program`
+- **Route builders:** `academicHalaqaPeople`, `academicProgram`, `academicStudentHistory`, `academicTeacherHistory`, `adminAccount`, `certificate`, `community`, `communityAttendance`, `communityAttendanceSnapshot`, `communityAttendanceSnapshots`, `communityInvitations`, `communityLive`, `communityMembers`, `conversation`, `episode`, `lesson`, `levels`, `program`
 - **Entry points:** `app/lib/main.dart`, `app/lib/app/app.dart`, `app/lib/app/router.dart`, `app/lib/providers/app_providers.dart`
 
 ## Architecture Decision Records (`docs/architecture/decisions/`)

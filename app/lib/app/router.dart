@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/widgets/layout/adaptive_nav_shell.dart';
+import '../features/academic_admin/academic_history_screen.dart';
 import '../features/academic_admin/academic_structure_screen.dart';
 import '../features/academic_admin/halaqa_people_screen.dart';
 import '../features/academic_admin/program_halaqat_screen.dart';
@@ -107,6 +108,22 @@ GoRouter buildRouter() {
             parentNavigatorKey: _rootNavigatorKey,
             builder: (context, state) =>
                 HalaqaPeopleScreen(halaqaId: state.pathParameters['halaqaId']!),
+          ),
+          GoRoute(
+            path: 'students/:userId/history',
+            name: 'academic-student-history',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) => StudentEnrollmentHistoryScreen(
+              userId: state.pathParameters['userId']!,
+            ),
+          ),
+          GoRoute(
+            path: 'teachers/:userId/history',
+            name: 'academic-teacher-history',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) => TeacherAssignmentHistoryScreen(
+              userId: state.pathParameters['userId']!,
+            ),
           ),
         ],
       ),

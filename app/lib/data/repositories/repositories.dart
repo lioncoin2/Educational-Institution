@@ -200,6 +200,25 @@ abstract interface class AcademicRepository {
 
   /// Ends a teaching assignment; the record is never deleted or reopened.
   Future<AssignmentRecord> endAssignment(String assignmentId);
+
+  // ── Relationship history (read-only; academic.manage; OWNER/ADMIN) ──
+  // A person's full academic history, newest first, every status, a keyset page
+  // at a time — an academic administrator's view (never reached through a
+  // teaching assignment, Q31). The server re-authorises each read.
+
+  /// One student's enrollment history (`GET /academic/students/:id/enrollments`),
+  /// each record with where it sits. Paginated; pass [cursor] for the next page.
+  Future<AcademicPage<PlacedEnrollment>> studentEnrollments(
+    String userId, {
+    String? cursor,
+  });
+
+  /// One teacher's assignment history (`GET /academic/teachers/:id/assignments`),
+  /// each record with where it sits. Paginated; pass [cursor] for the next page.
+  Future<AcademicPage<PlacedAssignment>> teacherAssignments(
+    String userId, {
+    String? cursor,
+  });
 }
 
 abstract interface class LearningRepository {

@@ -97,26 +97,24 @@ void main() {
     expect(constructing, ['lib/providers/app_providers.dart']);
   });
 
-  test(
-    'stays within /academic — structure and relationships, not discovery',
-    () {
-      final http =
-          sources['lib/data/repositories/http/http_academic_repository.dart']!;
-      // Structure management (Sprint 45) and relationship administration
-      // (Sprint 46, owner-approved) are both staff tools, gated on
-      // academic.manage and re-authorised server-side.
-      expect(RegExp(r'_api\.(post|patch)\(').hasMatch(http), isTrue);
-      // Relationships ARE now administered here (enrol / assign / end).
-      expect(http.contains('/enrollments'), isTrue);
-      expect(http.contains('/teachers'), isTrue);
-      expect(http.contains('/teacher-assignments'), isTrue);
-      // But finding people is PeopleRepository's job (people.read), never the
-      // academic repository's; and it touches no other module.
-      for (final foreign in const ['/people', '/communities', '/messaging']) {
-        expect(http.contains(foreign), isFalse, reason: foreign);
-      }
-      // The reads are the four structure GETs plus the two roster GETs.
-      expect(RegExp(r'_api\.get\(').allMatches(http), hasLength(6));
-    },
-  );
+  test('stays within /academic — structure and relationships, not discovery', () {
+    final http =
+        sources['lib/data/repositories/http/http_academic_repository.dart']!;
+    // Structure management (Sprint 45) and relationship administration
+    // (Sprint 46, owner-approved) are both staff tools, gated on
+    // academic.manage and re-authorised server-side.
+    expect(RegExp(r'_api\.(post|patch)\(').hasMatch(http), isTrue);
+    // Relationships ARE now administered here (enrol / assign / end).
+    expect(http.contains('/enrollments'), isTrue);
+    expect(http.contains('/teachers'), isTrue);
+    expect(http.contains('/teacher-assignments'), isTrue);
+    // But finding people is PeopleRepository's job (people.read), never the
+    // academic repository's; and it touches no other module.
+    for (final foreign in const ['/people', '/communities', '/messaging']) {
+      expect(http.contains(foreign), isFalse, reason: foreign);
+    }
+    // The reads are the four structure GETs, the two roster GETs, and the
+    // two relationship-history GETs (student enrolments, teacher assignments).
+    expect(RegExp(r'_api\.get\(').allMatches(http), hasLength(8));
+  });
 }

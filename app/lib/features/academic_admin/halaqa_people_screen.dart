@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../app/routes.dart';
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/foundations/app_card.dart';
@@ -131,6 +133,11 @@ class _StudentsTab extends ConsumerWidget {
                       entry.enrollment.status,
                     ),
                     icon: Icons.person_outline,
+                    onTap: canManage
+                        ? () => context.push(
+                            Routes.academicStudentHistory(entry.student.userId),
+                          )
+                        : null,
                     onEnd: canManage
                         ? () => _endEnrollment(context, ref, halaqaId, entry)
                         : null,
@@ -209,6 +216,11 @@ class _TeachersTab extends ConsumerWidget {
                         '${AcademicPeopleCopy.role(entry.assignment.role)} · '
                         '${AcademicPeopleCopy.assignmentStatus(entry.assignment.status)}',
                     icon: Icons.school_outlined,
+                    onTap: canManage
+                        ? () => context.push(
+                            Routes.academicTeacherHistory(entry.teacher.userId),
+                          )
+                        : null,
                     onEnd: canManage
                         ? () => _endAssignment(context, ref, halaqaId, entry)
                         : null,
@@ -280,6 +292,7 @@ class _PersonCard extends StatelessWidget {
     required this.icon,
     required this.onEnd,
     required this.endLabel,
+    this.onTap,
   });
 
   final String? name;
@@ -289,9 +302,14 @@ class _PersonCard extends StatelessWidget {
   final VoidCallback? onEnd;
   final String endLabel;
 
+  /// Opens the person's academic history (manager-only); null = not tappable.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
     return AppCard(
+      onTap: onTap,
+      semanticLabel: name,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

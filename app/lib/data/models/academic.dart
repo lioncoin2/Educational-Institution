@@ -615,6 +615,37 @@ class AcademicPage<T> {
   final String? nextCursor;
 }
 
+/// One row of a student's enrollment history: the enrollment and where it sits
+/// (section → program → halaqa). Every status (ACTIVE / COMPLETED / WITHDRAWN)
+/// appears; distinct records are never merged, even for the same halaqa.
+class PlacedEnrollment {
+  const PlacedEnrollment({required this.enrollment, required this.placement});
+
+  factory PlacedEnrollment.fromJson(Map<String, Object?> json) =>
+      PlacedEnrollment(
+        enrollment: EnrollmentRecord.fromJson(_map(json['enrollment'])),
+        placement: AcademicPlacement.fromJson(_map(json['placement'])),
+      );
+
+  final EnrollmentRecord enrollment;
+  final AcademicPlacement placement;
+}
+
+/// One row of a teacher's assignment history: the assignment and where it sits.
+/// Every status (ACTIVE / ENDED) appears; distinct records are never merged.
+class PlacedAssignment {
+  const PlacedAssignment({required this.assignment, required this.placement});
+
+  factory PlacedAssignment.fromJson(Map<String, Object?> json) =>
+      PlacedAssignment(
+        assignment: AssignmentRecord.fromJson(_map(json['assignment'])),
+        placement: AcademicPlacement.fromJson(_map(json['placement'])),
+      );
+
+  final AssignmentRecord assignment;
+  final AcademicPlacement placement;
+}
+
 /// A refusal from `/academic`, with the server's stable code
 /// (`academic.halaqa_access_denied`, `identity.authentication_required`, …).
 class AcademicException implements Exception {

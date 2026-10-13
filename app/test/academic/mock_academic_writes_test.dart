@@ -89,4 +89,12 @@ void main() {
       await expectLater(repo.endAssignment('a'), throwsUnsupported());
     },
   );
+
+  test(
+    'refuses relationship history — the demo has no records to list',
+    () async {
+      await expectLater(repo.studentEnrollments('u'), throwsUnsupported());
+      await expectLater(repo.teacherAssignments('u'), throwsUnsupported());
+    },
+  );
 }

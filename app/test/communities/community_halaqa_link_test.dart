@@ -321,4 +321,16 @@ class _FakeAcademic implements AcademicRepository {
   @override
   Future<AssignmentRecord> endAssignment(String assignmentId) =>
       throw UnimplementedError();
+
+  @override
+  Future<AcademicPage<PlacedEnrollment>> studentEnrollments(
+    String userId, {
+    String? cursor,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<AcademicPage<PlacedAssignment>> teacherAssignments(
+    String userId, {
+    String? cursor,
+  }) => throw UnimplementedError();
 }

@@ -37,6 +37,13 @@ abstract final class Routes {
   static String academicHalaqaPeople(String halaqaId) =>
       '$academicStructure/halaqat/${Uri.encodeComponent(halaqaId)}/people';
 
+  /// Read-only academic relationship history for one account (`academic.manage`).
+  static String academicStudentHistory(String userId) =>
+      '$academicStructure/students/${Uri.encodeComponent(userId)}/history';
+
+  static String academicTeacherHistory(String userId) =>
+      '$academicStructure/teachers/${Uri.encodeComponent(userId)}/history';
+
   static String program(String programId) => '$programs/$programId';
 
   static String levels(String programId) => '$programs/$programId/levels';
