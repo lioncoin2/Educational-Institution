@@ -13,6 +13,7 @@ abstract final class Routes {
   static const String announcements = '/announcements';
   static const String messages = '/messages';
   static const String communities = '/communities';
+  static const String adminAccounts = '/admin/accounts';
   static const String signIn = '/sign-in';
 
   /// Where an invitation link opens. Its token is never in this path, a

@@ -148,6 +148,13 @@ responsibility and what each module must not know live in
 
 ## Flutter features (`app/lib/features/`)
 
+### admin
+
+- **Path:** `app/lib/features/admin/`
+- **Controllers:** `admin_accounts_controller.dart`
+- **Static imports → areas:** `core`, `data`, `providers`
+- **Static imports → features:** —
+
 ### announcements
 
 - **Path:** `app/lib/features/announcements/`
@@ -237,7 +244,7 @@ responsibility and what each module must not know live in
 - **Path:** `app/lib/features/profile/`
 - **Controllers:** —
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
-- **Static imports → features:** `communities`, `notifications`
+- **Static imports → features:** `admin`, `communities`, `notifications`
 
 ### programs
 
@@ -262,8 +269,8 @@ responsibility and what each module must not know live in
 
 ## Flutter data seam (`app/lib/data/`, `app/lib/app/`)
 
-- **Repository contracts (`data/repositories/repositories.dart`):** `AcademicRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `InstitutionRepository`, `LearningRepository`, `LiveRepository`, `MessagingRepository`, `NotificationsRepository`, `PeopleRepository`, `ProgressRepository`
-- **Routes (`app/routes.dart`):** `announcements` → `/announcements`, `certificates` → `/certificates`, `communities` → `/communities`, `home` → `/home`, `invite` → `/invite`, `messages` → `/messages`, `notificationSettings` → `/notifications/settings`, `notifications` → `/notifications`, `path` → `/path`, `profile` → `/profile`, `programs` → `/programs`, `progress` → `/progress`, `signIn` → `/sign-in`, `splash` → `/splash`
+- **Repository contracts (`data/repositories/repositories.dart`):** `AcademicRepository`, `AdminRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `InstitutionRepository`, `LearningRepository`, `LiveRepository`, `MessagingRepository`, `NotificationsRepository`, `PeopleRepository`, `ProgressRepository`
+- **Routes (`app/routes.dart`):** `adminAccounts` → `/admin/accounts`, `announcements` → `/announcements`, `certificates` → `/certificates`, `communities` → `/communities`, `home` → `/home`, `invite` → `/invite`, `messages` → `/messages`, `notificationSettings` → `/notifications/settings`, `notifications` → `/notifications`, `path` → `/path`, `profile` → `/profile`, `programs` → `/programs`, `progress` → `/progress`, `signIn` → `/sign-in`, `splash` → `/splash`
 - **Route builders:** `certificate`, `community`, `communityAttendance`, `communityAttendanceSnapshot`, `communityAttendanceSnapshots`, `communityInvitations`, `communityLive`, `communityMembers`, `conversation`, `episode`, `lesson`, `levels`, `program`
 - **Entry points:** `app/lib/main.dart`, `app/lib/app/app.dart`, `app/lib/app/router.dart`, `app/lib/providers/app_providers.dart`
 

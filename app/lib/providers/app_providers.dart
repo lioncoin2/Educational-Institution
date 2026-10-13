@@ -33,6 +33,7 @@ import '../data/repositories/academic/academic_catalog_repository.dart';
 import '../data/repositories/academic/academic_learning_repository.dart';
 import '../data/repositories/academic/academic_profile_repositories.dart';
 import '../data/repositories/http/http_academic_repository.dart';
+import '../data/repositories/http/http_admin_repository.dart';
 import '../data/repositories/http/http_attendance_repository.dart';
 import '../data/repositories/http/http_auth_repository.dart';
 import '../data/repositories/http/http_community_repository.dart';
@@ -41,6 +42,7 @@ import '../data/repositories/http/http_messaging_repository.dart';
 import '../data/repositories/http/http_notifications_repository.dart';
 import '../data/repositories/http/http_people_repository.dart';
 import '../data/repositories/mock/mock_academic_repository.dart';
+import '../data/repositories/mock/mock_admin_repository.dart';
 import '../data/repositories/mock/mock_attendance_repository.dart';
 import '../data/repositories/mock/mock_auth_repository.dart';
 import '../data/repositories/mock/mock_community_repository.dart';
@@ -199,6 +201,17 @@ final peopleRepositoryProvider = Provider<PeopleRepository>(
   (ref) => ref.watch(backendModeProvider)
       ? HttpPeopleRepository(ref.watch(apiClientProvider))
       : MockPeopleRepository(),
+);
+
+// ── Admin (account provisioning) ─────────────────────────────────────────────
+// Staff-only account directory + provisioning (`/admin/users`); the list lives
+// in features/admin/state. The server gates list on users.read and create on
+// users.manage and re-authorises every request.
+
+final adminRepositoryProvider = Provider<AdminRepository>(
+  (ref) => ref.watch(backendModeProvider)
+      ? HttpAdminRepository(ref.watch(apiClientProvider))
+      : MockAdminRepository(),
 );
 
 /// Writes the link to an invitation, given its token; null while nothing can.

@@ -17,6 +17,7 @@ import '../../core/widgets/layout/responsive_body.dart';
 import '../../core/widgets/patterns/info_row.dart';
 import '../../data/models/student.dart';
 import '../../providers/app_providers.dart';
+import '../admin/admin_copy.dart';
 import '../communities/community_copy.dart';
 import '../notifications/state/unread_count_controller.dart';
 import 'widgets/about_institution_section.dart';
@@ -32,6 +33,13 @@ class ProfileScreen extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
     final textScale = ref.watch(textScaleProvider);
     final unreadNotifications = ref.watch(unreadNotificationCountProvider);
+    // OWNER/ADMIN/SUPERVISOR may read the institution's accounts; the server
+    // re-authorises. A hidden entry is a courtesy, never the control.
+    final canSeeAccounts = ref.watch(
+      sessionUserProvider.select(
+        (session) => session.value?.can('users.read') ?? false,
+      ),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -151,6 +159,14 @@ class ProfileScreen extends ConsumerWidget {
                       label: CommunityCopy.screenTitle,
                       onTap: () => context.push(Routes.communities),
                     ),
+                    if (canSeeAccounts) ...[
+                      const Divider(indent: Insets.giant),
+                      _NavRow(
+                        icon: Icons.manage_accounts_outlined,
+                        label: AdminCopy.screenTitle,
+                        onTap: () => context.push(Routes.adminAccounts),
+                      ),
+                    ],
                   ],
                 ),
               ),

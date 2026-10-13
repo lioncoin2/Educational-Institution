@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/widgets/layout/adaptive_nav_shell.dart';
+import '../features/admin/admin_accounts_screen.dart';
 import '../features/announcements/announcements_screen.dart';
 import '../features/attendance/record_attendance_screen.dart';
 import '../features/attendance/snapshot_detail_screen.dart';
@@ -66,6 +67,12 @@ GoRouter buildRouter() {
         name: 'announcements',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const AnnouncementsScreen(),
+      ),
+      GoRoute(
+        path: Routes.adminAccounts,
+        name: 'admin-accounts',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const AdminAccountsScreen(),
       ),
       GoRoute(
         path: Routes.progress,

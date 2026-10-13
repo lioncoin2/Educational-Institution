@@ -1,4 +1,5 @@
 import '../models/academic.dart';
+import '../models/admin.dart';
 import '../models/attendance.dart';
 import '../models/auth.dart';
 import '../models/certificate.dart';
@@ -133,6 +134,28 @@ abstract interface class AuthRepository {
 
   /// Signs one of the user's devices out.
   Future<void> endSession(String sessionId);
+}
+
+/// Admin account provisioning (`/admin/users`) — staff create and view the
+/// institution's accounts. There is no self-registration; this is the only way
+/// an account comes into existence. The server is the authority: it gates the
+/// list on `users.read` and creation on `users.manage`, and re-authorises every
+/// request. A refusal throws [AdminException] with the server's code. No
+/// password or credential is ever returned.
+abstract interface class AdminRepository {
+  /// The institution's accounts, a keyset page at a time (newest-registered
+  /// first) — for a holder of `users.read`.
+  Future<AdminAccountPage> accounts({String? cursor});
+
+  /// Provisions a new account (status PENDING, no roles) with [displayName], an
+  /// email [identifier] and an [initialPassword] — for a holder of
+  /// `users.manage`. The server normalises/validates (email shape; password
+  /// ≥ 8); a taken identifier throws [AdminException] `identity.identifier_taken`.
+  Future<AdminAccount> createAccount({
+    required String displayName,
+    required String identifier,
+    required String initialPassword,
+  });
 }
 
 /// Messaging — conversations the signed-in person takes part in.
