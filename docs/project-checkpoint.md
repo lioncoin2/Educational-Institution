@@ -63,7 +63,9 @@ silently invent institutional rules — record unknowns as deferred.
   policy), **0030** (Flutter LiveKit media client), **0031** (architecture index), **0032** (discovery ≠
   membership ≠ authorization ≠ attendance — owner/admin-only `GET /people`, community-scoped member search),
   **0033** (Sprint 28: optional community–halaqa link as inert metadata; conversation member-list is
-  owner/admin-only; teacher roster is current students only). Table: `.../decisions/README.md`.
+  owner/admin-only; teacher roster is current students only),
+  **0034** (Sprint 30, **Deferred**: Q50 enrollment-sourced membership & derived capabilities stay
+  OPEN — policy unapproved + two model gaps; design ready). Table: `.../decisions/README.md`.
 - **Live-media verification log:** [`docs/p8-live-media-verification.md`](p8-live-media-verification.md).
   **Messaging/attachments + client dependencies:** [`docs/architecture/messaging.md`](architecture/messaging.md),
   [`docs/architecture/live.md`](architecture/live.md) §17.

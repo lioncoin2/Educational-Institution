@@ -777,6 +777,30 @@ describe('communities API', () => {
       const unknown = await call('PUT', '/communities/does-not-exist/halaqa', admin, { halaqaId });
       expect([unknown.status, code(unknown)]).toEqual([404, 'communities.community_not_found']);
     });
+
+    it('is inert: enrolling a student in the linked halaqa creates no membership (Q50 remains open)', async () => {
+      // Link the community to the halaqa, then enroll an outsider in that halaqa
+      // through academic. Enrollment-sourced membership is Q50 and NOT built
+      // (ADR 0016 dec 11, ADR 0032, ADR 0034): the link derives nothing.
+      expect((await call('PUT', `/communities/${linkId}/halaqa`, admin, { halaqaId })).status).toBe(
+        200,
+      );
+      const before = await call('GET', `/communities/${linkId}`, admin);
+      const enrolled = await call('POST', `/academic/halaqat/${halaqaId}/enrollments`, admin, {
+        studentUserId: outsider.id,
+      });
+      expect(enrolled.status).toBe(201);
+      // No community membership followed the enrollment: the count is unchanged,
+      // and to the enrolled student the community they were never added to does
+      // not exist (a non-member is told exactly what a stranger is told).
+      const after = await call('GET', `/communities/${linkId}`, admin);
+      expect(after.body.memberCount).toBe(before.body.memberCount);
+      const asOutsider = await call('GET', `/communities/${linkId}`, outsider);
+      expect([asOutsider.status, code(asOutsider)]).toEqual([
+        404,
+        'communities.community_not_found',
+      ]);
+    });
   });
 
   it('never answers with an email, and never with a token hash', () => {

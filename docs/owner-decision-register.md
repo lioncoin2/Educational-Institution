@@ -808,6 +808,52 @@ membership, capability, messaging or attendance is derived; ADR 0023 untouched).
 
 ---
 
+## 19. Q50 enrollment-sourced membership & derived capabilities — investigated, stays OPEN (Sprint 30)
+
+Sprint 30 investigated whether enrollment-sourced membership and derived
+capabilities can be built **safely within the existing architecture**. The
+answer is **not yet** — the policy is not owner-approved and the data model is
+not ready. Full evidence table, the exact owner decisions, and the ready design
+are in [ADR 0034](architecture/decisions/0034-q50-enrollment-sourced-membership-and-derived-capabilities.md).
+Nothing was implemented; the current **inert** behaviour was locked with a
+cross-module regression test.
+
+**Why it stays OPEN (each reason sufficient):**
+
+1. **Policy not approved (RESOLVED-as-NO by the provisional default, not by owner
+   "yes").** open-questions Q50's default is "no enrollment-sourced membership and
+   no derived capabilities in v1"; ADR 0032 rejects deriving membership as "exactly
+   Q50, which is OPEN… this ADR is forbidden to invent." Gated behind Q36, ADR 0015
+   and the Q40 governance gate. The capability↔relationship mapping is undefined —
+   inventing it is forbidden.
+2. **Model gaps (verified in source).** Membership `source` is `['ADDED','INVITATION']`
+   — no derived value, and one ACTIVE stint per person — so a derived membership
+   can't be told apart from, or removed independently of, a manual one. Capability
+   grants are owner-delegated with **one active grant per stint+capability and no
+   `source`** — a derived and an independent manual grant of the same capability
+   can't coexist, so derived revocation would be unsafe. Both need additive
+   migrations *before* any implementation.
+3. **Infra is ready (so this is not the blocker).** No outbox/broker/scheduler is
+   needed: the `CommunityChatSync` pattern (wake-on-event → pull-from-contract →
+   idempotent apply → boot+interval sweeper) already gives self-healing propagation
+   over the non-durable in-memory bus. Academic already emits enrollment events
+   (zero consumers today).
+
+**Exact owner decisions required** (narrowed; see ADR 0034 §"decisions required"):
+A eligibility (which states confer membership; what completion/withdrawal does);
+B target & cardinality (a halaqa backs ≥0 communities — all? none-until-one? no-op
+when none?); C derived membership is a distinct, coexisting source; D the exact
+capability↔relationship mapping (if any) + independent-source survival; E async
+projection is acceptable.
+
+**Classification:** **OPEN** (essential policy + two model migrations outstanding).
+Independently verified & complete this sprint: the source investigation, the
+evidence table, and the regression test proving the link + enrollment are inert.
+**Keep the Sprint 29 halaqa-link decision intact** — the association alone causes
+no membership or capability side effect.
+
+---
+
 > This register is advisory and reversible. Closing a question means: record an ADR in `decisions/`,
 > make the (usually small) change, and delete the entry from `open-questions.md` with the ADR number —
 > per that file's "How to close one."
