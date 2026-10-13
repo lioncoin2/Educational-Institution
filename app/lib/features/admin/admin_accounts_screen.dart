@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../app/routes.dart';
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/foundations/app_card.dart';
@@ -99,7 +101,10 @@ class _AccountsList extends ConsumerWidget {
               return ResponsiveBody(
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: Insets.sm),
-                  child: _AccountTile(account: account),
+                  child: _AccountTile(
+                    account: account,
+                    onTap: () => context.push(Routes.adminAccount(account.id)),
+                  ),
                 ),
               );
             },
@@ -111,14 +116,17 @@ class _AccountsList extends ConsumerWidget {
 }
 
 class _AccountTile extends StatelessWidget {
-  const _AccountTile({required this.account});
+  const _AccountTile({required this.account, this.onTap});
 
   final AdminAccount account;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final email = account.primaryIdentifier ?? AdminCopy.noIdentifier;
     return AppCard(
+      onTap: onTap,
+      semanticLabel: account.displayName,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -47,6 +47,31 @@ class _FakeAdmin implements AdminRepository {
     _accounts.insert(0, account);
     return account;
   }
+
+  // Lifecycle methods are exercised in account_detail_screen_test.dart.
+  @override
+  Future<AdminAccount> account(String userId) => throw UnimplementedError();
+
+  @override
+  Future<AdminAccount> assignRole(String userId, {required String role}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<AdminAccount> removeRole(String userId, {required String role}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<AdminAccount> setStatus(
+    String userId, {
+    required AccountStatus status,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> resetPassword(String userId, {required String newPassword}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<int> revokeSessions(String userId) => throw UnimplementedError();
 }
 
 AdminAccount _account(String name, String email) => AdminAccount(

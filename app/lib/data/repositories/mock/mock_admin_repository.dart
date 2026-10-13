@@ -82,6 +82,125 @@ class MockAdminRepository implements AdminRepository {
     return account;
   }
 
+  // ── Lifecycle (keeps the server's reachable rules on the in-memory record) ──
+  // The demo directory is stateful, so these mutate it; self/outrank rules are
+  // not modelled (the demo has one viewer), but unknown roles, invalid
+  // transitions and missing accounts refuse with the server's codes. No
+  // credential is stored, and the demo holds no sessions.
+  static const _knownRoles = {
+    'OWNER',
+    'ADMIN',
+    'SUPERVISOR',
+    'TEACHER',
+    'ASSISTANT_TEACHER',
+    'STUDENT',
+  };
+  static const _transitions = <AccountStatus, Set<AccountStatus>>{
+    AccountStatus.pending: {AccountStatus.active, AccountStatus.disabled},
+    AccountStatus.active: {AccountStatus.suspended, AccountStatus.disabled},
+    AccountStatus.suspended: {AccountStatus.active, AccountStatus.disabled},
+    AccountStatus.disabled: {AccountStatus.active},
+  };
+
+  AdminAccount _byId(String userId) {
+    for (final a in _accounts) {
+      if (a.id == userId) return a;
+    }
+    throw const AdminException('identity.user_not_found', 'No such account.');
+  }
+
+  AdminAccount _store(AdminAccount updated) {
+    final i = _accounts.indexWhere((a) => a.id == updated.id);
+    if (i >= 0) _accounts[i] = updated;
+    return updated;
+  }
+
+  AdminAccount _copy(
+    AdminAccount a, {
+    List<String>? roles,
+    AccountStatus? status,
+  }) => AdminAccount(
+    id: a.id,
+    displayName: a.displayName,
+    status: status ?? a.status,
+    identifiers: a.identifiers,
+    roles: roles ?? a.roles,
+    createdAt: a.createdAt,
+    origin: a.origin,
+  );
+
+  @override
+  Future<AdminAccount> account(String userId) async {
+    await _wait();
+    return _byId(userId);
+  }
+
+  @override
+  Future<AdminAccount> assignRole(String userId, {required String role}) async {
+    await _wait();
+    final a = _byId(userId);
+    if (!_knownRoles.contains(role)) {
+      throw const AdminException('identity.role_unknown', 'Unknown role.');
+    }
+    if (a.roles.contains(role)) return a;
+    return _store(_copy(a, roles: [...a.roles, role]));
+  }
+
+  @override
+  Future<AdminAccount> removeRole(String userId, {required String role}) async {
+    await _wait();
+    final a = _byId(userId);
+    return _store(
+      _copy(
+        a,
+        roles: [
+          for (final r in a.roles)
+            if (r != role) r,
+        ],
+      ),
+    );
+  }
+
+  @override
+  Future<AdminAccount> setStatus(
+    String userId, {
+    required AccountStatus status,
+  }) async {
+    await _wait();
+    final a = _byId(userId);
+    final allowed = _transitions[a.status] ?? const <AccountStatus>{};
+    if (!allowed.contains(status)) {
+      throw const AdminException(
+        'identity.status_transition_invalid',
+        'That status change is not allowed.',
+      );
+    }
+    return _store(_copy(a, status: status));
+  }
+
+  @override
+  Future<void> resetPassword(
+    String userId, {
+    required String newPassword,
+  }) async {
+    await _wait();
+    _byId(userId); // identity.user_not_found when missing
+    if (newPassword.runes.length < 8) {
+      throw const AdminException(
+        'identity.password_too_short',
+        'The password is too short.',
+      );
+    }
+    // The demo keeps no credentials; nothing is stored.
+  }
+
+  @override
+  Future<int> revokeSessions(String userId) async {
+    await _wait();
+    _byId(userId);
+    return 0; // the demo holds no sessions
+  }
+
   static bool _looksLikeEmail(String value) =>
       RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value);
 

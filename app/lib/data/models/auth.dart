@@ -18,6 +18,18 @@ enum AccountStatus {
     'DISABLED' => AccountStatus.disabled,
     _ => AccountStatus.unknown,
   };
+
+  /// The wire form the server expects (e.g. for a status change). [unknown] has
+  /// none — it is a read-time degradation, never something the app sends.
+  String get wire => switch (this) {
+    AccountStatus.pending => 'PENDING',
+    AccountStatus.active => 'ACTIVE',
+    AccountStatus.suspended => 'SUSPENDED',
+    AccountStatus.disabled => 'DISABLED',
+    AccountStatus.unknown => throw StateError(
+      'AccountStatus.unknown has no wire form',
+    ),
+  };
 }
 
 /// The signed-in account, as returned by `GET /auth/me`.

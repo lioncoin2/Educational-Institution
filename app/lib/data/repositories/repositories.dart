@@ -287,6 +287,43 @@ abstract interface class AdminRepository {
     required String identifier,
     required String initialPassword,
   });
+
+  // ── Account lifecycle administration (OWNER/ADMIN) ──
+  // Each act re-authorises on the server, which also enforces what a route
+  // cannot: the target is not the caller (`identity.self_administration`), the
+  // caller outranks the target (`identity.target_outranks_actor`), and a role
+  // granted carries no permission the caller lacks (`identity.role_outranks_actor`).
+  // The app never assumes a role or transition is permitted because the UI
+  // offers it. Role/status writes return the fresh account; password and
+  // session revocation return no account and expose no credential.
+
+  /// One account's full record (`GET /admin/users/:id`) — for `users.read`.
+  Future<AdminAccount> account(String userId);
+
+  /// Grants [role] to the account; returns the updated account. Gated on
+  /// `roles.assign`; refused with `identity.role_outranks_actor` /
+  /// `identity.role_unknown` and the shared guard's codes.
+  Future<AdminAccount> assignRole(String userId, {required String role});
+
+  /// Removes [role] from the account; returns the updated account
+  /// (`roles.assign`).
+  Future<AdminAccount> removeRole(String userId, {required String role});
+
+  /// Moves the account to [status] (`users.manage`). Only transitions the
+  /// server allows succeed; others throw `identity.status_transition_invalid`.
+  Future<AdminAccount> setStatus(
+    String userId, {
+    required AccountStatus status,
+  });
+
+  /// Sets a new password for the account (`users.manage`). Sent once and kept
+  /// nowhere; returns nothing. A too-short password throws
+  /// `identity.password_too_short`.
+  Future<void> resetPassword(String userId, {required String newPassword});
+
+  /// Ends every session the account holds (`sessions.manage`); returns how many
+  /// were ended.
+  Future<int> revokeSessions(String userId);
 }
 
 /// Messaging — conversations the signed-in person takes part in.

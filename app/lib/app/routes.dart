@@ -26,6 +26,10 @@ abstract final class Routes {
   /// out of the address bar before routing (lib/app/invite_link.dart).
   static const String invite = '/invite';
 
+  /// One account's detail and lifecycle administration (OWNER/ADMIN).
+  static String adminAccount(String userId) =>
+      '$adminAccounts/${Uri.encodeComponent(userId)}';
+
   static String academicProgram(String programId) =>
       '$academicStructure/programs/${Uri.encodeComponent(programId)}';
 

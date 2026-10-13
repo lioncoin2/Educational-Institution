@@ -1,5 +1,6 @@
 import '../../api/api_client.dart';
 import '../../models/admin.dart';
+import '../../models/auth.dart' show AccountStatus;
 import '../../models/data_origin.dart';
 import '../repositories.dart';
 
@@ -43,6 +44,69 @@ class HttpAdminRepository implements AdminRepository {
       origin: DataOrigin.records,
     ),
   );
+
+  // ── Account lifecycle (users.read / users.manage / roles.assign / sessions.manage) ──
+  // Role and status writes return the fresh account, so the detail re-renders
+  // from the server's truth. The password is sent once (204, nothing back) and
+  // kept nowhere. Session revocation returns only a count. The server
+  // re-authorises and enforces self/outrank/transition rules; refusals flow
+  // through [_call] keeping their code.
+
+  static String _user(String id) => '/admin/users/${Uri.encodeComponent(id)}';
+
+  @override
+  Future<AdminAccount> account(String userId) => _call(
+    () async => AdminAccount.fromJson(
+      await _api.get(_user(userId)),
+      origin: DataOrigin.records,
+    ),
+  );
+
+  @override
+  Future<AdminAccount> assignRole(String userId, {required String role}) =>
+      _call(
+        () async => AdminAccount.fromJson(
+          await _api.post('${_user(userId)}/roles', body: {'role': role}),
+          origin: DataOrigin.records,
+        ),
+      );
+
+  @override
+  Future<AdminAccount> removeRole(String userId, {required String role}) =>
+      _call(
+        () async => AdminAccount.fromJson(
+          await _api.delete(
+            '${_user(userId)}/roles/${Uri.encodeComponent(role)}',
+          ),
+          origin: DataOrigin.records,
+        ),
+      );
+
+  @override
+  Future<AdminAccount> setStatus(
+    String userId, {
+    required AccountStatus status,
+  }) => _call(
+    () async => AdminAccount.fromJson(
+      await _api.post('${_user(userId)}/status', body: {'status': status.wire}),
+      origin: DataOrigin.records,
+    ),
+  );
+
+  @override
+  Future<void> resetPassword(String userId, {required String newPassword}) =>
+      _call(() async {
+        await _api.post(
+          '${_user(userId)}/password',
+          body: {'newPassword': newPassword},
+        );
+      });
+
+  @override
+  Future<int> revokeSessions(String userId) => _call(() async {
+    final json = await _api.delete('${_user(userId)}/sessions');
+    return (json['sessionsEnded'] as num?)?.toInt() ?? 0;
+  });
 
   static const _unreadable = AdminException(
     'admin.unreadable',

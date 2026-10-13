@@ -5,6 +5,7 @@ import '../core/widgets/layout/adaptive_nav_shell.dart';
 import '../features/academic_admin/academic_structure_screen.dart';
 import '../features/academic_admin/halaqa_people_screen.dart';
 import '../features/academic_admin/program_halaqat_screen.dart';
+import '../features/admin/account_detail_screen.dart';
 import '../features/admin/admin_accounts_screen.dart';
 import '../features/announcements/announcements_screen.dart';
 import '../features/attendance/record_attendance_screen.dart';
@@ -76,6 +77,15 @@ GoRouter buildRouter() {
         name: 'admin-accounts',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const AdminAccountsScreen(),
+        routes: [
+          GoRoute(
+            path: ':userId',
+            name: 'admin-account',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) =>
+                AccountDetailScreen(userId: state.pathParameters['userId']!),
+          ),
+        ],
       ),
       GoRoute(
         path: Routes.academicStructure,
