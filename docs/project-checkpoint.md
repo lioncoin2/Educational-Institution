@@ -21,9 +21,12 @@ in-memory). Product scope is the owner's; engineering never invents institutiona
 ## Repository state (verify before trusting)
 
 - **Branch:** `claude/quranic-education-app-prototype-gkzle8`
-- **HEAD:** `2140a4d` (Sprint 31 — master roadmap reconciliation) at the start of Sprint 32; Sprint 32
-  commits the owner membership policy on top (re-verify with `git rev-parse HEAD`). **In sync with `origin`.**
-- **Latest work, newest first:** Sprint 32 owner membership/capability policy (Policy A–E) recorded, ADR
+- **HEAD:** `f13f09c` (Sprint 32 — owner membership policy / ADR 0035) at the start of Sprint 33; Sprint 33
+  commits the owner **decision brief** (docs only, no product code) on top (re-verify with `git rev-parse HEAD`).
+  **In sync with `origin`.**
+- **Latest work, newest first:** Sprint 33 owner decision brief for the gated product loop
+  `docs/owner-decision-brief-product-loop.md` (GROUP C/D/G + Q6 + Q28; **recommendations pending owner
+  approval**, nothing resolved); Sprint 32 owner membership/capability policy (Policy A–E) recorded, ADR
   0035, **Q50 fully resolved** (enrollment→membership/derived-caps decided NO); Sprint 31 master roadmap
   `docs/project-roadmap.md` (`2140a4d`); Sprint 30 Q50 enrollment-membership/derived-caps investigated →
   deferred, ADR 0034 (`144ab15`); Sprint 29 Q50 halaqa existence validation + Flutter link/unlink UI (`c6f48e9`);
@@ -32,8 +35,8 @@ in-memory). Product scope is the owner's; engineering never invents institutiona
   LiveKit web activation (`76e8e48`); Sprint 19 secure sessions (`89a8879`); before that the live-media
   programme. Full verified ledger (SHAs + CI run IDs): [`docs/project-roadmap.md §4`](project-roadmap.md).
   Use `git log --oneline` for the authoritative history, not this file.
-- **Date reconciled:** 2026-10-13 (Sprint 32 — owner membership/capability policy recorded, ADR 0035, Q50
-  fully resolved; one regression test; no product feature code changed. Prior: Sprint 31 roadmap).
+- **Date reconciled:** 2026-10-13 (Sprint 33 — owner decision brief for GROUP C/D/G + Q6 + Q28, docs only,
+  recommendations pending approval, nothing resolved. Prior: Sprint 32 membership policy / ADR 0035).
 - **Preserved local working-tree changes (do NOT overwrite):** four owner-maintained files remain modified
   and intentionally uncommitted — `backend/src/platform/health/health.controller.ts` (+ its new
   `health.controller.spec.ts`, a DB-readiness probe, observability.md §3), `docs/architecture/observability.md`,

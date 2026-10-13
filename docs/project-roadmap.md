@@ -245,6 +245,11 @@ Q50-derive — is implementable without inventing policy, which is forbidden. En
 either external-resource-gated (native, push, P8 hardware) or blocked on P8 evidence (P11).
 
 **Decision sheet to put to the owner (smallest set, greatest unlock):**
+- **A consolidated, decision-ready brief for GROUP C/D/G + Q6 + Q28 is in
+  [`docs/owner-decision-brief-product-loop.md`](owner-decision-brief-product-loop.md)** (Sprint 33 —
+  current behaviour, the plain-language decision, a recommended default, alternatives, implications,
+  prerequisites, reversibility, and a dependency-aware decision order; **recommendations pending owner
+  approval**, nothing resolved).
 - **GROUP C/D/G** product policy and **GROUP A** residue (Q6) — gate the educational loop (progress,
   assessment, mastery, assignments, operations) and parent messaging. This is now the highest unlock.
 - **P8 deferral** — decide whether to lift "defer until real users" and authorize a capacity run (operational, needs hardware).

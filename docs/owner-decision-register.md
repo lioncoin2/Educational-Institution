@@ -133,6 +133,12 @@ Safe interim**.
   30-day max, immediate join, no preview) or change them?*
 - **Safe interim:** current provisional defaults (no app create, no archive, links as configured).
 
+> **Decision-ready brief (Sprint 33):** GROUP C, D, G, the GROUP A/Q6 residue and Q28 are consolidated
+> for the owner in [`owner-decision-brief-product-loop.md`](owner-decision-brief-product-loop.md) —
+> current behaviour, the decision in plain language, a recommended default (labelled pending approval),
+> alternatives, implications, prerequisites, reversibility, and a decision order. It marks nothing
+> resolved; the group entries below stay the authoritative mapping.
+
 ### GROUP C — Academic progression, assessment, mastery, certificates  (must NOT be invented)
 
 **IDs: Q37 (assessment/placement/mastery/«نظام الضخ»), Q9 (certificates), Q38 (development path).**
