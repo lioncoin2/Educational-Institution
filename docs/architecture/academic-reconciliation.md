@@ -1,8 +1,13 @@
 # Academic Core — owner information reconciliation
 
-**Status: open, waiting on the owner.** Date: 2026-09-23. Baseline: Academic
-Core V1 at commit `dffb156` ([academic.md](academic.md),
-[ADR 0014](decisions/0014-academic-core-v1.md)).
+**Status: RESOLVED and applied — this audit is history.** The questions it raised
+(Q35/Q36, the seven core sections, Tahajji/groups) were **answered by the owner on
+2026-10-05** and recorded in [ADR 0015](decisions/0015-academic-structure-reconciliation.md)
+(Accepted; Option A applied to the seed + tests). Authoritative current status:
+[open-questions.md](open-questions.md) Q35/Q36, [ADR 0015], and
+[`project-roadmap.md`](../project-roadmap.md). The original status line is kept below for
+history. *(Original — Date: 2026-09-23, Baseline: Academic Core V1 at commit `dffb156`,
+[academic.md](academic.md), [ADR 0014](decisions/0014-academic-core-v1.md).)*
 
 **Scope.** This is an audit, not feature work. After Academic Core V1 was
 finished, the owner described the institution's academic organisation in

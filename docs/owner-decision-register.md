@@ -10,10 +10,11 @@ the ADRs (immutable). It groups the still-open questions, adds a recommendation 
 owner question per group, maps each to the roadmap, and lists the engineering work that needs **no**
 owner decision. Evidence is cited by file + Q/ADR; line numbers are omitted deliberately (they drift).
 
-**Compiled:** 2026-10-11, from source (branch `claude/quranic-education-app-prototype-gkzle8`, HEAD
-`143147a…`). Verified against `open-questions.md`, `decisions/README.md`, the module contracts, and the
-project checkpoint. A question is treated as *resolved* only when an ADR or an owner ruling records it —
-never because code happens to run one provisional default.
+**Compiled:** 2026-10-11, from source; **reconciled 2026-10-13 (Sprint 31)** at HEAD `144ab15` (adds §17–§19
+for Sprints 28–30 and ADR 0033/0034). Verified against `open-questions.md`, `decisions/README.md`, the module
+contracts, and the project checkpoint; the consolidated status map is [`docs/project-roadmap.md`](project-roadmap.md).
+A question is treated as *resolved* only when an ADR or an owner ruling records it — never because code happens
+to run one provisional default.
 
 ---
 
@@ -23,8 +24,10 @@ The product's core is built and verified: Identity, Communities (membership, del
 invitation links), Community chat + moderation (delete/review), Messaging (incl. the `message.deleted`
 realtime hint), Live sessions + policy-gated moderation (kick, presenters, no-hidden-listeners),
 Attendance snapshots (record + view + the Flutter surface), the Academic read surfaces, and
-Notifications (inbox/list/read/badge/preferences/device-registration). Backend `jest` 3743 passed,
-Flutter 1238 passed, all static + architecture gates green (see §9 Verification).
+Notifications (inbox/list/read/badge/preferences/device-registration). As of HEAD `144ab15` (Sprint 30):
+backend `jest` **3807 passed**, Flutter **1405 passed** (Sprint 29), all static + architecture gates green;
+CI run `38329854598` success (supersedes the earlier 3743/1238 figures). See §9 and
+[`project-roadmap.md §4/§9`](project-roadmap.md).
 
 **Almost everything that remains is gated by an owner policy decision, an external provider/resource, or
 a capacity dependency — not by missing engineering.** The five backend modules `people`, `operations`,
@@ -823,9 +826,12 @@ cross-module regression test.
 1. **Policy not approved (RESOLVED-as-NO by the provisional default, not by owner
    "yes").** open-questions Q50's default is "no enrollment-sourced membership and
    no derived capabilities in v1"; ADR 0032 rejects deriving membership as "exactly
-   Q50, which is OPEN… this ADR is forbidden to invent." Gated behind Q36, ADR 0015
-   and the Q40 governance gate. The capability↔relationship mapping is undefined —
-   inventing it is forbidden.
+   Q50, which is OPEN… this ADR is forbidden to invent." The capability↔relationship
+   mapping is undefined — inventing it is forbidden. **Reconciled (Sprint 31):** the
+   governance prerequisites ADR 0034 cited — Q36/Q35 (ADR 0015), ADR 0015 itself, and
+   the Q40 governance gate (ADR 0016) — are now all **RESOLVED**, so the *operative*
+   blocker for Q50-derive is the owner policy A–E (+ the two model migrations), not
+   those gates. ADR 0034's decision (defer) is unchanged.
 2. **Model gaps (verified in source).** Membership `source` is `['ADDED','INVITATION']`
    — no derived value, and one ACTIVE stint per person — so a derived membership
    can't be told apart from, or removed independently of, a manual one. Capability

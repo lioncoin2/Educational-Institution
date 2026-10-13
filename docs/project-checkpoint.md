@@ -21,13 +21,16 @@ in-memory). Product scope is the owner's; engineering never invents institutiona
 ## Repository state (verify before trusting)
 
 - **Branch:** `claude/quranic-education-app-prototype-gkzle8`
-- **HEAD:** `8b88f92` — `feat(messaging): support real message attachments` (Sprint 21). **In sync with
-  `origin`** (0 ahead / 0 behind at the time of writing).
-- **Latest work, newest first:** Sprint 21 attachments/voice (`8b88f92`); Sprint 20 LiveKit web
-  activation (`76e8e48`); Sprint 19 secure persistent sessions (`89a8879`); before that the reconnect
-  diagnostic/evidence series (`6350e46`…) and the long P6→P18 live-media programme. Use `git log --oneline`
-  for the full lineage — it is the authoritative history, not this file.
-- **Date reconciled:** 2026-10-12 (Sprint 22 — this documentation-only reconciliation).
+- **HEAD:** `144ab15` — `Sprint 30: Q50 enrollment-sourced membership & derived capabilities — investigated,
+  stays OPEN`. **In sync with `origin`** (0 ahead / 0 behind at the time of writing).
+- **Latest work, newest first:** Sprint 30 Q50 enrollment-membership/derived-caps investigated → deferred,
+  ADR 0034 (`144ab15`); Sprint 29 Q50 halaqa existence validation + Flutter link/unlink UI (`c6f48e9`);
+  Sprint 28 Q50 link / Q22 member-list / Q31 roster (`54204f9`); Sprints 24–27 people discovery + ADR 0032
+  (`42507b3`…`03fd925`); Sprint 22 checkpoint (`f67c4f6`); Sprint 21 attachments/voice (`8b88f92`); Sprint 20
+  LiveKit web activation (`76e8e48`); Sprint 19 secure sessions (`89a8879`); before that the live-media
+  programme. Full verified ledger (SHAs + CI run IDs): [`docs/project-roadmap.md §4`](project-roadmap.md).
+  Use `git log --oneline` for the authoritative history, not this file.
+- **Date reconciled:** 2026-10-13 (Sprint 31 — documentation-only roadmap reconciliation; no product code changed).
 - **Preserved local working-tree changes (do NOT overwrite):** four owner-maintained files remain modified
   and intentionally uncommitted — `backend/src/platform/health/health.controller.ts` (+ its new
   `health.controller.spec.ts`, a DB-readiness probe, observability.md §3), `docs/architecture/observability.md`,
@@ -50,6 +53,10 @@ silently invent institutional rules — record unknowns as deferred.
 ## Authoritative documents (read these)
 
 - **Engineering governance (read first, obey always):** [`docs/ENGINEERING_RULES.md`](ENGINEERING_RULES.md).
+- **Master roadmap & status (Sprint 31):** [`docs/project-roadmap.md`](project-roadmap.md) — the
+  authoritative, evidence-grounded phase/status matrix, sprint ledger, incomplete-work inventory, critical
+  path, and next action. This checkpoint is the current-state continuity source; the roadmap is the
+  consolidated status map.
 - **Roadmap / owner-policy authority:** [`docs/owner-decision-register.md`](owner-decision-register.md) —
   every unresolved owner decision, grouped A–G, cross-referencing `open-questions.md` and the ADRs. This
   checkpoint links and summarizes it; it does not replace it.
@@ -282,14 +289,20 @@ cosmetic `academic.*` "levels" description fix (new migration). **IMPLEMENTABLE_
 ---
 
 ## CI / E2E / deployment evidence
-- **CI** run `38259433922` @ `8b88f92` (2026-10-12) → **success** — jobs Backend, Backend — real LiveKit,
-  Flutter app. **Deploy Pages** run `38259433921` @ `8b88f92` → **success**.
+Per-SHA run IDs for the whole Sprint 19–30 ledger are in [`project-roadmap.md §4`](project-roadmap.md);
+current HEAD and the latest two below.
+- **CI** run `38329854598` @ `144ab15` (Sprint 30) → **success** — jobs Backend, Backend — real LiveKit,
+  Flutter app. **Deploy Pages** run `38329854602` @ `144ab15` → **success**. (Sprint 29 @ `c6f48e9`: CI
+  `38323027472` / Deploy `38323027465`, both success.)
 - **Live E2E** (real LiveKit) run `38254959768` @ `76e8e48` → **success** (production-composition + the
-  2-/3-client, screen-share, reset, session-end harnesses). Not re-dispatched for `8b88f92` (no live-media
-  wiring change; it is dispatch-only — `gh workflow run live-e2e.yml --ref <branch>`).
-- Flutter full VM suite = **1394 passed** locally @ `8b88f92`; web release build ✓; `arch:index:check`
-  up to date. Backend suite is exercised by the CI Backend job (incl. the PostgreSQL integration suites,
-  which CI runs with `POSTGRES_REQUIRED=1`, and the real-LiveKit contract job).
+  2-/3-client, screen-share, reset, session-end harnesses), on **web/Chrome with fake media devices** — not
+  device validation. Dispatch/scoped-PR only (not on-push); last run for `76e8e48`
+  (`gh workflow run live-e2e.yml --ref <branch>`).
+- Flutter full VM suite = **1405 passed** (@ `c6f48e9`, Sprint 29); backend `jest` = **3807 passed** (@
+  `144ab15`, no-PG local run; 22 Postgres suites skipped locally and exercised by CI). Web release build ✓;
+  `arch:index:check` up to date. The CI Backend job runs the PostgreSQL integration suites with
+  `POSTGRES_REQUIRED=1`, and the real-LiveKit contract job runs the pinned server. **No CI/load run logs are
+  committed to the repo** — the run IDs are the evidence. (Supersedes the earlier `8b88f92`/1394 figures.)
 
 ## Deferred / open questions (do not guess)
 - Voice/LiveKit mapping of educational groups (separate from the academic model).
