@@ -102,6 +102,7 @@ GoRouter buildRouter() {
             parentNavigatorKey: _rootNavigatorKey,
             builder: (context, state) => TeacherRosterScreen(
               halaqaId: state.pathParameters['halaqaId']!,
+              halaqaName: state.extra as String?,
             ),
           ),
         ],

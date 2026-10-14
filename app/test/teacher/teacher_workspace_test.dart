@@ -76,10 +76,28 @@ HalaqaRosterEntry _rosterStudent(
   'student': {'userId': id, 'displayName': name, 'active': active},
 });
 
+HalaqaTeacherEntry _coTeacher(
+  String id,
+  String name, {
+  String role = 'ASSISTANT_TEACHER',
+}) => HalaqaTeacherEntry.fromJson({
+  'assignment': {
+    'id': 'asg-$id',
+    'halaqaId': 'h:1',
+    'teacherUserId': id,
+    'role': role,
+    'status': 'ACTIVE',
+    'startedAt': '2026-09-01T08:00:00.000Z',
+    'endedAt': null,
+  },
+  'teacher': {'userId': id, 'displayName': name, 'active': true},
+});
+
 class _FakeAcademic implements AcademicRepository {
   _FakeAcademic({
     this.teaching = const [],
     this.rosterPages = const {},
+    this.teacherPages = const {},
     this.meFailWith,
     this.rosterFailWith,
     this.truncated = false,
@@ -87,12 +105,20 @@ class _FakeAcademic implements AcademicRepository {
 
   final List<Map<String, Object?>> teaching;
   final Map<String?, AcademicPage<HalaqaRosterEntry>> rosterPages;
+  final Map<String?, AcademicPage<HalaqaTeacherEntry>> teacherPages;
   final String? meFailWith;
   final String? rosterFailWith;
   final bool truncated;
 
   @override
   DataOrigin get origin => DataOrigin.records;
+
+  @override
+  Future<AcademicPage<HalaqaTeacherEntry>> halaqaTeachers(
+    String halaqaId, {
+    String? status,
+    String? cursor,
+  }) async => teacherPages[cursor] ?? const AcademicPage(items: []);
 
   @override
   Future<MyAcademic> me() async {
@@ -211,12 +237,51 @@ void main() {
     await tester.tap(find.text('حلقة ألف'));
     await tester.pumpAndSettle();
 
-    expect(find.text(TeacherCopy.rosterTitle), findsOneWidget);
+    // The halaqa view (tabs) opened, titled with the halaqa name, students first.
+    expect(find.text(TeacherCopy.studentsTab), findsOneWidget);
+    expect(find.text(TeacherCopy.teachersTab), findsOneWidget);
     expect(find.text('مريم'), findsOneWidget);
     // Read-only: no management affordances.
     expect(find.byType(PopupMenuButton<String>), findsNothing);
     expect(find.byIcon(Icons.more_vert), findsNothing);
     expect(find.byType(FloatingActionButton), findsNothing);
+  });
+
+  testWidgets('shows co-teachers on the teachers tab, read-only', (
+    tester,
+  ) async {
+    final repo = _FakeAcademic(
+      rosterPages: {
+        null: AcademicPage(items: [_rosterStudent('u:s1', 'مريم')]),
+      },
+      teacherPages: {
+        null: AcademicPage(items: [_coTeacher('u:t2', 'الأستاذة سُمية')]),
+      },
+    );
+    await open(tester, Routes.teacherHalaqaRoster('h:1'), repo: repo);
+    await tester.tap(find.text(TeacherCopy.teachersTab));
+    await tester.pumpAndSettle();
+
+    expect(find.text('الأستاذة سُمية'), findsOneWidget);
+    expect(
+      find.textContaining(TeacherCopy.role(TeachingRole.assistantTeacher)),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('an empty co-teacher list shows its own empty state', (
+    tester,
+  ) async {
+    final repo = _FakeAcademic(
+      rosterPages: {
+        null: AcademicPage(items: [_rosterStudent('u:s1', 'مريم')]),
+      },
+      teacherPages: {null: const AcademicPage(items: [])},
+    );
+    await open(tester, Routes.teacherHalaqaRoster('h:1'), repo: repo);
+    await tester.tap(find.text(TeacherCopy.teachersTab));
+    await tester.pumpAndSettle();
+    expect(find.text(TeacherCopy.noTeachers), findsOneWidget);
   });
 
   testWidgets('a halaqa the teacher cannot access is refused, not empty', (

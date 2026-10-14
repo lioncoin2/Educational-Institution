@@ -14,9 +14,14 @@ abstract final class TeacherCopy {
   static const truncatedNote = 'تُعرض أحدث الحلقات؛ قد توجد حلقات أخرى.';
   static const viewStudents = 'عرض الطلاب';
 
-  static const rosterTitle = 'طلاب الحلقة';
+  static const halaqaFallbackTitle = 'الحلقة';
+  static const studentsTab = 'الطلاب';
+  static const teachersTab = 'المعلّمون';
   static const noStudents = 'لا طلاب في هذه الحلقة';
   static const noStudentsMessage = 'لا يوجد طلاب مسجّلون في هذه الحلقة حاليًا.';
+  static const noTeachers = 'لا معلّمون آخرون';
+  static const noTeachersMessage =
+      'لا يوجد معلّمون آخرون مُسنَدون لهذه الحلقة حاليًا.';
   static const loadMore = 'عرض المزيد';
   static const loadMoreFailed = 'تعذّر التحميل — إعادة المحاولة';
   static const inactiveAccount = 'حساب موقوف';

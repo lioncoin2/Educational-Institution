@@ -133,6 +133,7 @@ class _AssignmentCard extends StatelessWidget {
     return AppCard(
       onTap: () => context.push(
         Routes.teacherHalaqaRoster(teaching.assignment.halaqaId),
+        extra: placement.halaqa.name,
       ),
       semanticLabel: placement.halaqa.name,
       child: Row(
