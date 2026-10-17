@@ -235,7 +235,7 @@ responsibility and what each module must not know live in
 ### messaging
 
 - **Path:** `app/lib/features/messaging/`
-- **Controllers:** `conversation_controller.dart`, `conversation_list_controller.dart`
+- **Controllers:** `conversation_controller.dart`, `conversation_list_controller.dart`, `conversation_mutes_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
 - **Static imports → features:** `communities`
 
@@ -249,9 +249,9 @@ responsibility and what each module must not know live in
 ### profile
 
 - **Path:** `app/lib/features/profile/`
-- **Controllers:** —
+- **Controllers:** `sessions_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
-- **Static imports → features:** `academic_admin`, `admin`, `communities`, `notifications`, `teacher`
+- **Static imports → features:** `academic_admin`, `admin`, `communities`, `notifications`, `student`, `teacher`
 
 ### programs
 
@@ -274,17 +274,24 @@ responsibility and what each module must not know live in
 - **Static imports → areas:** `app`, `core`, `data`
 - **Static imports → features:** —
 
+### student
+
+- **Path:** `app/lib/features/student/`
+- **Controllers:** `student_enrollments_controller.dart`, `student_record_controller.dart`
+- **Static imports → areas:** `app`, `core`, `data`, `providers`
+- **Static imports → features:** `academic_admin`, `messaging`
+
 ### teacher
 
 - **Path:** `app/lib/features/teacher/`
-- **Controllers:** `teacher_assignments_controller.dart`
+- **Controllers:** `teacher_assignments_controller.dart`, `teacher_history_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
-- **Static imports → features:** `academic_admin`
+- **Static imports → features:** `academic_admin`, `messaging`
 
 ## Flutter data seam (`app/lib/data/`, `app/lib/app/`)
 
 - **Repository contracts (`data/repositories/repositories.dart`):** `AcademicRepository`, `AdminRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `InstitutionRepository`, `LearningRepository`, `LiveRepository`, `MessagingRepository`, `NotificationsRepository`, `PeopleRepository`, `ProgressRepository`
-- **Routes (`app/routes.dart`):** `academicStructure` → `/admin/academic`, `adminAccounts` → `/admin/accounts`, `announcements` → `/announcements`, `certificates` → `/certificates`, `communities` → `/communities`, `home` → `/home`, `invite` → `/invite`, `messages` → `/messages`, `notificationSettings` → `/notifications/settings`, `notifications` → `/notifications`, `path` → `/path`, `profile` → `/profile`, `programs` → `/programs`, `progress` → `/progress`, `signIn` → `/sign-in`, `splash` → `/splash`, `teacherWorkspace` → `/teaching`
+- **Routes (`app/routes.dart`):** `academicStructure` → `/admin/academic`, `adminAccounts` → `/admin/accounts`, `announcements` → `/announcements`, `certificates` → `/certificates`, `changePassword` → `/profile/password`, `communities` → `/communities`, `home` → `/home`, `invite` → `/invite`, `messages` → `/messages`, `notificationSettings` → `/notifications/settings`, `notifications` → `/notifications`, `path` → `/path`, `profile` → `/profile`, `programs` → `/programs`, `progress` → `/progress`, `sessions` → `/profile/sessions`, `signIn` → `/sign-in`, `splash` → `/splash`, `studentRecord` → `/my-halaqat/record`, `studentWorkspace` → `/my-halaqat`, `teacherHistory` → `/teaching/history`, `teacherWorkspace` → `/teaching`
 - **Route builders:** `academicHalaqaPeople`, `academicProgram`, `academicStudentHistory`, `academicTeacherHistory`, `adminAccount`, `certificate`, `community`, `communityAttendance`, `communityAttendanceSnapshot`, `communityAttendanceSnapshots`, `communityInvitations`, `communityLive`, `communityMembers`, `conversation`, `episode`, `lesson`, `levels`, `program`, `teacherHalaqaRoster`
 - **Entry points:** `app/lib/main.dart`, `app/lib/app/app.dart`, `app/lib/app/router.dart`, `app/lib/providers/app_providers.dart`
 
