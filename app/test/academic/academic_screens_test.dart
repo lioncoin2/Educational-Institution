@@ -337,7 +337,11 @@ void main() {
       (tester) async {
         server.enroll('h:dep-tajweed-2-h3');
         await open(tester, '/profile');
-        expect(find.text('مريم'), findsOneWidget);
+        // The signed-in account's name shows in TWO intended places against the
+        // backend: the identity header and the AccountSection session card
+        // ("signed in as …", which owns sign-out / password / sessions). Both
+        // are the real account — neither is a demo placeholder.
+        expect(find.text('مريم'), findsNWidgets(2));
         expect(find.text('قسم تجويد متوسط'), findsOneWidget);
         expect(find.text('ملف طالبة تجريبي'), findsNothing);
         // No target group is on file for a real account (the demo shows one).

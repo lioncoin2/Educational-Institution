@@ -63,6 +63,14 @@ abstract final class MessagingCopy {
   /// the server keeps to itself (locked, no capability, too large).
   static const cannotPostHere = 'لا يمكنك النشر في هذه المحادثة حاليًا.';
 
+  // ── Conversation mute (Q6 / ADR 0036): silence PUSH for one conversation ──
+  // In-app and realtime delivery are unchanged; only push is held.
+  static const mute = 'كتم الإشعارات';
+  static const unmute = 'إلغاء كتم الإشعارات';
+  static const muted = 'تم كتم إشعارات هذه المحادثة.';
+  static const unmuted = 'أُلغي كتم الإشعارات.';
+  static const muteToggleFailed = 'تعذّر تحديث الكتم. حاول مرة أخرى.';
+
   // ── Starting a direct conversation (Q6, owner GROUP A ruling) ────────────
   // Offered on a co-member's name in a group or community chat, to a viewer
   // whose account may start one. The server decides who they may reach.

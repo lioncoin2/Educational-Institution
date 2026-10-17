@@ -333,4 +333,12 @@ class _FakeAcademic implements AcademicRepository {
     String userId, {
     String? cursor,
   }) => throw UnimplementedError();
+
+  @override
+  Future<AcademicPage<PlacedEnrollment>> myEnrollments({String? cursor}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<AcademicPage<PlacedAssignment>> myTeaching({String? cursor}) =>
+      throw UnimplementedError();
 }

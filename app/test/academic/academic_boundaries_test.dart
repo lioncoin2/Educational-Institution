@@ -113,8 +113,10 @@ void main() {
     for (final foreign in const ['/people', '/communities', '/messaging']) {
       expect(http.contains(foreign), isFalse, reason: foreign);
     }
-    // The reads are the four structure GETs, the two roster GETs, and the
-    // two relationship-history GETs (student enrolments, teacher assignments).
-    expect(RegExp(r'_api\.get\(').allMatches(http), hasLength(8));
+    // The reads are the four structure GETs, the two roster GETs, the two
+    // admin relationship-history GETs (one student's enrolments, one teacher's
+    // assignments), and the two SELF-history GETs (the signed-in person's own
+    // `me/enrollments` and `me/teaching`).
+    expect(RegExp(r'_api\.get\(').allMatches(http), hasLength(10));
   });
 }

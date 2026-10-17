@@ -10,8 +10,10 @@ import '../../data/models/messaging.dart';
 import '../../providers/app_providers.dart';
 import '../communities/state/community_controller.dart';
 import 'messaging_copy.dart';
+import '../../data/models/notifications.dart';
 import 'state/conversation_controller.dart';
 import 'state/conversation_list_controller.dart';
+import 'state/conversation_mutes_controller.dart';
 import 'state/direct_message_starter.dart';
 import 'widgets/composer.dart';
 import 'widgets/connection_banner.dart';
@@ -77,6 +79,15 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             user.value?.can('messaging.start_direct') == true,
       ),
     );
+    // Per-conversation PUSH mute (Q6 / ADR 0036), the viewer's own choice.
+    // Backend-only (the server stores it); the server re-checks every change.
+    final backend = ref.watch(backendModeProvider);
+    final muted =
+        ref
+            .watch(conversationMutesProvider)
+            .value
+            ?.contains(widget.conversationId) ??
+        false;
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -99,6 +110,17 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           ],
         ),
         actions: [
+          if (backend && conversation != null)
+            IconButton(
+              key: const Key('conversation-mute-toggle'),
+              tooltip: muted ? MessagingCopy.unmute : MessagingCopy.mute,
+              onPressed: () => _toggleMute(muted),
+              icon: Icon(
+                muted
+                    ? Icons.notifications_off_outlined
+                    : Icons.notifications_none_rounded,
+              ),
+            ),
           IconButton(
             tooltip: 'تحديث',
             onPressed: () => ref.read(provider.notifier).refreshNewer(),
@@ -150,6 +172,20 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         ),
       ),
     );
+  }
+
+  /// Flips this conversation's PUSH mute through the controller (optimistic,
+  /// reverts on failure), and says what changed. The server is the authority.
+  Future<void> _toggleMute(bool muted) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref
+          .read(conversationMutesProvider.notifier)
+          .setMuted(widget.conversationId, !muted);
+      messenger.toast(muted ? MessagingCopy.unmuted : MessagingCopy.muted);
+    } on NotificationsException {
+      messenger.toast(MessagingCopy.muteToggleFailed);
+    }
   }
 }
 

@@ -7,6 +7,12 @@ abstract final class Routes {
   static const String path = '/path';
   static const String certificates = '/certificates';
   static const String profile = '/profile';
+
+  /// The signed-in user changes their own password (`POST /auth/password`).
+  static const String changePassword = '/profile/password';
+
+  /// The signed-in user's own devices/sessions (`GET /auth/sessions`).
+  static const String sessions = '/profile/sessions';
   static const String progress = '/progress';
   static const String notifications = '/notifications';
   static const String notificationSettings = '/notifications/settings';
@@ -22,6 +28,18 @@ abstract final class Routes {
   /// The teacher's own workspace: the halaqat they actively teach
   /// (`academic.teach`). The server answers by the authenticated identity.
   static const String teacherWorkspace = '/teaching';
+
+  /// The teacher's own assignment record: every assignment, current and past
+  /// (`GET /academic/me/teaching`, `academic.read`).
+  static const String teacherHistory = '/teaching/history';
+
+  /// The student's own workspace: the halaqat they are enrolled in
+  /// (`academic.read`/`academic.study`). The server answers by the identity.
+  static const String studentWorkspace = '/my-halaqat';
+
+  /// The student's own academic record: every enrollment, current and past
+  /// (`GET /academic/me/enrollments`, `academic.read`).
+  static const String studentRecord = '/my-halaqat/record';
 
   static const String signIn = '/sign-in';
 

@@ -315,6 +315,26 @@ class HttpAcademicRepository implements AcademicRepository {
     ),
   );
 
+  @override
+  Future<AcademicPage<PlacedEnrollment>> myEnrollments({String? cursor}) =>
+      _call(
+        () async => AcademicPage.fromJson(
+          await _api.get(
+            '/academic/me/enrollments',
+            query: {'cursor': ?cursor},
+          ),
+          PlacedEnrollment.fromJson,
+        ),
+      );
+
+  @override
+  Future<AcademicPage<PlacedAssignment>> myTeaching({String? cursor}) => _call(
+    () async => AcademicPage.fromJson(
+      await _api.get('/academic/me/teaching', query: {'cursor': ?cursor}),
+      PlacedAssignment.fromJson,
+    ),
+  );
+
   static const _unreadable = AcademicException(
     'academic.unreadable',
     'The server sent something this app cannot read.',

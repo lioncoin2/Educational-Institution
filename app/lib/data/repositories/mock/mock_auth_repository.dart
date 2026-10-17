@@ -100,4 +100,47 @@ class MockAuthRepository implements AuthRepository {
       _user = null;
     }
   }
+
+  /// Reproduces the server's contract so the screen behaves the same on the
+  /// demo build: requires a session, and rejects a blank / too-short /
+  /// unchanged new password with the same codes. It holds no credential, so any
+  /// non-empty current password is accepted; on success other sessions would end
+  /// on the server — the mock keeps only this device, so the session stays.
+  @override
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await Future<void>.delayed(AppConfig.fakeLatency);
+    if (_user == null) {
+      throw const AuthException(
+        'identity.authentication_required',
+        'Authentication required.',
+      );
+    }
+    if (currentPassword.isEmpty) {
+      throw const AuthException(
+        'identity.current_password_incorrect',
+        'The current password is incorrect.',
+      );
+    }
+    if (newPassword.trim().isEmpty) {
+      throw const AuthException(
+        'identity.password_blank',
+        'The password must not be blank.',
+      );
+    }
+    if (newPassword.runes.length < 8) {
+      throw const AuthException(
+        'identity.password_too_short',
+        'The password is too short.',
+      );
+    }
+    if (newPassword == currentPassword) {
+      throw const AuthException(
+        'identity.password_unchanged',
+        'The new password must differ from the current one.',
+      );
+    }
+  }
 }

@@ -12,6 +12,7 @@ import '../../data/models/academic.dart';
 import '../../providers/app_providers.dart';
 import '../academic_admin/state/halaqa_people_controller.dart'
     show halaqaRosterProvider, halaqaTeachersProvider;
+import '../messaging/widgets/start_direct_message_button.dart';
 import 'teacher_copy.dart';
 
 /// One of the teacher's halaqat, read-only: its current students and its
@@ -81,6 +82,14 @@ class _StudentsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final roster = ref.watch(halaqaRosterProvider(halaqaId));
     final demo = !ref.watch(backendModeProvider);
+    // A teacher may start a direct conversation with a student (staff hold
+    // `messaging.start_direct`). The server re-authorises every start, so this
+    // only governs the affordance; it grants nothing and invents no policy.
+    final canMessageStudent = ref.watch(
+      sessionUserProvider.select(
+        (session) => session.value?.can('messaging.start_direct') ?? false,
+      ),
+    );
     return AsyncView(
       value: roster,
       onRetry: () => ref.invalidate(halaqaRosterProvider(halaqaId)),
@@ -110,6 +119,15 @@ class _StudentsTab extends ConsumerWidget {
             active: person.active,
             subtitle: null,
             icon: Icons.person_outline,
+            // Contact a current, active student; a suspended account is not
+            // offered the action (the server would refuse an unreachable one).
+            trailing: canMessageStudent && person.active
+                ? StartDirectMessageButton(
+                    key: Key('message-student-${person.userId}'),
+                    userId: person.userId,
+                    label: TeacherCopy.messageStudent,
+                  )
+                : null,
           );
         },
       ),
@@ -256,12 +274,16 @@ class _PersonCard extends StatelessWidget {
     required this.active,
     required this.subtitle,
     required this.icon,
+    this.trailing,
   });
 
   final String? name;
   final bool active;
   final String? subtitle;
   final IconData icon;
+
+  /// An optional end-of-row action (e.g. message this student). Null = none.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -291,6 +313,7 @@ class _PersonCard extends StatelessWidget {
               ],
             ),
           ),
+          ?trailing,
         ],
       ),
     );

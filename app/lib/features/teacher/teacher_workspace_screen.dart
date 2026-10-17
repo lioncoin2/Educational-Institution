@@ -30,6 +30,11 @@ class TeacherWorkspaceScreen extends ConsumerWidget {
         title: const Text(TeacherCopy.workspaceTitle),
         actions: [
           IconButton(
+            tooltip: TeacherCopy.historyEntry,
+            onPressed: () => context.push(Routes.teacherHistory),
+            icon: const Icon(Icons.history_edu_outlined),
+          ),
+          IconButton(
             tooltip: TeacherCopy.refresh,
             onPressed: () => ref.invalidate(teacherAssignmentsProvider),
             icon: const Icon(Icons.refresh_rounded),

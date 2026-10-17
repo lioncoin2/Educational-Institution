@@ -90,6 +90,27 @@ class HttpNotificationsRepository implements NotificationsRepository {
         _api.delete('/notifications/devices/${Uri.encodeComponent(deviceId)}'),
   );
 
+  static String _mute(String id) =>
+      '/notifications/mutes/${Uri.encodeComponent(id)}';
+
+  @override
+  Future<Set<String>> mutedConversations() => _call(() async {
+    final json = await _api.get('/notifications/mutes');
+    final items = json['conversations'] as List<Object?>? ?? const [];
+    return {
+      for (final item in items)
+        ((item! as Map).cast<String, Object?>())['conversationId']! as String,
+    };
+  });
+
+  @override
+  Future<void> muteConversation(String conversationId) =>
+      _call(() => _api.put(_mute(conversationId)));
+
+  @override
+  Future<void> unmuteConversation(String conversationId) =>
+      _call(() => _api.delete(_mute(conversationId)));
+
   static Future<T> _call<T>(Future<T> Function() work) async {
     try {
       return await work();

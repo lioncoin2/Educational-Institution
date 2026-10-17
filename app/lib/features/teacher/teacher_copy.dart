@@ -22,6 +22,15 @@ abstract final class TeacherCopy {
   static const noTeachers = 'لا معلّمون آخرون';
   static const noTeachersMessage =
       'لا يوجد معلّمون آخرون مُسنَدون لهذه الحلقة حاليًا.';
+  static const messageStudent = 'مراسلة الطالب';
+
+  // ── The teacher's own assignment record (every halaqa, current & past) ──
+  static const historyTitle = 'سجلّ إسناداتي';
+  static const historyEntry = 'سجلّ إسناداتي';
+  static const historyEmpty = 'لا سجلّ إسناد بعد';
+  static const historyEmptyMessage =
+      'ستظهر هنا الحلقات المُسنَدة إليك، الحالية والسابقة.';
+
   static const loadMore = 'عرض المزيد';
   static const loadMoreFailed = 'تعذّر التحميل — إعادة المحاولة';
   static const inactiveAccount = 'حساب موقوف';

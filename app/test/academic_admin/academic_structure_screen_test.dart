@@ -296,6 +296,14 @@ class _FakeAcademic implements AcademicRepository {
     String? cursor,
   }) => throw UnimplementedError();
 
+  @override
+  Future<AcademicPage<PlacedEnrollment>> myEnrollments({String? cursor}) =>
+      throw UnimplementedError();
+
+  @override
+  Future<AcademicPage<PlacedAssignment>> myTeaching({String? cursor}) =>
+      throw UnimplementedError();
+
   Map<String, Object?> _findProgram(String id) {
     for (final section in _sections) {
       for (final program

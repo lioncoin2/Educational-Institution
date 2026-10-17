@@ -291,6 +291,14 @@ class MockAcademicRepository implements AcademicRepository {
     String? cursor,
   }) async => throw _unsupported;
 
+  @override
+  Future<AcademicPage<PlacedEnrollment>> myEnrollments({String? cursor}) async =>
+      throw _unsupported;
+
+  @override
+  Future<AcademicPage<PlacedAssignment>> myTeaching({String? cursor}) async =>
+      throw _unsupported;
+
   static AcademicSection _withoutPrograms(AcademicSection section) =>
       AcademicSection(
         id: section.id,

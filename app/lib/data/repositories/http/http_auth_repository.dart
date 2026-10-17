@@ -104,6 +104,23 @@ class HttpAuthRepository implements AuthRepository {
     }
   }
 
+  @override
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    try {
+      // 204 No Content; the server ends every OTHER session but keeps this one,
+      // so the tokens on this device stay valid — nothing to rewrite here.
+      await _api.post(
+        '/auth/password',
+        body: {'currentPassword': currentPassword, 'newPassword': newPassword},
+      );
+    } on ApiException catch (error) {
+      throw AuthException(error.code, error.message);
+    }
+  }
+
   static String _platform() {
     if (kIsWeb) return 'web';
     return switch (defaultTargetPlatform) {

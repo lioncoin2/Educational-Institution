@@ -219,6 +219,20 @@ abstract interface class AcademicRepository {
     String userId, {
     String? cursor,
   });
+
+  /// The SIGNED-IN student's own enrollment history (`GET /academic/me/
+  /// enrollments`), every status, newest first, each record with where it sits.
+  /// The server answers by the authenticated identity — no user id — so a
+  /// student reads only their own record (`academic.read`). Paginated; pass
+  /// [cursor] for the next page.
+  Future<AcademicPage<PlacedEnrollment>> myEnrollments({String? cursor});
+
+  /// The SIGNED-IN teacher's own assignment history (`GET /academic/me/
+  /// teaching`), every status, newest first, each record with where it sits.
+  /// The server answers by the authenticated identity — no user id — so a
+  /// teacher reads only their own record (`academic.read`). Paginated; pass
+  /// [cursor] for the next page.
+  Future<AcademicPage<PlacedAssignment>> myTeaching({String? cursor});
 }
 
 abstract interface class LearningRepository {
@@ -284,6 +298,17 @@ abstract interface class AuthRepository {
 
   /// Signs one of the user's devices out.
   Future<void> endSession(String sessionId);
+
+  /// Changes THIS account's password. The server verifies [currentPassword],
+  /// enforces the policy (≥ 8 code points, not blank, and different from the
+  /// current), and ends every OTHER device's session — this device stays
+  /// signed in. Throws [AuthException] with the server's code on refusal
+  /// (`identity.current_password_incorrect`, `identity.password_too_short`,
+  /// `identity.password_unchanged`, …).
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  });
 }
 
 /// Admin account provisioning (`/admin/users`) — staff create and view the
@@ -777,4 +802,17 @@ abstract interface class NotificationsRepository {
   });
 
   Future<void> unregisterDevice(String deviceId);
+
+  /// The caller's own muted conversations — the set of conversation ids whose
+  /// PUSH the viewer has silenced (Q6 / ADR 0036). Self-scoped on the server
+  /// (`GET /notifications/mutes`); in-app and realtime delivery are unaffected.
+  Future<Set<String>> mutedConversations();
+
+  /// Silences push for one conversation (`PUT /notifications/mutes/:id`,
+  /// idempotent). Throws [NotificationsException] on refusal.
+  Future<void> muteConversation(String conversationId);
+
+  /// Restores push for one conversation (`DELETE /notifications/mutes/:id`,
+  /// idempotent). Throws [NotificationsException] on refusal.
+  Future<void> unmuteConversation(String conversationId);
 }

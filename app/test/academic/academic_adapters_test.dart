@@ -189,6 +189,14 @@ class CountingAcademic implements AcademicRepository {
     String userId, {
     String? cursor,
   }) => inner.teacherAssignments(userId, cursor: cursor);
+
+  @override
+  Future<AcademicPage<PlacedEnrollment>> myEnrollments({String? cursor}) =>
+      inner.myEnrollments(cursor: cursor);
+
+  @override
+  Future<AcademicPage<PlacedAssignment>> myTeaching({String? cursor}) =>
+      inner.myTeaching(cursor: cursor);
 }
 
 void main() {

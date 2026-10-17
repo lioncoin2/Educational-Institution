@@ -30,11 +30,16 @@ import '../features/messaging/conversation_screen.dart';
 import '../features/messaging/conversations_screen.dart';
 import '../features/notifications/notification_settings_screen.dart';
 import '../features/notifications/notifications_screen.dart';
+import '../features/profile/change_password_screen.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/profile/sessions_screen.dart';
 import '../features/programs/program_detail_screen.dart';
 import '../features/programs/programs_screen.dart';
 import '../features/progress/progress_screen.dart';
 import '../features/splash/splash_screen.dart';
+import '../features/student/student_record_screen.dart';
+import '../features/student/student_workspace_screen.dart';
+import '../features/teacher/teacher_history_screen.dart';
 import '../features/teacher/teacher_roster_screen.dart';
 import '../features/teacher/teacher_workspace_screen.dart';
 import 'routes.dart';
@@ -104,6 +109,26 @@ GoRouter buildRouter() {
               halaqaId: state.pathParameters['halaqaId']!,
               halaqaName: state.extra as String?,
             ),
+          ),
+          GoRoute(
+            path: 'history',
+            name: 'teacher-history',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) => const TeacherHistoryScreen(),
+          ),
+        ],
+      ),
+      GoRoute(
+        path: Routes.studentWorkspace,
+        name: 'student-workspace',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const StudentWorkspaceScreen(),
+        routes: [
+          GoRoute(
+            path: 'record',
+            name: 'student-record',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) => const StudentRecordScreen(),
           ),
         ],
       ),
@@ -357,6 +382,20 @@ GoRouter buildRouter() {
                 path: Routes.profile,
                 name: 'profile',
                 builder: (context, state) => const ProfileScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'password',
+                    name: 'change-password',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => const ChangePasswordScreen(),
+                  ),
+                  GoRoute(
+                    path: 'sessions',
+                    name: 'sessions',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => const SessionsScreen(),
+                  ),
+                ],
               ),
             ],
           ),

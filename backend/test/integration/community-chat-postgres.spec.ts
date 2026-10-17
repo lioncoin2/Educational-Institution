@@ -629,8 +629,18 @@ describeWithPostgres('community chats on Postgres', () => {
       ).toBe('messaging.conversation_not_found');
       expect((await h.recipients.list(chatId, { limit: 1000 })).userIds).not.toContain(lost.userId);
 
+      // The sweeper is the backstop (community-chat.md §7.5): correctness never
+      // depends on WHICH trigger first finds the projection ahead. The authority-
+      // driven access checks above are themselves self-healing — each schedules a
+      // reconcile for this community (ConversationAccess.checkRow → requestReconcile;
+      // MessageRecipientsService → requestReconcile) — so asserting the sweep itself
+      // observes `ahead: 1` races that rebuild and is flaky under load (it can read
+      // the projection already reconciled, reporting `ahead: 0`). Assert only what is
+      // deterministic — the sweep enumerated the one community — then wait on the
+      // explicit convergence condition below, which proves the rebuild happened
+      // (projection == authority, tombstone, warning, no audit).
       const report = await h.sweeper.tick();
-      expect(report).toMatchObject({ ahead: 1 });
+      expect(report).toMatchObject({ communities: 1 });
       await h.sync.idle();
       expect((await readModel.communityChat(communityId))?.projectedVersion).toBe(restoredTo);
       expect(await projected(chatId)).toEqual(await authority(communityId));

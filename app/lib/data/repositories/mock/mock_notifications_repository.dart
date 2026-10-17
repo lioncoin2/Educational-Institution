@@ -163,6 +163,26 @@ class MockNotificationsRepository implements NotificationsRepository {
     }
   }
 
+  final Set<String> _muted = <String>{};
+
+  @override
+  Future<Set<String>> mutedConversations() async {
+    await _wait();
+    return Set.of(_muted);
+  }
+
+  @override
+  Future<void> muteConversation(String conversationId) async {
+    await _wait();
+    _muted.add(conversationId);
+  }
+
+  @override
+  Future<void> unmuteConversation(String conversationId) async {
+    await _wait();
+    _muted.remove(conversationId);
+  }
+
   Future<void> _wait() =>
       latency == Duration.zero ? Future.value() : Future.delayed(latency);
 

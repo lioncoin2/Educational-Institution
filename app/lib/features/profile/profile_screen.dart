@@ -21,8 +21,10 @@ import '../academic_admin/academic_admin_copy.dart';
 import '../admin/admin_copy.dart';
 import '../communities/community_copy.dart';
 import '../notifications/state/unread_count_controller.dart';
+import '../student/student_copy.dart';
 import '../teacher/teacher_copy.dart';
 import 'widgets/about_institution_section.dart';
+import 'widgets/account_section.dart';
 
 /// The learner's account, appearance settings, and the institution's own
 /// information straight from the profile.
@@ -55,6 +57,14 @@ class ProfileScreen extends ConsumerWidget {
     final isTeacher = ref.watch(
       sessionUserProvider.select(
         (session) => session.value?.can('academic.teach') ?? false,
+      ),
+    );
+    // A student may open their own enrolment workspace; `academic.study` marks
+    // an eligible student. The server answers by the authenticated identity and
+    // shows only this student's own halaqat.
+    final isStudent = ref.watch(
+      sessionUserProvider.select(
+        (session) => session.value?.can('academic.study') ?? false,
       ),
     );
 
@@ -127,6 +137,9 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ),
 
+            // ── الحساب والجلسة (في وضع الخادم فقط) ─────────────────────
+            const SliverToBoxAdapter(child: AccountSection()),
+
             // ── روابط سريعة ────────────────────────────────────────────
             SliverGutter(
               top: Insets.xxl,
@@ -182,6 +195,14 @@ class ProfileScreen extends ConsumerWidget {
                         icon: Icons.manage_accounts_outlined,
                         label: AdminCopy.screenTitle,
                         onTap: () => context.push(Routes.adminAccounts),
+                      ),
+                    ],
+                    if (isStudent) ...[
+                      const Divider(indent: Insets.giant),
+                      _NavRow(
+                        icon: Icons.school_outlined,
+                        label: StudentCopy.workspaceTitle,
+                        onTap: () => context.push(Routes.studentWorkspace),
                       ),
                     ],
                     if (isTeacher) ...[
