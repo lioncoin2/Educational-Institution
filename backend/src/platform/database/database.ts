@@ -38,13 +38,42 @@ export function createPool(config: AppConfig): Pool {
   // would be an uncaught 'error' and end the process. Logged by code and
   // class only: the message can echo connection details.
   pool.on('error', (error: Error) => {
-    const code = (error as { code?: unknown }).code;
     logger.warn(
-      { err: { name: error.name, code: typeof code === 'string' ? code : undefined } },
+      { err: errorClass(error) },
       'an idle database connection failed; the pool dropped it',
     );
   });
+  // A connection can also fail while it is checked out — mid-transaction, when
+  // Postgres restarts or the network drops. node-postgres then emits 'error' on
+  // the CLIENT, which the pool listens to only while the client is idle; unheard,
+  // that is an uncaught exception and the whole process ends with every request
+  // in it. The work in flight already fails on its own (its query rejects, and
+  // its caller answers with the failure), and the pool discards the broken
+  // client when it is released — so this listener only keeps the event from
+  // ending the process. Logged by code and class only, as above.
+  pool.on('connect', (client) => {
+    let reported = false;
+    client.on('error', (error: Error) => {
+      // While the client is idle the pool listens too, and reports it above;
+      // this listener speaks only for a client in use.
+      if (client.listenerCount('error') > 1) return;
+      // pg reports one lost connection more than once (Postgres's own 57P01,
+      // then "Connection terminated unexpectedly"): one line per connection.
+      if (reported) return;
+      reported = true;
+      logger.warn(
+        { err: errorClass(error) },
+        'a database connection in use failed; the work on it was refused',
+      );
+    });
+  });
   return pool;
+}
+
+/** What may be logged of a driver error: its class and code, never its message. */
+function errorClass(error: Error): { name: string; code: string | undefined } {
+  const code = (error as { code?: unknown }).code;
+  return { name: error.name, code: typeof code === 'string' ? code : undefined };
 }
 
 export function createDatabase(pool: Pool): Database {
