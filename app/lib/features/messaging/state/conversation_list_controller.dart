@@ -71,8 +71,28 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
   /// next page asked for before is dropped rather than spliced on.
   int _generation = 0;
 
+  /// Moves on with every build — the account changing, a refresh. The
+  /// notifier (and its `ref`) outlives a rebuild, so `ref.mounted` cannot tell
+  /// a page asked for under the last build from one asked for under this one;
+  /// a result is applied only if the build that asked for it is still current.
+  int _epoch = 0;
+
+  /// What is shown, only while it is settled data of the current build. A
+  /// rebuild keeps the previous build's value inside its loading or error
+  /// state (Riverpod's `previous`); that is the last account's inbox, and no
+  /// update may be computed from it.
+  ConversationListState? get _shown => state.asData?.value;
+
   @override
   Future<ConversationListState> build() async {
+    // Kept for the app's life, so it must follow the account: a different
+    // account is a different inbox — rebuilt the moment the account changes,
+    // so a sign-out on a shared device leaves nothing of the last one's here.
+    ref.watch(sessionUserProvider.select((session) => session.value?.id));
+    _epoch += 1;
+    _generation += 1;
+    _viewerId = null;
+    _resyncing = null;
     final repository = ref.watch(messagingRepositoryProvider);
     final realtime = ref.watch(realtimeConnectionProvider);
     final events = realtime.events.listen(_onEvent);
@@ -82,11 +102,12 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
       unawaited(statuses.cancel());
     });
 
+    final epoch = _epoch;
     final (page, viewer) = await (
       repository.conversations(),
       repository.viewerId(),
     ).wait;
-    _viewerId = viewer;
+    if (epoch == _epoch) _viewerId = viewer;
     return ConversationListState(
       items: page.items,
       nextCursor: page.nextCursor,
@@ -97,7 +118,7 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
   /// failure keeps what is shown and offers retry; a page cut from a list no
   /// longer shown is dropped.
   Future<void> loadMore() async {
-    final current = state.value;
+    final current = _shown;
     if (current == null ||
         state.isLoading ||
         !current.hasMore ||
@@ -106,13 +127,14 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
     }
     final repository = ref.read(messagingRepositoryProvider);
     final generation = _generation;
+    final epoch = _epoch;
     state = AsyncData(
       current.copyWith(loadingMore: true, loadMoreFailed: false),
     );
     try {
       final page = await repository.conversations(cursor: current.nextCursor);
-      if (!ref.mounted) return;
-      final now = state.value ?? current;
+      if (!ref.mounted || epoch != _epoch) return;
+      final now = _shown ?? current;
       if (generation != _generation) {
         state = AsyncData(now.copyWith(loadingMore: false));
         return;
@@ -128,9 +150,9 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
         ),
       );
     } on MessagingException {
-      if (!ref.mounted) return;
+      if (!ref.mounted || epoch != _epoch) return;
       state = AsyncData(
-        (state.value ?? current).copyWith(
+        (_shown ?? current).copyWith(
           loadingMore: false,
           loadMoreFailed: generation == _generation,
         ),
@@ -146,7 +168,7 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
   /// Clears a conversation's badge locally once it has been read, without
   /// refetching the list.
   void markedRead(String conversationId, int sequence) {
-    final current = state.value;
+    final current = _shown;
     if (current == null) return;
     state = AsyncData(
       current.copyWith(
@@ -162,7 +184,7 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
   /// server. Moves its conversation to the top with the new preview; a
   /// message already counted changes nothing.
   void messageStored(Message message, {String? senderName}) {
-    final current = state.value;
+    final current = _shown;
     if (current == null) return;
     final index = current.items.indexWhere(
       (c) => c.id == message.conversationId,
@@ -196,7 +218,7 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
   /// conversation this list has not loaded, or whose preview is a different
   /// message, is left unchanged (a re-read reconciles).
   void messageDeleted(String conversationId, int sequence) {
-    final current = state.value;
+    final current = _shown;
     if (current == null) return;
     final index = current.items.indexWhere((c) => c.id == conversationId);
     if (index < 0) return;
@@ -216,8 +238,7 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
     switch (event) {
       case ConversationCreatedEvent():
         final known =
-            state.value?.items.any((c) => c.id == event.conversationId) ??
-            false;
+            _shown?.items.any((c) => c.id == event.conversationId) ?? false;
         if (!known) unawaited(_resync());
       case MessageSentEvent():
         messageStored(event.message, senderName: event.senderName);
@@ -232,7 +253,7 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
       case CommunityMemberRemovedEvent() when event.userId == _viewerId:
         unawaited(communityLeft(event.communityId));
       case ParticipantRemovedEvent() when event.userId == _viewerId:
-        final current = state.value;
+        final current = _shown;
         if (current == null) return;
         _generation += 1;
         state = AsyncData(
@@ -257,7 +278,7 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
   /// list at once, then the list is fetched again — the server's word stands
   /// over what was taken out.
   Future<void> communityLeft(String communityId) {
-    final current = state.value;
+    final current = _shown;
     if (current != null) {
       _generation += 1;
       state = AsyncData(
@@ -279,9 +300,14 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
   /// The first page again, quietly — no spinner over what is shown. Runs
   /// once at a time; a failure keeps what is shown.
   Future<void> _resync() {
-    return _resyncing ??= _fetchFirstPage().whenComplete(
-      () => _resyncing = null,
-    );
+    final running = _resyncing;
+    if (running != null) return running;
+    late final Future<void> next;
+    // Clears only its own slot: a rebuild may have started a newer resync.
+    next = _fetchFirstPage().whenComplete(() {
+      if (identical(_resyncing, next)) _resyncing = null;
+    });
+    return _resyncing = next;
   }
 
   /// A first-page read that starts after the one in flight, if any — the
@@ -301,17 +327,20 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
   }
 
   Future<void> _fetchFirstPage() async {
-    if (state.value == null) return; // Still loading: build fetches anyway.
+    if (_shown == null) return; // Still loading: build fetches anyway.
+    final epoch = _epoch;
     try {
       final page = await ref.read(messagingRepositoryProvider).conversations();
-      if (!ref.mounted) return;
+      // Asked for under a build that is no longer current — the last
+      // account's, say: its answer is the last account's inbox. Dropped.
+      if (!ref.mounted || epoch != _epoch) return;
       _generation += 1;
       state = AsyncData(
         ConversationListState(
           items: page.items,
           nextCursor: page.nextCursor,
           // A next page on its way stays on its way — to be dropped.
-          loadingMore: state.value?.loadingMore ?? false,
+          loadingMore: _shown?.loadingMore ?? false,
         ),
       );
     } on MessagingException {

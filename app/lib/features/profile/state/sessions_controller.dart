@@ -13,8 +13,12 @@ import '../../../providers/app_providers.dart';
 /// surfaces failures as state — no HTTP or business logic leaks into widgets.
 class SessionsController extends AsyncNotifier<List<DeviceSession>> {
   @override
-  Future<List<DeviceSession>> build() =>
-      ref.watch(authRepositoryProvider).sessions();
+  Future<List<DeviceSession>> build() {
+    // Another account has other sessions: read again when the account changes
+    // (the screen sits on the profile tab, which stays mounted).
+    ref.watch(sessionUserProvider.select((session) => session.value?.id));
+    return ref.watch(authRepositoryProvider).sessions();
+  }
 
   Future<void> refresh() async {
     ref.invalidateSelf();

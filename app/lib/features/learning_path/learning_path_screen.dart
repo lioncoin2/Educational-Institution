@@ -57,7 +57,10 @@ class LearningPathScreen extends ConsumerWidget {
     final path = ref.watch(pathProvider);
     final progress = ref.watch(progressProvider);
     final currentHalaqa = ref.watch(currentHalaqaProvider);
-    final currentStep = signedOut ? null : _currentStep(path.value);
+    // Only this learner's settled path: a rebuild after an account change
+    // keeps the last learner's as Riverpod's `previous`, never to be shown.
+    final settledPath = path.asData?.value;
+    final currentStep = signedOut ? null : _currentStep(settledPath);
 
     return Theme(
       data: PathPalette.themeOf(context),
@@ -109,7 +112,7 @@ class LearningPathScreen extends ConsumerWidget {
                   // A real record with no current enrollment says exactly
                   // that — not "awaiting registration", which is not a state
                   // the institution's records have.
-                  else if (backend && path.hasValue)
+                  else if (backend && settledPath != null)
                     const SliverGutter(
                       top: Insets.xl,
                       child: _NotEnrolledCard(),

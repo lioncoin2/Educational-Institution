@@ -85,8 +85,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final muted =
         ref
             .watch(conversationMutesProvider)
-            .value
-            ?.contains(widget.conversationId) ??
+            // Only this account's settled set — never a rebuild's `previous`.
+            .asData
+            ?.value
+            .contains(widget.conversationId) ??
         false;
     return Scaffold(
       appBar: AppBar(

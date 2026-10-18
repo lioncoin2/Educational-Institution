@@ -29,8 +29,15 @@ class UnreadCountController extends AsyncNotifier<UnreadCount> {
   Future<void>? _refreshing;
   bool _again = false;
 
+  /// Moves on with every build: the notifier outlives a rebuild (the account
+  /// changing), so a count asked for under the last build is dropped.
+  int _epoch = 0;
+
   @override
   Future<UnreadCount> build() async {
+    _epoch += 1;
+    _refreshing = null;
+    _again = false;
     // A different account is a different inbox — counted again only when the
     // account changes, not while the session merely resolves.
     ref.watch(sessionUserProvider.select((session) => session.value?.id));
@@ -56,7 +63,12 @@ class UnreadCountController extends AsyncNotifier<UnreadCount> {
       _again = true;
       return _refreshing!;
     }
-    return _refreshing = _refreshLoop().whenComplete(() => _refreshing = null);
+    late final Future<void> next;
+    // Clears only its own slot: a rebuild may have started a newer one.
+    next = _refreshLoop().whenComplete(() {
+      if (identical(_refreshing, next)) _refreshing = null;
+    });
+    return _refreshing = next;
   }
 
   /// One notification was read on this device.
@@ -75,11 +87,12 @@ class UnreadCountController extends AsyncNotifier<UnreadCount> {
   }
 
   Future<void> _refreshLoop() async {
+    final epoch = _epoch;
     do {
       _again = false;
       try {
         final count = await _fetch(ref.read(notificationsRepositoryProvider));
-        if (!ref.mounted) return;
+        if (!ref.mounted || epoch != _epoch) return;
         state = AsyncData(count);
       } on NotificationsException {
         // Keep what is shown; the next event or reconnect tries again.

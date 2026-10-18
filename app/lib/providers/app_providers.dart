@@ -72,15 +72,22 @@ final Provider<AcademicRepository> academicRepositoryProvider =
 /// The institution is described by its profile in both modes; the person is
 /// the signed-in account and its academic record against the backend, and
 /// the demo's placeholder learner otherwise.
+/// Against the backend, the person described is the signed-in account — so
+/// the repository is per account: rebuilt when the account changes, and with
+/// it every learner provider that reads it (they are kept alive on tabs that
+/// stay mounted; without this, the next person on a shared device would see
+/// the last one's name and record).
 final Provider<InstitutionRepository> institutionRepositoryProvider =
-    Provider<InstitutionRepository>(
-      (ref) => ref.watch(backendModeProvider)
-          ? AcademicInstitutionRepository(
-              ref.watch(academicRepositoryProvider),
-              ref.watch(authRepositoryProvider),
-            )
-          : const MockInstitutionRepository(),
-    );
+    Provider<InstitutionRepository>((ref) {
+      if (!ref.watch(backendModeProvider)) {
+        return const MockInstitutionRepository();
+      }
+      ref.watch(sessionUserProvider.select((session) => session.value?.id));
+      return AcademicInstitutionRepository(
+        ref.watch(academicRepositoryProvider),
+        ref.watch(authRepositoryProvider),
+      );
+    });
 
 /// Always read through an academic repository. Against the backend, the
 /// structure is the institution's records for whoever is signed in; to a
@@ -97,12 +104,14 @@ final catalogRepositoryProvider = Provider<CatalogRepository>((ref) {
 });
 
 /// Against the backend: the learner's real enrollments and no progress (none
-/// is recorded). In the demo: the placeholder path, lessons and progress.
-final learningRepositoryProvider = Provider<LearningRepository>(
-  (ref) => ref.watch(backendModeProvider)
-      ? AcademicLearningRepository(ref.watch(academicRepositoryProvider))
-      : const MockLearningRepository(),
-);
+/// is recorded) — the signed-in learner's, so rebuilt when the account
+/// changes (see [institutionRepositoryProvider]). In the demo: the
+/// placeholder path, lessons and progress.
+final learningRepositoryProvider = Provider<LearningRepository>((ref) {
+  if (!ref.watch(backendModeProvider)) return const MockLearningRepository();
+  ref.watch(sessionUserProvider.select((session) => session.value?.id));
+  return AcademicLearningRepository(ref.watch(academicRepositoryProvider));
+});
 final progressRepositoryProvider = Provider<ProgressRepository>(
   (ref) => ref.watch(backendModeProvider)
       ? const UnrecordedProgressRepository()
