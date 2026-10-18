@@ -4,6 +4,7 @@ import { join, relative } from 'node:path';
 import { RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 
+import { CORS_METHODS } from '../../src/platform/http/configure-app';
 import { PUBLIC_ROUTE } from '../../src/platform/http/public-route.decorator';
 import {
   REQUIRE_AUTHENTICATION,
@@ -113,6 +114,16 @@ describe('route authorization', () => {
       'platform/health/health.controller.ts#HealthController',
     ]);
     expect(routes.length).toBeGreaterThanOrEqual(20);
+  });
+
+  // A route whose method the CORS policy omits works for native apps and is
+  // dead for the web app: its preflight fails (PATCH was missing until 2026-10).
+  it('serves only methods the CORS policy lets a listed browser origin send — and the policy no more', () => {
+    const served = new Set(routes.map((route) => route.route.split(' ')[0]));
+    const allowed = new Set(CORS_METHODS);
+    expect([...served].filter((method) => !allowed.has(method))).toEqual([]);
+    // HEAD is answered by every GET route.
+    expect([...allowed].filter((method) => method !== 'HEAD' && !served.has(method))).toEqual([]);
   });
 
   it('declares exactly one access level on every route', () => {

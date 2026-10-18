@@ -5,6 +5,14 @@ import type { AppConfig } from '../config/app-config';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 
 /**
+ * Every HTTP method the API serves, which is every method a browser on a
+ * listed origin may preflight — no more (an architecture test pins it to the
+ * routes). Missing one breaks that route for the web app alone, silently: the
+ * preflight fails and the request is never sent.
+ */
+export const CORS_METHODS: readonly string[] = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'];
+
+/**
  * Everything about how the HTTP application behaves, in one place — so the
  * server and the API tests run exactly the same configuration. A test suite
  * that builds its own ValidationPipe is testing a different application.
@@ -27,7 +35,7 @@ export function configureApp(app: INestApplication, config: AppConfig): void {
   if (config.http.corsOrigins.length > 0) {
     app.enableCors({
       origin: [...config.http.corsOrigins],
-      methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE'],
+      methods: [...CORS_METHODS],
       allowedHeaders: ['authorization', 'content-type', 'range', 'x-request-id'],
       exposedHeaders: ['content-range', 'content-disposition', 'retry-after', 'x-request-id'],
       credentials: false,

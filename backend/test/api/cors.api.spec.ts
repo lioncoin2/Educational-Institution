@@ -18,13 +18,13 @@ describe('CORS', () => {
     delete process.env.CORS_ORIGINS;
   });
 
-  const preflight = (origin: string) =>
-    fetch(`${api.base}/messaging/conversations`, {
+  const preflight = (origin: string, method = 'GET', path = '/messaging/conversations') =>
+    fetch(`${api.base}${path}`, {
       method: 'OPTIONS',
       headers: {
         origin,
-        'access-control-request-method': 'GET',
-        'access-control-request-headers': 'authorization',
+        'access-control-request-method': method,
+        'access-control-request-headers': 'authorization,content-type',
       },
     });
 
@@ -37,9 +37,28 @@ describe('CORS', () => {
     expect(response.headers.get('access-control-allow-credentials')).toBeNull();
   });
 
-  it('grants nothing to any other origin', async () => {
-    const response = await preflight('https://evil.example');
-    expect(response.headers.get('access-control-allow-origin')).toBeNull();
+  // The web app edits preferences and the academic structure with PATCH; a
+  // preflight that refused it made those screens fail on the web only.
+  it('lets a listed origin send every method the API serves, PATCH included', async () => {
+    const response = await preflight(ALLOWED, 'PATCH', '/notifications/preferences');
+    expect(response.status).toBe(204);
+    expect(response.headers.get('access-control-allow-origin')).toBe(ALLOWED);
+    expect(response.headers.get('access-control-allow-methods')?.split(',')).toEqual([
+      'GET',
+      'HEAD',
+      'POST',
+      'PUT',
+      'PATCH',
+      'DELETE',
+    ]);
+    expect(response.headers.get('access-control-allow-headers')).toContain('content-type');
+  });
+
+  it('grants nothing to any other origin, whatever the method', async () => {
+    for (const method of ['GET', 'PATCH', 'DELETE']) {
+      const response = await preflight('https://evil.example', method);
+      expect(response.headers.get('access-control-allow-origin')).toBeNull();
+    }
   });
 
   it('exposes the headers a browser client needs to read', async () => {
