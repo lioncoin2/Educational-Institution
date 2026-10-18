@@ -69,6 +69,10 @@ const DEVELOPMENT_SECRET = 'development-only-secret';
 /**
  * Which media provider this deployment binds (P6 audit, D19) — fail closed:
  *
+ *   LIVE_MEDIA_PROVIDER=fake         the fake, declared on purpose by a
+ *                                    deployment that runs no media server
+ *                                    (the Trial, ADR 0037) — never in
+ *                                    production, which configuration refuses
  *   the development secret           the fake: development and tests, where
  *                                    no media flows and none is expected
  *   LIVE_MEDIA_PROVIDER=livekit      the LiveKit adapter — real media,
@@ -97,6 +101,13 @@ export function rtcProviderFor(
 ): RtcProvider {
   const roomNamePrefix = liveSettingsFor(config).roomNamePrefix;
   const event = 'live.provider.initialize';
+  if (config.live.mediaProvider === 'fake') {
+    logger.warn(
+      { event, provider: 'fake', roomNamePrefix },
+      'media provider: fake (LIVE_MEDIA_PROVIDER=fake) — no live media will flow',
+    );
+    return new FakeRtcProvider(clock);
+  }
   if (config.livekit.apiSecret === DEVELOPMENT_SECRET) {
     logger.warn(
       { event, provider: 'fake', roomNamePrefix },

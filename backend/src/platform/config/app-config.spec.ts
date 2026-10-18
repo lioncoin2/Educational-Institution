@@ -15,6 +15,7 @@ const PRODUCTION = {
   LIVEKIT_API_KEY: 'key',
   LIVEKIT_API_SECRET: 'a-real-livekit-secret',
   STORAGE_SIGNING_SECRET: 'b'.repeat(48),
+  TRUST_PROXY: 'false',
 };
 
 describe('loadConfig', () => {
@@ -69,6 +70,27 @@ describe('loadConfig', () => {
     expect(loadConfig({}).http.trustProxy).toBe(false);
     expect(loadConfig({ TRUST_PROXY: '1' }).http.trustProxy).toBe(1);
     expect(loadConfig({ TRUST_PROXY: 'true' }).http.trustProxy).toBe(true);
+    expect(loadConfig({ TRUST_PROXY: 'false' }).http.trustProxy).toBe(false);
+  });
+
+  // A mistyped value used to read as `false`: every client one address behind
+  // the proxy, and every per-IP rate limit one limit shared by everybody.
+  it.each(['yes', '1abc', '-1', '1.5', 'TRUE', '100'])(
+    'refuses the proxy setting %j rather than guessing',
+    (value) => {
+      expect(() => loadConfig({ TRUST_PROXY: value })).toThrow(
+        /TRUST_PROXY must be true, false or a number of hops/,
+      );
+    },
+  );
+
+  it('requires a deployed environment to name its proxy setting, `false` included', () => {
+    const { TRUST_PROXY: _omitted, ...withoutProxy } = PRODUCTION;
+    expect(() => loadConfig(withoutProxy)).toThrow(/TRUST_PROXY is required in production/);
+    expect(() => loadConfig({ ...withoutProxy, NODE_ENV: 'staging' })).toThrow(
+      /TRUST_PROXY is required in staging/,
+    );
+    expect(loadConfig(PRODUCTION).http.trustProxy).toBe(false);
   });
 
   it('allows no browser origin unless one is listed, and never a wildcard', () => {
@@ -196,8 +218,8 @@ describe('loadConfig — live sessions', () => {
     );
   });
 
-  it.each(['LiveKit', 'fake', 'none', 'disabled', ' livekit'])(
-    'refuses LIVE_MEDIA_PROVIDER=%j: real media is enabled by exactly "livekit", or not at all',
+  it.each(['LiveKit', 'Fake', 'none', 'disabled', ' livekit', ' fake'])(
+    'refuses LIVE_MEDIA_PROVIDER=%j: a provider is chosen by exactly "livekit" or "fake", or not at all',
     (value) => {
       expect(() => loadConfig({ LIVE_MEDIA_PROVIDER: value })).toThrow(/LIVE_MEDIA_PROVIDER/);
     },
@@ -270,5 +292,129 @@ describe('loadConfig — live sessions', () => {
       mediaProvider: null,
     });
     expect(loadConfig({ ...PRODUCTION, LIVEKIT_API_KEY: 'devkey' }).livekit.apiKey).toBe('devkey');
+  });
+});
+
+/**
+ * The Trial (ADR 0037): reachable from the internet, so it carries the full
+ * deployed baseline — but it runs no media server, which it says by declaring
+ * the fake rather than by pretending to be development.
+ */
+describe('loadConfig — the trial environment', () => {
+  const TRIAL = {
+    NODE_ENV: 'trial',
+    DATABASE_URL: 'postgresql://trial@trial-db/trial',
+    REDIS_URL: 'redis://trial-redis:6379',
+    JWT_SECRET: 'j'.repeat(54),
+    STORAGE_SIGNING_SECRET: 's'.repeat(54),
+    TRUST_PROXY: '1',
+    CORS_ORIGINS: 'https://trial.example.org',
+    LIVE_MEDIA_PROVIDER: 'fake',
+  };
+  const without = (key: keyof typeof TRIAL): Record<string, string> => {
+    const { [key]: _omitted, ...rest } = TRIAL;
+    return rest;
+  };
+
+  it('boots with its own secrets, database, Redis and proxy, and the fake declared — no LiveKit setting needed', () => {
+    const config = loadConfig(TRIAL);
+    expect(config.nodeEnv).toBe('trial');
+    expect(config.live.mediaProvider).toBe('fake');
+    expect(config.http.trustProxy).toBe(1);
+    expect(config.database).toEqual({ url: TRIAL.DATABASE_URL, configured: true });
+    expect(config.logLevel).toBe('info');
+  });
+
+  it.each([
+    'JWT_SECRET',
+    'STORAGE_SIGNING_SECRET',
+    'DATABASE_URL',
+    'REDIS_URL',
+    'TRUST_PROXY',
+  ] as const)('refuses to boot without %s — never a local default', (key) => {
+    expect(() => loadConfig(without(key))).toThrow(new RegExp(`${key} is required in trial`));
+    expect(() => loadConfig({ ...TRIAL, [key]: '   ' })).toThrow(
+      new RegExp(`${key} is required in trial`),
+    );
+  });
+
+  it.each([
+    'development-only-secret',
+    'development-only-storage-secret',
+    'change-me',
+    'change-me-in-every-environment',
+    'devkey',
+    'secret',
+  ])('refuses the placeholder %j for either secret', (placeholder) => {
+    expect(() => loadConfig({ ...TRIAL, JWT_SECRET: placeholder })).toThrow(
+      /JWT_SECRET still holds a placeholder value/,
+    );
+    expect(() => loadConfig({ ...TRIAL, STORAGE_SIGNING_SECRET: placeholder })).toThrow(
+      /STORAGE_SIGNING_SECRET still holds a placeholder value/,
+    );
+  });
+
+  it('refuses a secret under 32 bytes, and one key for two jobs — naming the setting, never its value', () => {
+    const weak = 'a-real-but-short-value';
+    let refusal = '';
+    try {
+      loadConfig({ ...TRIAL, JWT_SECRET: weak });
+    } catch (error) {
+      refusal = (error as Error).message;
+    }
+    expect(refusal).toMatch(/JWT_SECRET must be at least 32 bytes in trial/);
+    expect(refusal).not.toContain(weak);
+
+    expect(() => loadConfig({ ...TRIAL, STORAGE_SIGNING_SECRET: 'x'.repeat(31) })).toThrow(
+      /STORAGE_SIGNING_SECRET must be at least 32 bytes in trial/,
+    );
+    expect(() => loadConfig({ ...TRIAL, STORAGE_SIGNING_SECRET: TRIAL.JWT_SECRET })).toThrow(
+      /STORAGE_SIGNING_SECRET must differ from JWT_SECRET/,
+    );
+  });
+
+  it('counts bytes, not characters: 16 two-byte characters are a 32-byte secret', () => {
+    expect(loadConfig({ ...TRIAL, JWT_SECRET: 'é'.repeat(16) }).auth.jwtSecret).toHaveLength(16);
+    expect(() => loadConfig({ ...TRIAL, JWT_SECRET: 'é'.repeat(15) })).toThrow(
+      /JWT_SECRET must be at least 32 bytes/,
+    );
+  });
+
+  it('without the fake declared, demands a media server like any deployed environment', () => {
+    const { LIVE_MEDIA_PROVIDER: _omitted, ...noMedia } = TRIAL;
+    expect(() => loadConfig(noMedia)).toThrow(
+      new RegExp(
+        [
+          'LIVEKIT_API_KEY is required in trial',
+          'LIVEKIT_API_SECRET is required in trial',
+          'LIVEKIT_URL is required in trial',
+        ].join('[\\s\\S]*'),
+      ),
+    );
+  });
+
+  it('still keeps a LiveKit secret, when one is given, apart from the other keys', () => {
+    expect(() => loadConfig({ ...TRIAL, LIVEKIT_API_SECRET: TRIAL.JWT_SECRET })).toThrow(
+      /LIVEKIT_API_SECRET must differ from JWT_SECRET/,
+    );
+  });
+
+  it('is refused the fake in production, and any provider it does not know', () => {
+    expect(() => loadConfig({ ...PRODUCTION, LIVE_MEDIA_PROVIDER: 'fake' })).toThrow(
+      /LIVE_MEDIA_PROVIDER=fake is refused in production/,
+    );
+    expect(
+      loadConfig({ ...PRODUCTION, NODE_ENV: 'staging', LIVE_MEDIA_PROVIDER: 'fake' }).live
+        .mediaProvider,
+    ).toBe('fake');
+    expect(() => loadConfig({ ...TRIAL, LIVE_MEDIA_PROVIDER: 'Fake' })).toThrow(
+      /LIVE_MEDIA_PROVIDER must be "livekit", "fake" or unset/,
+    );
+  });
+
+  it('refuses an environment it does not know, checking it as production meanwhile', () => {
+    expect(() => loadConfig({ ...TRIAL, NODE_ENV: 'trail' })).toThrow(
+      /NODE_ENV must be development, test, trial, staging or production/,
+    );
   });
 });

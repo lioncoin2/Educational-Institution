@@ -19,6 +19,7 @@ const PREFIX = 'live-school-a-';
 const CONFIG: AppConfig = loadConfig({
   NODE_ENV: 'production',
   DATABASE_URL: 'postgresql://app@db/institution',
+  TRUST_PROXY: '1',
   REDIS_URL: 'redis://cache:6379',
   JWT_SECRET: 'j'.repeat(48),
   STORAGE_SIGNING_SECRET: 'k'.repeat(48),

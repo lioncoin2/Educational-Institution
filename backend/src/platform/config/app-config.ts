@@ -9,19 +9,32 @@
 
 import { readLiveKitServer } from './livekit-config';
 
-export type NodeEnv = 'development' | 'test' | 'staging' | 'production';
+export type NodeEnv = 'development' | 'test' | 'trial' | 'staging' | 'production';
 
-const NODE_ENVS: readonly NodeEnv[] = ['development', 'test', 'staging', 'production'];
+const NODE_ENVS: readonly NodeEnv[] = ['development', 'test', 'trial', 'staging', 'production'];
 
 /**
- * Staging and production are DEPLOYED environments: each runs its own LiveKit
- * server, key, secret and URL, and each gets the production-grade checks —
- * no placeholder secret, a minimum secret length, secrets kept apart, secure
- * URLs. Development and test run with local defaults.
+ * Trial, staging and production are DEPLOYED environments: reachable by real
+ * people, so each gets the production-grade checks — every secret supplied on
+ * purpose, no placeholder, a minimum length, secrets kept apart, the database,
+ * Redis and proxy settings named rather than defaulted, secure media URLs.
+ * Development and test run with local defaults.
+ *
+ * Trial is the internet-facing evaluation environment (ADR 0037): the same
+ * security baseline as staging, but it may run without a media server by
+ * declaring `LIVE_MEDIA_PROVIDER=fake` — which production refuses.
  */
 export function isDeployed(nodeEnv: NodeEnv): boolean {
-  return nodeEnv === 'staging' || nodeEnv === 'production';
+  return nodeEnv === 'trial' || nodeEnv === 'staging' || nodeEnv === 'production';
 }
+
+/**
+ * Which media provider a deployment declares (D19): `livekit` is real media,
+ * enabled on purpose; `fake` is the in-process fake — sessions start and end,
+ * no media flows — declared on purpose; null (unset) binds the fake only for
+ * the development secret, and the provider that refuses everything otherwise.
+ */
+export type MediaProviderChoice = 'livekit' | 'fake';
 
 export interface AppConfig {
   readonly nodeEnv: NodeEnv;
@@ -105,10 +118,12 @@ export interface AppConfig {
     /**
      * `livekit` only when real media is explicitly enabled
      * (`LIVE_MEDIA_PROVIDER=livekit`), which the LiveKit-integration phase
-     * turns on together with its hardening; null otherwise, and a deployment
+     * turns on together with its hardening; `fake` only when a non-production
+     * deployment explicitly runs without a media server
+     * (`LIVE_MEDIA_PROVIDER=fake`, ADR 0037); null otherwise, and a deployment
      * then binds a provider that refuses every call (P6 audit, D19).
      */
-    readonly mediaProvider: 'livekit' | null;
+    readonly mediaProvider: MediaProviderChoice | null;
   };
   readonly storage: {
     readonly localRoot: string;
@@ -194,11 +209,32 @@ function readOrigins(raw: string | undefined, problems: string[]): readonly stri
   return Object.freeze(origins);
 }
 
-function readTrustProxy(raw: string | undefined): boolean | number {
-  if (raw === undefined || raw.trim() === '' || raw === 'false') return false;
-  if (raw === 'true') return true;
-  const hops = Number.parseInt(raw, 10);
-  return Number.isNaN(hops) ? false : hops;
+/**
+ * Express `trust proxy`: `true`, `false` or a whole number of hops. Anything
+ * else is refused rather than read as `false`: a mistyped value would
+ * otherwise make every client one address behind the proxy, and every per-IP
+ * rate limit one shared limit. A deployed environment names it — `false`
+ * included — because there the API is meant to sit behind a known proxy.
+ */
+function readTrustProxy(
+  raw: string | undefined,
+  deployment: { readonly deployed: boolean; readonly environment: NodeEnv },
+  problems: string[],
+): boolean | number {
+  if (raw === undefined || raw.trim() === '') {
+    if (deployment.deployed) {
+      problems.push(
+        `TRUST_PROXY is required in ${deployment.environment} (true, false or a number of hops)`,
+      );
+    }
+    return false;
+  }
+  const value = raw.trim();
+  if (value === 'false') return false;
+  if (value === 'true') return true;
+  if (/^\d{1,2}$/.test(value)) return Number(value);
+  problems.push(`TRUST_PROXY must be true, false or a number of hops, not ${JSON.stringify(raw)}`);
+  return false;
 }
 
 /**
@@ -223,17 +259,33 @@ function readNodeEnv(raw: string | undefined, problems: string[]): NodeEnv {
   if (raw === undefined || raw.trim() === '') return 'development';
   if ((NODE_ENVS as readonly string[]).includes(raw)) return raw as NodeEnv;
   problems.push(
-    `NODE_ENV must be development, test, staging or production, not ${JSON.stringify(raw)}`,
+    `NODE_ENV must be development, test, trial, staging or production, not ${JSON.stringify(raw)}`,
   );
   // Checked as the strictest environment meanwhile; the boot is refused anyway.
   return 'production';
 }
 
-/** Real media is bound only on explicit opt-in (D19); anything but `livekit` is a mistake. */
-function readMediaProvider(raw: string | undefined, problems: string[]): 'livekit' | null {
+/**
+ * A media provider is bound only on explicit choice (D19): `livekit` or
+ * `fake`; anything else is a mistake. The fake is never production's: real
+ * people would join sessions that carry no sound, with nothing to say so.
+ */
+function readMediaProvider(
+  raw: string | undefined,
+  nodeEnv: NodeEnv,
+  problems: string[],
+): MediaProviderChoice | null {
   if (raw === undefined || raw.trim() === '') return null;
   if (raw === 'livekit') return 'livekit';
-  problems.push(`LIVE_MEDIA_PROVIDER must be "livekit" or unset, not ${JSON.stringify(raw)}`);
+  if (raw === 'fake') {
+    if (nodeEnv === 'production') {
+      problems.push('LIVE_MEDIA_PROVIDER=fake is refused in production: no media would flow');
+    }
+    return 'fake';
+  }
+  problems.push(
+    `LIVE_MEDIA_PROVIDER must be "livekit", "fake" or unset, not ${JSON.stringify(raw)}`,
+  );
   return null;
 }
 
@@ -241,22 +293,30 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const problems: string[] = [];
   const nodeEnv = readNodeEnv(env.NODE_ENV, problems);
   const deployed = isDeployed(nodeEnv);
+  const mediaProvider = readMediaProvider(env.LIVE_MEDIA_PROVIDER, nodeEnv, problems);
+  // A deployment that declares the fake runs no media server, so it has no
+  // LiveKit settings to demand. Every other deployed environment does, real
+  // media enabled or not (staging hands its LiveKit server the secret either way).
+  const mediaServerSettingsRequired = deployed && mediaProvider !== 'fake';
 
-  /** In a deployed environment a setting must be supplied; elsewhere a local default is fine. */
-  const required = (key: string, devDefault: string): string => {
+  /** Where `enforced`, a setting must be supplied; elsewhere a local default is fine. */
+  const requiredWhen = (enforced: boolean, key: string, devDefault: string): string => {
     const value = env[key];
     if (value !== undefined && value.trim() !== '') return value;
-    if (deployed) problems.push(`${key} is required in ${nodeEnv}`);
+    if (enforced) problems.push(`${key} is required in ${nodeEnv}`);
     return devDefault;
   };
-
-  const secret = (key: string, devDefault: string): string => {
-    const value = required(key, devDefault);
-    if (deployed && PLACEHOLDER_SECRETS.has(value)) {
+  const secretWhen = (enforced: boolean, key: string, devDefault: string): string => {
+    const value = requiredWhen(enforced, key, devDefault);
+    if (enforced && PLACEHOLDER_SECRETS.has(value)) {
       problems.push(`${key} still holds a placeholder value`);
     }
     return value;
   };
+  /** In a deployed environment a setting must be supplied; elsewhere a local default is fine. */
+  const required = (key: string, devDefault: string): string =>
+    requiredWhen(deployed, key, devDefault);
+  const secret = (key: string, devDefault: string): string => secretWhen(deployed, key, devDefault);
 
   const jwtSecret = secret('JWT_SECRET', 'development-only-secret');
   if (deployed && Buffer.byteLength(jwtSecret, 'utf8') < MIN_JWT_SECRET_BYTES) {
@@ -288,8 +348,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     problems.push('REFRESH_SESSION_TTL_SECONDS must exceed a positive JWT_ACCESS_TTL');
   }
 
-  const livekitApiKey = required('LIVEKIT_API_KEY', 'devkey');
-  const livekitApiSecret = secret('LIVEKIT_API_SECRET', 'development-only-secret');
+  const livekitApiKey = requiredWhen(mediaServerSettingsRequired, 'LIVEKIT_API_KEY', 'devkey');
+  const livekitApiSecret = secretWhen(
+    mediaServerSettingsRequired,
+    'LIVEKIT_API_SECRET',
+    'development-only-secret',
+  );
 
   const maxParticipantsPerSession = readWholeNumber(env.LIVE_MAX_PARTICIPANTS_PER_SESSION, 300);
   if (!Number.isSafeInteger(maxParticipantsPerSession) || maxParticipantsPerSession < 1) {
@@ -319,10 +383,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       'LIVE_ROOM_NAME_PREFIX must be 1 to 48 characters, each a letter, a digit, ".", "_" or "-"',
     );
   }
-  const mediaProvider = readMediaProvider(env.LIVE_MEDIA_PROVIDER, problems);
   const livekitServer = readLiveKitServer(
     env,
-    { enabled: mediaProvider === 'livekit', deployed, environment: nodeEnv },
+    {
+      enabled: mediaProvider === 'livekit',
+      deployed: mediaServerSettingsRequired,
+      environment: nodeEnv,
+    },
     problems,
   );
   if (mediaProvider === 'livekit') {
@@ -382,7 +449,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: readInt(env.PORT, 3000),
     logLevel: env.LOG_LEVEL ?? (deployed ? 'info' : 'debug'),
     http: Object.freeze({
-      trustProxy: readTrustProxy(env.TRUST_PROXY),
+      trustProxy: readTrustProxy(env.TRUST_PROXY, { deployed, environment: nodeEnv }, problems),
       corsOrigins: readOrigins(env.CORS_ORIGINS, problems),
     }),
     database: Object.freeze({

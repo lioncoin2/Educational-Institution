@@ -1,0 +1,20 @@
+# The Trial's environment contract (ADR 0037), layered on infra/compose.trial.yaml so
+# that file stays as it is:
+#
+#   docker compose -p institution-trial -f infra/compose.trial.yaml \
+#     -f infra/compose.trial.environment.yaml [-f <image override>] \
+#     --env-file infra/env/trial.env up -d --no-deps trial-api
+#
+# NODE_ENV=trial makes the Trial a deployed environment: every secret required, no
+# placeholder, at least 32 bytes, kept apart; DATABASE_URL, REDIS_URL and TRUST_PROXY
+# required. LIVE_MEDIA_PROVIDER=fake keeps the Trial's media as it is (no LiveKit
+# server; sessions start, no media flows). TRUST_PROXY=1: the host nginx is one hop,
+# so per-IP rate limits see each visitor's own address (X-Forwarded-For) instead of
+# one shared address. Use only with an API image that knows `trial` (the remediation
+# patch or later): an older image refuses NODE_ENV=trial at boot.
+services:
+  trial-api:
+    environment:
+      NODE_ENV: trial
+      LIVE_MEDIA_PROVIDER: fake
+      TRUST_PROXY: "1"

@@ -47,7 +47,9 @@ const LOCAL_DEVELOPMENT_URL = 'ws://localhost:7880';
 /**
  * Reads LIVEKIT_URL, LIVEKIT_API_URL and LIVEKIT_VERSION, adding a problem
  * for each rule broken. `enabled`: LIVE_MEDIA_PROVIDER=livekit; `deployed`:
- * staging or production, named by `environment`.
+ * a deployed environment that runs a media server — trial, staging or
+ * production, unless it declared LIVE_MEDIA_PROVIDER=fake (ADR 0037) —
+ * named by `environment`.
  */
 export function readLiveKitServer(
   env: NodeJS.ProcessEnv,

@@ -16,6 +16,7 @@ const DEPLOYED = {
   LIVEKIT_URL: 'wss://media.school.example',
   LIVEKIT_API_KEY: 'APIa1b2c3d4e5f6',
   LIVEKIT_API_SECRET: 's'.repeat(40),
+  TRUST_PROXY: '1',
 };
 
 /** What real media takes on top: the opt-in, the room prefix and the pinned server. */
@@ -25,7 +26,7 @@ const REAL_MEDIA = {
   LIVEKIT_VERSION: PINNED_LIVEKIT_SERVER_VERSION,
 };
 
-const DEPLOYED_ENVIRONMENTS = ['staging', 'production'] as const;
+const DEPLOYED_ENVIRONMENTS = ['trial', 'staging', 'production'] as const;
 
 /** The problems a configuration is refused with — none when it loads. */
 function problemsOf(env: Record<string, string>): string[] {
@@ -39,7 +40,7 @@ function problemsOf(env: Record<string, string>): string[] {
 }
 
 describe('loadConfig — environments (P7.1, decision 2)', () => {
-  it('knows exactly four environments, and runs as development when none is named', () => {
+  it('knows exactly five environments, and runs as development when none is named', () => {
     expect(loadConfig({}).nodeEnv).toBe('development');
     expect(loadConfig({ NODE_ENV: '' }).nodeEnv).toBe('development');
     expect(loadConfig({ NODE_ENV: 'test' }).nodeEnv).toBe('test');
@@ -52,12 +53,13 @@ describe('loadConfig — environments (P7.1, decision 2)', () => {
     'refuses to boot under NODE_ENV=%j',
     (value) => {
       expect(problemsOf({ ...DEPLOYED, NODE_ENV: value })).toEqual([
-        `NODE_ENV must be development, test, staging or production, not ${JSON.stringify(value)}`,
+        `NODE_ENV must be development, test, trial, staging or production, not ${JSON.stringify(value)}`,
       ]);
     },
   );
 
-  it('treats staging and production as deployed, development and test as local', () => {
+  it('treats trial, staging and production as deployed, development and test as local', () => {
+    expect(isDeployed('trial')).toBe(true);
     expect(isDeployed('staging')).toBe(true);
     expect(isDeployed('production')).toBe(true);
     expect(isDeployed('development')).toBe(false);
@@ -78,6 +80,7 @@ describe('loadConfig — environments (P7.1, decision 2)', () => {
         `LIVEKIT_API_SECRET is required in ${environment}`,
         'LIVEKIT_API_SECRET still holds a placeholder value',
         `LIVEKIT_URL is required in ${environment}`,
+        `TRUST_PROXY is required in ${environment} (true, false or a number of hops)`,
         `DATABASE_URL is required in ${environment}`,
         `REDIS_URL is required in ${environment}`,
       ]);

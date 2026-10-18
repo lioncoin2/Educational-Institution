@@ -60,6 +60,7 @@ below says.
 | [0034](0034-q50-enrollment-sourced-membership-and-derived-capabilities.md) | Q50 enrollment-sourced membership & derived capabilities: investigated and **deferred** — policy is not owner-approved and two additive model gaps (membership and capability-grant have no derived `source`) block safe implementation; propagation pattern is ready; the inert link + enrollment are regression-tested; Q50 stays OPEN | Deferred (status superseded by 0035) |
 | [0035](0035-community-membership-governance-separation.md) | Community membership governance (owner decision, Policy A–E): academic enrollment never creates or removes community membership; membership stays explicit (`source` ∈ {ADDED, INVITATION}); ordinary membership grants no capabilities; enrollment/membership/invitations/grants/attendance/messaging stay separate. Resolves the Q50 question 0034 left open (decided **no**); no code/schema change — the model already enforces it (regression-tested). **Q50 fully resolved** | Accepted |
 | [0036](0036-quiet-hours-and-conversation-mute.md) | Quiet hours and per-conversation mute (owner decision, Q6/Q24): institution-level quiet-hours window + timezone with a **full** user override (inherit / disable / custom), evaluated DST-aware in the user's timezone or the institution's as fallback; **push only** (the inbox stays lossless, realtime untouched); per-conversation mute keyed on the notification's stable conversation target; **no urgent bypass**. Institution policy is `settings.manage` (owner-only), user settings/mutes are self-scoped; no new permission. Migration 0022 (additive); push stays a stub. Q6/Q24 remain OPEN in part | Accepted |
+| [0037](0037-trial-environment-and-explicit-fake-media.md) | The Trial is a deployed environment (`NODE_ENV=trial`): staging's full configuration baseline (every secret required, no placeholder, ≥ 32 bytes, kept apart; `DATABASE_URL`/`REDIS_URL` required); the fake media provider is a declared choice (`LIVE_MEDIA_PROVIDER=fake`), refused in production; `TRUST_PROXY` named in every deployed environment, a malformed value refused | Proposed |
 
 > **`Proposed`** (added 2026-09-23): a design under review, with nothing
 > implemented. It becomes `Accepted` when the user accepts it (dated in the
@@ -75,6 +76,12 @@ below says.
 > the fix landed with P4's review fixes while 0022 was still `Proposed`.
 > The user accepted 0022 on 2026-09-24 and kept the implementation. 0018
 > stays `Accepted` for everything 0022 does not replace.
+>
+> **0037 has an implementation prepared but not merged.** The Trial remediation
+> (2026-10-18) wrote and tested the code for 0037 in an **uncommitted** patch;
+> nothing of it is in the repository. 0037 stays `Proposed` until the user
+> accepts it, and that code is not merged before then — so "nothing
+> implemented" stays true of the repository.
 
 **0015 is reserved.** The academic reconciliation names ADR 0015 for its
 structure change (`academic-reconciliation.md:410`, `:490`, `:506`), which

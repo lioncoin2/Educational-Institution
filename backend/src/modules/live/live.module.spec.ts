@@ -89,6 +89,7 @@ function boot(env: Record<string, string>): RtcProvider {
 const PRODUCTION = {
   NODE_ENV: 'production',
   DATABASE_URL: 'postgresql://app@db/institution',
+  TRUST_PROXY: '1',
   REDIS_URL: 'redis://cache:6379',
   JWT_SECRET: 'j'.repeat(48),
   STORAGE_SIGNING_SECRET: 'k'.repeat(48),
@@ -306,6 +307,32 @@ describe('the media provider Live binds', () => {
     );
   });
 
+  // ADR 0037: the Trial is deployed — strong secrets of its own, no
+  // development default anywhere — yet runs no media server, and says so.
+  it('binds the fake a deployed trial declares, with no LiveKit setting and no development secret', () => {
+    const trial = {
+      NODE_ENV: 'trial',
+      DATABASE_URL: 'postgresql://trial@trial-db/trial',
+      REDIS_URL: 'redis://trial-redis:6379',
+      JWT_SECRET: 'j'.repeat(54),
+      STORAGE_SIGNING_SECRET: 'k'.repeat(54),
+      TRUST_PROXY: '1',
+      LIVE_MEDIA_PROVIDER: 'fake',
+    };
+    expect(boot(trial)).toBeInstanceOf(FakeRtcProvider);
+    expect(bindingLine()).toEqual([
+      [
+        { event: 'live.provider.initialize', provider: 'fake', roomNamePrefix: 'live-' },
+        'media provider: fake (LIVE_MEDIA_PROVIDER=fake) — no live media will flow',
+      ],
+    ]);
+    // The same trial, the fake not declared: no media server named, so no boot.
+    const { LIVE_MEDIA_PROVIDER: _undeclared, ...undeclared } = trial;
+    expect(() => boot(undeclared)).toThrow(/LIVEKIT_API_SECRET is required in trial/);
+    // Declared with a real LiveKit secret beside it, the declaration still wins.
+    expect(boot({ ...trial, LIVEKIT_API_SECRET: 's'.repeat(40) })).toBeInstanceOf(FakeRtcProvider);
+  });
+
   it('binds the LiveKit adapter in staging on explicit opt-in', () => {
     expect(boot({ ...PRODUCTION, ...REAL_MEDIA, NODE_ENV: 'staging' })).toBeInstanceOf(
       LiveKitRtcProvider,
@@ -457,9 +484,14 @@ describe('the media provider Live binds', () => {
       /LIVEKIT_API_SECRET still holds a placeholder value/,
     ],
     [
-      'a media provider other than exactly "livekit"',
+      'a media provider other than exactly "livekit" or "fake"',
       { ...REAL_MEDIA, LIVE_MEDIA_PROVIDER: 'LiveKit' },
-      /LIVE_MEDIA_PROVIDER must be "livekit" or unset/,
+      /LIVE_MEDIA_PROVIDER must be "livekit", "fake" or unset/,
+    ],
+    [
+      'the fake in production',
+      { ...PRODUCTION, LIVE_MEDIA_PROVIDER: 'fake' },
+      /LIVE_MEDIA_PROVIDER=fake is refused in production/,
     ],
   ])('refuses to boot %s — and binds nothing', (_case, env, problem) => {
     expect(() => boot(env)).toThrow(ConfigurationError);
