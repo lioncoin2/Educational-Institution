@@ -255,3 +255,65 @@ describeWithPostgres('migration 0012 on a database already in use', () => {
     ).toEqual(['5']);
   });
 });
+
+// ADR 0033 (Q50): the optional community → halaqa link. One nullable text
+// column — a plain cross-module id, so no foreign key into academic's tables,
+// no default and no index — and every existing community left unlinked.
+describeWithPostgres('migration 0021 on a database already in use', () => {
+  let scratch: ScratchDatabase;
+
+  beforeAll(async () => {
+    scratch = await scratchDatabase({ upTo: 21 });
+  }, 60_000);
+
+  afterAll(async () => {
+    await scratch?.drop();
+  });
+
+  const column = async (query: ReturnType<typeof sql>) =>
+    (await scratch.db.execute(query)).rows.map((row) => Object.values(row)[0] as string);
+
+  it('adds only the nullable halaqa link — no foreign key, default or index — and links nothing', async () => {
+    const columns = () =>
+      column(sql`select column_name || ':' || data_type || ':' || is_nullable || ':' ||
+                        coalesce(column_default, '-')
+                   from information_schema.columns
+                  where table_schema = 'public' and table_name = 'communities'
+                  order by column_name`);
+    const constraints = () =>
+      column(sql`select conname from pg_constraint
+                  where conrelid = 'communities'::regclass order by 1`);
+    const indexes = () =>
+      column(sql`select indexname from pg_indexes where tablename = 'communities' order by 1`);
+    await scratch.db.execute(sql`
+      insert into communities (id, title, status, membership_version, member_count,
+                               created_by, created_at, updated_at)
+      values ('c-kept', 'باقية', 'OPEN', 1, 1, 'u-owner', now(), now())`);
+    const columnsBefore = await columns();
+    const constraintsBefore = await constraints();
+    const indexesBefore = await indexes();
+
+    // Up to and including 0021.
+    await migrateTo(scratch.db, 22);
+
+    const columnsAfter = await columns();
+    expect(columnsAfter.filter((entry) => !columnsBefore.includes(entry))).toEqual([
+      'halaqa_id:text:YES:-',
+    ]);
+    expect(columnsBefore.filter((entry) => !columnsAfter.includes(entry))).toEqual([]);
+    expect(await constraints()).toEqual(constraintsBefore);
+    expect(await indexes()).toEqual(indexesBefore);
+    expect(
+      await column(
+        sql`select coalesce(halaqa_id, 'unlinked') from communities where id = 'c-kept'`,
+      ),
+    ).toEqual(['unlinked']);
+    // Any id is accepted at the column: existence is academic's to confirm, in the use case.
+    await scratch.db.execute(
+      sql`update communities set halaqa_id = 'h-anything' where id = 'c-kept'`,
+    );
+    expect(await column(sql`select halaqa_id from communities where id = 'c-kept'`)).toEqual([
+      'h-anything',
+    ]);
+  });
+});

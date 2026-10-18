@@ -258,7 +258,9 @@ void main() {
     expect(container.read(unreadNotificationCountProvider), 0);
   });
 
-  testWidgets('an unknown URL shows the not-found screen', (tester) async {
+  // A real route with an id that names nothing: the screen's own empty state.
+  testWidgets('a missing halaqa under a real route shows the episode\'s '
+      'not-found state', (tester) async {
     await boot(tester);
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
@@ -266,5 +268,23 @@ void main() {
     container.read(routerProvider).go('/programs/does-not-exist/levels/nope');
     await tester.pumpAndSettle();
     expect(find.textContaining('لم نجد هذه الحلقة'), findsOneWidget);
+    expect(find.text('صفحة غير موجودة'), findsNothing);
+  });
+
+  // No route at all: the router's own not-found screen, naming the path, with
+  // the way home.
+  testWidgets('an unknown URL shows the not-found screen', (tester) async {
+    await boot(tester);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    container.read(routerProvider).go('/no-such-screen');
+    await tester.pumpAndSettle();
+    expect(find.text('صفحة غير موجودة'), findsOneWidget);
+    expect(find.textContaining('/no-such-screen'), findsOneWidget);
+
+    await tester.tap(find.text('العودة إلى الرئيسية'));
+    await tester.pumpAndSettle();
+    expect(location(), '/home');
   });
 }
