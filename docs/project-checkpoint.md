@@ -20,6 +20,12 @@ in-memory). Product scope is the owner's; engineering never invents institutiona
 
 ## Repository state (verify before trusting)
 
+> **Current state, verified 2026-10-18 (supersedes the HEAD/branch lines below until they are
+> reconciled):** branch `claude/trial-integration-sprints-52-61`, HEAD `a8500a9` = origin, CI run
+> 39047171460 green; Sprints 52–61 are committed (`c6d5ee0`) and both Trial tiers run `a8500a9`
+> (released 2026-10-17). A remediation patch is prepared but **uncommitted and undeployed** — see
+> [`trial-remediation-2026-10.md`](trial-remediation-2026-10.md) and register §25.
+
 - **Branch:** `claude/quranic-education-app-prototype-gkzle8`
 - **HEAD:** `d754284` (Sprint 50 — teacher halaqa view enriched with co-teachers + name). Sprints 42–50
   (`b45b272`…`d754284`) committed an in-app administration + teacher layer on top of `31cc950` (Sprint 35,

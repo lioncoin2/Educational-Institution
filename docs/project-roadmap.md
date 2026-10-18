@@ -21,6 +21,11 @@ decision** (docs-only; §22); Sprint 35 — Q6 per-conversation mute (kept; surf
 (ADR 0036, migration 0022) — **quiet hours subsequently REJECTED by the owner (§8)**; Sprint 34 (read-only
 Q6 sheet, no commit); Sprint 33 owner decision brief; Sprint 32
 ADR 0035 (Q50 resolved).
+> **Note, verified 2026-10-18 (added by the Trial remediation; the HEAD line below is left as written):**
+> HEAD is `a8500a9` on `claude/trial-integration-sprints-52-61` (= origin; CI 39047171460 green; Sprints
+> 52–61 committed in `c6d5ee0`; released to the web Trial 2026-10-17). The Trial remediation patch is
+> uncommitted — [`trial-remediation-2026-10.md`](trial-remediation-2026-10.md).
+
 **Current verified HEAD.** `d754284` (Sprint 50). Sprints 42–50 (`b45b272`…`d754284`) sit on top of
 `31cc950` (Sprint 35 — Q6 quiet hours/mute; itself on `3396f77`, Sprint 33); Sprints 36–41 were docs-only
 (working tree, no commit). Branch `claude/quranic-education-app-prototype-gkzle8`, in sync with origin.
@@ -355,6 +360,16 @@ and must not be claimed from CI.
 ---
 
 ## 12. Change log & reconciled discrepancies
+
+**Trial remediation (2026-10-18; patch prepared, uncommitted, undeployed).** Engineering remediation of the
+deployed Trial: a `trial` deployed environment with an explicit fake media provider (ADR 0037, Proposed);
+readiness built on the owner's DB check (no ping without a configured DB; single-flight); a fix for a process
+crash when an in-use database connection dies; CORS PATCH; login identifiers only for `users.manage`; four
+cross-account state leaks in the app fixed; sign-in recovery on expired sessions; teacher-directory paging;
+the not-found test corrected; HTTP tests for password change, session revoke and expiry; a migration-0021
+test; a tested CSP/security-header proposal. No grant, permission, migration or product policy changed.
+Decisions D-1–D-6 and D-8 requested (register §25; D-7 withdrawn — the Quiet Hours rejection is settled and not
+reopened); the TRIAL row below is **unchanged** until D-4.
 
 **Status reconciliation (2026-10-17, docs-only).** Verified the uncommitted Sprints 52–61 work against the
 current tree (routes wired, repository methods, screens, the backend PG specs on disk) and recorded it in

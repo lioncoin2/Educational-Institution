@@ -142,14 +142,27 @@ the other, and the institution may separate them further.
 Not confirmed by the institution (Q1). It exists so the system is usable and
 testable meanwhile, and it is kept in one file so nobody mistakes it for policy.
 
-| Role | Provisional grants |
+| Role | Provisional grants (count) |
 | --- | --- |
-| OWNER | all 30 |
-| ADMIN | all except `settings.manage` and `messaging.manage` (28) |
-| SUPERVISOR | read access: `users`, `academic`, `attendance`, `assignments`, `reports`, `messaging.read/send/start_direct/create_group`, `live.join`, `files.read` |
-| TEACHER | `academic.read/teach`, `attendance.*`, `assignments.read/manage`, `messaging.read/send/start_direct/create_group`, `live.join/speak/moderate`, `files.*` |
-| ASSISTANT_TEACHER | `academic.read/teach`, `attendance.read`, `assignments.read`, `messaging.read/send`, `live.join`, `files.read` |
-| STUDENT | `academic.read/study`, `assignments.read/submit`, `messaging.read/send`, `live.join/raise_hand`, `files.*` |
+| OWNER | all 36 |
+| ADMIN | all except `settings.manage` and `messaging.manage` (34) |
+| SUPERVISOR | `users.read`, `academic.read`, `attendance.read`, `assignments.read`, `reports.read`, `messaging.read/send/start_direct/create_group`, `live.join`, `files.read`, `communities.read` (12) |
+| TEACHER | `academic.read/teach`, `attendance.read/manage`, `assignments.read/manage`, `messaging.read/send/start_direct/create_group`, `live.join/speak/moderate`, `files.read/upload`, `communities.read/moderate` (17) |
+| ASSISTANT_TEACHER | `academic.read/teach`, `attendance.read`, `assignments.read`, `messaging.read/send`, `live.join`, `files.read`, `communities.read` (9) |
+| STUDENT | `academic.read/study`, `assignments.read/submit`, `messaging.read/send/start_direct_peer/start_direct_teacher`, `live.join/raise_hand`, `files.read/upload`, `communities.read` (13) |
+
+The source of truth is `identity/domain/provisional-policy.ts`, seeded into
+`role_permissions` by migration and held equal to it by the
+`identity-persistence` drift test; this table restates it (reconciled 2026-10-18).
+
+**Reading accounts is not administering them.** `users.read` (OWNER, ADMIN,
+SUPERVISOR) lists accounts at `GET /admin/users` with name, status and roles; an
+account's **login identifiers** (today, its email) are included only for a reader
+who also holds `users.manage` (OWNER, ADMIN) and are `null` otherwise
+(`identity/application/admin/account-views.ts`, remediation 2026-10). That keeps
+ENGINEERING_RULES §11 ("emails never appear in a response") everywhere except the
+account-administration surface, and there only for who administers. Whether a
+supervisor should list accounts at all is part of Q1 and an open owner decision.
 
 `people.read` is held by **OWNER/ADMIN only** (migration `0020`, Sprint 24):
 `GET /people` is the institution-wide membership-management directory, not a

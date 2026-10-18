@@ -451,6 +451,20 @@ answer to this question.
 **When answered.** A cookie mode on `/auth/login` and `/auth/refresh` for the
 web client, with CSRF protection. The allow-list already exists.
 
+**Status 2026-10-18 — the "built instead" above is no longer what runs (STILL
+OPEN).** Sprint 19 (`89a8879`) bound `SecureTokenStore` on every platform in
+backend mode, web included, so the web build now **persists** both tokens:
+`flutter_secure_storage_web` 2.1.1 encrypts them with AES-GCM but keeps the raw key
+base64-encoded in the same `localStorage` — script-readable, so the encryption is
+obscurity, not protection, against an injected script. The deployed Trial has run
+this way since 2026-10-14. This is recorded, not resolved: the options (keep
+persistence and accept the risk behind a strict script CSP; tab-scoped
+`sessionStorage`; memory-only; or the httpOnly-cookie refresh transport above) and
+their consequences are laid out for the owner as decision **D-2** in
+[`trial-remediation-2026-10.md`](../trial-remediation-2026-10.md#d-2--web-token-storage-q17).
+Until then the mitigation that needs no product decision is the Content Security
+Policy proposed there (no inline or eval'd script).
+
 ---
 
 ## Q18 — May an admin create other admins?

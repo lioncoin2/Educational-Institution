@@ -1010,6 +1010,21 @@ design gate explored these, but they are **pending** and must be resolved before
 no present/absent policy and resolves no GROUP G attendance-record question (Q70/Q71/Q72). **Attendance stays
 separate from live connectivity** (ADR 0020 dec 3 / 0023; Q68 OPEN) — a standing prior decision, unchanged.
 
+## 25. Trial remediation (2026-10-18) — decisions requested, none taken
+
+The engineering remediation of the deployed web Trial is recorded in
+[`trial-remediation-2026-10.md`](trial-remediation-2026-10.md) (findings, design, tests, deployment
+plan, proposed acceptance criteria). It changes **no** role grant, permission, migration or product
+policy. It asks the owner for: **D-1** authorize the authenticated Trial smoke test (exact writes
+listed); **D-2** web token storage (Q17 — options a–d); **D-3** supervisor access to the account
+directory and an explicit §11 exception (implemented meanwhile: login identifiers only for
+`users.manage`); **D-4** web-Trial acceptance criteria and release format; **D-5** the Trial product
+description replacing «واجهات فقط»; **D-6** DM eligibility before offering the button; **D-8** nginx
+headers and the redeploy. Each record is in that file's §5; this entry only indexes them. **D-7 is
+withdrawn:** Quiet Hours is rejected (roadmap §8) and settled — not a decision and not reopened; the
+remediation changes nothing about it and records, in that file's §6, that this register (§21) and
+ADR 0036 do not yet reflect the rejection.
+
 ---
 
 > This register is advisory and reversible. Closing a question means: record an ADR in `decisions/`,

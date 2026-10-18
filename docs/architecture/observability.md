@@ -179,6 +179,19 @@ a deliberately db-less boot) there is nothing to check and the pod is ready; in 
 deployed environment a missing `DATABASE_URL` is rejected at startup, so readiness
 cannot mask an unconfigured database.
 
+"Without a database" is what configuration says (`database.configured`), not
+whether a pool object exists: `AppModule` always composes the (lazy) pool, so the
+check reads the configuration and pings nothing when `DATABASE_URL` is unset
+(remediation 2026-10; before it, a db-less development boot answered 503).
+
+Concurrent probes share **one** ping: the route is public, and a burst of requests
+would otherwise each hold a pooled connection for up to the timeout — taking the
+pool from real traffic exactly when the database is slow. A probe that arrives while
+a ping is in flight waits for that ping's answer; the next one asks again. Proven
+end to end on a real pool by `test/integration/readiness-postgres.spec.ts`: healthy,
+gone (503 at once), hung (20 concurrent probes answered within the bound with one
+connection), recovered, and liveness throughout.
+
 The probe is time-bounded in two parts, by design, not one flat budget:
 *acquiring* a client is bounded by the pool's `connectionTimeoutMillis` (5 s), and
 the query itself by a 2 s readiness timeout. **The 2 s timeout does not cancel the
@@ -193,6 +206,19 @@ failure is a 503, which the exception filter logs once per occurrence (status �
 **Redis is still not checked** — this build has no connected Redis client (the
 rate limiter is in-process); that check lands with the P11 multi-instance Redis
 rate-limit adapter.
+
+Verified 2026-10-18: no module imports a Redis library, so Redis is not a dependency
+readiness could honestly report; `REDIS_URL` is nonetheless required in deployed
+environments, so the first Redis consumer cannot silently fall back to a local
+default.
+
+**A connection lost while in use does not end the process.** node-postgres emits
+`error` on a *checked-out* client whose socket dies (a transaction in flight when
+Postgres restarts); the pool listens only to idle clients, so that event used to be
+an uncaught exception that ended the process. Every client now carries its own
+listener from the moment the pool opens it (`platform/database/database.ts`), logging
+the error's class and code only; the work in flight fails on its own and the pool
+discards the client on release. Regression-tested on a real pool (same suite).
 
 ---
 

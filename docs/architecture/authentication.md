@@ -226,6 +226,12 @@ POST /admin/users/:id/status      { status: "ACTIVE" }                          
 | `POST /admin/users/:id/password` | `users.manage` |
 | `DELETE /admin/users/:id/sessions` | `sessions.manage` |
 
+Every account these routes return carries its login identifiers (`identifiers`,
+today one email) **only for a reader who also holds `users.manage`**; to any
+other reader — a supervisor holding `users.read` alone — it is `null` ("withheld",
+distinct from an empty list). One owner decides it, `AccountViews`
+(`application/admin/account-views.ts`); see authorization.md §4.
+
 Each use case re-checks its permission itself — the route guard is the coarse
 gate, not the only one — and adds the two checks a route cannot express. Both
 are security invariants, not institutional policy:
