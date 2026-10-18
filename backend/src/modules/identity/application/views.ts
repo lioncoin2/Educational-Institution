@@ -33,7 +33,8 @@ export interface UserAccountView {
   readonly id: string;
   readonly displayName: string;
   readonly status: AccountStatus;
-  readonly identifiers: readonly { readonly kind: IdentifierKind; readonly value: string }[];
+  /** Null when withheld from this reader (`AccountViews`); never an empty stand-in. */
+  readonly identifiers: readonly { readonly kind: IdentifierKind; readonly value: string }[] | null;
   readonly roles: readonly {
     readonly code: string;
     readonly grantedAt: Date;
@@ -77,12 +78,16 @@ export function toSessionView(session: AuthSession, currentSessionId?: string): 
   };
 }
 
-export function toUserAccountView(user: User): UserAccountView {
+/** Whether an account's login identifiers go into its view (decided by `AccountViews`). */
+export type IdentifierDisclosure = 'shown' | 'withheld';
+
+export function toUserAccountView(user: User, identifiers: IdentifierDisclosure): UserAccountView {
   return {
     id: user.id,
     displayName: user.displayName,
     status: user.status,
-    identifiers: user.identifiers.map(({ kind, value }) => ({ kind, value })),
+    identifiers:
+      identifiers === 'shown' ? user.identifiers.map(({ kind, value }) => ({ kind, value })) : null,
     roles: user.roles.map(({ role, grantedAt, grantedBy }) => ({
       code: role,
       grantedAt,

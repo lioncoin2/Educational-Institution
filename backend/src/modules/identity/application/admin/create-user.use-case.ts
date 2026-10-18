@@ -29,7 +29,8 @@ import {
 } from '../../domain/ports';
 import { createUser } from '../../domain/user';
 import { IdentityAudit, USER_RESOURCE, auditEntry } from '../audit-actions';
-import { toUserAccountView, type UserAccountView } from '../views';
+import type { UserAccountView } from '../views';
+import { AccountViews } from './account-views';
 
 export interface CreateUserCommand {
   readonly actor: Principal;
@@ -57,6 +58,7 @@ export class CreateUserUseCase {
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
+    private readonly views: AccountViews,
   ) {}
 
   async execute(command: CreateUserCommand): Promise<Result<UserAccountView>> {
@@ -107,6 +109,6 @@ export class CreateUserUseCase {
     );
     await this.events.publish([userCreated(user.id, now, command.meta.correlationId)]);
 
-    return ok(toUserAccountView(user));
+    return ok(this.views.of(command.actor, user));
   }
 }

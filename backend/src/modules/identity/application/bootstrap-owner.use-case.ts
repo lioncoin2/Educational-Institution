@@ -118,6 +118,7 @@ export class BootstrapOwnerUseCase {
       userCreated(owner.value.id, now, command.meta.correlationId),
       roleAssigned(owner.value.id, Roles.owner, null, now, command.meta.correlationId),
     ]);
-    return ok(toUserAccountView(owner.value));
+    // The owner bootstrapping their own account sees how it signs in.
+    return ok(toUserAccountView(owner.value, 'shown'));
   }
 }

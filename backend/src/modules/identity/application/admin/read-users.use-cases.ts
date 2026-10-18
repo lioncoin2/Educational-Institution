@@ -15,14 +15,19 @@ import type { Principal } from '../../contracts/principal';
 import { USER_REPOSITORY, type UserRepository } from '../../domain/ports';
 import type { UserId } from '../../domain/user';
 import { USER_RESOURCE } from '../audit-actions';
-import { toUserAccountView, type UserAccountView } from '../views';
+import type { UserAccountView } from '../views';
+import { AccountViews } from './account-views';
 
-/** Reading accounts needs `users.read`. Reading is not administering, so no rank check. */
+/**
+ * Reading accounts needs `users.read`. Reading is not administering, so no rank
+ * check — and so login identifiers only for who may administer (`AccountViews`).
+ */
 @Injectable()
 export class ListUsersUseCase {
   constructor(
     @Inject(AUTHORIZATION_SERVICE) private readonly authorization: AuthorizationService,
     @Inject(USER_REPOSITORY) private readonly users: UserRepository,
+    private readonly views: AccountViews,
   ) {}
 
   async execute(command: {
@@ -35,7 +40,10 @@ export class ListUsersUseCase {
     if (!allowed.ok) return allowed;
 
     const page = await this.users.list({ ...command.page, limit: clampLimit(command.page.limit) });
-    return ok({ items: page.items.map(toUserAccountView), nextCursor: page.nextCursor });
+    return ok({
+      items: page.items.map((user) => this.views.of(command.actor, user)),
+      nextCursor: page.nextCursor,
+    });
   }
 }
 
@@ -44,6 +52,7 @@ export class GetUserUseCase {
   constructor(
     @Inject(AUTHORIZATION_SERVICE) private readonly authorization: AuthorizationService,
     @Inject(USER_REPOSITORY) private readonly users: UserRepository,
+    private readonly views: AccountViews,
   ) {}
 
   async execute(command: {
@@ -60,6 +69,6 @@ export class GetUserUseCase {
     if (user === null) {
       return err(failure('not_found', 'identity.user_not_found', 'No such account.'));
     }
-    return ok(toUserAccountView(user));
+    return ok(this.views.of(command.actor, user));
   }
 }

@@ -5,7 +5,10 @@ import 'data_origin.dart';
 /// and as account provisioning returns it (`POST /admin/users`).
 ///
 /// Never a password, never a credential — only who the account is, its status,
-/// its identifiers (today one email) and its roles.
+/// its identifiers (today one email) and its roles. The server sends the
+/// identifiers only to a reader who may administer accounts (`users.manage`);
+/// to anyone else they are withheld (`identifiers: null` on the wire), which
+/// [identifiersWithheld] says — it is not the same as an account with none.
 class AdminAccount {
   const AdminAccount({
     required this.id,
@@ -14,6 +17,7 @@ class AdminAccount {
     required this.identifiers,
     required this.roles,
     required this.createdAt,
+    this.identifiersWithheld = false,
     this.origin = DataOrigin.records,
   });
 
@@ -37,6 +41,8 @@ class AdminAccount {
         if (raw is Map) raw['code']! as String,
     ],
     createdAt: DateTime.parse(json['createdAt']! as String),
+    identifiersWithheld:
+        json.containsKey('identifiers') && json['identifiers'] == null,
     origin: origin,
   );
 
@@ -44,6 +50,10 @@ class AdminAccount {
   final String displayName;
   final AccountStatus status;
   final List<AccountIdentifier> identifiers;
+
+  /// True when the server withheld the identifiers from this reader (who may
+  /// read accounts but not administer them); [identifiers] is then empty.
+  final bool identifiersWithheld;
 
   /// Role codes (OWNER/ADMIN/SUPERVISOR/TEACHER/ASSISTANT_TEACHER/STUDENT); a
   /// fresh account has none until a role is assigned.

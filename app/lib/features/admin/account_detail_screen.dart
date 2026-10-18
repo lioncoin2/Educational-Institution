@@ -171,7 +171,9 @@ class _IdentifiersCard extends StatelessWidget {
           children: [
             const SectionHeader(title: AccountDetailCopy.identifiersSection),
             const SizedBox(height: Insets.sm),
-            if (account.identifiers.isEmpty)
+            if (account.identifiersWithheld)
+              Text(AdminCopy.identifierWithheld, style: context.text.bodyMedium)
+            else if (account.identifiers.isEmpty)
               Text(AdminCopy.noIdentifier, style: context.text.bodyMedium)
             else
               for (final id in account.identifiers)

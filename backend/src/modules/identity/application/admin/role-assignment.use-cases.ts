@@ -21,7 +21,8 @@ import { USER_REPOSITORY, type UserRepository } from '../../domain/ports';
 import { assignRole, revokeRole } from '../../domain/user';
 import { IdentityAudit, USER_RESOURCE, auditEntry } from '../audit-actions';
 import { RolePermissions } from '../role-permissions';
-import { toUserAccountView, type UserAccountView } from '../views';
+import type { UserAccountView } from '../views';
+import { AccountViews } from './account-views';
 import { AccountAdministration } from './account-administration';
 
 export interface RoleChangeCommand {
@@ -47,6 +48,7 @@ export class AssignRoleUseCase {
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly views: AccountViews,
   ) {}
 
   async execute(command: RoleChangeCommand): Promise<Result<UserAccountView>> {
@@ -100,7 +102,7 @@ export class AssignRoleUseCase {
         command.meta.correlationId,
       ),
     ]);
-    return ok(toUserAccountView(updated.value));
+    return ok(this.views.of(command.actor, updated.value));
   }
 }
 
@@ -116,6 +118,7 @@ export class RevokeRoleUseCase {
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly views: AccountViews,
   ) {}
 
   async execute(command: RoleChangeCommand): Promise<Result<UserAccountView>> {
@@ -153,6 +156,6 @@ export class RevokeRoleUseCase {
         command.meta.correlationId,
       ),
     ]);
-    return ok(toUserAccountView(updated.value));
+    return ok(this.views.of(command.actor, updated.value));
   }
 }

@@ -245,6 +245,95 @@ describe('identity API', () => {
     });
   });
 
+  // ENGINEERING_RULES §11: emails never appear in a response — except on the
+  // surface that administers accounts, and there only for who may administer
+  // them. A supervisor holds `users.read` (provisional, Q1) but not
+  // `users.manage`: it sees who an account is, never how it signs in.
+  describe('login identifiers — only for who may administer accounts', () => {
+    const SUPERVISOR = { email: 'supervisor@institution.test', password: 'supervisor passphrase' };
+    let supervisorToken: string;
+    let supervisorId: string;
+
+    beforeAll(async () => {
+      const created = await api.call('POST', '/admin/users', {
+        token: ownerToken,
+        body: {
+          displayName: 'Supervisor One',
+          identifier: SUPERVISOR.email,
+          initialPassword: SUPERVISOR.password,
+        },
+      });
+      supervisorId = created.body.id as string;
+      await api.call('POST', `/admin/users/${supervisorId}/roles`, {
+        token: ownerToken,
+        body: { role: 'SUPERVISOR' },
+      });
+      await api.call('POST', `/admin/users/${supervisorId}/status`, {
+        token: ownerToken,
+        body: { status: 'ACTIVE' },
+      });
+      const login = await api.call('POST', '/auth/login', {
+        body: {
+          identifier: SUPERVISOR.email,
+          password: SUPERVISOR.password,
+          device: { platform: 'web', label: 'Supervisor desk' },
+        },
+      });
+      supervisorToken = login.body.accessToken as string;
+    });
+
+    it('lists accounts to a supervisor with every identifier withheld, and no email anywhere in the body', async () => {
+      const response = await api.call('GET', '/admin/users', { token: supervisorToken });
+      expect(response.status).toBe(200);
+      const items = response.body.items as Record<string, unknown>[];
+      expect(items.length).toBeGreaterThanOrEqual(3);
+      for (const item of items) {
+        expect(item.identifiers).toBeNull();
+        expect(Object.keys(item).sort()).toEqual([
+          'createdAt',
+          'displayName',
+          'id',
+          'identifiers',
+          'roles',
+          'status',
+          'updatedAt',
+        ]);
+      }
+      expect(response.raw).not.toMatch(/@institution\.test/);
+    });
+
+    it('withholds them from one account read by a supervisor, too', async () => {
+      const list = await api.call('GET', '/admin/users', { token: ownerToken });
+      const owner = (list.body.items as { id: string; roles: { code: string }[] }[]).find((item) =>
+        item.roles.some((role) => role.code === 'OWNER'),
+      );
+      const response = await api.call('GET', `/admin/users/${owner?.id ?? ''}`, {
+        token: supervisorToken,
+      });
+      expect(response.status).toBe(200);
+      expect(response.body.identifiers).toBeNull();
+      expect(response.raw).not.toContain(OWNER.email);
+    });
+
+    it('shows them to who administers accounts', async () => {
+      const response = await api.call('GET', `/admin/users/${supervisorId}`, { token: ownerToken });
+      expect(response.body.identifiers).toEqual([{ type: 'email', value: SUPERVISOR.email }]);
+    });
+
+    it('lets a supervisor administer nothing — so no way round the rule', async () => {
+      const created = await api.call('POST', '/admin/users', {
+        token: supervisorToken,
+        body: { displayName: 'X', identifier: 'x@x.test', initialPassword: 'x passphrase long' },
+      });
+      expect(created.status).toBe(403);
+      const status = await api.call('POST', `/admin/users/${supervisorId}/status`, {
+        token: supervisorToken,
+        body: { status: 'DISABLED' },
+      });
+      expect(status.status).toBe(403);
+    });
+  });
+
   describe('what never leaves the API', () => {
     it('never returns a password hash, in any response so far', () => {
       const everything = api.transcript.join('\n');

@@ -10,6 +10,7 @@ import { AccessGuard } from './api/guards/access.guard';
 import { IdentityAccountDirectory } from './application/account-directory.service';
 import { IdentityAccountSearch } from './application/account-search.service';
 import { AccountAdministration } from './application/admin/account-administration';
+import { AccountViews } from './application/admin/account-views';
 import { ChangeAccountStatusUseCase } from './application/admin/account-status.use-case';
 import { CreateUserUseCase } from './application/admin/create-user.use-case';
 import { ResetPasswordUseCase } from './application/admin/password-reset.use-case';
@@ -159,6 +160,7 @@ function persistent<T>(
 
     RolePermissions,
     AccountAdministration,
+    AccountViews,
     ResolvePrincipalUseCase,
     // One implementation of authentication: the guard's and the contract's.
     { provide: ACCESS_TOKEN_AUTHENTICATOR, useExisting: ResolvePrincipalUseCase },

@@ -4,6 +4,7 @@ import { UuidIdGenerator } from '../../src/platform/primitives/uuid-id-generator
 import { InMemoryRateLimiter } from '../../src/platform/rate-limit/in-memory-rate-limiter';
 import type { AuditEntry, AuditLog, Clock, DomainEvent, EventPublisher } from '../../src/shared';
 import { AccountAdministration } from '../../src/modules/identity/application/admin/account-administration';
+import { AccountViews } from '../../src/modules/identity/application/admin/account-views';
 import { ChangeAccountStatusUseCase } from '../../src/modules/identity/application/admin/account-status.use-case';
 import { CreateUserUseCase } from '../../src/modules/identity/application/admin/create-user.use-case';
 import { ResetPasswordUseCase } from '../../src/modules/identity/application/admin/password-reset.use-case';
@@ -153,6 +154,7 @@ export function identityHarness(
   const rolePermissions = new RolePermissions(catalog, clock, settings);
   const authorization = new PolicyAuthorizationService(PROVISIONAL_POLICY_RULES);
   const administration = new AccountAdministration(authorization, users, rolePermissions);
+  const accountViews = new AccountViews(authorization);
 
   const h = {
     clock,
@@ -190,9 +192,26 @@ export function identityHarness(
     currentUser: new GetCurrentUserUseCase(users),
     changePassword: new ChangeMyPasswordUseCase(users, sessions, hasher, limiter, audit, clock),
     resolvePrincipal: new ResolvePrincipalUseCase(tokens, sessions, users, clock, rolePermissions),
-    createUser: new CreateUserUseCase(authorization, users, hasher, audit, events, clock, ids),
-    assignRole: new AssignRoleUseCase(administration, rolePermissions, users, audit, events, clock),
-    revokeRole: new RevokeRoleUseCase(administration, users, audit, events, clock),
+    createUser: new CreateUserUseCase(
+      authorization,
+      users,
+      hasher,
+      audit,
+      events,
+      clock,
+      ids,
+      accountViews,
+    ),
+    assignRole: new AssignRoleUseCase(
+      administration,
+      rolePermissions,
+      users,
+      audit,
+      events,
+      clock,
+      accountViews,
+    ),
+    revokeRole: new RevokeRoleUseCase(administration, users, audit, events, clock, accountViews),
     changeStatus: new ChangeAccountStatusUseCase(
       administration,
       users,
@@ -200,11 +219,12 @@ export function identityHarness(
       audit,
       events,
       clock,
+      accountViews,
     ),
     resetPassword: new ResetPasswordUseCase(administration, users, sessions, hasher, audit, clock),
     revokeUserSessions: new RevokeUserSessionsUseCase(administration, sessions, audit, clock),
-    listUsers: new ListUsersUseCase(authorization, users),
-    getUser: new GetUserUseCase(authorization, users),
+    listUsers: new ListUsersUseCase(authorization, users, accountViews),
+    getUser: new GetUserUseCase(authorization, users, accountViews),
     bootstrapOwner: new BootstrapOwnerUseCase(users, hasher, audit, events, clock, ids),
 
     /** Puts an account straight into storage — ACTIVE by default. */

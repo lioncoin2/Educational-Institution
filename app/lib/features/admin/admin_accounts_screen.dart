@@ -123,7 +123,9 @@ class _AccountTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final email = account.primaryIdentifier ?? AdminCopy.noIdentifier;
+    final email = account.identifiersWithheld
+        ? AdminCopy.identifierWithheld
+        : account.primaryIdentifier ?? AdminCopy.noIdentifier;
     return AppCard(
       onTap: onTap,
       semanticLabel: account.displayName,

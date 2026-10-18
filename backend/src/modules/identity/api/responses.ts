@@ -54,7 +54,12 @@ export interface UserAccountResponse {
   readonly id: string;
   readonly displayName: string;
   readonly status: string;
-  readonly identifiers: readonly { readonly type: string; readonly value: string }[];
+  /**
+   * How the account signs in — only for a reader who may administer accounts
+   * (`users.manage`); `null` when withheld from this reader (ENGINEERING_RULES
+   * §11; `AccountViews`).
+   */
+  readonly identifiers: readonly { readonly type: string; readonly value: string }[] | null;
   readonly roles: readonly {
     readonly code: string;
     readonly grantedAt: string;
@@ -109,7 +114,10 @@ export function toUserAccountResponse(view: UserAccountView): UserAccountRespons
     id: view.id,
     displayName: view.displayName,
     status: view.status,
-    identifiers: view.identifiers.map(({ kind, value }) => ({ type: kind, value })),
+    identifiers:
+      view.identifiers === null
+        ? null
+        : view.identifiers.map(({ kind, value }) => ({ type: kind, value })),
     roles: view.roles.map(({ code, grantedAt, grantedBy }) => ({
       code,
       grantedAt: grantedAt.toISOString(),

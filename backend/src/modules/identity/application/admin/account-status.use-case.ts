@@ -29,7 +29,8 @@ import {
   auditEntry,
   type IdentityAuditAction,
 } from '../audit-actions';
-import { toUserAccountView, type UserAccountView } from '../views';
+import type { UserAccountView } from '../views';
+import { AccountViews } from './account-views';
 import { AccountAdministration } from './account-administration';
 
 export interface ChangeAccountStatusCommand {
@@ -76,6 +77,7 @@ export class ChangeAccountStatusUseCase {
     @Inject(AUDIT_LOG) private readonly audit: AuditLog,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly views: AccountViews,
   ) {}
 
   async execute(command: ChangeAccountStatusCommand): Promise<Result<UserAccountView>> {
@@ -121,6 +123,6 @@ export class ChangeAccountStatusUseCase {
         command.meta.correlationId,
       ),
     ]);
-    return ok(toUserAccountView(updated.value));
+    return ok(this.views.of(command.actor, updated.value));
   }
 }

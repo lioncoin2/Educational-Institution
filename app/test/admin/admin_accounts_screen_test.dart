@@ -113,6 +113,60 @@ void main() {
     expect(find.text('maryam@example.edu'), findsOneWidget);
   });
 
+  // The server withholds identifiers from a reader without users.manage
+  // (`identifiers: null`); the directory says so instead of claiming "none".
+  testWidgets(
+    'says an identifier is withheld, not missing, for a read-only viewer',
+    (tester) async {
+      final withheld = AdminAccount.fromJson({
+        'id': 'u-1',
+        'displayName': 'الأستاذة مريم',
+        'status': 'ACTIVE',
+        'identifiers': null,
+        'roles': [
+          {'code': 'TEACHER'},
+        ],
+        'createdAt': '2026-01-01T00:00:00.000Z',
+      });
+      expect(withheld.identifiersWithheld, isTrue);
+      expect(withheld.identifiers, isEmpty);
+      await openApp(
+        tester,
+        '/admin/accounts',
+        overrides: overrides(
+          _FakeAdmin(seed: [withheld]),
+          _user({'users.read'}),
+        ),
+      );
+      expect(find.text('الأستاذة مريم'), findsOneWidget);
+      expect(find.text(AdminCopy.identifierWithheld), findsOneWidget);
+      expect(find.text(AdminCopy.noIdentifier), findsNothing);
+    },
+  );
+
+  test('reads an absent or empty identifier list as none, not withheld', () {
+    Map<String, Object?> json(Object? identifiers, {bool include = true}) => {
+      'id': 'u-2',
+      'displayName': 'x',
+      'status': 'ACTIVE',
+      if (include) 'identifiers': identifiers,
+      'createdAt': '2026-01-01T00:00:00.000Z',
+    };
+    expect(AdminAccount.fromJson(json(const [])).identifiersWithheld, isFalse);
+    expect(
+      AdminAccount.fromJson(json(null, include: false)).identifiersWithheld,
+      isFalse,
+    );
+    expect(
+      AdminAccount.fromJson(
+        json([
+          {'type': 'email', 'value': 'a@b.c'},
+        ]),
+      ).primaryIdentifier,
+      'a@b.c',
+    );
+  });
+
   testWidgets('shows the create button to a holder of users.manage', (
     tester,
   ) async {

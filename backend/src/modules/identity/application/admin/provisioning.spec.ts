@@ -374,4 +374,25 @@ describe('reading accounts', () => {
       'identity.permission_denied',
     );
   });
+
+  // ENGINEERING_RULES §11 / AccountViews: reading is not administering.
+  it('shows login identifiers to who may administer accounts, and withholds them from who may only read', async () => {
+    const { h, admin } = await withAdmins();
+    await h.seedUser({ email: 'supervisor@example.com', roles: ['SUPERVISOR'] });
+    const supervisor = await h.principalOf('supervisor@example.com');
+    expect(supervisor.permissions.has(Permissions.users.read)).toBe(true);
+    expect(supervisor.permissions.has(Permissions.users.manage)).toBe(false);
+
+    const read = expectOk(await h.listUsers.execute({ actor: supervisor, page: { limit: 10 } }));
+    expect(read.items).toHaveLength(5);
+    expect(read.items.map((item) => item.identifiers)).toEqual(Array(5).fill(null));
+    const one = expectOk(await h.getUser.execute({ actor: supervisor, userId: read.items[0].id }));
+    expect(one.identifiers).toBeNull();
+
+    const administered = expectOk(await h.listUsers.execute({ actor: admin, page: { limit: 10 } }));
+    expect(administered.items.every((item) => item.identifiers?.length === 1)).toBe(true);
+    expect(
+      expectOk(await h.getUser.execute({ actor: admin, userId: read.items[0].id })).identifiers,
+    ).toEqual([{ kind: 'email', value: expect.stringContaining('@example.com') }]);
+  });
 });

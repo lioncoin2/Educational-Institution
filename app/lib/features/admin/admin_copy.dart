@@ -30,6 +30,9 @@ abstract final class AdminCopy {
 
   /// An account the directory shows with no identifier (never a bare id).
   static const noIdentifier = 'بلا معرّف';
+
+  /// Shown instead of an email to a reader who may not administer accounts.
+  static const identifierWithheld = 'معرّف الدخول متاح لمن يدير الحسابات فقط';
   static const noRoles = 'بلا دور بعد';
 
   static String roles(List<String> codes) =>

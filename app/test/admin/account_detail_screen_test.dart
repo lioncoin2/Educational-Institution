@@ -176,6 +176,30 @@ void main() {
     expect(find.byIcon(Icons.close), findsNothing); // roles not deletable
   });
 
+  // The server sends `identifiers: null` to a reader without users.manage.
+  testWidgets('says the login identifier is withheld from a read-only viewer', (
+    tester,
+  ) async {
+    final withheld = AdminAccount(
+      id: 'u:1',
+      displayName: 'الأستاذة مريم',
+      status: AccountStatus.active,
+      identifiers: const [],
+      identifiersWithheld: true,
+      roles: const ['TEACHER'],
+      createdAt: DateTime.utc(2026, 9),
+      origin: DataOrigin.records,
+    );
+    await open(
+      tester,
+      repo: _FakeAdmin(withheld),
+      user: _user('me', {'users.read'}),
+    );
+    expect(find.text(AdminCopy.identifierWithheld), findsOneWidget);
+    expect(find.text(AdminCopy.noIdentifier), findsNothing);
+    expect(find.text('m@example.edu'), findsNothing);
+  });
+
   testWidgets('refuses to administer your own account', (tester) async {
     // The actor IS this account.
     await open(
