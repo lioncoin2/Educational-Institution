@@ -2,6 +2,7 @@ import { Controller, Get, Inject, Optional } from '@nestjs/common';
 import type { Pool } from 'pg';
 
 import { failure } from '../../shared';
+import { APP_CONFIG, type AppConfig } from '../config/app-config';
 import { DATABASE_POOL } from '../database/database';
 import { FailureException } from '../http/http-failure';
 import { PublicRoute } from '../http/public-route.decorator';
@@ -38,6 +39,16 @@ interface ReadyBody {
  *   by the pool's `connectionTimeoutMillis`, then the query by
  *   [READINESS_TIMEOUT_MS]. Booted without a database (a unit test, or a
  *   deliberately db-less boot) there is nothing to check and the pod is ready.
+ *   "Without a database" is what configuration says (`database.configured`),
+ *   not whether a pool object exists: `AppModule` always composes the pool —
+ *   lazily, against the local default URL when DATABASE_URL is unset — while
+ *   the modules then run on their in-memory adapters, so pinging that pool
+ *   would fail readiness for a process that depends on no database at all. A
+ *   deployed environment always configures one (`DATABASE_URL` is required).
+ * - Concurrent probes share ONE ping: the route is public, and without this a
+ *   burst of requests would each hold a pooled connection for up to the
+ *   timeout — taking the pool from real traffic exactly when the database is
+ *   slow. A probe arriving while a ping is in flight waits for that ping.
  *
  * Redis is not checked: this build has no connected Redis client (the rate
  * limiter is in-process), so there is nothing to ping; a Redis readiness check
@@ -48,8 +59,12 @@ interface ReadyBody {
 @Controller('health')
 export class HealthController {
   private readonly startedAt = Date.now();
+  private inFlight: Promise<void> | undefined;
 
-  constructor(@Optional() @Inject(DATABASE_POOL) private readonly pool?: Pool) {}
+  constructor(
+    @Optional() @Inject(DATABASE_POOL) private readonly pool?: Pool,
+    @Optional() @Inject(APP_CONFIG) private readonly config?: AppConfig,
+  ) {}
 
   @Get('live')
   @PublicRoute()
@@ -61,11 +76,15 @@ export class HealthController {
   @PublicRoute()
   async ready(): Promise<ReadyBody> {
     const uptimeSeconds = Math.floor((Date.now() - this.startedAt) / 1000);
-    if (this.pool === undefined) {
+    const pool = this.pool;
+    if (pool === undefined || this.config?.database.configured === false) {
       return { status: 'ok', uptimeSeconds, checks: { database: 'not_configured' } };
     }
     try {
-      await this.pingDatabase(this.pool);
+      this.inFlight ??= this.pingDatabase(pool).finally(() => {
+        this.inFlight = undefined;
+      });
+      await this.inFlight;
     } catch {
       // The driver error is deliberately neither read nor echoed — it can carry
       // a connection string or host. The standard 503 error body names only the

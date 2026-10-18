@@ -1,6 +1,7 @@
 import { Logger, type ArgumentsHost } from '@nestjs/common';
 import type { Pool } from 'pg';
 
+import { loadConfig } from '../config/app-config';
 import { AllExceptionsFilter } from '../http/all-exceptions.filter';
 import { FailureException } from '../http/http-failure';
 import { HealthController, READINESS_TIMEOUT_MS } from './health.controller';
@@ -213,6 +214,75 @@ describe('HealthController', () => {
         uptimeSeconds: expect.any(Number),
         checks: { database: 'not_configured' },
       });
+    });
+  });
+
+  describe('ready — what is checked, and how often', () => {
+    it('pings nothing when configuration says no database is configured, though a pool exists', async () => {
+      // AppModule always composes the pool; without DATABASE_URL the modules run
+      // in memory, so a ping of the local default would fail a healthy process.
+      const connect = jest.fn(() => Promise.reject(new Error('no server at localhost:5432')));
+      const controller = new HealthController(poolReturning(null, connect), loadConfig({}));
+
+      await expect(controller.ready()).resolves.toMatchObject({
+        status: 'ok',
+        checks: { database: 'not_configured' },
+      });
+      expect(connect).not.toHaveBeenCalled();
+    });
+
+    it('pings when configuration names a database', async () => {
+      const { client } = fakeClient(() => Promise.resolve({ rows: [] }));
+      const connect = jest.fn(() => Promise.resolve(client));
+      const controller = new HealthController(
+        poolReturning(null, connect),
+        loadConfig({ DATABASE_URL: 'postgresql://app@db/institution' }),
+      );
+
+      await expect(controller.ready()).resolves.toMatchObject({ checks: { database: 'ok' } });
+      expect(connect).toHaveBeenCalledTimes(1);
+    });
+
+    it('serves a burst of concurrent probes with ONE pooled connection, then pings afresh', async () => {
+      let answer!: () => void;
+      const { client, released } = fakeClient(
+        () => new Promise<unknown>((resolve) => (answer = () => resolve({ rows: [] }))),
+      );
+      const connect = jest.fn(() => Promise.resolve(client));
+      const controller = new HealthController(poolReturning(null, connect));
+
+      const burst = Array.from({ length: 25 }, () => controller.ready());
+      await Promise.resolve();
+      await Promise.resolve();
+      answer();
+      const bodies = await Promise.all(burst);
+
+      expect(bodies.every((body) => body.checks.database === 'ok')).toBe(true);
+      expect(connect).toHaveBeenCalledTimes(1);
+      expect(released).toEqual([undefined]);
+
+      // The shared ping is over: the next probe asks the database again.
+      const second = controller.ready();
+      await Promise.resolve();
+      await Promise.resolve();
+      answer();
+      await second;
+      expect(connect).toHaveBeenCalledTimes(2);
+    });
+
+    it('fails every probe that shared a failed ping, and the next probe tries again', async () => {
+      const connect = jest
+        .fn<Promise<unknown>, []>()
+        .mockRejectedValueOnce(new Error('down'))
+        .mockResolvedValueOnce(fakeClient(() => Promise.resolve({ rows: [] })).client);
+      const controller = new HealthController(poolReturning(null, connect));
+
+      const results = await Promise.allSettled([controller.ready(), controller.ready()]);
+      expect(results.map((result) => result.status)).toEqual(['rejected', 'rejected']);
+      expect(connect).toHaveBeenCalledTimes(1);
+
+      await expect(controller.ready()).resolves.toMatchObject({ checks: { database: 'ok' } });
+      expect(connect).toHaveBeenCalledTimes(2);
     });
   });
 
