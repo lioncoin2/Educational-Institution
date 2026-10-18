@@ -11,6 +11,7 @@ import '../../core/widgets/layout/responsive_body.dart';
 import '../../data/models/admin.dart';
 import '../../data/models/auth.dart' show AccountStatus;
 import '../../providers/app_providers.dart';
+import '../auth/sign_in_prompt.dart';
 import 'account_detail_copy.dart';
 import 'admin_copy.dart';
 import 'state/account_detail_controller.dart';
@@ -65,6 +66,10 @@ class AccountDetailScreen extends ConsumerWidget {
         child: AsyncView(
           value: account,
           onRetry: () => ref.invalidate(accountDetailProvider(userId)),
+          errorBuilder: (context, error) => SignInPrompt.forError(
+            error,
+            onReturn: () => ref.invalidate(accountDetailProvider(userId)),
+          ),
           builder: (context, data) {
             final isSelf = session?.id == data.id;
             final canManageUsers = session?.can('users.manage') ?? false;

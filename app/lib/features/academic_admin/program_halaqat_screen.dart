@@ -11,6 +11,7 @@ import '../../core/widgets/foundations/empty_state.dart';
 import '../../core/widgets/layout/responsive_body.dart';
 import '../../data/models/academic.dart';
 import '../../providers/app_providers.dart';
+import '../auth/sign_in_prompt.dart';
 import 'academic_admin_copy.dart';
 import 'state/program_halaqat_controller.dart';
 import 'widgets/structure_form_sheet.dart';
@@ -59,6 +60,10 @@ class ProgramHalaqatScreen extends ConsumerWidget {
         child: AsyncView(
           value: detail,
           onRetry: () => ref.invalidate(programHalaqatProvider(programId)),
+          errorBuilder: (context, error) => SignInPrompt.forError(
+            error,
+            onReturn: () => ref.invalidate(programHalaqatProvider(programId)),
+          ),
           builder: (context, data) {
             if (data.halaqat.isEmpty) {
               return const SingleChildScrollView(

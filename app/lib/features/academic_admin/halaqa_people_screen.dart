@@ -12,6 +12,7 @@ import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/layout/responsive_body.dart';
 import '../../data/models/academic.dart';
 import '../../providers/app_providers.dart';
+import '../auth/sign_in_prompt.dart';
 import 'academic_people_copy.dart';
 import 'state/halaqa_people_controller.dart';
 import 'widgets/person_picker_sheet.dart';
@@ -85,6 +86,10 @@ class _StudentsTab extends ConsumerWidget {
     return AsyncView(
       value: roster,
       onRetry: () => ref.invalidate(halaqaRosterProvider(halaqaId)),
+      errorBuilder: (context, error) => SignInPrompt.forError(
+        error,
+        onReturn: () => ref.invalidate(halaqaRosterProvider(halaqaId)),
+      ),
       builder: (context, state) {
         return RefreshIndicator(
           onRefresh: () =>
@@ -168,6 +173,10 @@ class _TeachersTab extends ConsumerWidget {
     return AsyncView(
       value: teachers,
       onRetry: () => ref.invalidate(halaqaTeachersProvider(halaqaId)),
+      errorBuilder: (context, error) => SignInPrompt.forError(
+        error,
+        onReturn: () => ref.invalidate(halaqaTeachersProvider(halaqaId)),
+      ),
       builder: (context, state) {
         return RefreshIndicator(
           onRefresh: () =>

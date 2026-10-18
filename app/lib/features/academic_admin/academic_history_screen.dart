@@ -10,6 +10,7 @@ import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/layout/responsive_body.dart';
 import '../../data/models/academic.dart';
 import '../../providers/app_providers.dart';
+import '../auth/sign_in_prompt.dart';
 import 'academic_history_copy.dart';
 import 'academic_people_copy.dart';
 import 'state/academic_history_controller.dart';
@@ -43,12 +44,19 @@ class StudentEnrollmentHistoryScreen extends ConsumerWidget {
         child: AsyncView(
           value: history,
           onRetry: () => ref.invalidate(studentEnrollmentsProvider(userId)),
-          errorBuilder: (context, error) => _HistoryError(
-            message: AcademicHistoryCopy.historyFailed(
-              error is AcademicException ? error.code : 'unknown',
-            ),
-            onRetry: () => ref.invalidate(studentEnrollmentsProvider(userId)),
-          ),
+          errorBuilder: (context, error) =>
+              SignInPrompt.forError(
+                error,
+                onReturn: () =>
+                    ref.invalidate(studentEnrollmentsProvider(userId)),
+              ) ??
+              _HistoryError(
+                message: AcademicHistoryCopy.historyFailed(
+                  error is AcademicException ? error.code : 'unknown',
+                ),
+                onRetry: () =>
+                    ref.invalidate(studentEnrollmentsProvider(userId)),
+              ),
           builder: (context, state) => _HistoryList(
             demo: demo,
             items: state.items,
@@ -98,12 +106,19 @@ class TeacherAssignmentHistoryScreen extends ConsumerWidget {
         child: AsyncView(
           value: history,
           onRetry: () => ref.invalidate(teacherAssignmentsProvider(userId)),
-          errorBuilder: (context, error) => _HistoryError(
-            message: AcademicHistoryCopy.historyFailed(
-              error is AcademicException ? error.code : 'unknown',
-            ),
-            onRetry: () => ref.invalidate(teacherAssignmentsProvider(userId)),
-          ),
+          errorBuilder: (context, error) =>
+              SignInPrompt.forError(
+                error,
+                onReturn: () =>
+                    ref.invalidate(teacherAssignmentsProvider(userId)),
+              ) ??
+              _HistoryError(
+                message: AcademicHistoryCopy.historyFailed(
+                  error is AcademicException ? error.code : 'unknown',
+                ),
+                onRetry: () =>
+                    ref.invalidate(teacherAssignmentsProvider(userId)),
+              ),
           builder: (context, state) => _HistoryList(
             demo: demo,
             items: state.items,

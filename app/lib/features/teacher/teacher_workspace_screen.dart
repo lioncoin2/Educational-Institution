@@ -12,6 +12,7 @@ import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/layout/responsive_body.dart';
 import '../../data/models/academic.dart';
 import '../../providers/app_providers.dart';
+import '../auth/sign_in_prompt.dart';
 import 'state/teacher_assignments_controller.dart';
 import 'teacher_copy.dart';
 
@@ -47,12 +48,17 @@ class TeacherWorkspaceScreen extends ConsumerWidget {
         child: AsyncView(
           value: workspace,
           onRetry: () => ref.invalidate(teacherAssignmentsProvider),
-          errorBuilder: (context, error) => _ErrorView(
-            message: TeacherCopy.workspaceFailed(
-              error is AcademicException ? error.code : 'unknown',
-            ),
-            onRetry: () => ref.invalidate(teacherAssignmentsProvider),
-          ),
+          errorBuilder: (context, error) =>
+              SignInPrompt.forError(
+                error,
+                onReturn: () => ref.invalidate(teacherAssignmentsProvider),
+              ) ??
+              _ErrorView(
+                message: TeacherCopy.workspaceFailed(
+                  error is AcademicException ? error.code : 'unknown',
+                ),
+                onRetry: () => ref.invalidate(teacherAssignmentsProvider),
+              ),
           builder: (context, state) {
             if (state.halaqat.isEmpty) {
               return const SingleChildScrollView(

@@ -12,6 +12,7 @@ import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/layout/responsive_body.dart';
 import '../../data/models/academic.dart';
 import '../../providers/app_providers.dart';
+import '../auth/sign_in_prompt.dart';
 import 'academic_admin_copy.dart';
 import 'state/academic_structure_controller.dart';
 import 'widgets/structure_form_sheet.dart';
@@ -68,6 +69,10 @@ class _StructureList extends ConsumerWidget {
     return AsyncView(
       value: sections,
       onRetry: () => ref.invalidate(academicStructureProvider),
+      errorBuilder: (context, error) => SignInPrompt.forError(
+        error,
+        onReturn: () => ref.invalidate(academicStructureProvider),
+      ),
       builder: (context, items) {
         if (items.isEmpty) {
           return const SingleChildScrollView(

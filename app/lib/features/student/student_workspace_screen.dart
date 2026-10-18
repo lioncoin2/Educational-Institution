@@ -12,6 +12,7 @@ import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/layout/responsive_body.dart';
 import '../../data/models/academic.dart';
 import '../../providers/app_providers.dart';
+import '../auth/sign_in_prompt.dart';
 import '../messaging/widgets/start_direct_message_button.dart';
 import 'state/student_enrollments_controller.dart';
 import 'student_copy.dart';
@@ -59,12 +60,17 @@ class StudentWorkspaceScreen extends ConsumerWidget {
         child: AsyncView(
           value: workspace,
           onRetry: () => ref.invalidate(studentEnrollmentsProvider),
-          errorBuilder: (context, error) => _ErrorView(
-            message: StudentCopy.workspaceFailed(
-              error is AcademicException ? error.code : 'unknown',
-            ),
-            onRetry: () => ref.invalidate(studentEnrollmentsProvider),
-          ),
+          errorBuilder: (context, error) =>
+              SignInPrompt.forError(
+                error,
+                onReturn: () => ref.invalidate(studentEnrollmentsProvider),
+              ) ??
+              _ErrorView(
+                message: StudentCopy.workspaceFailed(
+                  error is AcademicException ? error.code : 'unknown',
+                ),
+                onRetry: () => ref.invalidate(studentEnrollmentsProvider),
+              ),
           builder: (context, state) {
             if (state.enrollments.isEmpty) {
               return const SingleChildScrollView(

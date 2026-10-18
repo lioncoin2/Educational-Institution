@@ -5,6 +5,7 @@ import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/layout/responsive_body.dart';
 import '../../data/models/auth.dart';
+import '../auth/sign_in_prompt.dart';
 import 'state/sessions_controller.dart';
 
 /// The signed-in user's devices and sessions (`GET /auth/sessions`): each row
@@ -115,10 +116,15 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen> {
         top: false,
         child: sessions.when(
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => _Error(
-            message: _describe(error is AuthException ? error.code : ''),
-            onRetry: () => ref.read(sessionsProvider.notifier).refresh(),
-          ),
+          error: (error, _) =>
+              SignInPrompt.forError(
+                error,
+                onReturn: () => ref.read(sessionsProvider.notifier).refresh(),
+              ) ??
+              _Error(
+                message: _describe(error is AuthException ? error.code : ''),
+                onRetry: () => ref.read(sessionsProvider.notifier).refresh(),
+              ),
           data: (items) => _list(context, items),
         ),
       ),

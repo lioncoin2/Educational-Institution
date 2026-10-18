@@ -153,14 +153,14 @@ responsibility and what each module must not know live in
 - **Path:** `app/lib/features/academic_admin/`
 - **Controllers:** `academic_history_controller.dart`, `academic_structure_controller.dart`, `halaqa_people_controller.dart`, `program_halaqat_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
-- **Static imports → features:** —
+- **Static imports → features:** `auth`
 
 ### admin
 
 - **Path:** `app/lib/features/admin/`
 - **Controllers:** `account_detail_controller.dart`, `admin_accounts_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
-- **Static imports → features:** —
+- **Static imports → features:** `auth`
 
 ### announcements
 
@@ -244,14 +244,14 @@ responsibility and what each module must not know live in
 - **Path:** `app/lib/features/notifications/`
 - **Controllers:** `notification_list_controller.dart`, `notification_preferences_controller.dart`, `unread_count_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
-- **Static imports → features:** —
+- **Static imports → features:** `auth`
 
 ### profile
 
 - **Path:** `app/lib/features/profile/`
 - **Controllers:** `sessions_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
-- **Static imports → features:** `academic_admin`, `admin`, `communities`, `notifications`, `student`, `teacher`
+- **Static imports → features:** `academic_admin`, `admin`, `auth`, `communities`, `notifications`, `student`, `teacher`
 
 ### programs
 
@@ -279,14 +279,14 @@ responsibility and what each module must not know live in
 - **Path:** `app/lib/features/student/`
 - **Controllers:** `student_enrollments_controller.dart`, `student_record_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
-- **Static imports → features:** `academic_admin`, `messaging`
+- **Static imports → features:** `academic_admin`, `auth`, `messaging`
 
 ### teacher
 
 - **Path:** `app/lib/features/teacher/`
 - **Controllers:** `teacher_assignments_controller.dart`, `teacher_history_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
-- **Static imports → features:** `academic_admin`, `messaging`
+- **Static imports → features:** `academic_admin`, `auth`, `messaging`
 
 ## Flutter data seam (`app/lib/data/`, `app/lib/app/`)
 

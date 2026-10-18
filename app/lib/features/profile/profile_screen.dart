@@ -19,6 +19,7 @@ import '../../data/models/student.dart';
 import '../../providers/app_providers.dart';
 import '../academic_admin/academic_admin_copy.dart';
 import '../admin/admin_copy.dart';
+import '../auth/sign_in_prompt.dart';
 import '../communities/community_copy.dart';
 import '../notifications/state/unread_count_controller.dart';
 import '../student/student_copy.dart';
@@ -81,6 +82,12 @@ class ProfileScreen extends ConsumerWidget {
               child: AsyncView(
                 value: student,
                 loading: const SizedBox(height: 160),
+                // Signed out there is nobody to describe, and that is not a
+                // failure: the account section below offers the sign-in.
+                errorBuilder: (context, error) =>
+                    SignInPrompt.needsSignIn(error)
+                        ? const SizedBox.shrink()
+                        : null,
                 builder: (context, data) => ContourBand(
                   background: context.colors.primary,
                   lineColor: context.colors.onPrimary,

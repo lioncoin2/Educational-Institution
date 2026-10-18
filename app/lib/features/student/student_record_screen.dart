@@ -12,6 +12,7 @@ import '../../data/models/academic.dart';
 import '../../providers/app_providers.dart';
 import '../academic_admin/academic_history_copy.dart';
 import '../academic_admin/academic_people_copy.dart';
+import '../auth/sign_in_prompt.dart';
 import 'state/student_record_controller.dart';
 import 'student_copy.dart';
 
@@ -46,12 +47,17 @@ class StudentRecordScreen extends ConsumerWidget {
         child: AsyncView(
           value: record,
           onRetry: () => ref.invalidate(studentRecordProvider),
-          errorBuilder: (context, error) => _RecordError(
-            message: AcademicHistoryCopy.historyFailed(
-              error is AcademicException ? error.code : 'unknown',
-            ),
-            onRetry: () => ref.invalidate(studentRecordProvider),
-          ),
+          errorBuilder: (context, error) =>
+              SignInPrompt.forError(
+                error,
+                onReturn: () => ref.invalidate(studentRecordProvider),
+              ) ??
+              _RecordError(
+                message: AcademicHistoryCopy.historyFailed(
+                  error is AcademicException ? error.code : 'unknown',
+                ),
+                onRetry: () => ref.invalidate(studentRecordProvider),
+              ),
           builder: (context, state) {
             if (state.items.isEmpty) {
               return const SingleChildScrollView(

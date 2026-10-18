@@ -12,6 +12,7 @@ import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/layout/responsive_body.dart';
 import '../../data/models/admin.dart';
 import '../../providers/app_providers.dart';
+import '../auth/sign_in_prompt.dart';
 import 'admin_copy.dart';
 import 'state/admin_accounts_controller.dart';
 import 'widgets/admin_create_account_sheet.dart';
@@ -63,6 +64,10 @@ class _AccountsList extends ConsumerWidget {
     return AsyncView(
       value: accounts,
       onRetry: () => ref.invalidate(adminAccountsProvider),
+      errorBuilder: (context, error) => SignInPrompt.forError(
+        error,
+        onReturn: () => ref.invalidate(adminAccountsProvider),
+      ),
       loading: const SingleChildScrollView(
         child: Padding(
           padding: EdgeInsets.only(top: Insets.giant),

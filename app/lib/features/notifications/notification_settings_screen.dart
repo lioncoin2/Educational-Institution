@@ -11,6 +11,7 @@ import '../../core/widgets/foundations/section_header.dart';
 import '../../core/widgets/layout/app_screen.dart';
 import '../../data/models/notifications.dart';
 import '../../providers/app_providers.dart';
+import '../auth/sign_in_prompt.dart';
 import 'notification_copy.dart';
 import 'state/notification_preferences_controller.dart';
 
@@ -32,6 +33,10 @@ class NotificationSettingsScreen extends ConsumerWidget {
         child: AsyncView(
           value: preferences,
           onRetry: () => ref.invalidate(notificationPreferencesProvider),
+          errorBuilder: (context, error) => SignInPrompt.forError(
+            error,
+            onReturn: () => ref.invalidate(notificationPreferencesProvider),
+          ),
           builder: (context, categories) => CustomScrollView(
             slivers: [
               for (final category in categories) ...[
