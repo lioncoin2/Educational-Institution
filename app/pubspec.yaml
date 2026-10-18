@@ -34,6 +34,11 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # Flutter's first-party browser/device UI-driving harness — the only way to
+  # drive the CanvasKit UI in a real browser (DOM automation cannot see Flutter
+  # widgets). Used by integration_test/ via `flutter drive`; not shipped.
+  integration_test:
+    sdk: flutter
   flutter_lints: ^6.0.0
 
 flutter:

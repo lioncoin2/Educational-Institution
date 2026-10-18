@@ -169,8 +169,30 @@ Collapsing them produces a restart loop on a transient dependency outage: the
 database blips, readiness fails, the orchestrator restarts a perfectly healthy
 process, and the restart makes recovery slower.
 
-`ready` currently reports process state only. It should check the database pool
-and Redis before production — listed as debt.
+`ready` checks out a pooled client and runs `SELECT 1`. When the pool cannot
+answer it fails with the standard **503** error body (`{ error: { kind:
+"unavailable", code: "platform.not_ready", … } }`, raised as a `FailureException`
+and passed through unchanged by the global exception filter — no SQL, host or
+driver text is ever exposed), so a pod whose database is unreachable is removed
+from rotation without being restarted. Booted without a database (a unit test, or
+a deliberately db-less boot) there is nothing to check and the pod is ready; in a
+deployed environment a missing `DATABASE_URL` is rejected at startup, so readiness
+cannot mask an unconfigured database.
+
+The probe is time-bounded in two parts, by design, not one flat budget:
+*acquiring* a client is bounded by the pool's `connectionTimeoutMillis` (5 s), and
+the query itself by a 2 s readiness timeout. **The 2 s timeout does not cancel the
+SQL statement** — pg has no in-flight cancel for a pooled query. When it wins, the
+check `release(err)`s the client, which closes the socket and removes it from the
+pool, so repeated probes against a hung-but-connected server cannot occupy or
+exhaust the pool; the server-side `SELECT 1` is abandoned (the connection is
+dropped), not cancelled via the Postgres cancel protocol. A routine readiness
+failure is a 503, which the exception filter logs once per occurrence (status ≥
+500) — bounded by the orchestrator's probe period, not a per-request flood.
+
+**Redis is still not checked** — this build has no connected Redis client (the
+rate limiter is in-process); that check lands with the P11 multi-instance Redis
+rate-limit adapter.
 
 ---
 

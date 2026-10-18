@@ -21,11 +21,24 @@ in-memory). Product scope is the owner's; engineering never invents institutiona
 ## Repository state (verify before trusting)
 
 - **Branch:** `claude/quranic-education-app-prototype-gkzle8`
-- **HEAD:** `3396f77` (Sprint 33 — owner decision brief) at the start of Sprint 35; Sprint 35 commits the
-  **Q6 quiet-hours + conversation-mute implementation** (backend feature + migration 0022 + ADR 0036) on
-  top (re-verify with `git rev-parse HEAD`). Sprint 34 was a read-only Q6 decision sheet (no commit).
-  **In sync with `origin`.**
-- **Latest work, newest first:** Sprint 35 Q6 quiet hours & per-conversation mute — institution window +
+- **HEAD:** `d754284` (Sprint 50 — teacher halaqa view enriched with co-teachers + name). Sprints 42–50
+  (`b45b272`…`d754284`) committed an in-app administration + teacher layer on top of `31cc950` (Sprint 35,
+  Q6 quiet-hours + conversation-mute, migration 0022 + ADR 0036); Sprints 36–41 were docs-only (no commit).
+  Prior base before Sprint 35: `3396f77` (Sprint 33 — owner decision brief); Sprint 34 was a read-only Q6
+  decision sheet (no commit). **In sync with `origin`** (re-verify with `git rev-parse HEAD`).
+- **Latest work, newest first.** Sprints 42–50 (in-app administration + teacher layer — activating
+  already-built, server-authoritative endpoints with Flutter surfaces, **inventing no institutional policy**):
+  Sprint 50 teacher halaqa view = two read-only tabs, students + co-teachers (`d754284`); Sprint 49 teacher
+  workspace — own ACTIVE halaqat via `GET /academic/me`, read-only rosters, gated `academic.teach`
+  (`0d01a12`); Sprint 48 read-only enrollment & teacher-assignment history, OWNER/ADMIN (`bde2c9f`);
+  Sprint 47 account lifecycle admin — roles/status/password/session-revocation over `/admin/users`
+  (`af96bb4`); Sprint 46 in-app enrollment & teacher-assignment administration, `academic.manage`
+  (`fd7ed39`); Sprint 45 in-app academic **structure** management — sections/programs/halaqat CRUD,
+  `academic.manage` (**structure only — NOT the educational learning loop**) (`bf05e38`); Sprint 44 in-app
+  account provisioning (`d52ae21`); Sprint 43 start a live session from the community screen — control plane
+  only (`2649057`); Sprint 42 in-app community creation (`b45b272`). Discovery/relationships stay
+  OWNER/ADMIN-only; no self-enrollment; no supervisor roster; Q22 unchanged; messaging-group admin deferred.
+  Earlier (Sprints 19–35, unchanged): Sprint 35 Q6 quiet hours & per-conversation mute — institution window +
   **full** per-user override + per-user timezone, **push-only** suppression (in-app lossless, realtime
   untouched, no urgent bypass), ADR 0036, register §21, migration 0022; push stays a stub; `settings.manage`
   (owner-only) for institution policy, self-scoped user settings/mutes, no new permission. Sprint 34 read-only
@@ -40,8 +53,10 @@ in-memory). Product scope is the owner's; engineering never invents institutiona
   LiveKit web activation (`76e8e48`); Sprint 19 secure sessions (`89a8879`); before that the live-media
   programme. Full verified ledger (SHAs + CI run IDs): [`docs/project-roadmap.md §4`](project-roadmap.md).
   Use `git log --oneline` for the authoritative history, not this file.
-- **Date reconciled:** 2026-10-13 (Sprint 35 — Q6 quiet hours & conversation mute implemented, ADR 0036,
-  migration 0022; backend feature, push stub. Prior: Sprint 34 read-only Q6 sheet; Sprint 33 decision brief).
+- **Date reconciled:** 2026-10-14 (post-Sprint-50 reconciliation + the HEAD `d754284` runtime/integration
+  readiness audit — see "CI / E2E / deployment evidence" and "Trial-release readiness"). Prior: 2026-10-13
+  (Sprint 35 — Q6 quiet hours & conversation mute, ADR 0036, migration 0022; backend feature, push stub);
+  Sprint 34 read-only Q6 sheet; Sprint 33 decision brief.
 - **Preserved local working-tree changes (do NOT overwrite):** four owner-maintained files remain modified
   and intentionally uncommitted — `backend/src/platform/health/health.controller.ts` (+ its new
   `health.controller.spec.ts`, a DB-readiness probe, observability.md §3), `docs/architecture/observability.md`,
@@ -120,12 +135,48 @@ or capabilities (by owner decision) |
 | Attendance (record + view) | **Implemented+verified** (EXPLAIN-at-scale deferred) | backend write/view + full Flutter surface; ADR 0023 |
 | Notifications & preferences | **Implemented+verified** (push delivery external-gated) | list/read/badge/preferences/device-registration; P10 translators (ADRs 0024/0025); **quiet hours + per-conversation mute** (Sprint 35, ADR 0036): institution window + full per-user override + per-user timezone, push-only suppression decided in the dispatcher (`channels.push`), self-scoped settings/mutes + `settings.manage` institution policy, migration 0022 — push itself still a stub |
 | Academic **read** stack | **Implemented+verified** | catalog/profile read surfaces only — NOT the learning loop |
+| Account provisioning & lifecycle admin (roles, status, password reset, session revocation) | **Implemented+verified** (web; real-backend E2E unproven) | Sprints 44/47 (`d52ae21`,`af96bb4`) over `/admin/users`; self/outrank/role-rank guards |
+| In-app community creation; start live session from community | **Implemented+verified** (web) | Sprints 42/43 (`b45b272`,`2649057`); `communities.create` / live control plane |
+| Academic **structure** management (sections/programs/halaqat CRUD) | **Implemented+verified** (web) | Sprint 45 (`bf05e38`), `academic.manage` — structure only, **not** the learning loop |
+| Academic relationship administration + read-only history | **Implemented+verified** (web) | Sprints 46/48 (`fd7ed39`,`bde2c9f`), `academic.manage`, OWNER/ADMIN |
+| Teacher workspace (own halaqat; read-only students + co-teachers) | **Implemented+verified** (web) | Sprints 49/50 (`0d01a12`,`d754284`), gated `academic.teach` |
+| LLM token streaming; STT/LLM/TTS voice-AI | **Not implemented** | no source exists; confirmed absent by the `d754284` runtime audit |
 | Progress, assessment, mastery/promotion, certificates, assignments, announcements/feed, owner operations | **Owner-decision-gated** | NOT implemented as a product loop; policy must not be invented — register groups C/D/G |
 
 **Backend-mode vs demo/mock.** The composition root selects HTTP/realtime/secure-storage/real-media
 implementations in backend mode and in-memory mocks otherwise. The GitHub Pages demo is mock mode and does
 **not** represent a connected backend: attachments are stored in-memory and render as placeholders, live
 media stays Unavailable, and sessions are not persisted server-side.
+
+## Trial-release readiness (HEAD `d754284`)
+
+Owner direction (2026-10-14): **pause practical device testing and keep building until there is a coherent,
+usable trial release.** Evidence: the HEAD `d754284` runtime/integration readiness audit (local, read-only).
+
+- **Build (local run — not a CI run ID for this task, not device validation):** backend typecheck passes;
+  `npm test` = **3,892 passed / 382 skipped / 0 failed** (Postgres + real-LiveKit suites skip locally);
+  Flutter analyze clean; latest reported full Flutter suite **1,524 passed**.
+- **Toward a trial:** *Implemented* — identity, account provisioning/lifecycle, communities (+in-app
+  create), messaging (web), live control plane, attendance, notifications, academic read +
+  structure/relationship/history admin + teacher workspace. *Partial* — live LiveKit media (web-first; bound
+  Unavailable unless `backendMode && kIsWeb && LIVE_MEDIA_ENABLED`; reconnect/ICE unproven), realtime chat,
+  push (logging provider only) — all need complete product integration/readiness. *Not implemented* — LLM
+  token streaming; STT/LLM/TTS voice-AI; the educational core (DEFERRED, see "Academic structure"); one-off
+  dated-lesson scheduling (only three decisions confirmed — detailed design & create/edit/cancel permissions
+  **NOT approved**, register §24); assignments (D); operations/automation/reporting (G); native media; P8/P11.
+  *Unverified on target* — real-backend end-to-end integration (the deployed Pages app is demo/mock-only; an
+  `API_BASE_URL` build has not been exercised E2E); on-device Android/iOS; an installable artifact (APK / iOS)
+  is **not produced**; production LiveKit/TURN; real push delivery.
+- **Path to a coherent installable trial (ordered — none of these is done until actually executed):**
+  (1) prove the app end-to-end against a real backend (Postgres/Redis + an `API_BASE_URL` build); (2) produce
+  the installable artifact and resolve the **UNRESOLVED** target device/release format — Android→APK;
+  iPhone→an iOS build via the Apple signing/TestFlight-or-ad-hoc route (owner-provided Apple developer team);
+  (3) complete chat + LiveKit product integration/readiness against the real backend (web-first for the
+  trial; native deferred); (4) stand up a shared real-backend environment for testers instead of the demo
+  Pages build.
+- **Explicitly out of the trial (unchanged prior decisions):** the educational core stays DEFERRED and
+  **«نظام الضخ» stays excluded**; voice-AI & LLM streaming are not in scope; **no permission or
+  product-scope expansion**.
 
 ---
 
@@ -201,6 +252,12 @@ Basic/Additional classification**; **"need" not used**; sections/halaqat are **d
 historically safe. **Academic progression (assessment→placement→mastery→higher progression), the broader
 development path, and «نظام الضخ بين الأقسام» are institutional concepts only — do NOT invent promotion
 criteria, mastery thresholds, assessment formulas or mandatory sequences.**
+**DEFERRED by owner decision (Sprint 39):** the educational core (Quran memorization progress/records,
+assessment & history, mastery tracking, progression/movement between halaqat, real certificate
+issuance/verification/revocation) is skipped for now and will be resumed later — **no implementation
+authorized**; features and questions are preserved (DEFERRED, not cancelled). «نظام الضخ» is **excluded**
+from scope (not a required feature). See roadmap §8/§12 and register §22. *(Sprint 39 was docs-only and made
+no commit — HEAD was `31cc950` at that time; it is now `d754284`.)*
 
 - **Tahajji / City of Tahajji — RESOLVED (uniform model):** same `Section → Program → Halaqa` model; a
   Tahajji "group" is an academic halaqa (not a chat/LiveKit/community construct); core section #7
@@ -269,10 +326,10 @@ Summary (do NOT invent answers):
   (`messaging.start_direct_peer`, migration 0018) and student↔teacher DM (`messaging.start_direct_teacher`,
   migration 0019, `GET /people/teachers`) are **IMPLEMENTED**. **Still owner-blocked:** parent messaging,
   quiet hours (Q6).
-- **GROUP B — community lifecycle:** archive (Q47), delete (Q47 / ADR 0016 — no delete route by design,
-  FKs RESTRICT), a separate channel entity / group→channel nesting (Q36 — ADR 0016 rejected a `kind`
-  field), app-side create-community (`POST /communities` exists but OWNER/ADMIN-only, Q41 PROVISIONAL),
-  edit/rename metadata + a description field (ADR 0016 decision 3, title-only) — all **blocked**.
+- **GROUP B — community lifecycle:** **app-side create-community is now SHIPPED** (Sprint 42, `b45b272`;
+  `communities.create`, OWNER/ADMIN; register §23). Still **blocked:** archive (Q47), delete (Q47 / ADR 0016 —
+  no delete route by design, FKs RESTRICT), a separate channel entity / group→channel nesting (Q36 — ADR 0016
+  rejected a `kind` field), edit/rename metadata + a description field (ADR 0016 decision 3, title-only).
   **Messaging edit** is unbuilt everywhere (only a reserved `editedAt`); out of scope until approved.
 - **GROUP C — academic progression, assessment, mastery, certificates (Q37/Q9/Q38):** **must NOT be
   invented.**
@@ -286,9 +343,13 @@ Summary (do NOT invent answers):
   gated. Note the register's corrections: Q36 resolved (ADR 0015) and Q67 resolved (ADR 0024); this repo's
   **Q11 is "localization," not "operations recurrence"** (operations is gated by Q70, not Q11).
 
-**Engineering available without an owner decision (if prioritised):** the ADR 0023 Option-B write-up; the
-cosmetic `academic.*` "levels" description fix (new migration). **IMPLEMENTABLE_NOW feature work = none**
-(building more would invent policy).
+**Engineering available without an owner decision (if prioritised):** the **trial-release track** — prove the
+app end-to-end against a real backend, produce an installable artifact (release format UNRESOLVED), and
+complete chat + LiveKit product integration/readiness (see "Trial-release readiness" and "Recommended next
+phases"); plus the ADR 0023 Option-B write-up and the cosmetic `academic.*` "levels" description fix (new
+migration). **No NEW educational product loop (GROUP C/D/G) is implementable without an owner policy
+decision** — that must not be invented. *(The former "IMPLEMENTABLE_NOW feature work = none" note predated
+Sprints 42–50, which shipped the in-app administration + teacher layer without inventing policy.)*
 
 ## External-resource gates (not owner policy)
 - Real push delivery — Firebase/Apple credentials + a device (Q65).
@@ -324,6 +385,12 @@ current HEAD and the latest two below.
   `arch:index:check` up to date. The CI Backend job runs the PostgreSQL integration suites with
   `POSTGRES_REQUIRED=1`, and the real-LiveKit contract job runs the pinned server. **No CI/load run logs are
   committed to the repo** — the run IDs are the evidence. (Supersedes the earlier `8b88f92`/1394 figures.)
+- **HEAD `d754284` runtime/integration readiness audit (2026-10-14, local, read-only):** backend typecheck
+  exit 0; backend `npm test` = **3,892 passed / 382 skipped / 0 failed** (Postgres + real-LiveKit suites skip
+  without a DB/server); Flutter analyze clean; latest reported full Flutter suite **1,524 passed**; web build
+  OK. **Not** a committed CI run for this SHA, **not** device validation; the deployed GitHub Pages build
+  remains **demo/mock-only** (no connected backend). Real-backend end-to-end integration is **not yet
+  proven**. The historic SHA-pinned figures above stand as-is for `144ab15` / `c6f48e9`.
 
 ## Deferred / open questions (do not guess)
 - Voice/LiveKit mapping of educational groups (separate from the academic model).
@@ -334,14 +401,23 @@ current HEAD and the latest two below.
   data** managed at runtime, not architectural questions.
 
 ## Recommended next phases (and dependencies)
-1. **Owner decisions first** — the highest unlock is **GROUP A residue + GROUP B/G policy**; without them
-   no new product loop is implementable without inventing policy (register §6 ranks the smallest set for
-   the greatest unlock).
-2. **Engineering, no owner needed:** ADR 0023 Option-B write-up; the `academic.*` "levels" description fix.
-3. **When resources exist (external-gated):** push delivery (Firebase/Apple); native media/attachments
-   (devices + mobile CI/signing); P8 load evidence → then P11 horizontal scale; EXPLAIN-at-scale benchmark.
-4. **Before any new module:** obey `ENGINEERING_RULES.md`, consult the owner-decision-register, and verify
-   actual HEAD + worktree.
+Owner direction (2026-10-14): **pause practical device testing; keep building toward a coherent, usable trial
+release.** Integrated testing and an APK / iOS build are **not done until actually executed** — the items
+below are the pending path, not achievements.
+1. **Next engineering action — prove the app end-to-end against a real backend:** stand up Postgres/Redis,
+   build the Flutter app with `API_BASE_URL`, and exercise the admin/teacher/messaging/attendance flows over
+   real HTTP + realtime. Converts "built" into "usable"; needs **no owner policy**.
+2. **Produce the installable trial artifact + resolve the release format (UNRESOLVED):** Android→APK;
+   iPhone→iOS build via the Apple signing/testing route (owner-provided developer team).
+3. **Complete chat + LiveKit product integration/readiness** against the real backend (web-first; native deferred).
+4. **Stand up a shared real-backend environment** for testers (replacing / re-labelling the demo Pages build).
+5. **Unchanged / still deferred (no scope or permission expansion):** educational core (DEFERRED;
+   «نظام الضخ» excluded); voice-AI & LLM streaming (not implemented); native media, push provider, P8 load →
+   P11 (external/capacity-gated); ADR 0023 Option-B write-up and the `academic.*` "levels" description fix
+   (engineering, no owner needed); one-off dated-lesson scheduling — only the three confirmed decisions stand
+   (one-off dated lessons, explicit persisted IANA institution timezone, no recurrence); its detailed design
+   and the create/edit/cancel permissions are **not approved** (register §24), so no build.
+6. **Before any module:** obey `ENGINEERING_RULES.md`, consult the owner-decision-register, verify HEAD + worktree.
 
 > Reminder: everything in this checkpoint is a current, reversible decision. Re-verify HEAD, worktree and
 > CI before continuing.

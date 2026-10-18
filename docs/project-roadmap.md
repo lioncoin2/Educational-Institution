@@ -10,12 +10,21 @@ detailed sources rather than copying them.
 sequencing*; it does not make product-policy or engineering decisions — those live in the
 ADRs (immutable) and the owner-decision register.
 
-**Last updated.** 2026-10-13 (Sprint 35 — Q6 quiet hours & per-conversation mute implemented, ADR 0036,
-register §21; migration 0022; backend feature, push stays a stub). Prior: Sprint 34 (read-only Q6 decision
-sheet, no commit); Sprint 33 owner decision brief; Sprint 32 ADR 0035 (Q50 resolved).
-**Current verified HEAD.** `3396f77` (Sprint 33) at the start of Sprint 35; this Sprint 35 update commits
-on top of it. Branch `claude/quranic-education-app-prototype-gkzle8`, in sync with origin. Always re-verify
-with `git rev-parse HEAD` / `git status` — this file is a reversible snapshot, not a substitute for git.
+**Last updated.** 2026-10-17 (status reconciliation: recorded Sprints 52–61 as DONE — automated-verified
+but **uncommitted / not yet in CI / not deployment-validated**, §4a; recorded **quiet hours as REJECTED by
+the owner**, §8, while keeping the separate per-conversation **mute** as DONE). Prior: 2026-10-14
+(post-Sprint-50 reconciliation + the HEAD `d754284` runtime/integration readiness audit). Sprints 42–50 (`b45b272`…`d754284`) committed an in-app administration + teacher layer
+(see §4); the owner paused practical device testing to build toward a coherent, usable trial release
+(§11, §12; register §23). Prior: Sprint 41 — Q68 "what counts as present" **reaudited** (confirmed OPEN &
+owner-gated; docs-only; see §6 item 12, §8, §12). Earlier: Sprint 39 — educational core **DEFERRED by owner
+decision** (docs-only; §22); Sprint 35 — Q6 per-conversation mute (kept; surfaced Sprint 61) and quiet hours
+(ADR 0036, migration 0022) — **quiet hours subsequently REJECTED by the owner (§8)**; Sprint 34 (read-only
+Q6 sheet, no commit); Sprint 33 owner decision brief; Sprint 32
+ADR 0035 (Q50 resolved).
+**Current verified HEAD.** `d754284` (Sprint 50). Sprints 42–50 (`b45b272`…`d754284`) sit on top of
+`31cc950` (Sprint 35 — Q6 quiet hours/mute; itself on `3396f77`, Sprint 33); Sprints 36–41 were docs-only
+(working tree, no commit). Branch `claude/quranic-education-app-prototype-gkzle8`, in sync with origin.
+Always re-verify with `git rev-parse HEAD` / `git status` — this file is a reversible snapshot, not a substitute for git.
 
 ---
 
@@ -52,6 +61,18 @@ and is owner-policy-gated by design.**
   messaging (+ moderation, attachments on web), community chat, live control plane + **web** media
   (real LiveKit), attendance record+view, notification translators, the policy-gated live features
   (ADRs 0026–0029), and the optional community→halaqa link (ADR 0033).
+- **In-app administration + teacher layer (Sprints 42–50, `b45b272`…`d754284`):** community creation; account
+  provisioning & lifecycle (roles/status/password/sessions); academic **structure** management; enrollment &
+  teacher-assignment administration + read-only relationship history; a read-only teacher workspace — all over
+  existing server-authoritative endpoints (OWNER/ADMIN, or `academic.teach`/`academic.manage`), inventing no
+  policy. Verified on web + local suites; **real-backend end-to-end integration is not yet proven** and the
+  deployed Pages build stays demo/mock-only.
+- **Self-service, academic self-views, two-way DM, mute, PG integration tests (Sprints 52–61, §4a):**
+  change-my-password + device/sessions; student workspace + academic record; teacher assignment history;
+  student↔teacher direct messaging; per-conversation PUSH mute — all over existing server-authoritative
+  contracts, no new policy. DONE — automated-verified (`flutter analyze` clean; full Flutter suite green;
+  real-Postgres backend integration suites green), **but uncommitted on top of `d754284`, not yet in CI, and
+  not interactively validated on a deployment.**
 - **Implemented but validation-pending / mock:** LiveKit server deployment (configured, not
   operationally verified); real push delivery (logging provider only); web attachments (no device).
 - **Resolved by owner decision (Sprint 32, ADR 0035):** Q50 enrollment-sourced membership & derived
@@ -102,6 +123,54 @@ Caveat recorded for all of the above: **no CI/E2E run logs are committed to the 
 IDs are the verifiable evidence (GitHub Actions), not committed artifacts. Live E2E is
 dispatch/scoped-PR only (not on-push), last run for `76e8e48`.
 
+**Sprints 42–50 (in-app administration + teacher layer, `b45b272`…`d754284`).** Activated already-built,
+server-authoritative endpoints with Flutter surfaces; **invented no institutional policy**. (No committed CI
+run IDs captured for these in this reconciliation — verify via `gh run list` for each SHA.)
+
+| Sprint | Outcome | Commit |
+| --- | --- | --- |
+| 42 | In-app community creation (`communities.create`, OWNER/ADMIN) | `b45b272` |
+| 43 | Start a live session from the community screen (control plane only) | `2649057` |
+| 44 | In-app account provisioning | `d52ae21` |
+| 45 | In-app academic **structure** management (sections/programs/halaqat CRUD, `academic.manage`) — structure only, **not** the learning loop | `bf05e38` |
+| 46 | In-app enrollment & teacher-assignment administration (`academic.manage`, OWNER/ADMIN) | `fd7ed39` |
+| 47 | Account lifecycle admin (roles, status, password reset, session revocation) over `/admin/users` | `af96bb4` |
+| 48 | Read-only student-enrollment & teacher-assignment history | `bde2c9f` |
+| 49 | Teacher workspace — own ACTIVE halaqat + read-only rosters (gated `academic.teach`) | `0d01a12` |
+| 50 | Teacher halaqa view enriched: students + co-teachers, two read-only tabs | `d754284` |
+
+Discovery/relationships stay OWNER/ADMIN-only; no self-enrollment; no supervisor roster; Q22 unchanged;
+messaging-group admin deferred. Verified on web + local suites; **real-backend end-to-end integration is not
+yet proven** (see §9 and the checkpoint "Trial-release readiness").
+
+### §4a. Sprints 52–61 — self-service, academic self-views, two-way DM, mute, PG integration tests
+
+**Status: DONE — Verified (automated).** All of the below activate pre-existing, server-authorised backend
+contracts with Flutter surfaces (or add permanent backend tests); **no backend contract or permission
+change**. Verified by `flutter analyze` (clean), the full Flutter suite (Sprint 59: 1553 passed / 1 skipped /
+0 failed), focused widget/controller tests per feature, and the backend PostgreSQL integration suites run
+green against a real Postgres (Sprint 60: 4 suites / 40 tests). **Caveat (not DONE at those layers):** this
+work sits **uncommitted** on top of HEAD `d754284` (so **not yet exercised by CI** — the new specs are
+jest-discoverable and run in CI only once committed, Sprint 60), and it is **not** interactively validated on
+a running deployment. Evidence is automated only.
+
+| Sprint | Capability (verified present + wired) | Key files |
+| --- | --- | --- |
+| 52 | De-flaked the community-chat sweep PG spec (root-cause, not a timeout) + verified 3 permanent PG integration specs | `backend/test/integration/{community-chat,academic-journey,messaging-attachments,community-chat-posting}-postgres.spec.ts` |
+| 53 | Self-service **change my password** + **device/session management** (over existing `/auth/password`, `/auth/sessions`) | `features/profile/{change_password_screen,sessions_screen,widgets/account_section}.dart`, `state/sessions_controller.dart` |
+| 54 | **Student workspace «حلقاتي»** — the student's own ACTIVE enrollments + each halaqa's teachers (`GET /academic/me`) | `features/student/{student_workspace_screen,student_copy}.dart`, `state/student_enrollments_controller.dart` |
+| 55–56 | **Two-way direct messaging** — student→teacher and teacher→student, reusing one `StartDirectMessageButton` → the existing `DirectMessageStarter` (`POST /messaging/conversations/direct`, idempotent); gated on existing `messaging.start_direct*` | `features/messaging/widgets/start_direct_message_button.dart`; entries in student workspace + teacher roster |
+| 57 | **Student academic record** — all enrollments, every status (`GET /academic/me/enrollments`) | `features/student/student_record_screen.dart`, `state/student_record_controller.dart`; repo `myEnrollments` |
+| 58 | **Teacher assignment history** — all assignments, every status (`GET /academic/me/teaching`) | `features/teacher/teacher_history_screen.dart`, `state/teacher_history_controller.dart`; repo `myTeaching` |
+| 59 | Fixed a stale profile test expectation (name shown in both the identity header and the account card); whole Flutter suite green | `test/academic/academic_screens_test.dart` |
+| 60 | Integration verification only — confirmed backend↔Flutter field compatibility for the new history endpoints, CI discovery of the PG specs, and messaging reuse; **no code change** | — |
+| 61 | **Per-conversation PUSH mute** — app-bar mute/unmute toggle over existing `/notifications/mutes` (ADR 0036 mute part; quiet hours stays REJECTED — §8) | `features/messaging/{conversation_screen,messaging_copy}.dart`, `state/conversation_mutes_controller.dart` |
+
+Added repository methods (interface + HTTP + mock, no new endpoints): `AuthRepository.changePassword`;
+`AcademicRepository.myEnrollments`/`myTeaching`; `NotificationsRepository.mutedConversations`/`muteConversation`/
+`unmuteConversation`. Ripple: the three explicit `AcademicRepository` test doubles were stubbed. A review
+manifest for committing exactly this set (40 files) exists from the integration-review task.
+
 ---
 
 ## 5. Phase progress matrix
@@ -124,6 +193,8 @@ dispatch/scoped-PR only (not on-push), last run for `76e8e48`.
 | Q50-link | Optional community→halaqa link | COMPLETE-VERIFIED | ADR 0033; migration 0021; existence validation via `ACADEMIC_RELATIONSHIPS`; Flutter link/unlink on `me.canManageHalaqa`; inert (regression-tested) | — | — | met |
 | Q50-derive | Enrollment-sourced membership + derived capabilities | COMPLETE-VERIFIED (resolved as **NO**) | **ADR 0035** (owner decision, Sprint 32): enrollment ↔ membership/capabilities stay separate; register §20; regression-tested (enroll adds no member; *end* removes none) | — (not built, by owner decision; reopening needs a new owner decision + ADR) | — | met: the separation is enforced + regression-tested |
 | PROD | Educational product loop (progress, assessment, mastery/promotion, certificates, assignments, announcements/feed, owner operations) | NOT-STARTED (BLOCKED: owner policy) | register groups C/D/G; Q37/Q9/Q38/Q70/Q71/Q72 | — (must NOT be invented) | explicit owner decisions | approved policy per group + ADRs |
+| TRIAL | Coherent installable trial release (real-backend E2E proof → installable artifact → chat/LiveKit readiness → shared backend env) | PARTIAL (owner-directed 2026-10-14) | §11/§12; checkpoint "Trial-release readiness"; HEAD `d754284` audit; register §23 | prove an `API_BASE_URL` build vs real Postgres/Redis E2E; produce an APK / iOS artifact; integrate chat+LiveKit against the real backend; a shared tester backend | release format **UNRESOLVED** (Android APK; iOS signing/testing — owner Apple team); none of these is done until executed | an installable build a tester runs end-to-end against a real backend |
+| SCHED | One-off dated academic lessons (confirmed: individual dated lessons, explicit persisted IANA institution timezone, no recurrence) | NOT-STARTED (confirmed decisions only; design & permissions NOT approved) | register §24 | resolve the detailed design + the create/edit/cancel permissions + remaining timezone decisions before any build | owner go-ahead on the unresolved parts | per an approved design + its test matrix |
 
 ---
 
@@ -154,28 +225,39 @@ whether the next action is engineering / owner-decision / external-op / testing 
    decision reopens it.
 7. **Q50 halaqa-existence staleness note** — the committed `communities-live-attendance.md §25` and
    `attendance.md`/`academic-reconciliation.md` headers are stale (see §12); not a product gap. Next action: **doc** (this sprint).
-8. **Educational product loop (GROUP C/D/G)** — remaining: owner policy for progress, assessment,
-   mastery/promotion, «نظام الضخ», certificates, assignments, announcements/feed, owner operations/automation/reporting.
-   Blocker: owner decisions (Q37/Q9/Q38/Q70/Q71/Q72). Source: register groups C/D/G. Next action: **owner-decision**.
-   **Must not be invented.**
+8. **Educational product loop (GROUP C/D/G).** **GROUP C — the educational core** (Quran memorization
+   progress & records, student assessment & assessment history, mastery tracking, student progression/movement
+   between halaqat, real certificate issuance/verification/revocation) is **DEFERRED by owner decision
+   (Sprint 39)** — skipped for now, to be resumed later; **no implementation authorized**. The institutional-
+   policy questions (Q37/Q9/Q38) remain **OPEN and preserved** (not resolved, not invented); **«نظام الضخ» is
+   excluded from scope — not a required feature**. GROUP D (assignments) and GROUP G (operations/automation/
+   reporting; Q70/Q71/Q72) are **unchanged — still owner-decision**. Source: register groups C/D/G + §22.
+   Next action: **owner-decision (D/G); none for C until the owner resumes it.** **Must not be invented.**
 9. **P12 screen-audio share / webhook accelerators** — remaining: an owner policy decision. Source: §25, ADR 0028. Next: **owner-decision**.
 10. **Q28 residue** — academic/future notification categories, parent-of-child visibility, collapsing specifics,
     guaranteed delivery (outbox T2). Source: ADR 0024 "deferred sub-decisions". Next: **owner-decision** + (delivery → P11).
 11. **GROUP A residue** — parent messaging and the messaging-permission parts of Q6 stay **owner-decision**.
-    Quiet hours + per-conversation mute are **BUILT** (Sprint 35, ADR 0036, register §21): institution
-    window + full per-user override, push-only, no urgent bypass. Source: register §A/§21.
-12. **Q68 attendance observation rule** — `NEEDS-REAUDIT`: the open-questions Q68 banner still reads
-    "open/provisional" while attendance landed under ADR 0023; confirm whether the provisional rule is the
-    accepted one or a decision is outstanding. Source: open-questions Q68, `attendance.md §23`, ADR 0023.
-    Next: **investigation**.
+    **Quiet hours is REJECTED by the owner** (out of scope; not pursued, not to be reopened — §8). **Per-
+    conversation mute is a separate, accepted feature and is DONE** (backend Sprint 35; Flutter toggle Sprint
+    61 — §4a). Source: owner decision; register §A/§21; ADR 0036 (mute part only).
+12. **Q68 attendance observation rule** — **RECONCILED (Sprint 41): confirmed OPEN (owner policy); no
+    inconsistency, the flag was stale.** ADR 0023 answered Q8 (amendment), Q12 (timing) and Q69 (who records /
+    who views) and did **not** touch Q68; ADR 0020 decision 3 (unchanged — only its decision 8 was superseded)
+    keeps the snapshot observation-only — it labels nobody present, the vocabulary is `CONNECTED | CONNECTING`
+    only (`attendance/contracts/vocabulary.ts`; `domain/snapshot.spec.ts`). So the Q68 "open/provisional"
+    banner was accurate, not stale. Defining what counts as "present" stays an owner institutional-policy
+    decision and remains OPEN; connectivity is not presence. Source: open-questions Q68, `attendance.md §23`,
+    ADR 0020 (dec 3) / ADR 0023. Next: **owner-decision** if/when the institution ever defines "present" —
+    nothing outstanding for engineering.
 
 ---
 
 ## 7. Critical path (ordered dependencies)
 
 1. **Owner decisions** (no engineering prerequisite; highest unlock): GROUP C/D/G product policy; GROUP A
-   residue (Q6 — parent/messaging-permission parts only; quiet hours + mute now decided & built, ADR 0036);
-   Q28 residue; P12 screen-audio. These gate every new product loop. *(Q50 A–E is decided — ADR 0035.)*
+   residue (Q6 — parent/messaging-permission parts only; **quiet hours is REJECTED — §8**; per-conversation
+   mute is DONE — §4a/§8); Q28 residue; P12 screen-audio. These gate every new product loop. *(Q50 A–E is
+   decided — ADR 0035.)*
 2. **P8 capacity evidence** (external-operational; owner lifts the "until real users" deferral): execute
    the ladder on real hardware → **unblocks P11**.
 3. **P11 horizontal scaling** (engineering, *after* P8 evidence + a load trigger).
@@ -196,10 +278,11 @@ new defect evidence.
 | Q69 — attendance record/view scoping | **RESOLVED** (2026-10-05, ADR 0023) | open-questions Q69 |
 | Q67 — community/live/attendance notification facts | **RESOLVED** (2026-10-06, ADR 0024) | open-questions Q67 |
 | Q28 — notification policy | **PARTIAL** (P10 scope answered, ADR 0024; residue open) | open-questions Q28 |
-| Q68 — what counts as present | **NEEDS-REAUDIT** (banner reads open; attendance landed under ADR 0023) | open-questions Q68 |
-| Q37 / Q9 / Q38 — assessment, mastery, «ضخ», certificates | **OPEN** — must NOT be invented | register GROUP C |
+| Q68 — what counts as present | **OPEN (owner policy)** — reaudited Sprint 41: ADR 0023 answered Q8/Q12/Q69 (not Q68); ADR 0020 dec 3 (unchanged) keeps snapshots observation-only (nobody labelled present), so the banner was accurate — no inconsistency. Defining "present" stays owner-gated. | open-questions Q68; ADR 0020 dec 3 / ADR 0023 |
+| Q37 / Q9 / Q38 — assessment, mastery, certificates (educational core) | **DEFERRED by owner (Sprint 39)** — skipped for now, to be resumed later; no implementation authorized. Underlying policy questions remain **OPEN** (not resolved, not invented). «نظام الضخ» **excluded** from scope (not a required feature). | register GROUP C + §22 |
 | Q70 / Q71 / Q72 — attendance operations/automation/reporting | **OPEN** | register GROUP G |
-| Q6 — quiet hours & conversation mute | **RESOLVED & BUILT** (Sprint 35, ADR 0036): institution window + full per-user override, push-only, no urgent bypass; migration 0022 | **ADR 0036**; register §21 |
+| Q6 — quiet hours | **REJECTED / OUT OF SCOPE (owner)** — the owner rejected quiet hours; it is not pursued and must not be reopened. The Sprint-35 backend code (ADR 0036, migration 0022) remains in the tree but is **not surfaced in the app and not built upon**; no quiet-hours UI exists or should be added. | owner decision (supersedes the ADR 0036 quiet-hours part) |
+| Q6 — per-conversation mute | **DONE** — a distinct feature the owner did not reject: backend built Sprint 35 (push-only suppression, migration 0022, `/notifications/mutes`); Flutter surface shipped **Sprint 61** (conversation app-bar mute/unmute toggle + optimistic controller). Mutes PUSH only; in-app/realtime unchanged. | ADR 0036 (mute part); §4a (Sprint 61) |
 | Q6 — parent messaging & messaging-permission residue | **OPEN** | register GROUP A |
 | **Q50 Policy A–E** — enrollment ↔ membership & derived capabilities | **RESOLVED (as NO)** — owner decided enrollment neither creates nor removes membership; membership stays explicit; membership ≠ admin capabilities; modules stay separate (Sprint 32) | **ADR 0035**; register §20 |
 
@@ -244,32 +327,87 @@ resolved** (link = ADR 0033; separation = ADR 0035).
 
 ## 11. Recommended next action
 
-**The correct next step is an OWNER DECISION, not engineering.** No new product loop — and no part of
-Q50-derive — is implementable without inventing policy, which is forbidden. Engineering-only items are
-either external-resource-gated (native, push, P8 hardware) or blocked on P8 evidence (P11).
+Owner direction (2026-10-14): **pause practical device testing; build toward a coherent, usable trial
+release.** The former "the next step is an owner decision, not engineering" conclusion is **superseded for
+the trial track** — Sprints 42–50 shipped the in-app administration + teacher layer (§4), so the gating gap
+is now **proving the built app end-to-end against a real backend**, not new policy. Integrated testing and an
+APK / iOS build are **not done until actually executed** — the path below is pending work, not achievements.
 
-**Decision sheet to put to the owner (smallest set, greatest unlock):**
-- **A consolidated, decision-ready brief for GROUP C/D/G + Q6 + Q28 is in
-  [`docs/owner-decision-brief-product-loop.md`](owner-decision-brief-product-loop.md)** (Sprint 33 —
-  current behaviour, the plain-language decision, a recommended default, alternatives, implications,
-  prerequisites, reversibility, and a dependency-aware decision order; **recommendations pending owner
-  approval**, nothing resolved).
-- **GROUP C/D/G** product policy and **GROUP A** residue (Q6) — gate the educational loop (progress,
-  assessment, mastery, assignments, operations) and parent messaging. This is now the highest unlock.
-- **P8 deferral** — decide whether to lift "defer until real users" and authorize a capacity run (operational, needs hardware).
-- *(Q50 A–E is now decided — ADR 0035 / register §20 — and is off the list.)*
+**Ordered trial-release path:**
+1. Prove the app E2E against a real backend (Postgres/Redis + an `API_BASE_URL` build) — engineering, no
+   owner policy. Highest priority; the deployed Pages app is demo/mock-only and real-backend integration is
+   unproven.
+2. Produce the installable artifact + resolve the **UNRESOLVED** release format: Android→APK; iPhone→iOS
+   build via the Apple signing/TestFlight-or-ad-hoc route (owner-provided developer team).
+3. Complete chat + LiveKit product integration/readiness against the real backend (web-first for the trial).
+4. Stand up a shared real-backend environment for testers.
 
-If instead an **operational** test is wanted next, the only CI-executable one is re-dispatching
-`live-e2e.yml` (web, real LiveKit); the P8 ladder and native media need real hardware/devices and must not
-be claimed from CI. **Definition of done for Sprint 31 (this task): the master roadmap exists, is
-evidence-grounded, and the checkpoint/register are consistent with HEAD — no product code changed.**
+**Still gated (unchanged — no scope or permission expansion):** the educational product loop (GROUP C —
+DEFERRED; «نظام الضخ» excluded) and GROUP D/G stay owner-policy-gated; voice-AI & LLM streaming are **not
+implemented**; native media, push provider, and P8 → P11 stay external/capacity-gated; one-off dated-lesson
+scheduling has only its three confirmed decisions (register §24) — its detailed design and the
+create/edit/cancel permissions are **not approved**, so no build. A decision-ready brief for GROUP C/D/G +
+Q6 + Q28 remains in [`docs/owner-decision-brief-product-loop.md`](owner-decision-brief-product-loop.md)
+(Sprint 33; recommendations pending, nothing resolved). The only CI-executable operational test is
+re-dispatching `live-e2e.yml` (web, real LiveKit); the P8 ladder and native media need real hardware/devices
+and must not be claimed from CI.
 
 ---
 
 ## 12. Change log & reconciled discrepancies
 
+**Status reconciliation (2026-10-17, docs-only).** Verified the uncommitted Sprints 52–61 work against the
+current tree (routes wired, repository methods, screens, the backend PG specs on disk) and recorded it in
+§2 and the new **§4a** as **DONE — automated-verified** (analyze clean; full Flutter suite green at Sprint
+59; real-Postgres backend integration suites green at Sprint 60), with the explicit caveat that it is
+**uncommitted, not yet exercised by CI, and not interactively validated on a deployment**. Corrected the
+**quiet hours** status: the owner **rejected** it, so §8 and §6 item 11 now record it **REJECTED / OUT OF
+SCOPE** (the Sprint-35 code remains in the tree but is not surfaced and must not be reopened); the separate
+**per-conversation mute** is recorded **DONE** (backend Sprint 35, Flutter toggle Sprint 61). No product
+policy invented, no decision meaning changed, no code/schema/test/ADR touched; only this file edited. No
+commit/push/deploy.
+
+**Sprint 50+ reconciliation (2026-10-14).** Recorded Sprints 42–50 (`b45b272`…`d754284`) — the in-app
+administration + teacher layer (§2, §4, §5 row TRIAL) — and the owner's decision to **pause practical device
+testing and build toward a coherent, usable trial release** (§11; register §23). Recorded the HEAD `d754284`
+runtime/integration readiness audit (local — backend typecheck pass; backend `npm test` 3,892 passed / 382
+skipped / 0 failed; Flutter analyze clean; latest full Flutter suite 1,524 passed — **not** device/CI-ID
+verified). Recorded gaps: the deployed Pages build is demo/mock-only; real-backend E2E is unproven; chat +
+LiveKit need complete product integration/readiness; **LLM token streaming and STT/LLM/TTS voice-AI are not
+implemented**. Preserved the **confirmed** scheduling decisions (one-off dated lessons, explicit persisted
+IANA institution timezone, no recurrence) and marked the detailed design + create/edit/cancel permissions
+**not approved** (§5 row SCHED; register §24). Kept the educational core **DEFERRED** with **«نظام الضخ»
+excluded**, and expanded no permission or product scope. Docs-only reconciliation (checkpoint, this roadmap,
+register); no source/schema/test/migration/ADR change; no commit/push/deploy.
+
+**Sprint 41 (docs-only; working tree, not committed).** Reaudited **Q68 — "what counts as present"** after
+the Sprint 40 flag. Verified in source: **ADR 0023** answered Q8 (amendment), Q12 (timing) and Q69 (record/
+view authorization) and did **not** address Q68; **ADR 0020 decision 3** (unchanged — only its decision 8 was
+superseded by 0023) keeps the snapshot **observation-only** (labels nobody present; vocabulary `CONNECTED |
+CONNECTING` only — `attendance/contracts/vocabulary.ts`, `domain/snapshot.spec.ts`). Conclusion: the Q68
+"open/provisional" banner was **accurate, not stale**; the "NEEDS-REAUDIT" flag was the stale item.
+**Corrected** the flag in §6 item 12 and the §8 governance row to **"OPEN (owner policy)"**, and added a
+one-line cross-reference to the Q68 banner in `open-questions.md`. **Q68 stays OPEN and owner-gated** — no
+attendance policy was defined, connectivity is not equated with presence, and no ADR/source/test/schema was
+changed. Docs-only; non-protected files; no commit/push/deploy.
+
+**Sprint 39 (docs-only; working tree, not committed).** Recorded the owner's decision to **defer the
+educational core** — Quran memorization progress & records, student assessment & assessment history, mastery
+tracking, student progression/movement between halaqat, and real certificate issuance/verification/revocation.
+Marked **DEFERRED, not cancelled**: no implementation authorized now; the individual features and their
+institutional-policy questions (Q37/Q9/Q38; register GROUP C; the Sprint 37/38 decision set) are **preserved
+and remain OPEN** so the work resumes later without losing context. **«نظام الضخ» is excluded from scope and
+is not a required feature** (owner, Sprint 38) — not reopened here. **No target date, deadline, or release
+commitment** was set. Unrelated workstreams — GROUP D (assignments), GROUP G (operations/automation/reporting),
+notifications, live media, P8/P11 — are **unchanged**. Edits: this file (header, §6 item 8, §8 status row,
+this entry) and `docs/owner-decision-register.md` (GROUP C status + new §22); a consistency note in
+`docs/project-checkpoint.md`. No source, test, schema, migration, API, Flutter, or governance/ADR record
+changed; no commit, push, or deploy.
+
 **Sprint 35.** Implemented the quiet-hours and per-conversation-mute parts of Q6/Q24
-([ADR 0036](architecture/decisions/0036-quiet-hours-and-conversation-mute.md), register §21). A
+([ADR 0036](architecture/decisions/0036-quiet-hours-and-conversation-mute.md), register §21).
+*(Superseded on the quiet-hours part: the owner later **REJECTED** quiet hours — see the 2026-10-17
+reconciliation entry above and §8. Per-conversation mute was kept and surfaced in Sprint 61.)* A
 mandatory governance gate first established: no immutable-ADR conflict (ADR 0013 lossless inbox +
 best-effort delivery preserved, realtime untouched), no existing per-user timezone, and a stable
 conversation identity for mute (the notification target). The owner then answered the two unsettled

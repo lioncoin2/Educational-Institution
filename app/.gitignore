@@ -46,3 +46,8 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Trial/build config: the operator-filled file is local (addresses + flags, never
+# secrets); only the committed *.env.example is tracked. See config/trial.env.example.
+/config/*.env
+!/config/*.env.example

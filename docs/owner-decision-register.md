@@ -111,8 +111,9 @@ Safe interim**.
 
 **IDs: Q41 (define/create), Q47 (archive/delete), Q48 (invitation terms).**
 
-- **Status:** PROVISIONAL defaults shipped; the institutional definition and the archive/delete policy
-  are open.
+- **Status:** app-side community creation **RESOLVED — YES, shipped** (Sprint 42, `b45b272`; see §23). The
+  institutional definition (Q41), the archive/delete policy (Q47) and the invitation-term ratification (Q48)
+  remain open; the other PROVISIONAL defaults still stand.
 - **Classification:** PRODUCT_POLICY + INSTITUTIONAL_POLICY.
 - **Evidence:** Q41 ("No institutional source mentions communities… creating spaces of up to 30,000,
   many minors, is a safeguarding decision"; provisional: `communities.create` = OWNER/ADMIN, creator
@@ -120,7 +121,8 @@ Safe interim**.
   a missing community fails closed); Q48 (link lifetimes 7d/30d, immediate join, no preview/approval).
 - **Today:** communities exist, are created by OWNER/ADMIN (backend `POST /communities`, tested), locked
   /unlocked, never archived or deleted; the app has **no create screen** (membership+management only).
-- **Blocked:** an app-side create-community flow; an ARCHIVED state; any delete/retention path.
+- **Blocked:** an ARCHIVED state; any delete/retention path. *(The app-side create-community flow is no
+  longer blocked — shipped Sprint 42, `b45b272`; see the Status line and §23.)*
 - **Affected:** backend `communities` (create route exists), Flutter (a create screen if wanted);
   a `COMMUNITY_STATUSES` vocabulary + CHECK migration for ARCHIVED.
 - **Reversibility:** adding ARCHIVED later is additive (a vocabulary value + CHECK migration + one
@@ -131,7 +133,8 @@ Safe interim**.
 - **Owner question:** *Should OWNER/ADMIN be able to create a community from the app? Do you need an
   "archived/retired" community state distinct from "locked"? Ratify link defaults (7-day default /
   30-day max, immediate join, no preview) or change them?*
-- **Safe interim:** current provisional defaults (no app create, no archive, links as configured).
+- **Safe interim:** app-side create is now shipped (Sprint 42; §23); the rest keep their provisional defaults
+  (no archive, links as configured).
 
 > **Decision-ready brief (Sprint 33):** GROUP C, D, G, the GROUP A/Q6 residue and Q28 are consolidated
 > for the owner in [`owner-decision-brief-product-loop.md`](owner-decision-brief-product-loop.md) —
@@ -143,8 +146,11 @@ Safe interim**.
 
 **IDs: Q37 (assessment/placement/mastery/«نظام الضخ»), Q9 (certificates), Q38 (development path).**
 
-- **Status:** unresolved; **nothing built** (by rule — the brief forbids inventing placement/promotion/
-  completion rules).
+- **Status:** **DEFERRED by owner decision (Sprint 39)** — the owner chose to skip the educational core for
+  now and resume it later; **no implementation is authorized at this time**. DEFERRED, **not cancelled**: the
+  features and questions below are **preserved and remain unresolved/OPEN** so the work can resume without
+  losing context. Still **nothing built** (by rule — the brief forbids inventing placement/promotion/
+  completion rules). **«نظام الضخ» is excluded from scope — not a required feature** (owner, Sprint 38). See **§22**.
 - **Classification:** INSTITUTIONAL_POLICY.
 - **Evidence:** Q37 ("Each answer is a placement, promotion or completion rule, which the brief forbids
   inventing… a move today is two acts: end, then enroll… no assessment/placement/mastery/awaiting state
@@ -918,6 +924,91 @@ provider will read the same `channels.push` decision. **Still open (not resolved
 push *provider* and lock-screen *preview* (Q24), the messaging-permission and parent parts of Q6,
 and any urgent-notification policy. The institution's actual schedule was **not** invented — the
 institution configures its own window.
+
+---
+
+## 22. Educational core — DEFERRED by owner decision (Sprint 39)
+
+The owner decided to **skip the educational core for now and return to it later**. This is a scheduling
+decision recorded as **DEFERRED, not cancelled**; it resolves none of the underlying institutional-policy
+questions and authorizes no implementation.
+
+**Deferred (preserved, resumable) — GROUP C / Q37, Q9, Q38:**
+
+- Quran memorization progress and records.
+- Student assessment and assessment history.
+- Mastery tracking.
+- Student progression and movement between halaqat.
+- Real certificate issuance, verification, and revocation.
+
+Notes:
+
+- **No implementation authorized** at this time; the existing honest "nothing recorded / mock" behaviour
+  stands (`UnrecordedProgressRepository` → null; certificates mock in both app modes; `CERTIFICATE_ISSUED`
+  notification inactive). Nothing is cancelled or deleted.
+- **Questions preserved and still OPEN:** Q37, Q9, Q38 in `open-questions.md` are left exactly as they are
+  (not marked resolved), together with the Sprint 37 discovery brief and the Sprint 38 decision set (D1–D8)
+  and implementation-phase plan — so the work resumes with full context.
+- **«نظام الضخ» is excluded from scope and is NOT a required feature** (owner, Sprint 38). It is *excluded*,
+  not merely deferred, and is **not reopened or expanded** here.
+- **No target date, deadline, or release commitment** is set — deferral is open-ended until the owner resumes it.
+- **Unrelated workstreams are unchanged:** GROUP D (assignments), GROUP G (operations/automation/reporting;
+  Q70/Q71/Q72), notifications, live media, and the P8/P11 tracks keep their existing statuses. This entry
+  touches only the GROUP C educational core.
+- **GROUP C Status (§3) now reads DEFERRED**; the ranked list (§6) and milestone map (§11) are left unchanged —
+  they rank GROUP C by *unlock potential*, which this *scheduling* deferral does not contradict.
+
+---
+
+## 23. Activate the built platform — in-app administration + teacher layer; build toward a trial release (Sprints 42–50)
+
+The owner directed activating the already-built, server-authoritative capabilities with Flutter surfaces, and
+(2026-10-14) **to pause practical device testing and keep building until there is a coherent, usable trial
+release.** **No institutional policy was invented and no permission or product scope was expanded**; every
+surface re-authorizes server-side.
+
+| Sprint / commit | Shipped | Authority | Note |
+| --- | --- | --- | --- |
+| 42 `b45b272` | In-app community creation | `communities.create` (OWNER/ADMIN) | resolves GROUP B's "app-side create" question — **YES** |
+| 43 `2649057` | Start a live session from the community screen | existing live control plane | control plane only — no media-binding change |
+| 44 `d52ae21` / 47 `af96bb4` | Account provisioning + lifecycle admin (roles, status, password reset, session revocation) | over `/admin/users`; self / outrank / role-rank guards | no new permission minted |
+| 45 `bf05e38` | Academic **structure** management (sections/programs/halaqat CRUD) | `academic.manage` | **structure only — NOT the educational core (GROUP C stays DEFERRED)** |
+| 46 `fd7ed39` / 48 `bde2c9f` | Enrollment & teacher-assignment administration + read-only history | `academic.manage`, OWNER/ADMIN | discovery/relationships OWNER/ADMIN-only; no self-enrollment; no supervisor roster; Q22 unchanged |
+| 49 `0d01a12` / 50 `d754284` | Teacher workspace — own halaqat + read-only students & co-teachers | `academic.teach` | read-only; no management controls |
+
+**Verified state (HEAD `d754284` runtime audit, 2026-10-14, local — not device/CI-ID):** backend typecheck
+pass; backend `npm test` 3,892 passed / 382 skipped / 0 failed; Flutter analyze clean; latest full Flutter
+suite 1,524 passed. **Gaps:** the deployed Pages build is demo/mock-only; real-backend end-to-end integration
+is unproven; chat + LiveKit need complete product integration/readiness; **LLM token streaming and
+STT/LLM/TTS voice-AI are not implemented**.
+
+**Trial-release path (ordered — none is done until actually executed):** (1) prove the app E2E against a real
+backend (Postgres/Redis + an `API_BASE_URL` build); (2) produce the installable artifact + resolve the
+**UNRESOLVED** release format (Android→APK; iPhone→iOS signing/testing, owner-provided Apple team); (3)
+complete chat + LiveKit readiness; (4) a shared real-backend env for testers. Integrated testing and an APK /
+iOS build are **not** counted as achieved before they are executed.
+
+**Still owner-gated / unchanged:** GROUP C educational core **DEFERRED** with **«نظام الضخ» excluded** (§22);
+GROUP D/G; messaging-group admin; student self-enrollment; supervisor academic visibility; parent messaging &
+quiet-hours residue (Q6). This section records delivery and direction; it opens no new decision.
+
+## 24. Scheduling domain — one-off dated academic lessons (confirmed decisions only; not approved for build)
+
+The owner **confirmed** three scheduling decisions, recorded here as settled policy:
+
+- **One-off (individual) dated lessons only.**
+- **An explicit, persisted institution timezone in IANA form** (IANA zone id; reusing the existing
+  `isValidTimezone()` / `institution_notification_settings` IANA rule — offsets rejected).
+- **No recurring scheduling.**
+
+**NOT approved — do NOT treat as settled, and do NOT begin implementation:** the detailed engineering design;
+the permissions for **creating / editing / cancelling** lessons; and any **other timezone decisions** (how
+the instant is stored, per-lesson snapshots, server-formatted local fields, DST handling, etc.). A read-only
+design gate explored these, but they are **pending** and must be resolved before any build.
+
+**Status:** NOT-STARTED. Only the three decisions above are confirmed; everything else is open. This invents
+no present/absent policy and resolves no GROUP G attendance-record question (Q70/Q71/Q72). **Attendance stays
+separate from live connectivity** (ADR 0020 dec 3 / 0023; Q68 OPEN) — a standing prior decision, unchanged.
 
 ---
 

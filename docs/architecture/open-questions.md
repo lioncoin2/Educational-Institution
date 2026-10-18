@@ -2593,6 +2593,14 @@ entry is labelled present. Both CONNECTED and CONNECTING are stored, with
 separate counts, and every role is treated the same. The rule is versioned
 (`provider_registry_v1`).
 
+**Still open after ADR 0023 (reaudited, Sprint 41).**
+[ADR 0023](decisions/0023-attendance-authorization-and-policy.md) answered the
+other attendance-policy questions — Q8 (amendment), Q12 (timing) and Q69 (who
+records / who views) — and did **not** address Q68; ADR 0020 decision 3 is
+unchanged, so the shipped snapshot stays observation-only. This question — what
+counts as "present" — therefore remains **OPEN and owner-gated**: connectivity is
+not presence, and no threshold is defined here.
+
 **When answered.** A new observation rule under a new id (P9 or later). Old
 snapshots keep theirs; no stored snapshot changes.
 

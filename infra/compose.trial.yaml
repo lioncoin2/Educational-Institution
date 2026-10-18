@@ -1,0 +1,76 @@
+# Isolated internal WEB TRIAL stack — fully separate from the Staging project
+# (`institution`). Its own Compose project (`institution-trial`), its own private
+# default network, its own database/redis/volumes and trial-only secrets. It
+# reuses the already-built `institution-api` image (no app rebuild, no code
+# duplication). Staging data is NEVER used.
+#
+#   docker compose -p institution-trial -f infra/compose.trial.yaml --env-file infra/env/trial.env up -d
+#
+# Served to the public only through the host nginx at https://trial.adlink4.com
+# (web at /, API at /api, realtime at /realtime). trial-db and trial-redis are
+# NOT published to any public interface; trial-db is bound to loopback only so
+# host-run migrations can reach it.
+name: institution-trial
+
+services:
+  trial-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: trial
+      POSTGRES_PASSWORD: ${TRIAL_DB_PASSWORD:?set in infra/env/trial.env}
+      POSTGRES_DB: trial
+    volumes:
+      - trial-pgdata:/var/lib/postgresql/data
+    # Loopback only (not public): lets host-run drizzle migrations reach it.
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trial -d trial -h 127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+
+  trial-redis:
+    image: redis:7
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\""]
+    environment:
+      REDIS_PASSWORD: ${TRIAL_REDIS_PASSWORD:?set in infra/env/trial.env}
+    volumes:
+      - trial-redisdata:/data
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+
+  trial-api:
+    image: institution-api:latest
+    depends_on:
+      trial-db:
+        condition: service_healthy
+      trial-redis:
+        condition: service_started
+    environment:
+      NODE_ENV: development          # isolated trial: fake live-media, no LiveKit dependency
+      PORT: "3000"
+      LOG_LEVEL: warn
+      DATABASE_URL: postgresql://trial:${TRIAL_DB_PASSWORD}@trial-db:5432/trial
+      REDIS_URL: redis://:${TRIAL_REDIS_PASSWORD}@trial-redis:6379
+      JWT_SECRET: ${TRIAL_JWT_SECRET:?set in infra/env/trial.env}
+      STORAGE_SIGNING_SECRET: ${TRIAL_STORAGE_SECRET:?set in infra/env/trial.env}
+      STORAGE_LOCAL_ROOT: /app/.storage
+      # Same-origin trial (web + API under trial.adlink4.com); this origin also
+      # authorises the /realtime WebSocket (the server checks Origin itself).
+      CORS_ORIGINS: https://trial.adlink4.com
+    volumes:
+      - trial-storage:/app/.storage
+    # Loopback only: the host nginx fronts it at https://trial.adlink4.com/api.
+    ports:
+      - "127.0.0.1:3100:3000"
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+
+volumes:
+  trial-pgdata:
+  trial-redisdata:
+  trial-storage:
