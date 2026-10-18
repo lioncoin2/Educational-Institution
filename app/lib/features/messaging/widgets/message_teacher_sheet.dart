@@ -133,8 +133,10 @@ class _MessageTeacherSheetState extends ConsumerState<_MessageTeacherSheet> {
         }
         return ListView.builder(
           shrinkWrap: true,
-          itemCount: page.items.length,
+          // One more row, for the next page, while the server has more.
+          itemCount: page.items.length + (page.hasMore ? 1 : 0),
           itemBuilder: (context, index) {
+            if (index == page.items.length) return _moreRow(page);
             final teacher = page.items[index];
             return ListTile(
               key: Key('message-teacher-${teacher.userId}'),
@@ -145,6 +147,22 @@ class _MessageTeacherSheetState extends ConsumerState<_MessageTeacherSheet> {
           },
         );
       },
+    );
+  }
+
+  Widget _moreRow(TeacherSearchState page) {
+    if (page.loadingMore) {
+      return const Padding(
+        padding: EdgeInsets.all(Insets.md),
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+    return TextButton(
+      key: const Key('message-teacher-more'),
+      onPressed: () => ref.read(teacherSearchProvider(_query).notifier).loadMore(),
+      child: Text(
+        page.loadMoreFailed ? MessagingCopy.messageTeacherMoreFailed : MessagingCopy.messageTeacherMore,
+      ),
     );
   }
 }

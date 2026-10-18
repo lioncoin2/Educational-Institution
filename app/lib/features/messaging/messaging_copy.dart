@@ -98,6 +98,10 @@ abstract final class MessagingCopy {
   static const messageTeacherPrompt = 'اكتب اسم المعلّم للبحث عنه.';
   static const messageTeacherNoResults = 'لا يوجد معلّم بهذا الاسم.';
 
+  /// The directory answers a page at a time: the next one, on request.
+  static const messageTeacherMore = 'عرض المزيد';
+  static const messageTeacherMoreFailed = 'تعذّر تحميل المزيد — إعادة المحاولة';
+
   /// A failure of the teacher search itself (not of starting a conversation):
   /// a refusal (the account may not use the directory) or an unreadable answer.
   static String teacherSearchError(String? code) => switch (code) {
