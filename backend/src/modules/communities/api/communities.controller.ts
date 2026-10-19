@@ -23,11 +23,14 @@ import type { CallMetadata, Principal } from '../../../shared';
 import { Permissions } from '../../identity/contracts/permissions';
 import { RequirePermission } from '../../identity/contracts/route-access';
 import { CommunityRateLimits } from '../application/communities-settings';
+import { GetCommunityAvatarLinkUseCase } from '../application/community-avatar-link.use-case';
 import {
   ChangeCommunityStatusUseCase,
   CreateCommunityUseCase,
+  EditCommunityProfileUseCase,
   GetCommunityUseCase,
   ListCommunitiesUseCase,
+  SetChatModeUseCase,
   SetCommunityHalaqaUseCase,
 } from '../application/community.use-cases';
 import { TransferOwnershipUseCase } from '../application/delegation.use-cases';
@@ -42,19 +45,23 @@ import {
 import {
   AddMembersDto,
   CreateCommunityDto,
+  EditCommunityProfileDto,
   ListCommunitiesQuery,
   MemberCandidatesQuery,
   PageQuery,
   RedeemInvitationDto,
+  SetChatModeDto,
   SetHalaqaDto,
   TransferOwnershipDto,
 } from './dto/communities.dto';
 import {
   toAddMembersResponse,
+  toCommunityAvatarLinkResponse,
   toCommunityResponse,
   toMemberCandidatesResponse,
   toMemberResponse,
   toPageResponse,
+  type CommunityAvatarLinkResponse,
 } from './responses';
 
 /**
@@ -84,6 +91,9 @@ export class CommunitiesController {
     private readonly redeemInvitation: RedeemInvitationUseCase,
     private readonly transferOwnership: TransferOwnershipUseCase,
     private readonly setHalaqa: SetCommunityHalaqaUseCase,
+    private readonly editProfile: EditCommunityProfileUseCase,
+    private readonly avatarLink: GetCommunityAvatarLinkUseCase,
+    private readonly setChatMode: SetChatModeUseCase,
   ) {}
 
   @Get()
@@ -116,7 +126,14 @@ export class CommunitiesController {
     @RequestMetadata() meta: CallMetadata,
   ) {
     return toCommunityResponse(
-      unwrap(await this.createCommunity.execute({ principal, title: dto.title, meta })),
+      unwrap(
+        await this.createCommunity.execute({
+          principal,
+          title: dto.title,
+          kind: dto.kind ?? 'GROUP',
+          meta,
+        }),
+      ),
     );
   }
 
@@ -312,6 +329,76 @@ export class CommunitiesController {
   ) {
     return toCommunityResponse(
       unwrap(await this.setHalaqa.execute({ principal, communityId, halaqaId: null, meta })),
+    );
+  }
+
+  /**
+   * Edit the community's own title, description and picture together
+   * (`community.profile.edit`). The edge permission stays `communities.read`;
+   * the use case asks COMMUNITY_AUTHORIZATION for the act in context, and Files
+   * verifies a new picture is an image the editor owns.
+   */
+  @Put(':communityId/profile')
+  @RequirePermission(Permissions.communities.read)
+  async editCommunityProfile(
+    @CurrentPrincipal() principal: Principal,
+    @Param('communityId') communityId: string,
+    @Body() dto: EditCommunityProfileDto,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toCommunityResponse(
+      unwrap(
+        await this.editProfile.execute({
+          principal,
+          communityId,
+          title: dto.title,
+          description: dto.description ?? null,
+          avatarFileAssetId: dto.avatarFileAssetId ?? null,
+          meta,
+        }),
+      ),
+    );
+  }
+
+  /**
+   * Restrict or restore ordinary-member posting in a GROUP (`community.chat.manage`,
+   * ADR 0039). The edge permission stays `communities.read`; the use case asks
+   * COMMUNITY_AUTHORIZATION for the act in context, and the domain rejects the
+   * toggle on a CHANNEL. Read access and membership are untouched.
+   */
+  @Put(':communityId/chat-mode')
+  @RequirePermission(Permissions.communities.read)
+  async editChatMode(
+    @CurrentPrincipal() principal: Principal,
+    @Param('communityId') communityId: string,
+    @Body() dto: SetChatModeDto,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toCommunityResponse(
+      unwrap(
+        await this.setChatMode.execute({
+          principal,
+          communityId,
+          membersMayPost: dto.membersMayPost,
+          meta,
+        }),
+      ),
+    );
+  }
+
+  /**
+   * A short-lived link to the community's picture, for anyone who may view the
+   * community. 404 when there is none.
+   */
+  @Get(':communityId/avatar')
+  @RequirePermission(Permissions.communities.read)
+  async communityAvatar(
+    @CurrentPrincipal() principal: Principal,
+    @Param('communityId') communityId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ): Promise<CommunityAvatarLinkResponse> {
+    return toCommunityAvatarLinkResponse(
+      unwrap(await this.avatarLink.execute({ principal, communityId, meta })),
     );
   }
 

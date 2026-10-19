@@ -479,6 +479,8 @@ describe('delegation', () => {
         'community.members.view',
         'community.members.remove',
         'community.lock',
+        'community.profile.edit',
+        'community.chat.manage',
       ]);
       expect(codeOf(await h.authorization.authorize(admin, id, 'community.members.invite'))).toBe(
         'communities.capability_required',

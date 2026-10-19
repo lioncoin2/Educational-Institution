@@ -1,4 +1,5 @@
 import type { Page } from '../../../shared';
+import type { DownloadLink } from '../../files/contracts/file-assets';
 import type { AccountSummary } from '../../identity/contracts';
 import type {
   CommunityCapability,
@@ -25,6 +26,12 @@ import type {
 export interface CommunityResponse {
   readonly id: string;
   readonly title: string;
+  /** A short description shown with the community, or null when unset. */
+  readonly description: string | null;
+  /** The Files asset id of the community's picture, or null (a reference). */
+  readonly avatarFileAssetId: string | null;
+  /** The chat posting mode (ADR 0039): GROUP_OPEN / GROUP_RESTRICTED / CHANNEL. */
+  readonly chatMode: string;
   readonly status: string;
   readonly lifecycleVersion: number;
   readonly memberCount: number;
@@ -37,6 +44,8 @@ export interface CommunityResponse {
     readonly capabilities: readonly CommunityCapability[];
     readonly participation: readonly CommunityParticipationAct[];
     readonly operations: readonly CommunityOperation[];
+    /** Whether the caller may post in the chat now (ADR 0039). */
+    readonly canPost: boolean;
     readonly canManageHalaqa: boolean;
   };
 }
@@ -45,6 +54,9 @@ export function toCommunityResponse(view: CommunityView): CommunityResponse {
   return {
     id: view.id,
     title: view.title,
+    description: view.description,
+    avatarFileAssetId: view.avatarFileAssetId,
+    chatMode: view.chatMode,
     status: view.status,
     lifecycleVersion: view.lifecycleVersion,
     memberCount: view.memberCount,
@@ -56,6 +68,7 @@ export function toCommunityResponse(view: CommunityView): CommunityResponse {
       capabilities: view.me.capabilities,
       participation: view.me.participation,
       operations: view.me.operations,
+      canPost: view.me.canPost,
       canManageHalaqa: view.me.canManageHalaqa,
     },
   };
@@ -75,6 +88,16 @@ export function toMemberResponse(view: MemberView): MemberResponse {
     active: view.active,
     joinedAt: view.joinedAt.toISOString(),
   };
+}
+
+/** A short-lived link to a community's picture; `expiresAt` is ISO 8601. */
+export interface CommunityAvatarLinkResponse {
+  readonly url: string;
+  readonly expiresAt: string;
+}
+
+export function toCommunityAvatarLinkResponse(link: DownloadLink): CommunityAvatarLinkResponse {
+  return { url: link.url, expiresAt: link.expiresAt.toISOString() };
 }
 
 export interface InvitationResponse {

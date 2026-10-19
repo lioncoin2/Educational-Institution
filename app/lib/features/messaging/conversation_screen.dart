@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/routes.dart';
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
+import '../../core/widgets/foundations/app_avatar.dart';
 import '../../core/widgets/foundations/async_view.dart';
 import '../../data/models/communities.dart';
 import '../../data/models/messaging.dart';
 import '../../providers/app_providers.dart';
 import '../communities/state/community_controller.dart';
+import '../live/state/live_session_controller.dart';
 import 'messaging_copy.dart';
 import '../../data/models/notifications.dart';
 import 'state/conversation_controller.dart';
@@ -68,6 +71,25 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   false,
             ),
           );
+    // Whether THIS viewer may post, and how posting stands here — for a
+    // community chat this is the authoritative signal (ADR 0039 `me.canPost`):
+    // an open-group member posts on membership without holding
+    // `community.chat.post`, so the conversation's own `canPost` (which still
+    // asks the capability) is not enough. The UI only reflects it; the server
+    // re-authorises every send. Null for a direct conversation — there the
+    // conversation's own `canPost` governs, unchanged.
+    final communityPosting = communityId == null
+        ? null
+        : ref.watch(
+            communityProvider(communityId).select((state) {
+              final community = state.value?.community;
+              return (
+                canPost: community?.canPost ?? false,
+                isChannel: community?.isChannel ?? false,
+                isRestrictedGroup: community?.isRestrictedGroup ?? false,
+              );
+            }),
+          );
     // Starting a direct conversation (Q6, owner GROUP A ruling): offered on a
     // co-member's name in a group or community chat, to a viewer whose account
     // may start one (a student → another student; staff → anyone). The server
@@ -92,25 +114,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         false;
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              conversation?.title ?? 'محادثة',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (conversation != null)
-              Text(
-                MessagingCopy.typeLabel(
-                  conversation.type,
-                  conversation.memberCount,
-                ),
-                style: context.text.labelSmall,
-              ),
-          ],
-        ),
+        title: _title(conversation),
         actions: [
           if (backend && conversation != null)
             IconButton(
@@ -136,6 +140,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         onRetry: () => ref.invalidate(provider),
         builder: (context, state) => Column(
           children: [
+            if (communityId != null) _LiveNowBanner(communityId: communityId),
             const ConnectionBanner(),
             Expanded(
               child: _Timeline(
@@ -150,18 +155,45 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 icon: Icons.person_off_outlined,
                 text: 'لم تعد عضوًا في هذه المحادثة.',
               )
-            else if (state.conversation.canPost)
+            // Whether to offer the composer. The conversation's own `canPost`
+            // governs a direct conversation, and a community publisher (a
+            // holder of `community.chat.post`) in any mode. On top of that, a
+            // plain member of an OPEN group posts on membership alone (ADR
+            // 0039) — a case the conversation's capability-based `canPost` may
+            // miss — so the community's `me.canPost` opens it too, but only
+            // while the group is open (its mode is a stable fact, so this can
+            // never wrongly offer a composer in a channel or a restricted
+            // group). The server re-authorises every send regardless.
+            else if (state.conversation.canPost ||
+                ((communityPosting?.canPost ?? false) &&
+                    !(communityPosting?.isChannel ?? false) &&
+                    !(communityPosting?.isRestrictedGroup ?? false)))
               Composer(
                 onSendText: (text) =>
                     ref.read(provider.notifier).sendText(text),
                 onSendFile: (file) =>
                     ref.read(provider.notifier).sendFile(file),
               )
-            // A community chat closed to the viewer may be locked, or not
-            // theirs to post in, or too large to post in now — the server
-            // does not say which, so neither does the screen.
+            // Read-only, and why — as much as is known without guessing. A
+            // channel reserves posting for the owner and publishers; a
+            // restricted group limits it to its moderators; otherwise the
+            // chat may be locked or simply not the viewer's to post in, and
+            // the server does not say which, so neither does the screen.
+            else if (communityPosting?.isChannel ?? false)
+              const _Notice(
+                key: Key('conversation-read-only'),
+                icon: Icons.campaign_outlined,
+                text: MessagingCopy.channelReadOnly,
+              )
+            else if (communityPosting?.isRestrictedGroup ?? false)
+              const _Notice(
+                key: Key('conversation-read-only'),
+                icon: Icons.edit_off_outlined,
+                text: MessagingCopy.groupRestrictedReadOnly,
+              )
             else if (state.conversation.isCommunityChat)
               const _Notice(
+                key: Key('conversation-read-only'),
                 icon: Icons.lock_outline_rounded,
                 text: MessagingCopy.cannotPostHere,
               )
@@ -170,6 +202,54 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 icon: Icons.campaign_outlined,
                 text: 'هذه قناة إعلانات: يمكنك القراءة فقط.',
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The app-bar title. For a community's chat it is a tappable header —
+  /// the community's picture and name — that opens the community's own info &
+  /// management page (the one the communities tab already uses, never a second
+  /// one). What that page then offers is the server's `me` to decide, not this
+  /// screen's. For any other conversation the title is plain text.
+  Widget _title(Conversation? conversation) {
+    final label = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          conversation?.title ?? MessagingCopy.conversationFallbackTitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        if (conversation != null)
+          Text(
+            MessagingCopy.typeLabel(conversation.type, conversation.memberCount),
+            style: context.text.labelSmall,
+          ),
+      ],
+    );
+
+    final communityId = conversation?.communityId;
+    if (conversation == null || communityId == null) return label;
+
+    return InkWell(
+      key: const Key('conversation-community-header'),
+      onTap: () => context.push(Routes.community(communityId)),
+      child: Semantics(
+        button: true,
+        label: MessagingCopy.communityInfo,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppAvatar(
+              name: conversation.title,
+              imageUrl: ref.watch(communityAvatarUrlProvider(communityId)).value,
+              radius: 18,
+            ),
+            const SizedBox(width: Insets.sm),
+            Flexible(child: label),
           ],
         ),
       ),
@@ -188,6 +268,83 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     } on NotificationsException {
       messenger.toast(MessagingCopy.muteToggleFailed);
     }
+  }
+}
+
+/// A "live now" bar under the app bar of a community chat, shown only while the
+/// server reports a running session for THIS community.
+///
+/// It watches [liveSessionProvider], which is the authority (an HTTP read of
+/// the community's current session) and keeps itself fresh on its own: it
+/// re-reads on a realtime `live.session.started`/`ended` hint and on every
+/// reconnect, so the bar appears when a session starts and disappears when it
+/// ends or the app comes back after being away — never on a loading or error
+/// guess (it shows only a confirmed live session), and never another
+/// community's session (the provider is keyed by this community's id).
+///
+/// Tapping it opens the EXISTING live screen for the same community; if no
+/// session is live there is nothing to tap and no screen opens. The bar states
+/// that a session is running — it makes no claim that audio or video work,
+/// which depends on the media provider and is the live screen's to report.
+class _LiveNowBanner extends ConsumerWidget {
+  const _LiveNowBanner({required this.communityId});
+
+  final String communityId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final session = ref.watch(liveSessionProvider(communityId)).value;
+    if (session == null || !session.isLive) return const SizedBox.shrink();
+
+    final colors = context.colors;
+    return Material(
+      color: colors.errorContainer,
+      child: InkWell(
+        key: const Key('community-live-indicator'),
+        onTap: () => context.push(Routes.communityLive(communityId)),
+        child: Semantics(
+          button: true,
+          label: MessagingCopy.liveNowSemantics,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: Insets.md,
+              vertical: Insets.sm,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.sensors_rounded,
+                  size: 18,
+                  color: colors.onErrorContainer,
+                ),
+                const SizedBox(width: Insets.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        MessagingCopy.liveNow,
+                        style: context.text.labelLarge?.copyWith(
+                          color: colors.onErrorContainer,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        MessagingCopy.liveNowHint,
+                        style: context.text.labelSmall?.copyWith(
+                          color: colors.onErrorContainer,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -227,6 +384,17 @@ class _Timeline extends ConsumerWidget {
     }
 
     final showNames = state.conversation.type != ConversationType.direct;
+    // One representative message per sender that has a picture, so every bubble
+    // of that sender resolves the one link (not one fetch per message).
+    final avatarMessageId = <String, String>{};
+    if (showNames) {
+      for (final m in state.messages) {
+        if (!state.isMine(m) &&
+            state.senderAvatarAssets[m.senderId] != null) {
+          avatarMessageId.putIfAbsent(m.senderId, () => m.id);
+        }
+      }
+    }
     final firstUnread = state.messages
         .where(
           (m) =>
@@ -252,6 +420,16 @@ class _Timeline extends ConsumerWidget {
           mine: state.isMine(message),
           senderName: showNames && !state.isMine(message)
               ? state.senderNames[message.senderId]
+              : null,
+          senderAvatarUrl: avatarMessageId[message.senderId] != null
+              ? ref
+                    .watch(
+                      senderAvatarUrlProvider((
+                        conversationId: state.conversation.id,
+                        messageId: avatarMessageId[message.senderId]!,
+                      )),
+                    )
+                    .value
               : null,
           // Tapping a co-member's name starts a direct conversation with them
           // (Q6), when the viewer's account may and the name is known. The
@@ -382,7 +560,7 @@ class _UnreadDivider extends StatelessWidget {
 
 /// Where the composer would be, when there is nothing to compose.
 class _Notice extends StatelessWidget {
-  const _Notice({required this.icon, required this.text});
+  const _Notice({required this.icon, required this.text, super.key});
 
   final IconData icon;
   final String text;

@@ -18,6 +18,8 @@ import {
   ACADEMIC_RELATIONSHIPS,
   type AcademicRelationships,
 } from '../../academic/contracts/relationships';
+import { FILE_ASSETS, type FileAssets } from '../../files/contracts/file-assets';
+import type { FileKind } from '../../files/contracts/file-kind';
 import {
   AUTHORIZATION_SERVICE,
   type AuthorizationService,
@@ -27,8 +29,14 @@ import { isSystemPrincipal } from '../../identity/contracts/principal';
 import { COMMUNITY_RESOURCE } from '../contracts/capabilities';
 import { ruleFor } from '../domain/act-rules';
 import { COMMUNITY_NOT_FOUND } from '../domain/authority';
-import { newCommunity } from '../domain/community';
+import { newCommunity, setChatMode } from '../domain/community';
 import {
+  chatModeForKind,
+  type CommunityChatMode,
+  type CommunityKind,
+} from '../contracts/vocabulary';
+import {
+  communityChatModeChanged,
   communityCreated,
   communityLocked,
   communityUnlocked,
@@ -41,7 +49,7 @@ import {
   type CommunityReadModel,
   type CommunityStore,
 } from '../domain/ports';
-import { normalizeTitle } from '../domain/text';
+import { normalizeDescription, normalizeTitle } from '../domain/text';
 import {
   COMMUNITY_CONFLICT,
   PERSON_REQUIRED,
@@ -82,6 +90,11 @@ export class CreateCommunityUseCase {
   async execute(command: {
     readonly principal: Principal;
     readonly title: string;
+    /**
+     * GROUP (open member posting) or CHANNEL (publishers only), ADR 0039.
+     * Defaults to GROUP — the brief's "groups" — when a caller omits it.
+     */
+    readonly kind?: CommunityKind;
     readonly meta: CallMetadata;
   }): Promise<Result<CommunityView>> {
     const { principal } = command;
@@ -115,6 +128,7 @@ export class CreateCommunityUseCase {
     const community = newCommunity({
       id: this.ids.next<'Community'>(),
       title: title.value,
+      chatMode: chatModeForKind(command.kind ?? 'GROUP'),
       createdBy: principal.userId,
       at,
     });
@@ -342,6 +356,197 @@ export class ChangeCommunityStatusUseCase {
         );
         return ok(view(outcome.community));
       }
+      case 'unchanged':
+        return ok(view(outcome.community));
+      case 'not_found':
+        return err(COMMUNITY_NOT_FOUND);
+      case 'basis_lost':
+        return err(await refusalAfterBasisLost(this.authorization, principal, communityId, rule));
+      case 'conflict':
+        return err(COMMUNITY_CONFLICT);
+    }
+  }
+}
+
+/** The picture named is not an image the editor uploaded (Files' own check). */
+const COMMUNITY_AVATAR_INVALID = failure(
+  'validation',
+  'communities.avatar_invalid',
+  'The picture must be an image you have uploaded.',
+);
+
+/** A community's picture is always an image. */
+const AVATAR_KINDS: readonly FileKind[] = ['IMAGE'];
+
+/**
+ * Edit a community's own title, description and picture together
+ * (`community.profile.edit`, ADR 0038).
+ *
+ * The decision is Communities' (ceiling + basis + lifecycle), asked through the
+ * one evaluator. A new picture is verified through the Files contract — an
+ * image the editor uploaded — before it is stored, exactly as messaging
+ * verifies an attachment; the unchanged picture is left untouched, so an
+ * overseer correcting the text need not own whoever's image it already carries.
+ * Membership, roles and grants are not touched.
+ */
+@Injectable()
+export class EditCommunityProfileUseCase {
+  constructor(
+    private readonly authorization: CommunityAuthorizationService,
+    @Inject(COMMUNITY_STORE) private readonly store: CommunityStore,
+    @Inject(FILE_ASSETS) private readonly files: FileAssets,
+    @Inject(CLOCK) private readonly clock: Clock,
+    private readonly journal: CommunitiesJournal,
+  ) {}
+
+  async execute(command: {
+    readonly principal: Principal;
+    readonly communityId: string;
+    readonly title: string;
+    readonly description: string | null;
+    readonly avatarFileAssetId: string | null;
+    readonly meta: CallMetadata;
+  }): Promise<Result<CommunityView>> {
+    const { principal, communityId } = command;
+
+    const title = normalizeTitle(command.title);
+    if (!title.ok) return title;
+    const description = normalizeDescription(command.description);
+    if (!description.ok) return description;
+
+    const rule = ruleFor('community.profile.edit');
+    const { result, read } = await this.authorization.evaluate(principal, communityId, rule);
+    if (!result.ok) return result;
+    const permit = result.value;
+
+    // Verify a NEW picture only — an image the editor owns — so correcting text
+    // never fails on a picture someone else uploaded earlier.
+    const currentAvatar = read?.community?.avatarFileAssetId ?? null;
+    if (command.avatarFileAssetId !== null && command.avatarFileAssetId !== currentAvatar) {
+      const verified = await this.files.verifyAttachable(
+        command.avatarFileAssetId,
+        principal.userId,
+        AVATAR_KINDS,
+      );
+      if (!verified.ok) return err(COMMUNITY_AVATAR_INVALID);
+    }
+
+    const at = this.clock.now();
+    const actor = actorOf(principal);
+    const outcome = await this.store.editProfile({
+      communityId,
+      title: title.value,
+      description: description.value,
+      avatarFileAssetId: command.avatarFileAssetId,
+      actor: actingBasis(permit),
+      actorUserId: actor,
+      at,
+    });
+    const view = (community: Parameters<typeof communityView>[0]) =>
+      communityView(
+        community,
+        this.authorization.me(principal, communityId, { community, stint: read?.stint ?? null }),
+      );
+
+    switch (outcome.kind) {
+      case 'changed':
+        await this.journal.record(
+          {
+            actorUserId: actor,
+            action: CommunityAudit.communityProfileUpdated,
+            resourceType: COMMUNITY_AUDIT_RESOURCE,
+            resourceId: communityId,
+            at,
+            metadata: {
+              hasDescription: outcome.community.description !== null,
+              hasAvatar: outcome.community.avatarFileAssetId !== null,
+              authority: authorityOf(permit),
+            },
+            correlationId: command.meta.correlationId,
+          },
+          [],
+        );
+        return ok(view(outcome.community));
+      case 'unchanged':
+        return ok(view(outcome.community));
+      case 'not_found':
+        return err(COMMUNITY_NOT_FOUND);
+      case 'basis_lost':
+        return err(await refusalAfterBasisLost(this.authorization, principal, communityId, rule));
+      case 'conflict':
+        return err(COMMUNITY_CONFLICT);
+    }
+  }
+}
+
+/**
+ * Restrict or restore ordinary-member posting in a GROUP (`community.chat.manage`,
+ * ADR 0039). `membersMayPost` is the admin's intent: true → GROUP_OPEN,
+ * false → GROUP_RESTRICTED. The domain `setChatMode` refuses an invalid
+ * transition (a CHANNEL, or turning a group into a channel) from the read
+ * snapshot before any write; the store re-verifies the acting basis under lock.
+ * Membership and read access are untouched — only who may publish changes.
+ */
+@Injectable()
+export class SetChatModeUseCase {
+  constructor(
+    private readonly authorization: CommunityAuthorizationService,
+    @Inject(COMMUNITY_STORE) private readonly store: CommunityStore,
+    @Inject(CLOCK) private readonly clock: Clock,
+    private readonly journal: CommunitiesJournal,
+  ) {}
+
+  async execute(command: {
+    readonly principal: Principal;
+    readonly communityId: string;
+    readonly membersMayPost: boolean;
+    readonly meta: CallMetadata;
+  }): Promise<Result<CommunityView>> {
+    const { principal, communityId } = command;
+    const to: CommunityChatMode = command.membersMayPost ? 'GROUP_OPEN' : 'GROUP_RESTRICTED';
+
+    const rule = ruleFor('community.chat.manage');
+    const { result, read } = await this.authorization.evaluate(principal, communityId, rule);
+    if (!result.ok) return result;
+    const permit = result.value;
+
+    // Validate the transition against the read snapshot: a CHANNEL's publishing
+    // is fixed, and a group is never turned into a channel here.
+    const current = read?.community ?? null;
+    if (current === null) return err(COMMUNITY_NOT_FOUND);
+    const transition = setChatMode(current, to, this.clock.now());
+    if (!transition.ok) return transition;
+
+    const at = this.clock.now();
+    const actor = actorOf(principal);
+    const outcome = await this.store.setChatMode({
+      communityId,
+      to,
+      actor: actingBasis(permit),
+      actorUserId: actor,
+      at,
+    });
+    const view = (community: Parameters<typeof communityView>[0]) =>
+      communityView(
+        community,
+        this.authorization.me(principal, communityId, { community, stint: read?.stint ?? null }),
+      );
+
+    switch (outcome.kind) {
+      case 'changed':
+        await this.journal.record(
+          {
+            actorUserId: actor,
+            action: CommunityAudit.communityChatModeChanged,
+            resourceType: COMMUNITY_AUDIT_RESOURCE,
+            resourceId: communityId,
+            at,
+            metadata: { chatMode: outcome.community.chatMode, authority: authorityOf(permit) },
+            correlationId: command.meta.correlationId,
+          },
+          [communityChatModeChanged(outcome.community, actor, at, command.meta.correlationId)],
+        );
+        return ok(view(outcome.community));
       case 'unchanged':
         return ok(view(outcome.community));
       case 'not_found':

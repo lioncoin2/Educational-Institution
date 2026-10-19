@@ -125,8 +125,15 @@ class ScriptedCommunities extends MockCommunityRepository {
   }
 
   @override
-  Future<Community> create(String title) =>
-      _write('create $title', () => super.create(title));
+  Future<Community> create(String title, {CommunityKind kind = CommunityKind.group}) =>
+      _write('create $title ${kind.wire}', () => super.create(title, kind: kind));
+
+  @override
+  Future<Community> setChatMode(String communityId, {required bool membersMayPost}) =>
+      _write(
+        'setChatMode $communityId $membersMayPost',
+        () => super.setChatMode(communityId, membersMayPost: membersMayPost),
+      );
 
   @override
   Future<CreatedInvitation> createInvitation(String communityId) => _write(
@@ -518,6 +525,8 @@ Map<String, Object?> communityJson({
   List<String> operations = const [],
   String? halaqaId,
   bool canManageHalaqa = false,
+  String? chatMode = 'GROUP_OPEN',
+  bool canPost = false,
 }) => {
   'id': id,
   'title': title,
@@ -526,6 +535,7 @@ Map<String, Object?> communityJson({
   'memberCount': memberCount,
   'halaqaId': halaqaId,
   'createdAt': '2026-09-01T08:00:00.000Z',
+  'chatMode': ?chatMode,
   'me': {
     'standing': standing,
     'joinedAt': standing == null ? null : '2026-09-02T08:00:00.000Z',
@@ -533,6 +543,7 @@ Map<String, Object?> communityJson({
     'participation': participation,
     'operations': operations,
     'canManageHalaqa': canManageHalaqa,
+    'canPost': canPost,
   },
 };
 

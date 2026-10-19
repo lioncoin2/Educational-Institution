@@ -147,11 +147,13 @@ describe('messaging boundaries', () => {
     ) as unknown[];
     expect(messagingImports).toContain(CommunitiesModule);
     expect(communitiesImports).not.toContain(MessagingModule);
-    // Communities wires in identity, and academic for the Q50 halaqa-existence
-    // check (ADR 0033) — never messaging, so no cycle.
+    // Communities wires in identity, academic for the Q50 halaqa-existence
+    // check (ADR 0033), and files for community pictures (ADR 0038) — never
+    // messaging, so no cycle.
     expect((communitiesImports as { name?: string }[]).map((imported) => imported.name)).toEqual([
       'IdentityModule',
       'AcademicModule',
+      'FilesModule',
     ]);
     expect(Reflect.getMetadata(MODULE_METADATA.EXPORTS, MessagingModule)).toEqual([
       MESSAGE_RECIPIENTS,

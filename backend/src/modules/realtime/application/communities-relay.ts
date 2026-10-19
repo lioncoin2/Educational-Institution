@@ -17,6 +17,7 @@ import {
   CommunityEvents,
   type CapabilityGranted,
   type CapabilityRevoked,
+  type CommunityChatModeChanged,
   type CommunityLocked,
   type CommunityUnlocked,
   type MemberAdded,
@@ -106,6 +107,7 @@ export class CommunitiesRealtimeRelay implements OnModuleInit, OnModuleDestroy {
       CommunityEvents.ownershipTransferred,
       CommunityEvents.communityLocked,
       CommunityEvents.communityUnlocked,
+      CommunityEvents.chatModeChanged,
     ]) {
       this.unsubscribes.push(this.subscriber.subscribe(name, (event) => this.schedule(event)));
     }
@@ -213,6 +215,44 @@ export class CommunitiesRealtimeRelay implements OnModuleInit, OnModuleDestroy {
         if (payload === null) return this.malformed(event);
         return this.lifecycleMoved(event, payload);
       }
+      case CommunityEvents.chatModeChanged: {
+        const payload = chatModePayload(event);
+        if (payload === null) return this.malformed(event);
+        return this.chatModeMoved(event, payload);
+      }
+    }
+  }
+
+  /**
+   * A group's posting policy changed (ADR 0039): every member's posting access
+   * may differ, so each online, viewing member gets a `community.access.changed`
+   * hint and re-reads the community — exactly the frame a capability change
+   * already uses, so no new client behaviour. A lock/unlock is a separate frame;
+   * this one rides the access-changed path because it changes what members may
+   * do, not the lifecycle.
+   */
+  private async chatModeMoved(
+    event: DomainEvent,
+    payload: CommunityChatModeChanged['payload'],
+  ): Promise<void> {
+    const members = await onlineAudience(this.connections, (page) =>
+      this.membership.members(payload.communityId, {
+        onlyUserIds: page.onlyUserIds,
+        cursor: page.cursor,
+        limit: page.limit,
+      }),
+    );
+    const recipients = await this.viewers(members);
+    for (const userId of recipients) {
+      this.connections.sendToUser(
+        userId,
+        communityAccessChangedFrame({
+          occurredAt: event.occurredAt,
+          communityId: payload.communityId,
+          userId,
+          cause: { kind: 'posting_mode', chatMode: payload.chatMode },
+        }),
+      );
     }
   }
 
@@ -385,4 +425,12 @@ function lifecyclePayload(
   );
   if (p === null || !isVersion(p.lifecycleVersion)) return null;
   return p as CommunityLocked['payload'];
+}
+
+const CHAT_MODES = new Set(['GROUP_OPEN', 'GROUP_RESTRICTED', 'CHANNEL']);
+
+function chatModePayload(event: DomainEvent): CommunityChatModeChanged['payload'] | null {
+  const p = fieldsOf<CommunityChatModeChanged['payload']>(event, CommunityEvents.chatModeChanged);
+  if (p === null || typeof p.chatMode !== 'string' || !CHAT_MODES.has(p.chatMode)) return null;
+  return p as CommunityChatModeChanged['payload'];
 }

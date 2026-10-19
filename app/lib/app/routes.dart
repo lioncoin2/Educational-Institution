@@ -13,6 +13,9 @@ abstract final class Routes {
 
   /// The signed-in user's own devices/sessions (`GET /auth/sessions`).
   static const String sessions = '/profile/sessions';
+
+  /// The signed-in user sets or removes their profile picture (`/files/me`).
+  static const String avatar = '/profile/avatar';
   static const String progress = '/progress';
   static const String notifications = '/notifications';
   static const String notificationSettings = '/notifications/settings';

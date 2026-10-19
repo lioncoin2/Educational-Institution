@@ -1,4 +1,5 @@
 export * from './access-tokens';
+export * from './account-avatar';
 export * from './account-directory';
 export * from './account-search';
 export * from './authorization';

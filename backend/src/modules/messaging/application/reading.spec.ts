@@ -98,6 +98,8 @@ describe('reading conversations', () => {
       expect(sequences(page)).toEqual([8, 9, 10, 11, 12]);
       expect(page).toMatchObject({ hasOlder: true, hasNewer: false, lastReadSequence: 0 });
       expect(page.senders).toHaveLength(1);
+      // Each sender carries a picture reference beside the name (null here).
+      expect(page.senders.every((sender) => sender.avatarFileAssetId === null)).toBe(true);
     });
 
     it('walks back through all history with `before`, each message exactly once', async () => {

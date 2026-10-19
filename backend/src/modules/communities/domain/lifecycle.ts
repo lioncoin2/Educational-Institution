@@ -68,9 +68,16 @@ export const GATE_OF_ACT: Readonly<Record<CommunityAct, LifecycleGate>> = Object
   'community.members.view': 'always',
   'community.members.remove': 'always',
   'community.lock': 'always',
+  // Editing the community's own profile is management (ADR 0038): the owner or
+  // an overseer may correct the title, description or picture even while LOCKED.
+  'community.profile.edit': 'always',
   'community.members.invite': 'acceptsMembers',
   'community.chat.read': 'chatReadable',
   'community.chat.post': 'chatPostingOpen',
+  // Managing the posting policy is administration (ADR 0039): an admin may set
+  // a group's open/restricted policy even while LOCKED, as with lock and
+  // profile editing — it takes visible effect once the community reopens.
+  'community.chat.manage': 'always',
   // Content moderation is management (Q51/Q23, ADR 0029): a moderator may delete
   // a rule-breaking message even while the community is LOCKED — as member
   // removal and live moderation stay open — so no status closes it.

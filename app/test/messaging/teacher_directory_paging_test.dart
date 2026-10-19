@@ -56,6 +56,10 @@ class _PagedTeachers implements PeopleRepository {
   @override
   Future<PeopleSearchPage> search(String query, {String? cursor}) =>
       throw UnimplementedError();
+
+  @override
+  Future<Uri> personAvatarUrl(String userId) async =>
+      throw const PeopleException('people.person_avatar_not_found', 'No picture.');
 }
 
 ProviderContainer _container(_PagedTeachers people) {

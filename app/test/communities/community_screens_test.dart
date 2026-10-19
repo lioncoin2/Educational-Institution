@@ -275,9 +275,10 @@ void main() {
         find.text('درس أحكام النون الساكنة يوم الأحد بإذن الله.'),
         findsOneWidget,
       );
-      // A reader of a community chat gets the neutral notice, not the
-      // announcement-channel one.
-      expect(find.text(MessagingCopy.cannotPostHere), findsOneWidget);
+      // A reader of a restricted community group (ADR 0039) is told posting is
+      // limited to its moderators — not the direct-message announcement-channel
+      // line, and never a composer.
+      expect(find.text(MessagingCopy.groupRestrictedReadOnly), findsOneWidget);
       expect(find.textContaining('قناة إعلانات'), findsNothing);
       expect(find.byType(TextField), findsNothing);
     });
@@ -302,6 +303,40 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+  });
+
+  // ADR 0039: posting in a group may be restricted to its moderators and
+  // restored. The control is a holder of `community.chat.manage`'s alone, and
+  // only for a group — a channel's posting is fixed. It is not optimistic: the
+  // shown state follows the server's answer.
+  group('restricting a group’s posting', () {
+    Finder toggle() => find.byKey(const Key('community-chat-mode-toggle'));
+
+    testWidgets('an admin sees the restrict/restore control and it flips the '
+        'state', (tester) async {
+      // owned: the viewer is the owner and holds community.chat.manage; a
+      // pre-existing community is a restricted group.
+      await open_(tester, '/communities/$owned', size: const Size(390, 2600));
+      expect(find.text(CommunityCopy.chatModeSection), findsOneWidget);
+      // Restricted now, so the control offers restoring posting to everyone.
+      expect(toggle(), findsOneWidget);
+      expect(find.text(CommunityCopy.restorePosting), findsOneWidget);
+
+      await tester.ensureVisible(toggle());
+      await tester.pumpAndSettle();
+      await tester.tap(toggle());
+      await tester.pumpAndSettle();
+
+      // The server answered open; the control now offers restricting.
+      expect(find.text(CommunityCopy.restrictPosting), findsOneWidget);
+      expect(repo.writes, contains('setChatMode $owned true'));
+    });
+
+    testWidgets('a plain member is never offered the control', (tester) async {
+      await open_(tester, '/communities/$open', size: const Size(390, 1600));
+      expect(find.text(CommunityCopy.chatModeSection), findsNothing);
+      expect(toggle(), findsNothing);
     });
   });
 

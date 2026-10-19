@@ -67,10 +67,33 @@ void main() {
       await tester.tap(submit);
       await tester.pumpAndSettle();
 
-      expect(repo.writes, contains('create حلقة جديدة'));
+      // A group by default (ADR 0039).
+      expect(repo.writes, contains('create حلقة جديدة GROUP'));
       expect(find.text(CommunityCopy.communityCreated), findsOneWidget);
       // The sheet closed.
       expect(find.byKey(const Key('create-community-title')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'creates a channel when the channel kind is chosen (ADR 0039)',
+    (tester) async {
+      await openList(tester, owner);
+      await tester.tap(find.byKey(const Key('create-community-fab')));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('create-community-title')),
+        'إعلانات',
+      );
+      // Choose «قناة» in the kind selector, then create.
+      await tester.tap(find.text(CommunityCopy.communityKindChannel));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('create-community-submit')));
+      await tester.pumpAndSettle();
+
+      expect(repo.writes, contains('create إعلانات CHANNEL'));
+      expect(find.text(CommunityCopy.communityCreated), findsOneWidget);
     },
   );
 

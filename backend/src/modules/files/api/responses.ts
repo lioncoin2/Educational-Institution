@@ -1,4 +1,4 @@
-import type { FileAssetSummary } from '../contracts/file-assets';
+import type { DownloadLink, FileAssetSummary } from '../contracts/file-assets';
 import type { FileKind } from '../contracts/file-kind';
 import type { UploadTicket } from '../application/views';
 
@@ -25,6 +25,16 @@ export interface UploadTicketResponse {
     readonly headers: Readonly<Record<string, string>>;
     readonly expiresAt: string;
   };
+}
+
+/** A short-lived link to a stored object; `expiresAt` is ISO 8601. */
+export interface DownloadLinkResponse {
+  readonly url: string;
+  readonly expiresAt: string;
+}
+
+export function toDownloadLinkResponse(link: DownloadLink): DownloadLinkResponse {
+  return { url: link.url, expiresAt: link.expiresAt.toISOString() };
 }
 
 export function toFileAssetResponse(asset: FileAssetSummary): FileAssetResponse {

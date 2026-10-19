@@ -19,6 +19,7 @@ import type { CallMetadata, Principal, Result } from '../../../shared';
 import { Permissions } from '../../identity/contracts/permissions';
 import { Authenticated, RequirePermission } from '../../identity/contracts/route-access';
 import { GetAttachmentLinkUseCase } from '../application/attachment-link.use-case';
+import { GetSenderAvatarLinkUseCase } from '../application/sender-avatar-link.use-case';
 import {
   CreateChannelUseCase,
   CreateGroupUseCase,
@@ -103,6 +104,7 @@ export class ConversationsController {
     private readonly removeParticipant: RemoveParticipantUseCase,
     private readonly leaveConversation: LeaveConversationUseCase,
     private readonly attachmentLink: GetAttachmentLinkUseCase,
+    private readonly senderAvatarLink: GetSenderAvatarLinkUseCase,
     private readonly moderateMessage: ModerateMessageUseCase,
     private readonly reviewDeletedMessage: ReviewDeletedMessageUseCase,
   ) {}
@@ -294,6 +296,18 @@ export class ConversationsController {
       unwrap(
         await this.attachmentLink.execute({ principal, conversationId, messageId, fileAssetId }),
       ),
+    );
+  }
+
+  @Get(':conversationId/messages/:messageId/sender/avatar')
+  @RequirePermission(Permissions.messaging.read)
+  async senderAvatar(
+    @CurrentPrincipal() principal: Principal,
+    @Param('conversationId') conversationId: string,
+    @Param('messageId') messageId: string,
+  ): Promise<{ url: string; expiresAt: string }> {
+    return toLinkResponse(
+      unwrap(await this.senderAvatarLink.execute({ principal, conversationId, messageId })),
     );
   }
 

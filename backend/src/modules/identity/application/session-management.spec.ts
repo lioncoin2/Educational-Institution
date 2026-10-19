@@ -252,7 +252,14 @@ describe('GetCurrentUserUseCase', () => {
 
     const me = expectOk(await h.currentUser.execute({ principal }));
 
-    expect(Object.keys(me).sort()).toEqual(['displayName', 'id', 'permissions', 'roles', 'status']);
+    expect(Object.keys(me).sort()).toEqual([
+      'avatarFileAssetId',
+      'displayName',
+      'id',
+      'permissions',
+      'roles',
+      'status',
+    ]);
     expect(me).toMatchObject({ id: user.id, status: 'ACTIVE', roles: ['STUDENT'] });
     expect(me.permissions).toContain('live.raise_hand');
     expect(JSON.stringify(me)).not.toContain(user.passwordHash);

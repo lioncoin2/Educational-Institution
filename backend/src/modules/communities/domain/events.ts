@@ -3,6 +3,7 @@ import {
   CommunityEvents,
   type CapabilityGranted,
   type CapabilityRevoked,
+  type CommunityChatModeChanged,
   type CommunityCreated,
   type CommunityLocked,
   type CommunityUnlocked,
@@ -58,6 +59,21 @@ export function communityUnlocked(
     CommunityEvents.communityUnlocked,
     community.id,
     { communityId: community.id, unlockedBy: by, lifecycleVersion: community.lifecycleVersion },
+    at,
+    correlationId,
+  );
+}
+
+export function communityChatModeChanged(
+  community: Community,
+  by: string | null,
+  at: Date,
+  correlationId?: string,
+): CommunityChatModeChanged {
+  return domainEvent(
+    CommunityEvents.chatModeChanged,
+    community.id,
+    { communityId: community.id, chatMode: community.chatMode, changedBy: by },
     at,
     correlationId,
   );

@@ -3,9 +3,11 @@ import {
   assignRole,
   changePasswordHash,
   changeStatus,
+  clearAvatar,
   createUser,
   rehashPassword,
   revokeRole,
+  setAvatar,
   type User,
 } from './user';
 
@@ -25,10 +27,30 @@ function newUser(displayName = 'Amina'): User {
 }
 
 describe('user', () => {
-  it('starts PENDING with no roles', () => {
+  it('starts PENDING with no roles and no avatar', () => {
     const user = newUser();
     expect(user.status).toBe('PENDING');
     expect(user.roles).toEqual([]);
+    expect(user.avatarFileAssetId).toBeNull();
+  });
+
+  it('sets, re-sets and clears the avatar reference', () => {
+    const set = setAvatar(newUser(), '  file-1  ', LATER);
+    expect(set.ok).toBe(true);
+    if (set.ok) {
+      expect(set.value.avatarFileAssetId).toBe('file-1'); // trimmed
+      expect(set.value.updatedAt).toEqual(LATER);
+    }
+
+    const blank = setAvatar(newUser(), '   ', LATER);
+    expect(!blank.ok && blank.error.code).toBe('identity.avatar_reference_invalid');
+
+    const cleared = clearAvatar(set.ok ? set.value : newUser(), LATER);
+    expect(cleared.avatarFileAssetId).toBeNull();
+
+    // Clearing an account that has no avatar is a no-op (same instance).
+    const already = newUser();
+    expect(clearAvatar(already, LATER)).toBe(already);
   });
 
   it('rejects an empty or over-long display name', () => {

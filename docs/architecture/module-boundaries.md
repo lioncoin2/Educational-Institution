@@ -54,18 +54,25 @@ resolved per request, never stored.
 **Use cases.** Sign-in, refresh with rotation, logout; list and end your own
 sessions; current user; change your password; provisioning (create, assign and
 revoke roles, change status, reset password, end someone's sessions, list and
-read accounts); owner bootstrap; per-request principal resolution.
+read accounts); owner bootstrap; per-request principal resolution. It also
+*stores* a reference to each account's profile picture (`avatarFileAssetId`, a
+Files asset id) — surfaced on `/auth/me` and `AccountSummary`, and written only
+through `ACCOUNT_AVATAR_WRITER` — but never verifies or serves the image: that
+is Files' (ADR 0038).
 
 **Public contract** (`identity/contracts/`): `AuthorizationService`
 (`can`, `authorize`), the permission catalogue, the route declarations
 (`RequirePermission`, `Authenticated`, `PublicRoute`), `Principal`,
 `systemPrincipal`, and `AccountDirectory` — who an account is (id, display
-name, active) and whether it may take part in something, for modules that
-reference accounts they did not create; and `AccessTokenAuthenticator` —
-the HTTP guard's own authentication (`ResolvePrincipalUseCase`), for a
-connection that is not a request, plus `revalidate` to re-check a live
-session without holding its token. The module exports exactly three
-providers: `AUTHORIZATION_SERVICE`, `ACCOUNT_DIRECTORY` and
+name, avatar reference, active) and whether it may take part in something, for
+modules that reference accounts they did not create; `ACCOUNT_AVATAR_WRITER` —
+the only way another module records which Files asset is an account's picture,
+so Files (which verifies the image) can store it without identity depending on
+Files (ADR 0038); and `AccessTokenAuthenticator` — the HTTP guard's own
+authentication (`ResolvePrincipalUseCase`), for a connection that is not a
+request, plus `revalidate` to re-check a live session without holding its
+token. The module exports exactly five providers: `AUTHORIZATION_SERVICE`,
+`ACCOUNT_DIRECTORY`, `ACCOUNT_AVATAR_WRITER`, `ACCOUNT_SEARCH` and
 `ACCESS_TOKEN_AUTHENTICATOR`.
 
 **Events.** `identity.user.created`, `identity.role.assigned`,
@@ -75,9 +82,11 @@ and codes only, never an email or a name.
 **Depends on.** `shared`, `platform` (config, database, audit, rate limiter,
 HTTP plumbing).
 
-**Must not know.** Programs, halaqat, attendance, messages, rooms. A permission
-string is opaque to identity: it does not know that `live.moderate` concerns
-audio. Adding a permission is still identity's change — its catalogue, its
+**Must not know.** Programs, halaqat, attendance, messages, rooms. Nor Files:
+it stores a picture's asset id as an opaque reference and never imports Files
+(the dependency runs files → identity, so it could not without a cycle). A
+permission string is opaque to identity: it does not know that `live.moderate`
+concerns audio. Adding a permission is still identity's change — its catalogue, its
 provisional matrix and a seed migration, kept in step by a test — even though
 identity never learns what the permission means. And no other module may read
 identity's tables. A test asserts that nothing outside identity imports its
@@ -116,9 +125,14 @@ make both cases awkward.
 
 **Public contract.** `PersonRef`, `PersonKind`.
 
-**Depends on.** `identity/contracts` (to link a person to a user).
+**Depends on.** `identity/contracts` (to link a person to a user, and — for the
+people search — to find and authorize through `ACCOUNT_SEARCH`,
+`ACCOUNT_DIRECTORY` and `AUTHORIZATION_SERVICE`); `files/contracts` (to turn a
+search result's picture reference into a short-lived link through `FILE_ASSETS`,
+`GET /people/:userId/avatar`, after re-asking `people.read` — ADR 0038).
 
-**Must not know.** Passwords, tokens, permission evaluation.
+**Must not know.** Passwords, tokens, permission evaluation. It never stores or
+serves the picture bytes — only resolves a link to a reference Files owns.
 
 ---
 
@@ -178,10 +192,24 @@ community for a person.
 
 **Use cases.** Create a community (its creator becomes owner and first
 member); view one; list one's own, or — for an overseer — all; lock and
-unlock; add members; remove a member; leave; list members; create, list and
-revoke invitation links; join by link; grant capabilities to a member, revoke
-a grant, list grants; transfer ownership. One use case per act, one evaluator,
-one journal — no `CommunitiesService`.
+unlock; edit the profile — title, description and picture (`community.profile.edit`,
+ADR 0038); restrict or restore a group's member posting — its `chat_mode`
+(`community.chat.manage`, ADR 0039); add members; remove a member; leave; list
+members; create, list and revoke invitation links; join by link; grant
+capabilities to a member, revoke a grant, list grants; transfer ownership; and
+serve a short-lived link to the community's picture to anyone who may view it.
+One use case per act, one evaluator, one journal — no `CommunitiesService`.
+
+**Groups vs channels (ADR 0039).** A community carries a `chat_mode`:
+`GROUP_OPEN` (every member posts), `GROUP_RESTRICTED` (a group an admin made
+read-only for ordinary members), or `CHANNEL` (owner + delegated publishers
+only). It is the product kind and, for a group, its posting policy — never the
+authorization itself. Posting is still the one act `community.chat.post`, asked
+on every send: in a GROUP_OPEN community a member posts on the membership basis
+(a member ceiling, no grant); otherwise only the owner and
+`community.chat.post` grantees do. The lifecycle lock is a separate axis that
+closes posting for everyone, whatever the mode. The chat remains a CHANNEL
+conversation (ADR 0018); the conversation type never decides community posting.
 
 **Public contract.** `COMMUNITY_AUTHORIZATION` (`authorize`, `authorizeEach`, and since P6
 `permittedAmong`, the same evaluator for a list of people with no principal
@@ -200,18 +228,27 @@ not acts, which the HTTP `me` block reports as `me.operations` for clients;
 no module consumes it) and the event types.
 
 **Events.** `communities.community.created|locked|unlocked`,
-`communities.member.added|removed`, `communities.invitation.created|revoked`,
+`communities.community.chat_mode_changed` (ADR 0039; relayed as the existing
+`community.access.changed` hint), `communities.member.added|removed`,
+`communities.invitation.created|revoked`,
 `communities.capability.granted|revoked`, `communities.ownership.transferred`
 — ids, codes and versions only; never a title, a name, a token or its hash.
 
 **Depends on.** `identity/contracts` (authorization, the account directory,
-the permission catalogue), `shared`. Nothing else — an architecture test
-(`communities-boundaries.spec.ts`) and the module's own wiring test pin it.
+the permission catalogue); `academic/contracts/relationships` (Q50, ADR 0033 —
+only to confirm a referenced halaqa exists); `files/contracts` (ADR 0038 — only
+to verify a community picture is an image the editor owns and to mint a
+short-lived link to it); `shared`. Nothing else — an architecture test
+(`communities-boundaries.spec.ts`) and the module's own wiring test pin exactly
+these edges.
 
 **Must not know.** Conversations and chat data, live sessions and LiveKit,
-attendance, realtime, notifications, academic and halaqat, and every other
-module's tables. Messaging, Realtime, Live and Attendance ask Communities;
-Communities never asks them.
+attendance, realtime, notifications, and every other module's tables — it reads
+no foreign table. What it knows of academic is one fact through a contract (does
+this halaqa exist?) and of files two (is this picture a valid owned image, and a
+link to it); it learns nothing else of either, and nothing at all of the rest.
+Messaging, Realtime, Live and Attendance ask Communities; Communities never asks
+them.
 
 ---
 
@@ -488,7 +525,12 @@ transfer routes, signed links, tests. See [storage.md](storage.md).
 
 **Responsibility.** What may be stored, verified storage of it, and
 short-lived links to it. **Not** who may read a file — the module that
-attached it decides that.
+attached it decides that. It also owns the two profile-picture-adjacent acts
+that are its own concern (ADR 0038): the self-service endpoints that set and
+clear a user's avatar (`PUT`/`DELETE /files/me/avatar`) — it verifies the asset
+is an `IMAGE` the caller owns, then records the reference through identity's
+`ACCOUNT_AVATAR_WRITER`, the one read path it authorizes itself being the
+owner's link to their own asset (`POST /files/me/assets/:id/link`).
 
 **Owned entities.** `FileAsset` (metadata and a generated storage key — never
 bytes).

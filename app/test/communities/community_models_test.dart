@@ -56,6 +56,41 @@ void main() {
       expect(Community.fromJson(json).me.canManageHalaqa, isFalse);
     });
 
+    test('reads the chat mode and the me.canPost signal (Phase 5)', () {
+      final channel = Community.fromJson(
+        communityJson(chatMode: 'CHANNEL', canPost: true),
+      );
+      expect(channel.chatMode, CommunityChatMode.channel);
+      expect(channel.isChannel, isTrue);
+      expect(channel.isRestrictedGroup, isFalse);
+      expect(channel.kind, CommunityKind.channel);
+      expect(channel.canPost, isTrue);
+
+      final restricted = Community.fromJson(
+        communityJson(chatMode: 'GROUP_RESTRICTED'),
+      );
+      expect(restricted.chatMode, CommunityChatMode.groupRestricted);
+      expect(restricted.isChannel, isFalse);
+      expect(restricted.isRestrictedGroup, isTrue);
+      expect(restricted.kind, CommunityKind.group);
+      // A missing canPost defaults to "may not post".
+      expect(restricted.canPost, isFalse);
+
+      final open = Community.fromJson(communityJson(chatMode: 'GROUP_OPEN'));
+      expect(open.chatMode, CommunityChatMode.groupOpen);
+      expect(open.isRestrictedGroup, isFalse);
+
+      // A newer server's mode, or an older server that omits it: unknown,
+      // never an action — the screen treats it as a plain (unrestricted) group.
+      final future = Community.fromJson(communityJson(chatMode: 'BROADCAST'));
+      expect(future.chatMode, CommunityChatMode.unknown);
+      expect(future.isChannel, isFalse);
+      expect(future.isRestrictedGroup, isFalse);
+      final older = Community.fromJson(communityJson(chatMode: null));
+      expect(older.chatMode, CommunityChatMode.unknown);
+      expect(older.canPost, isFalse);
+    });
+
     test('ignores keys it does not know', () {
       final json = communityJson()
         ..['archivedAt'] = '2027-01-01T00:00:00.000Z'

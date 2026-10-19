@@ -1,0 +1,4 @@
+ALTER TABLE "communities_capability_grants" DROP CONSTRAINT "communities_capability_grants_capability_valid";--> statement-breakpoint
+ALTER TABLE "communities" ADD COLUMN "chat_mode" text DEFAULT 'GROUP_RESTRICTED' NOT NULL;--> statement-breakpoint
+ALTER TABLE "communities" ADD CONSTRAINT "communities_chat_mode_valid" CHECK ("communities"."chat_mode" in ('GROUP_OPEN', 'GROUP_RESTRICTED', 'CHANNEL'));--> statement-breakpoint
+ALTER TABLE "communities_capability_grants" ADD CONSTRAINT "communities_capability_grants_capability_valid" CHECK ("communities_capability_grants"."capability" in ('community.members.view', 'community.members.invite', 'community.members.remove', 'community.lock', 'community.profile.edit', 'community.chat.post', 'community.chat.manage', 'community.messages.moderate', 'community.live.start', 'community.live.moderate', 'community.attendance.record', 'community.attendance.view'));

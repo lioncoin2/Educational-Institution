@@ -12,6 +12,10 @@ export const CommunityAudit = {
   communityCreated: 'communities.community.created',
   communityLocked: 'communities.community.locked',
   communityUnlocked: 'communities.community.unlocked',
+  /** The title, description or picture was edited (`community.profile.edit`, ADR 0038). */
+  communityProfileUpdated: 'communities.community.profile_updated',
+  /** A group's member-posting policy was restricted or restored (`community.chat.manage`, ADR 0039). */
+  communityChatModeChanged: 'communities.community.chat_mode_changed',
   /** A manager added someone — one entry per newcomer. */
   memberAdded: 'communities.member.added',
   /** Someone joined through a link; the actor is the joiner. */

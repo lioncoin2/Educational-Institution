@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
+import '../../core/widgets/foundations/app_avatar.dart';
 import '../../core/widgets/foundations/app_card.dart';
 import '../../core/widgets/foundations/async_view.dart';
 import '../../core/widgets/foundations/mock_ribbon.dart';
@@ -25,6 +26,7 @@ import 'state/community_controller.dart';
 import 'state/community_write.dart';
 import 'widgets/community_change.dart';
 import 'widgets/community_states.dart';
+import 'widgets/edit_community_profile_sheet.dart';
 import 'widgets/halaqa_picker.dart';
 
 /// One community, as the viewer may see it now: whether it is locked, how
@@ -79,14 +81,14 @@ class CommunityScreen extends ConsumerWidget {
   }
 }
 
-class _Details extends StatelessWidget {
+class _Details extends ConsumerWidget {
   const _Details({required this.community, required this.writing});
 
   final Community community;
   final CommunityWrite? writing;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final me = community.me;
     final capabilities = [
       for (final c in CommunityCapability.values)
@@ -103,7 +105,36 @@ class _Details extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(community.title, style: context.text.titleLarge),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AppAvatar(
+                    name: community.title,
+                    imageUrl: ref
+                        .watch(communityAvatarUrlProvider(community.id))
+                        .value,
+                    radius: 28,
+                  ),
+                  const SizedBox(width: Insets.md),
+                  Expanded(
+                    child: Text(
+                      community.title,
+                      style: context.text.titleLarge,
+                    ),
+                  ),
+                  if (community.canEditProfile)
+                    IconButton(
+                      tooltip: CommunityCopy.editCommunity,
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () =>
+                          showEditCommunityProfile(context, community),
+                    ),
+                ],
+              ),
+              if (community.description case final description?) ...[
+                const SizedBox(height: Insets.sm),
+                Text(description, style: context.text.bodyMedium),
+              ],
               const SizedBox(height: Insets.sm),
               Wrap(
                 spacing: Insets.sm,
@@ -118,6 +149,24 @@ class _Details extends StatelessWidget {
                     const StatBadge(
                       label: CommunityCopy.locked,
                       icon: Icons.lock_outline_rounded,
+                      tone: StatBadgeTone.soft,
+                    ),
+                  // How posting stands here: a channel, or a group whose
+                  // posting has been restricted. An open group says nothing
+                  // (posting is its default). Informational only; the server
+                  // decides who may post.
+                  if (community.isChannel)
+                    const StatBadge(
+                      key: Key('community-chat-mode'),
+                      label: CommunityCopy.chatModeChannel,
+                      icon: Icons.campaign_outlined,
+                      tone: StatBadgeTone.soft,
+                    )
+                  else if (community.isRestrictedGroup)
+                    const StatBadge(
+                      key: Key('community-chat-mode'),
+                      label: CommunityCopy.chatModeGroupRestricted,
+                      icon: Icons.edit_off_outlined,
                       tone: StatBadgeTone.soft,
                     ),
                 ],
@@ -348,7 +397,13 @@ class _Management extends ConsumerWidget {
     // The halaqa link is institutional oversight (Q50), offered on the
     // server's `me.canManageHalaqa` alone — never a membership capability.
     final showHalaqa = me.canManageHalaqa;
-    if (buttons.isEmpty && !showHalaqa) return const SizedBox.shrink();
+    // Restrict/restore member posting, offered to a holder of
+    // `community.chat.manage`. Only a group toggles — a channel's posting is
+    // fixed, so the control never appears for one.
+    final showChatMode = community.canManageChat && !community.isChannel;
+    if (buttons.isEmpty && !showHalaqa && !showChatMode) {
+      return const SizedBox.shrink();
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -357,6 +412,10 @@ class _Management extends ConsumerWidget {
         for (final button in buttons) ...[
           const SizedBox(height: Insets.md),
           button,
+        ],
+        if (showChatMode) ...[
+          const SizedBox(height: Insets.lg),
+          _ChatModeManagement(community: community, writing: writing),
         ],
         if (showHalaqa) ...[
           const SizedBox(height: Insets.lg),
@@ -430,6 +489,80 @@ class _Management extends ConsumerWidget {
       router.go(Routes.communities);
     }
     sayWriteOutcome(messenger, outcome, refresh: refresh, confirmed: true);
+  }
+}
+
+/// Restrict or reopen member posting in a group, shown only to a holder of
+/// `community.chat.manage` and only for a group (a channel's posting is fixed).
+/// The current state is shown in words; restricting keeps every member's
+/// membership and read access and only limits who may post, and reopening
+/// restores it. One request at a time, like the rest of [_Management], and
+/// NOT optimistic — the state and the composer change only once the server's
+/// answer is reconciled. The server re-authorises and decides; a refusal is
+/// said in words.
+class _ChatModeManagement extends ConsumerWidget {
+  const _ChatModeManagement({required this.community, required this.writing});
+
+  final Community community;
+  final CommunityWrite? writing;
+
+  CommunityController _controller(WidgetRef ref) =>
+      ref.read(communityProvider(community.id).notifier);
+
+  VoidCallback _refreshOf(BuildContext context) {
+    final container = ProviderScope.containerOf(context, listen: false);
+    final provider = communityProvider(community.id);
+    return () {
+      if (container.exists(provider)) {
+        unawaited(container.read(provider.notifier).refresh());
+      }
+    };
+  }
+
+  Future<void> _set(BuildContext context, WidgetRef ref, bool membersMayPost) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final refresh = _refreshOf(context);
+    sayWriteOutcome(
+      messenger,
+      await _controller(ref).setChatMode(membersMayPost: membersMayPost),
+      refresh: refresh,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final restricted = community.isRestrictedGroup;
+    final idle = writing == null;
+    final busy = writing == CommunityWrite.setChatMode;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          CommunityCopy.chatModeSection,
+          style: Theme.of(context).textTheme.labelLarge,
+        ),
+        const SizedBox(height: Insets.sm),
+        Text(
+          restricted
+              ? CommunityCopy.chatModeGroupRestricted
+              : CommunityCopy.chatModeGroupOpen,
+          style: context.text.bodyMedium,
+        ),
+        const SizedBox(height: Insets.md),
+        OutlinedButton.icon(
+          key: const Key('community-chat-mode-toggle'),
+          onPressed: idle ? () => _set(context, ref, restricted) : null,
+          icon: busy
+              ? const BusyIndicator()
+              : Icon(restricted ? Icons.edit_rounded : Icons.edit_off_outlined),
+          label: Text(
+            restricted
+                ? CommunityCopy.restorePosting
+                : CommunityCopy.restrictPosting,
+          ),
+        ),
+      ],
+    );
   }
 }
 

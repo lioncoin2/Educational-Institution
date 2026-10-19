@@ -24,6 +24,7 @@ import {
 import {
   LINK_MANAGEMENT_RULE,
   MANAGE_GRANTS,
+  POSTING_MEMBER_RULE,
   TRANSFER_OWNERSHIP,
   ruleFor,
   type ActRule,
@@ -102,6 +103,13 @@ export class CommunityAuthorizationService implements CommunityAuthorization {
     communityId: string,
     act: CommunityAct,
   ): Promise<Result<CommunityPermit>> {
+    // Posting is the one act whose rule depends on the community's chat mode
+    // (ADR 0039): a GROUP_OPEN member posts on the membership basis, everyone
+    // else on the publisher capability. The decision is made here, server-side,
+    // and re-asked on every send — never from the conversation type or a client.
+    if (act === 'community.chat.post') {
+      return (await this.evaluatePost(principal, communityId)).result;
+    }
     return (await this.evaluate(principal, communityId, ruleFor(act))).result;
   }
 
@@ -112,6 +120,10 @@ export class CommunityAuthorizationService implements CommunityAuthorization {
   ): Promise<ReadonlyMap<string, Result<CommunityPermit>>> {
     if (communityIds.length > MAX_AUTHORIZE_BATCH) {
       throw new RangeError(`authorizeEach takes at most ${MAX_AUTHORIZE_BATCH} community ids.`);
+    }
+    // Posting's rule is per-community (its chat mode), so it has its own batch.
+    if (act === 'community.chat.post') {
+      return this.authorizeEachPost(principal, communityIds);
     }
     const rule = ruleFor(act);
     const answers = new Map<string, Result<CommunityPermit>>();
@@ -155,6 +167,12 @@ export class CommunityAuthorizationService implements CommunityAuthorization {
     if (userIds.length > MAX_AUTHORIZE_BATCH) {
       throw new RangeError(`permittedAmong takes at most ${MAX_AUTHORIZE_BATCH} user ids.`);
     }
+    // Posting's rule depends on the community's chat mode (ADR 0039), the same
+    // for everyone in one community — so it reads once, picks the rule, then
+    // filters and decides, agreeing with `authorize` in every mode.
+    if (act === 'community.chat.post') {
+      return this.permittedAmongPost(communityId, userIds);
+    }
     const rule = ruleFor(act);
     let holding: readonly string[] = [...new Set(userIds)];
     // A latent divergence, kept in view: `withPermission` asks identity with
@@ -177,6 +195,38 @@ export class CommunityAuthorizationService implements CommunityAuthorization {
   }
 
   /**
+   * `permittedAmong` for posting (ADR 0039): one read of the community and the
+   * candidates' stints tells the chat mode, which picks the member rule
+   * (GROUP_OPEN membership) or the publisher rule (owner/grant). Then the
+   * chosen rule's standing ceiling filters the candidates and
+   * `decideCommunityAct` decides — so it returns exactly whom `authorize` would
+   * permit, in every mode. Not used in production today (live acts are), but
+   * kept coherent with the single evaluator.
+   */
+  private async permittedAmongPost(
+    communityId: string,
+    userIds: readonly string[],
+  ): Promise<readonly string[]> {
+    const candidates = [...new Set(userIds)];
+    if (candidates.length === 0) return [];
+    const reads = await this.store.authorityOfMany(communityId, candidates);
+    const mode = [...reads.values()].find((read) => read.community !== null)?.community?.chatMode;
+    const rule = mode === 'GROUP_OPEN' ? POSTING_MEMBER_RULE : ruleFor('community.chat.post');
+    let holding = candidates;
+    for (const permission of rule.standingCeiling) {
+      if (holding.length === 0) return [];
+      const eligible = await this.people.eligible(holding, permission);
+      holding = holding.filter((userId) => eligible.has(userId));
+    }
+    const held: HeldCeilings = { standing: true, oversight: false };
+    return holding.filter(
+      (userId) =>
+        decideCommunityAct(rule, held, reads.get(userId) ?? { community: null, stint: null })
+          .kind === 'permit',
+    );
+  }
+
+  /**
    * The evaluator with any rule — including the link-management override —
    * returning the read it made, so a use case can build its response from
    * the same snapshot instead of reading again.
@@ -188,6 +238,71 @@ export class CommunityAuthorizationService implements CommunityAuthorization {
     }
     const read = await this.store.authorityOf(communityId, principal.userId);
     return { result: this.decide(principal, communityId, rule, held, read), read };
+  }
+
+  /**
+   * `community.chat.post` (ADR 0039): the rule depends on the chat mode, which
+   * is only known after the read. Both the member rule (GROUP_OPEN membership
+   * basis, a member ceiling) and the publisher rule (owner/grant,
+   * `communities.moderate`) are weighed for the pre-read ceiling check — anyone
+   * who could post under either mode holds at least one, so nothing is read
+   * without a ceiling — then the mode in the read chooses which rule decides.
+   */
+  private async evaluatePost(principal: Principal, communityId: string): Promise<Evaluation> {
+    const memberRule = POSTING_MEMBER_RULE;
+    const publisherRule = ruleFor('community.chat.post');
+    const memberHeld = this.ceilings(principal, communityId, memberRule);
+    const publisherHeld = this.ceilings(principal, communityId, publisherRule);
+    if (
+      !holdsAnyCeiling(memberRule, memberHeld) &&
+      !holdsAnyCeiling(publisherRule, publisherHeld)
+    ) {
+      return { result: this.noCeiling(principal, communityId, publisherRule), read: null };
+    }
+    const read = await this.store.authorityOf(communityId, principal.userId);
+    const [rule, held] =
+      read.community?.chatMode === 'GROUP_OPEN'
+        ? ([memberRule, memberHeld] as const)
+        : ([publisherRule, publisherHeld] as const);
+    return { result: this.decide(principal, communityId, rule, held, read), read };
+  }
+
+  /** `authorizeEach` for the posting act: the mode is read per community. */
+  private async authorizeEachPost(
+    principal: Principal,
+    communityIds: readonly string[],
+  ): Promise<ReadonlyMap<string, Result<CommunityPermit>>> {
+    const memberRule = POSTING_MEMBER_RULE;
+    const publisherRule = ruleFor('community.chat.post');
+    const answers = new Map<string, Result<CommunityPermit>>();
+    const toRead: string[] = [];
+    const heldBy = new Map<string, { member: HeldCeilings; publisher: HeldCeilings }>();
+    for (const communityId of new Set(communityIds)) {
+      const member = this.ceilings(principal, communityId, memberRule);
+      const publisher = this.ceilings(principal, communityId, publisherRule);
+      if (holdsAnyCeiling(memberRule, member) || holdsAnyCeiling(publisherRule, publisher)) {
+        heldBy.set(communityId, { member, publisher });
+        toRead.push(communityId);
+      } else {
+        answers.set(communityId, this.noCeiling(principal, communityId, publisherRule));
+      }
+    }
+    if (toRead.length > 0) {
+      const reads = await this.store.authorityOfEach(toRead, principal.userId);
+      for (const communityId of toRead) {
+        const read = reads.get(communityId) ?? { community: null, stint: null };
+        const ceilings = heldBy.get(communityId) as {
+          member: HeldCeilings;
+          publisher: HeldCeilings;
+        };
+        const [rule, held] =
+          read.community?.chatMode === 'GROUP_OPEN'
+            ? ([memberRule, ceilings.member] as const)
+            : ([publisherRule, ceilings.publisher] as const);
+        answers.set(communityId, this.decide(principal, communityId, rule, held, read));
+      }
+    }
+    return answers;
   }
 
   /**
@@ -303,12 +418,23 @@ export class CommunityAuthorizationService implements CommunityAuthorization {
         }
       }
     };
+    // Whether the viewer may post RIGHT NOW (ADR 0039), by the same rule the
+    // send path enforces: a GROUP_OPEN member posts on membership; everyone else
+    // needs the publisher capability. Not derivable from `capabilities` (an
+    // open-group member holds no capability yet may post), so it is its own flag
+    // — the authoritative signal the composer keys on, never the conversation
+    // type. A locked community makes it false for all, via the gate.
+    const postingRule =
+      read.community?.chatMode === 'GROUP_OPEN'
+        ? POSTING_MEMBER_RULE
+        : ruleFor('community.chat.post');
     return {
       standing: read.stint?.standing ?? null,
       joinedAt: read.stint?.joinedAt ?? null,
       capabilities: COMMUNITY_CAPABILITIES.filter(permits),
       participation: COMMUNITY_PARTICIPATION.filter(permits),
       operations: COMMUNITY_OPERATIONS.filter(allows),
+      canPost: decide(postingRule).kind === 'permit',
       // Q50: setting/clearing the halaqa link is institutional oversight
       // (`communities.manage`), decided by identity alone — never membership,
       // so it is not a community operation and rests on no stint.

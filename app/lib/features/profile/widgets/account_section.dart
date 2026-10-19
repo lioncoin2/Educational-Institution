@@ -117,6 +117,20 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
       ),
       const Divider(height: 1),
       ListTile(
+        leading: Icon(Icons.photo_camera_outlined, color: context.colors.primary),
+        title: Text('الصورة الشخصية', style: context.text.titleSmall),
+        subtitle: Text(
+          'اختيار صورة حسابك أو إزالتها',
+          style: context.text.bodySmall,
+        ),
+        trailing: Icon(
+          Icons.chevron_right_rounded,
+          color: context.colors.onSurfaceVariant,
+        ),
+        onTap: _busy ? null : () => context.push(Routes.avatar),
+      ),
+      const Divider(height: 1),
+      ListTile(
         leading: Icon(Icons.lock_outline, color: context.colors.primary),
         title: Text('تغيير كلمة المرور', style: context.text.titleSmall),
         subtitle: Text(

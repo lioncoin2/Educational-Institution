@@ -110,7 +110,7 @@ const delivery: MessageDelivery = {
   message: async () => ({
     forSender: view('client-key-0001'),
     forMembers: view(null),
-    sender: { userId: SENDER, displayName: 'المعلّم' },
+    sender: { userId: SENDER, displayName: 'المعلّم', avatarFileAssetId: null },
   }),
   position: async () => {
     throw new Error('not asked here');

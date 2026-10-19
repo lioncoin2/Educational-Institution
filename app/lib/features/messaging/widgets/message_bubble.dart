@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/extensions/context_ext.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/foundations/app_avatar.dart';
 import '../../../data/models/messaging.dart';
 import '../../../providers/app_providers.dart';
 import '../messaging_copy.dart';
@@ -17,6 +18,7 @@ class MessageBubble extends StatelessWidget {
     required this.message,
     required this.mine,
     this.senderName,
+    this.senderAvatarUrl,
     this.onTapAuthor,
     this.onModerateDelete,
     this.onReview,
@@ -27,6 +29,10 @@ class MessageBubble extends StatelessWidget {
 
   /// Shown above others' messages in groups and channels.
   final String? senderName;
+
+  /// A short-lived link to the sender's picture, beside their name. Null shows
+  /// their initials (no picture, or the demo).
+  final Uri? senderAvatarUrl;
 
   /// Tapping the sender's name starts a direct conversation with them (Q6),
   /// when the viewer's account may start one. Null hides that affordance (a
@@ -76,23 +82,33 @@ class MessageBubble extends StatelessWidget {
         fontWeight: FontWeight.w700,
       ),
     );
-    if (onTapAuthor == null) return label;
-    return GestureDetector(
-      key: Key('message-author-${message.senderId}'),
-      behavior: HitTestBehavior.opaque,
-      onTap: onTapAuthor,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Flexible(child: label),
-          const SizedBox(width: Insets.xs),
-          Icon(
-            Icons.chat_bubble_outline_rounded,
-            size: 14,
-            color: context.colors.primary,
-          ),
-        ],
-      ),
+    final Widget named = onTapAuthor == null
+        ? label
+        : GestureDetector(
+            key: Key('message-author-${message.senderId}'),
+            behavior: HitTestBehavior.opaque,
+            onTap: onTapAuthor,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(child: label),
+                const SizedBox(width: Insets.xs),
+                Icon(
+                  Icons.chat_bubble_outline_rounded,
+                  size: 14,
+                  color: context.colors.primary,
+                ),
+              ],
+            ),
+          );
+    // The sender's picture (or initials) sits before the name.
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppAvatar(name: name, imageUrl: senderAvatarUrl, radius: 12),
+        const SizedBox(width: Insets.xs),
+        Flexible(child: named),
+      ],
     );
   }
 

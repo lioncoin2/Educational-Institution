@@ -31,6 +31,14 @@ export interface User {
   readonly roles: readonly RoleAssignment[];
   readonly passwordHash: string;
   readonly passwordChangedAt: Date;
+  /**
+   * The Files asset id of the account's profile picture, or null when none is
+   * set. A stable *reference*, never a URL: identity stores only the id and
+   * never reads the file. That the asset is an image the account owns is
+   * verified by Files before the reference is written (Files owns that check;
+   * identity cannot depend on it — the dependency runs the other way).
+   */
+  readonly avatarFileAssetId: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -66,6 +74,7 @@ export function createUser(input: NewUser): Result<User> {
     roles: [],
     passwordHash: input.passwordHash,
     passwordChangedAt: input.at,
+    avatarFileAssetId: null,
     createdAt: input.at,
     updatedAt: input.at,
   });
@@ -142,4 +151,28 @@ export function changePasswordHash(user: User, passwordHash: string, at: Date): 
  */
 export function rehashPassword(user: User, passwordHash: string, at: Date): User {
   return { ...user, passwordHash, updatedAt: at };
+}
+
+/**
+ * Points the account at a profile picture. `fileAssetId` is a Files asset id
+ * that the caller has already verified (an image the account owns); identity
+ * records the reference and nothing more. Setting it to the same reference is a
+ * no-op transition that still bumps `updatedAt`, so the write stays idempotent.
+ */
+export function setAvatar(user: User, fileAssetId: string, at: Date): Result<User> {
+  const reference = fileAssetId.trim();
+  if (reference.length === 0) {
+    return err(
+      failure('validation', 'identity.avatar_reference_invalid', 'A file reference is required.'),
+    );
+  }
+  return ok({ ...user, avatarFileAssetId: reference, updatedAt: at });
+}
+
+/** Removes the profile picture, falling back to the default (initials) view. */
+export function clearAvatar(user: User, at: Date): User {
+  if (user.avatarFileAssetId === null) {
+    return user;
+  }
+  return { ...user, avatarFileAssetId: null, updatedAt: at };
 }

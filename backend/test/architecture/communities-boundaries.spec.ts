@@ -4,12 +4,14 @@ import { cruise, edgesFrom, reachableFrom, type CruiseOutput } from '../support/
  * The shape of Communities, asserted (communities.md §17) — each property as
  * its own test, so a failure says which one broke:
  *
- *   - Communities knows identity through identity's contracts, and — since the
- *     owner approved the optional halaqa link (Q50, ADR 0033) — academic
- *     through its read-only `academic/contracts/relationships` contract alone
- *     (to confirm a referenced halaqa EXISTS, nothing more). No other business
- *     module at all — not messaging, live, attendance, realtime, notifications
- *     or files; its module file wires in only identity and academic;
+ *   - Communities knows identity through identity's contracts; academic — since
+ *     the owner approved the optional halaqa link (Q50, ADR 0033) — through its
+ *     read-only `academic/contracts/relationships` contract alone (to confirm a
+ *     referenced halaqa EXISTS, nothing more); and files — since the owner
+ *     approved community pictures (ADR 0038) — through its `files/contracts/
+ *     file-assets` contract alone (verify a picture, mint its link). No other
+ *     business module at all — not messaging, live, attendance, realtime or
+ *     notifications; its module file wires in only identity, academic and files;
  *   - no other module reaches Communities' internals: its contracts (and the
  *     module file, for the composition root) are the way in;
  *   - Communities never reads another module's tables, and only its own
@@ -32,6 +34,12 @@ const PERMISSIONS = 'src/modules/identity/contracts/permissions.ts';
 // existence check for a referenced halaqa, through academic's public contract.
 const ACADEMIC_RELATIONSHIPS_CONTRACT = 'src/modules/academic/contracts/relationships.ts';
 const ACADEMIC_MODULE = 'src/modules/academic/academic.module.ts';
+// The files edge the owner approved (ADR 0038): verifying a community picture is
+// an image the editor uploaded, and minting a short-lived link to it, through
+// files' public contracts (`file-assets`, `file-kind`). The only files surface
+// communities may touch.
+const FILES_CONTRACTS = 'src/modules/files/contracts/';
+const FILES_MODULE = 'src/modules/files/files.module.ts';
 const isCommunitiesCode = (source: string) =>
   source.startsWith(COMMUNITIES) && source !== MODULE_FILE;
 
@@ -85,13 +93,20 @@ describe('communities boundaries', () => {
       // Q50 (ADR 0033): the one approved academic edge — existence validation
       // for a referenced halaqa, through academic's read-only public contract.
       .filter((edge) => edge.resolved !== ACADEMIC_RELATIONSHIPS_CONTRACT)
+      // ADR 0038: the one approved files edge — verify a community picture and
+      // mint its link, through files' public contracts.
+      .filter((edge) => !edge.resolved.startsWith(FILES_CONTRACTS))
       .map((edge) => `${edge.source} -> ${edge.resolved}`);
     expect(intrusions).toEqual([]);
     // `reachableFrom` skips module files, so the wiring is checked edge by edge.
     const wiring = edgesFrom(output, (source) => source === MODULE_FILE)
       .map((edge) => edge.resolved)
       .filter((path) => path.startsWith('src/modules/') && !path.startsWith(COMMUNITIES));
-    expect(wiring.sort()).toEqual([ACADEMIC_MODULE, 'src/modules/identity/identity.module.ts']);
+    expect(wiring.sort()).toEqual([
+      ACADEMIC_MODULE,
+      FILES_MODULE,
+      'src/modules/identity/identity.module.ts',
+    ]);
   });
 
   it('is reached by other modules only through its contracts', () => {

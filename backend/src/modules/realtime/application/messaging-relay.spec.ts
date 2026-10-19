@@ -85,7 +85,7 @@ describe('messaging events, delivered in real time', () => {
           deletedAt: null,
           attachments: [],
         },
-        sender: { userId: teacher.userId, displayName: 'الأستاذ عبدالله' },
+        sender: { userId: teacher.userId, displayName: 'الأستاذ عبدالله', avatarFileAssetId: null },
       });
     });
 

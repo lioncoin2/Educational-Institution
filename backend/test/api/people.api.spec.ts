@@ -1,6 +1,11 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { BootstrapOwnerUseCase } from '../../src/modules/identity/application/bootstrap-owner.use-case';
 import { USER_REPOSITORY, type UserRepository } from '../../src/modules/identity/domain/ports';
 import { startApi, type RunningApi } from '../support/api-client';
+import { sampleBytes } from '../support/files-harness';
 
 const OWNER = { email: 'owner@institution.test', password: 'owner passphrase one' };
 const errorOf = (body: Record<string, unknown>) => body.error as { code: string; message: string };
@@ -162,7 +167,10 @@ describe('people API — GET /people', () => {
     expect(res.status).toBe(200);
     expect(Object.keys(res.body).sort()).toEqual(['items', 'nextCursor']);
     for (const item of items(res.body)) {
-      expect(Object.keys(item).sort()).toEqual(['displayName', 'userId']);
+      // Minimal projection: an id, a name, and a picture reference (null here —
+      // these accounts set none). Never an email, role or status.
+      expect(Object.keys(item).sort()).toEqual(['avatarFileAssetId', 'displayName', 'userId']);
+      expect(item.avatarFileAssetId).toBeNull();
     }
     const found = items(res.body).map((i) => i.userId);
     expect(found).toContain(ids.teacher);
@@ -266,10 +274,10 @@ describe('people API — GET /people', () => {
       expect(found).not.toContain(ids.owner ?? '__none__'); // the owner is an administrator too
     });
 
-    it('discloses only {userId, displayName} — no email, role or status', async () => {
+    it('discloses only {userId, displayName, avatarFileAssetId} — no email, role or status', async () => {
       const res = await api.call('GET', '/people/teachers?q=سا', { token: tokens.student });
       for (const item of items(res.body)) {
-        expect(Object.keys(item).sort()).toEqual(['displayName', 'userId']);
+        expect(Object.keys(item).sort()).toEqual(['avatarFileAssetId', 'displayName', 'userId']);
       }
       expect(res.raw).not.toContain('@institution.test');
       expect(res.raw).not.toContain('email');
@@ -322,5 +330,139 @@ describe('people API — GET /people', () => {
       expect(res.body.error).toMatchObject({ kind: 'unavailable', code: 'unavailable' });
       spy.mockRestore();
     });
+  });
+});
+
+/**
+ * GET /people/:userId/avatar — a search result's picture (ADR 0038, Phase 1
+ * follow-up). The reference rides the search result; the bytes are served only
+ * through a short-lived link minted here, after Files re-verifies the person
+ * owns the image. Proves: the reference surfaces on the wire; an authorized
+ * caller mints a link that serves the bytes; a person with no picture is 404; a
+ * caller without `people.read` is refused (403) — so an avatar is never exposed
+ * for someone they may not discover. Runs with local storage configured.
+ */
+describe('people API — GET /people/:userId/avatar', () => {
+  let api: RunningApi;
+  let storageRoot: string;
+  let ownerToken: string;
+  const ids: Record<string, string> = {};
+  const tokens: Record<string, string> = {};
+
+  async function login(email: string, password: string): Promise<string> {
+    const res = await api.call('POST', '/auth/login', {
+      body: { identifier: email, password, device: { platform: 'web', label: 't' } },
+    });
+    return res.body.accessToken as string;
+  }
+
+  async function provision(key: string, displayName: string, role: string): Promise<void> {
+    const email = `${key}@institution.test`;
+    const password = `${key} passphrase long enough`;
+    const created = await api.call('POST', '/admin/users', {
+      token: ownerToken,
+      body: { displayName, identifier: email, initialPassword: password },
+    });
+    const id = created.body.id as string;
+    ids[key] = id;
+    await api.call('POST', `/admin/users/${id}/roles`, { token: ownerToken, body: { role } });
+    await api.call('POST', `/admin/users/${id}/status`, {
+      token: ownerToken,
+      body: { status: 'ACTIVE' },
+    });
+    tokens[key] = await login(email, password);
+  }
+
+  // A person sets their own picture through the Files flow (declare → PUT →
+  // complete → bind), exactly as the app does.
+  async function setOwnAvatar(token: string): Promise<string> {
+    const bytes = sampleBytes('image/png', 256);
+    const declared = await api.call('POST', '/files/uploads', {
+      token,
+      body: { kind: 'IMAGE', contentType: 'image/png', byteSize: bytes.length, fileName: 'a.png' },
+    });
+    const assetId = (declared.body.asset as { id: string }).id;
+    await fetch(`${api.base}${(declared.body.upload as { url: string }).url}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'image/png' },
+      body: bytes,
+    });
+    await api.call('POST', `/files/uploads/${assetId}/complete`, { token });
+    const set = await api.call('PUT', '/files/me/avatar', {
+      token,
+      body: { fileAssetId: assetId },
+    });
+    expect(set.status).toBe(200);
+    return assetId;
+  }
+
+  beforeAll(async () => {
+    storageRoot = mkdtempSync(join(tmpdir(), 'people-avatar-'));
+    api = await startApi({
+      STORAGE_LOCAL_ROOT: storageRoot,
+      STORAGE_SIGNING_SECRET: 'api-test-storage-secret-of-at-least-32-bytes',
+    });
+    const bootstrapped = await api.app.get(BootstrapOwnerUseCase).execute({
+      displayName: 'Owner',
+      identifierKind: 'email',
+      identifier: OWNER.email,
+      password: OWNER.password,
+      meta: {},
+    });
+    if (!bootstrapped.ok) throw new Error(bootstrapped.error.code);
+    ids.owner = bootstrapped.value.id;
+    ownerToken = await login(OWNER.email, OWNER.password);
+    await provision('admin', 'سامية المديرة', 'ADMIN');
+    await provision('withpic', 'ليلى المصوَّرة', 'STUDENT');
+    await provision('nopic', 'نورة', 'STUDENT');
+    await provision('student', 'سارة الطالبة', 'STUDENT');
+  }, 60_000);
+
+  afterAll(async () => {
+    await api.close();
+    rmSync(storageRoot, { recursive: true, force: true });
+  });
+
+  it('surfaces the picture reference on the search wire for a person who set one', async () => {
+    const assetId = await setOwnAvatar(tokens.withpic);
+    const res = await api.call('GET', '/people?q=ليلى', { token: ownerToken });
+    expect(res.status).toBe(200);
+    const row = items(res.body).find((i) => i.userId === ids.withpic);
+    expect(row?.avatarFileAssetId).toBe(assetId);
+  });
+
+  it('mints a short-lived link an authorized caller can fetch the image through', async () => {
+    const link = await api.call('GET', `/people/${ids.withpic}/avatar`, { token: ownerToken });
+    expect(link.status).toBe(200);
+    expect(typeof link.body.url).toBe('string');
+    expect(typeof link.body.expiresAt).toBe('string');
+    const fetched = await fetch(`${api.base}${link.body.url as string}`);
+    expect(fetched.status).toBe(200);
+    expect(fetched.headers.get('content-type')).toBe('image/png');
+  });
+
+  it('404 — a person who has no picture', async () => {
+    const res = await api.call('GET', `/people/${ids.nopic}/avatar`, { token: ownerToken });
+    expect(res.status).toBe(404);
+    expect(errorOf(res.body).code).toBe('people.person_avatar_not_found');
+  });
+
+  it('404 — an unknown account (no enumeration beyond the search)', async () => {
+    const res = await api.call('GET', '/people/00000000-0000-4000-8000-000000000000/avatar', {
+      token: ownerToken,
+    });
+    expect(res.status).toBe(404);
+    expect(errorOf(res.body).code).toBe('people.person_avatar_not_found');
+  });
+
+  it('403 — a student (no people.read) cannot read anyone’s avatar, picture or not', async () => {
+    const res = await api.call('GET', `/people/${ids.withpic}/avatar`, { token: tokens.student });
+    expect(res.status).toBe(403);
+    expect(errorOf(res.body).code).toBe('identity.permission_denied');
+  });
+
+  it('401 — refuses an unauthenticated avatar request', async () => {
+    const res = await api.call('GET', `/people/${ids.withpic}/avatar`);
+    expect(res.status).toBe(401);
   });
 });

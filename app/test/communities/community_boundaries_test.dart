@@ -172,8 +172,15 @@ void main() {
 
     test('makes exactly these calls — a new one is a change to this list', () {
       expect(calls, unorderedEquals(_allowedCalls));
-      // Nothing reaches the API client past the pattern above.
-      expect(RegExp(r'\b_api\.').allMatches(http), hasLength(calls.length));
+      // Nothing reaches the API client past the pattern above, apart from
+      // `_api.resolve` — a URL helper, not an HTTP call, used to turn the
+      // server's relative avatar link into an absolute one (ADR 0038). Every
+      // actual HTTP call still carries a verb and must be in the list below.
+      final resolveCalls = RegExp(r'\b_api\.resolve\(').allMatches(http).length;
+      expect(
+        RegExp(r'\b_api\.').allMatches(http),
+        hasLength(calls.length + resolveCalls),
+      );
       expect(
         RegExp(r'\b\w+\.(get|post|put|patch|delete)\(').allMatches(http),
         hasLength(calls.length),
@@ -337,4 +344,7 @@ const _allowedCalls = [
   r"put '${_community(communityId)}/owner'",
   r"put '${_community(communityId)}/halaqa'",
   r"delete '${_community(communityId)}/halaqa'",
+  r"put '${_community(communityId)}/profile'",
+  r"get '${_community(communityId)}/avatar'",
+  r"put '${_community(communityId)}/chat-mode'",
 ];

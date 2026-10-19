@@ -244,7 +244,10 @@ class CommunityListController extends AsyncNotifier<CommunityListState> {
   /// made, so there is none to reconcile. The request is kept alive so it
   /// finishes and the list still reconciles even if the sheet that asked for
   /// it has closed.
-  Future<WriteOutcome<Community>> create(String title) async {
+  Future<WriteOutcome<Community>> create(
+    String title, {
+    CommunityKind kind = CommunityKind.group,
+  }) async {
     if (_creating) return const WriteNotSent();
     final owner = ref;
     final alive = owner.keepAlive();
@@ -252,7 +255,8 @@ class CommunityListController extends AsyncNotifier<CommunityListState> {
     try {
       final Community created;
       try {
-        created = await ref.read(communityRepositoryProvider).create(title);
+        created =
+            await ref.read(communityRepositoryProvider).create(title, kind: kind);
       } on CommunityException catch (error) {
         return WriteFailed(error);
       }

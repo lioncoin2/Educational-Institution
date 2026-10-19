@@ -19,6 +19,8 @@ export interface CurrentUserResponse {
   readonly id: string;
   readonly displayName: string;
   readonly status: string;
+  /** The Files asset id of the account's own profile picture, or null. */
+  readonly avatarFileAssetId: string | null;
   readonly roles: readonly string[];
   readonly permissions: readonly string[];
 }
@@ -74,6 +76,7 @@ export function toCurrentUserResponse(view: CurrentUserView): CurrentUserRespons
     id: view.id,
     displayName: view.displayName,
     status: view.status,
+    avatarFileAssetId: view.avatarFileAssetId,
     roles: view.roles,
     permissions: view.permissions,
   };

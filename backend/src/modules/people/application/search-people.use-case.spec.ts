@@ -60,7 +60,9 @@ describe('SearchPeopleUseCase', () => {
   it('searches with the default limit when none is given, and returns the page', async () => {
     const search = new FakeSearch();
     search.page = {
-      items: [{ userId: 'u-2', displayName: 'سارة', active: true }],
+      items: [
+        { userId: 'u-2', displayName: 'سارة', avatarFileAssetId: 'asset-sara', active: true },
+      ],
       nextCursor: 'c1',
     };
     const useCase = new SearchPeopleUseCase(auth(true), search);
@@ -70,6 +72,9 @@ describe('SearchPeopleUseCase', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.items.map((a) => a.userId)).toEqual(['u-2']);
+      // The picture reference flows through untouched — the use case neither
+      // drops it nor turns it into a link (that is the response layer's job).
+      expect(result.value.items[0].avatarFileAssetId).toBe('asset-sara');
       expect(result.value.nextCursor).toBe('c1');
     }
     expect(search.calls[0]).toEqual({ kind: 'people', query: 'سا', page: { limit: 50 } });
@@ -99,7 +104,9 @@ describe('SearchTeachersUseCase', () => {
 
   it('searches TEACHERS (not the general directory) with the default limit', async () => {
     const search = new FakeSearch();
-    search.page = { items: [{ userId: 'u-2', displayName: 'الأستاذ', active: true }] };
+    search.page = {
+      items: [{ userId: 'u-2', displayName: 'الأستاذ', avatarFileAssetId: null, active: true }],
+    };
     const useCase = new SearchTeachersUseCase(auth(true), search);
 
     const result = await useCase.execute({ principal: student, query: 'عب' });

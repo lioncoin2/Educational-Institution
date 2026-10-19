@@ -488,29 +488,47 @@ class MessagePage {
     required this.hasNewer,
     required this.lastReadSequence,
     this.senderNames = const {},
+    this.senderAvatarAssets = const {},
   });
 
-  factory MessagePage.fromJson(Map<String, Object?> json) => MessagePage(
-    items: [
-      for (final item in json['items']! as List<Object?>)
-        Message.fromJson((item! as Map).cast<String, Object?>()),
-    ],
-    hasOlder: json['hasOlder']! as bool,
-    hasNewer: json['hasNewer']! as bool,
-    lastReadSequence: json['lastReadSequence']! as int,
-    senderNames: {
-      for (final sender in json['senders']! as List<Object?>)
-        ((sender! as Map)['userId']! as String):
-            (sender as Map)['displayName']! as String,
-    },
-  );
+  factory MessagePage.fromJson(Map<String, Object?> json) {
+    final senders = json['senders']! as List<Object?>;
+    Map<String, Object?> asMap(Object? sender) =>
+        (sender! as Map).cast<String, Object?>();
+    return MessagePage(
+      items: [
+        for (final item in json['items']! as List<Object?>)
+          Message.fromJson((item! as Map).cast<String, Object?>()),
+      ],
+      hasOlder: json['hasOlder']! as bool,
+      hasNewer: json['hasNewer']! as bool,
+      lastReadSequence: json['lastReadSequence']! as int,
+      senderNames: {
+        for (final sender in senders)
+          (asMap(sender)['userId']! as String):
+              asMap(sender)['displayName']! as String,
+      },
+      // The sender's picture reference, or null (no picture / older server).
+      senderAvatarAssets: {
+        for (final sender in senders)
+          (asMap(sender)['userId']! as String):
+              asMap(sender)['avatarFileAssetId'] as String?,
+      },
+    );
+  }
 
   /// Ascending by sequence.
   final List<Message> items;
   final bool hasOlder;
   final bool hasNewer;
   final int lastReadSequence;
+
+  /// Sender id → display name, resolved at view time (never on the message).
   final Map<String, String> senderNames;
+
+  /// Sender id → Files asset id of their picture (or null). The signed link is
+  /// fetched via `MessagingRepository.senderAvatarUrl`.
+  final Map<String, String?> senderAvatarAssets;
 }
 
 /// A file about to be sent: the bytes and what they claim to be. The server

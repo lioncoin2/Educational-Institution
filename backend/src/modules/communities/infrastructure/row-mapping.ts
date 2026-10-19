@@ -15,6 +15,9 @@ export function toCommunity(row: CommunityRow): Community {
   return {
     id: row.id,
     title: row.title,
+    description: row.description,
+    avatarFileAssetId: row.avatarFileAssetId,
+    chatMode: row.chatMode,
     status: row.status,
     lifecycleVersion: row.lifecycleVersion,
     membershipVersion: Number(row.membershipVersion),
@@ -32,6 +35,9 @@ export function communityRow(community: Community): CommunityRow {
   return {
     id: community.id,
     title: community.title,
+    description: community.description,
+    avatarFileAssetId: community.avatarFileAssetId,
+    chatMode: community.chatMode,
     status: community.status,
     lifecycleVersion: community.lifecycleVersion,
     membershipVersion: community.membershipVersion,

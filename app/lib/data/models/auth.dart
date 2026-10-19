@@ -43,6 +43,7 @@ class CurrentUser implements Sourced {
     required this.status,
     required this.roles,
     required this.permissions,
+    this.avatarFileAssetId,
     this.origin = DataOrigin.profile,
   });
 
@@ -57,6 +58,8 @@ class CurrentUser implements Sourced {
     permissions: Set<String>.unmodifiable(
       (json['permissions']! as List<Object?>).cast<String>(),
     ),
+    // Optional: absent on an older server, or null when no picture is set.
+    avatarFileAssetId: json['avatarFileAssetId'] as String?,
   );
 
   final String id;
@@ -64,6 +67,10 @@ class CurrentUser implements Sourced {
   final AccountStatus status;
   final List<String> roles;
   final Set<String> permissions;
+
+  /// The Files asset id of the account's profile picture, or null. A reference
+  /// — a signed link to it is fetched separately (see `FilesRepository`).
+  final String? avatarFileAssetId;
 
   @override
   final DataOrigin origin;

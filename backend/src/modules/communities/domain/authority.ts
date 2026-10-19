@@ -2,7 +2,7 @@ import { failure, type Failure } from '../../../shared/result';
 import type { Permission } from '../../identity/contracts/permissions';
 import type { CommunityAuthorityBasis } from '../contracts/authorization';
 import type { CommunityCapability } from '../contracts/capabilities';
-import type { MembershipStanding } from '../contracts/vocabulary';
+import type { CommunityChatMode, MembershipStanding } from '../contracts/vocabulary';
 import { backingCapability, type ActRule } from './act-rules';
 import { permitsGate } from './lifecycle';
 
@@ -24,7 +24,12 @@ export interface HeldGrant {
  * one per capability). Unique-index probes only, whatever the size.
  */
 export interface AuthorityRead {
-  readonly community: { readonly status: string } | null;
+  /**
+   * `chatMode` is read only by the authorization service (to choose the posting
+   * rule, ADR 0039); `decideCommunityAct` itself never branches on it — the rule
+   * it is handed already reflects the mode.
+   */
+  readonly community: { readonly status: string; readonly chatMode?: CommunityChatMode } | null;
   readonly stint: {
     readonly id: string;
     readonly standing: MembershipStanding;

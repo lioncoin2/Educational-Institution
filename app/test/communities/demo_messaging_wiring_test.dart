@@ -259,7 +259,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.byType(TextField), findsNothing);
-      expect(find.text(MessagingCopy.cannotPostHere), findsOneWidget);
+      expect(find.text(MessagingCopy.groupRestrictedReadOnly), findsOneWidget);
     });
 
     testWidgets('takes a left community’s chat out of the Messages list — '
@@ -330,7 +330,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(location(), '/messages/$ownedChat');
       expect(find.byType(TextField), findsNothing);
-      expect(find.text(MessagingCopy.cannotPostHere), findsOneWidget);
+      expect(find.text(MessagingCopy.groupRestrictedReadOnly), findsOneWidget);
     });
   });
 }

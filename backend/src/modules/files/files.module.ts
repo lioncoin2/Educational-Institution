@@ -4,9 +4,12 @@ import { APP_CONFIG, type AppConfig } from '../../platform/config/app-config';
 import { DATABASE, type Database } from '../../platform/database';
 import { CLOCK, type Clock } from '../../shared';
 import { IdentityModule } from '../identity/identity.module';
+import { MyFilesController } from './api/my-files.controller';
 import { UploadsController } from './api/uploads.controller';
 import { CompleteUploadUseCase } from './application/complete-upload.use-case';
 import { FileAssetsService } from './application/file-assets.service';
+import { GetMyAssetLinkUseCase } from './application/my-asset-link.use-case';
+import { ClearMyAvatarUseCase, SetMyAvatarUseCase } from './application/my-avatar.use-cases';
 import { RequestUploadUseCase } from './application/request-upload.use-case';
 import { FILE_ASSETS } from './contracts/file-assets';
 import { FILE_ASSET_REPOSITORY, type FileAssetRepository } from './domain/ports';
@@ -30,7 +33,7 @@ import { LocalTransferController } from './infrastructure/local-transfer.control
  */
 @Module({
   imports: [IdentityModule],
-  controllers: [UploadsController, LocalTransferController],
+  controllers: [UploadsController, MyFilesController, LocalTransferController],
   providers: [
     {
       provide: LocalStorageProvider,
@@ -51,6 +54,9 @@ import { LocalTransferController } from './infrastructure/local-transfer.control
     RequestUploadUseCase,
     CompleteUploadUseCase,
     { provide: FILE_ASSETS, useClass: FileAssetsService },
+    SetMyAvatarUseCase,
+    ClearMyAvatarUseCase,
+    GetMyAssetLinkUseCase,
   ],
   exports: [FILE_ASSETS],
 })

@@ -145,7 +145,7 @@ class MockCommunityRepository implements CommunityRepository {
   }
 
   @override
-  Future<Community> create(String title) async {
+  Future<Community> create(String title, {CommunityKind kind = CommunityKind.group}) async {
     await _wait();
     // The server normalises and validates the title; the demo mirrors the
     // reachable rules (trimmed, 1–100 code points) so a widget test and the
@@ -162,9 +162,74 @@ class MockCommunityRepository implements CommunityRepository {
       createdAt: _now(),
       joinedAt: _now(),
       owned: true,
+      // A new group opens posting to members; a new channel restricts it.
+      chatMode: kind == CommunityKind.channel
+          ? CommunityChatMode.channel
+          : CommunityChatMode.groupOpen,
     );
     _communities[community.id] = community;
     return community.view();
+  }
+
+  @override
+  Future<Community> setChatMode(String communityId, {required bool membersMayPost}) async {
+    await _wait();
+    final c = _find(communityId);
+    // The server decides afresh on `community.chat.manage`; the demo mirrors the
+    // reachable path (the owner, or a delegate who holds it).
+    if (!c.view().me.has(CommunityCapability.chatManage)) {
+      throw _capabilityRequired(CommunityCapability.chatManage);
+    }
+    // A channel's publishing is fixed; only a group toggles open/restricted.
+    if (c.chatMode == CommunityChatMode.channel) {
+      throw const CommunityException(
+        'communities.chat_mode_transition_invalid',
+        'Only a group can switch between open and restricted member posting.',
+      );
+    }
+    c.chatMode =
+        membersMayPost ? CommunityChatMode.groupOpen : CommunityChatMode.groupRestricted;
+    return c.view();
+  }
+
+  @override
+  Future<Community> updateProfile(
+    String communityId, {
+    required String title,
+    String? description,
+    String? avatarFileAssetId,
+  }) async {
+    await _wait();
+    final c = _find(communityId);
+    // The server decides afresh on `community.profile.edit`; the demo mirrors
+    // the reachable path (owner or a delegate who holds it).
+    if (!c.view().me.has(CommunityCapability.profileEdit)) {
+      throw _capabilityRequired(CommunityCapability.profileEdit);
+    }
+    final normalized = title.trim();
+    if (normalized.isEmpty) throw _titleInvalid('empty');
+    if (normalized.runes.length > 100) throw _titleInvalid('length');
+    final trimmedDescription = description?.trim();
+    c.title = normalized;
+    c.description = (trimmedDescription == null || trimmedDescription.isEmpty)
+        ? null
+        : trimmedDescription;
+    c.avatarFileAssetId = avatarFileAssetId;
+    return c.view();
+  }
+
+  @override
+  Future<Uri> communityAvatarUrl(String communityId) async {
+    await _wait();
+    final c = _find(communityId);
+    final asset = c.avatarFileAssetId;
+    if (asset == null) {
+      throw const CommunityException(
+        'communities.avatar_not_found',
+        'This community has no picture.',
+      );
+    }
+    return Uri.parse('mock://community-avatar/${c.id}/$asset');
   }
 
   @override
@@ -1152,6 +1217,11 @@ class _MockCommunity {
     bool owned = false,
     bool member = true,
     this.status = CommunityStatus.open,
+    // A pre-existing community posts as it always has — publisher-only, by the
+    // `community.chat.post` capability. This mirrors the server, whose existing
+    // rows default to GROUP_RESTRICTED (ADR 0039); a newly created group opens
+    // posting to members (see `create`), and a channel is created as one.
+    this.chatMode = CommunityChatMode.groupRestricted,
     this.lifecycleVersion = 1,
   }) : rowCount = memberCount,
        rosterStart = joinedAt,
@@ -1159,7 +1229,9 @@ class _MockCommunity {
        stint = member ? _Stint.active : _Stint.none;
 
   final String id;
-  final String title;
+  String title;
+  String? description;
+  String? avatarFileAssetId;
   final DateTime createdAt;
 
   /// Rows are dated from here, however the viewer's own stint moves.
@@ -1168,6 +1240,10 @@ class _MockCommunity {
   /// When the viewer's current (or last) stint began.
   DateTime joinedAt;
   CommunityStatus status;
+
+  /// The chat posting mode (ADR 0039). A group is open by default; an admin may
+  /// restrict/restore it; a channel is fixed to publishers.
+  CommunityChatMode chatMode;
   int lifecycleVersion;
   _Stint stint;
 
@@ -1246,9 +1322,21 @@ class _MockCommunity {
   /// PROVISIONAL, Q42 — the server's table: anyone but the owner.
   bool get mayLeave => viewerIsMember && !owned;
 
+  /// Whether the viewer may post now (ADR 0039), mirroring the server's rule:
+  /// a member of an open group, or the owner/a delegated publisher otherwise;
+  /// never a non-member, and never while LOCKED.
+  bool get canPostNow {
+    if (!viewerIsMember || status != CommunityStatus.open) return false;
+    if (chatMode == CommunityChatMode.groupOpen) return true;
+    return viewerHolds(CommunityCapability.chatPost);
+  }
+
   Community view() => Community(
     id: id,
     title: title,
+    description: description,
+    avatarFileAssetId: avatarFileAssetId,
+    chatMode: chatMode,
     status: status,
     lifecycleVersion: lifecycleVersion,
     memberCount: memberCount,
@@ -1274,6 +1362,7 @@ class _MockCommunity {
         if (transfers) CommunityOperation.ownershipTransfer,
         if (mayLeave) CommunityOperation.leave,
       },
+      canPost: canPostNow,
       // The real server offers this to `communities.manage` (owner/admin
       // oversight); the demo approximates it with the community's own owner.
       canManageHalaqa: owned,

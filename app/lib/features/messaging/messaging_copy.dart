@@ -63,6 +63,15 @@ abstract final class MessagingCopy {
   /// the server keeps to itself (locked, no capability, too large).
   static const cannotPostHere = 'لا يمكنك النشر في هذه المحادثة حاليًا.';
 
+  /// A channel (Phase 5): the viewer reads, only the owner and the delegated
+  /// publishers post.
+  static const channelReadOnly = 'هذه قناة: ينشر فيها المالك والناشرون فقط، ويمكنك القراءة.';
+
+  /// A group whose posting has been restricted (Phase 5): membership and read
+  /// access are unchanged; only posting is limited to the group's moderators.
+  static const groupRestrictedReadOnly =
+      'الكتابة في هذا الكروب مقيّدة بالمشرفين حاليًا، ويمكنك القراءة.';
+
   // ── Conversation mute (Q6 / ADR 0036): silence PUSH for one conversation ──
   // In-app and realtime delivery are unchanged; only push is held.
   static const mute = 'كتم الإشعارات';
@@ -120,6 +129,21 @@ abstract final class MessagingCopy {
         ConversationType.channel => 'قناة · $memberCount مشتركًا',
         ConversationType.unknown => 'محادثة',
       };
+
+  /// The fallback title before a conversation has loaded.
+  static const String conversationFallbackTitle = 'محادثة';
+
+  /// Tapping a community chat's header opens the community's info & management.
+  static const String communityInfo = 'معلومات الكروب وإدارته';
+
+  // ── Live session indicator (Phase 3) ───────────────────────────────────
+  // Shown under the app bar only while the server says a session is live for
+  // THIS community. It states that a session is running — never that audio or
+  // video is working (the media may be a fake provider); the live screen is
+  // the one place that reports whether joining is available.
+  static const String liveNow = 'بث مباشر الآن';
+  static const String liveNowHint = 'اضغط لعرض الجلسة';
+  static const String liveNowSemantics = 'بث مباشر في هذا الكروب — اضغط لعرض الجلسة';
 
   /// A list preview: the text, or what kind of message it was.
   static String preview(MessagePreview? message) {

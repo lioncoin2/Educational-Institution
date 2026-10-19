@@ -33,6 +33,7 @@ export class IdentityAccountDirectory implements AccountDirectory {
     return found.map((user) => ({
       userId: user.id,
       displayName: user.displayName,
+      avatarFileAssetId: user.avatarFileAssetId,
       active: canAuthenticate(user.status),
     }));
   }

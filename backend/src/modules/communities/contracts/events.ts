@@ -26,6 +26,7 @@ export const CommunityEvents = {
   capabilityGranted: 'communities.capability.granted',
   capabilityRevoked: 'communities.capability.revoked',
   ownershipTransferred: 'communities.ownership.transferred',
+  chatModeChanged: 'communities.community.chat_mode_changed',
 } as const;
 
 /** Always followed by `member.added` for the owner. */
@@ -49,6 +50,21 @@ export type CommunityUnlocked = DomainEvent<
     readonly communityId: string;
     readonly unlockedBy: string | null;
     readonly lifecycleVersion: number;
+  }
+>;
+
+/**
+ * A GROUP's chat posting mode changed (ADR 0039) — members restricted to
+ * read-only, or restored to open posting. A hint for realtime: every member's
+ * posting access may have changed, so each online member re-reads the
+ * community. Carries ids and the new mode only, never who may post.
+ */
+export type CommunityChatModeChanged = DomainEvent<
+  typeof CommunityEvents.chatModeChanged,
+  {
+    readonly communityId: string;
+    readonly chatMode: 'GROUP_OPEN' | 'GROUP_RESTRICTED' | 'CHANNEL';
+    readonly changedBy: string | null;
   }
 >;
 
@@ -154,4 +170,5 @@ export type CommunityEvent =
   | InvitationRevoked
   | CapabilityGranted
   | CapabilityRevoked
-  | OwnershipTransferred;
+  | OwnershipTransferred
+  | CommunityChatModeChanged;

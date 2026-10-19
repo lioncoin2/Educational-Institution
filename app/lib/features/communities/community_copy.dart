@@ -83,6 +83,46 @@ abstract final class CommunityCopy {
   static const createCommunityAction = 'إنشاء';
   static const communityCreated = 'تم إنشاء المجتمع.';
 
+  // The kind chosen at creation (Phase 5). A group lets every active member
+  // post by default; a channel reserves posting for the owner and delegated
+  // publishers. The server fixes a channel's kind; a group can later be
+  // restricted and reopened. This choice only shapes the create request — the
+  // server decides.
+  static const communityKindLabel = 'نوع المجتمع';
+  static const communityKindGroup = 'كروب';
+  static const communityKindChannel = 'قناة';
+  static const communityKindGroupHint = 'يكتب فيه جميع الأعضاء';
+  static const communityKindChannelHint = 'ينشر فيه المالك والناشرون فقط';
+
+  // Group posting mode, shown and managed by a holder of
+  // `community.chat.manage`. Restricting keeps everyone's membership and read
+  // access; it only limits who may post. A channel's posting is fixed, so the
+  // control never appears for one. The server re-authorises and decides; a
+  // refusal is said in words.
+  static const chatModeSection = 'الكتابة';
+  static const chatModeGroupOpen = 'يكتب جميع الأعضاء';
+  static const chatModeGroupRestricted = 'الكتابة مقيّدة بالمشرفين';
+  static const chatModeChannel = 'قناة: ينشر المالك والناشرون';
+  static const restrictPosting = 'تقييد الكتابة';
+  static const restorePosting = 'إتاحة الكتابة للجميع';
+  static const postingRestricted = 'تم تقييد الكتابة على الأعضاء.';
+  static const postingRestored = 'تمت إتاحة الكتابة لجميع الأعضاء.';
+
+  // Editing a community's own profile — title, description, picture
+  // (`community.profile.edit`). Shown only to a holder; the server
+  // re-authorises on the request.
+  static const editCommunity = 'تعديل المعلومات';
+  static const editCommunityTitle = 'تعديل معلومات المجتمع';
+  static const communityDescriptionLabel = 'الوصف';
+  static const communityDescriptionHint = 'وصف موجز للمجتمع (اختياري)';
+  static const editCommunityAction = 'حفظ';
+  static const communityUpdated = 'تم حفظ المعلومات.';
+  static const communityPictureLabel = 'صورة المجتمع';
+  static const changePicture = 'تغيير الصورة';
+  static const removePicture = 'إزالة الصورة';
+  static const pickerUnavailable = 'اختيار الصور غير متاح على هذا الجهاز.';
+  static const pictureInvalid = 'اختر صورة (JPEG أو PNG أو WebP).';
+
   /// A person the directory has no name for — never their id.
   static const personFallback = 'حساب';
 
@@ -152,7 +192,9 @@ abstract final class CommunityCopy {
         CommunityCapability.membersInvite => 'دعوة أعضاء',
         CommunityCapability.membersRemove => 'إزالة أعضاء',
         CommunityCapability.lock => 'قفل المجتمع وفتحه',
+        CommunityCapability.profileEdit => 'تعديل معلومات المجتمع',
         CommunityCapability.chatPost => 'النشر في المحادثة',
+        CommunityCapability.chatManage => 'إدارة الكتابة في المحادثة',
         CommunityCapability.liveStart => 'بدء جلسة مباشرة',
         CommunityCapability.liveModerate => 'إدارة الجلسات المباشرة',
         CommunityCapability.attendanceRecord => 'جمع الحضور',
@@ -232,6 +274,8 @@ abstract final class CommunityCopy {
     'communities.conflict' || 'communities.owner_conflict' =>
       'تغيّر شيء في المجتمع في اللحظة نفسها، فلم يتمّ الطلب. حاول مرة أخرى.',
     'communities.community_not_found' => gone,
+    'communities.description_invalid' => 'الوصف طويل جدًّا (500 حرف كحدّ أقصى).',
+    'communities.avatar_invalid' => 'يجب أن تكون الصورة صورةً رفعتها.',
     'communities.member_not_found' => 'هذا الشخص ليس عضوًا في المجتمع الآن.',
     'communities.invitation_not_found' => 'لم يُعثر على رابط الدعوة هذا.',
     'communities.grant_not_found' => 'لم يُعثر على هذه الصلاحية.',
@@ -247,6 +291,8 @@ abstract final class CommunityCopy {
     'identity.permission_denied' ||
     'communities.not_community_owner' => 'هذا غير متاح لك في هذا المجتمع.',
     'communities.halaqa_not_found' => 'الحلقة المحدّدة غير موجودة.',
+    'communities.chat_mode_transition_invalid' =>
+      'لا يمكن تغيير نوع الكتابة في هذا المجتمع.',
     'communities.title_invalid' => 'اسم المجتمع غير صالح (من حرف إلى 100 حرف).',
     'communities.unreadable' =>
       'وصلت من الخادم بيانات لا يقرؤها هذا الإصدار من التطبيق.',

@@ -325,6 +325,9 @@ function fromJson(json: unknown): CommunityRow {
   return {
     id: row.id as string,
     title: row.title as string,
+    description: row.description as string | null,
+    avatarFileAssetId: row.avatar_file_asset_id as string | null,
+    chatMode: row.chat_mode as CommunityRow['chatMode'],
     status: row.status as CommunityRow['status'],
     lifecycleVersion: Number(row.lifecycle_version),
     membershipVersion: Number(row.membership_version),

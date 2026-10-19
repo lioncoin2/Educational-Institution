@@ -23,6 +23,7 @@ import {
   PROVISIONAL_ROLE_PERMISSIONS,
 } from '../../src/modules/identity/domain/provisional-policy';
 import type { KnownRoleCode } from '../../src/modules/identity/domain/role';
+import type { CommunityKind } from '../../src/modules/communities/contracts/vocabulary';
 import { CapabilityHoldersService } from '../../src/modules/communities/application/capability-holders.service';
 import { CommunityAuthorizationService } from '../../src/modules/communities/application/community-authorization.service';
 import { CommunityDirectoryService } from '../../src/modules/communities/application/community-directory.service';
@@ -33,6 +34,7 @@ import {
   CreateCommunityUseCase,
   GetCommunityUseCase,
   ListCommunitiesUseCase,
+  SetChatModeUseCase,
 } from '../../src/modules/communities/application/community.use-cases';
 import { CommunitiesJournal } from '../../src/modules/communities/application/communities-journal';
 import {
@@ -153,7 +155,14 @@ export class StubAccounts implements AccountDirectory {
       const account = this.accounts.get(userId);
       return account === undefined
         ? []
-        : [{ userId, displayName: account.displayName, active: account.active }];
+        : [
+            {
+              userId,
+              displayName: account.displayName,
+              avatarFileAssetId: null,
+              active: account.active,
+            },
+          ];
     });
   }
 
@@ -239,6 +248,7 @@ export function communitiesHarness(
       communitiesJournal,
     ),
     status: new ChangeCommunityStatusUseCase(authorization, store, clock, communitiesJournal),
+    setChatMode: new SetChatModeUseCase(authorization, store, clock, communitiesJournal),
     add: new AddMembersUseCase(
       authorization,
       people,
@@ -298,8 +308,12 @@ export function communitiesHarness(
     },
 
     /** A community owned by `owner`, as the create use case makes it. */
-    async community(owner: Principal, title = 'حلقة التجويد'): Promise<string> {
-      const created = await h.create.execute({ principal: owner, title, meta: META });
+    async community(
+      owner: Principal,
+      title = 'حلقة التجويد',
+      kind: CommunityKind = 'GROUP',
+    ): Promise<string> {
+      const created = await h.create.execute({ principal: owner, title, kind, meta: META });
       if (!created.ok) throw new Error(`could not create a community: ${created.error.code}`);
       return created.value.id;
     },

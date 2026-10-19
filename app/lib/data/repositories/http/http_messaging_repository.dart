@@ -140,6 +140,16 @@ class HttpMessagingRepository implements MessagingRepository {
   });
 
   @override
+  Future<Uri> senderAvatarUrl(String conversationId, String messageId) =>
+      _call(() async {
+        final json = await _api.get(
+          '${_conversation(conversationId)}'
+          '/messages/${Uri.encodeComponent(messageId)}/sender/avatar',
+        );
+        return _api.resolve(json['url']! as String);
+      });
+
+  @override
   Future<void> deleteMessage(String conversationId, String messageId) => _call(
     () async => _api.delete(
       '${_conversation(conversationId)}/messages/${Uri.encodeComponent(messageId)}',

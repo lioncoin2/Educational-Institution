@@ -8,6 +8,7 @@ import { IdentityModule } from '../identity/identity.module';
 import { CommunityChatController } from './api/community-chat.controller';
 import { ConversationsController } from './api/conversations.controller';
 import { GetAttachmentLinkUseCase } from './application/attachment-link.use-case';
+import { GetSenderAvatarLinkUseCase } from './application/sender-avatar-link.use-case';
 import { CommunityChatReconciler } from './application/community-chat-reconciler';
 import {
   COMMUNITY_CHAT_SETTINGS,
@@ -141,6 +142,7 @@ import { InMemoryMessagingStore } from './infrastructure/in-memory-messaging-sto
     RemoveParticipantUseCase,
     LeaveConversationUseCase,
     GetAttachmentLinkUseCase,
+    GetSenderAvatarLinkUseCase,
     GetCommunityChatUseCase,
     ModerateMessageUseCase,
     ReviewDeletedMessageUseCase,

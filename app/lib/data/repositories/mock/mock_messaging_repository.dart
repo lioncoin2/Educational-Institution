@@ -257,6 +257,17 @@ class MockMessagingRepository implements MessagingRepository {
   }
 
   @override
+  Future<Uri> senderAvatarUrl(String conversationId, String messageId) async {
+    await _wait();
+    // No pictures in the demo: every sender shows initials, as on the server
+    // for a sender who set none.
+    throw const MessagingException(
+      'messaging.sender_avatar_not_found',
+      'Pictures are not stored in the demo.',
+    );
+  }
+
+  @override
   Future<void> deleteMessage(String conversationId, String messageId) async {
     await _wait();
     final c = _find(conversationId);

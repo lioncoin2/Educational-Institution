@@ -54,7 +54,9 @@ describe('creating a community', () => {
           'community.members.invite',
           'community.members.remove',
           'community.lock',
+          'community.profile.edit',
           'community.chat.post',
+          'community.chat.manage',
           'community.messages.moderate',
           'community.live.start',
           'community.live.moderate',
@@ -240,6 +242,10 @@ describe('locking and unlocking', () => {
       'community.members.view',
       'community.members.remove',
       'community.lock',
+      // Gated `always`: a profile correction stays open while LOCKED (ADR 0038).
+      'community.profile.edit',
+      // Gated `always`: managing the posting policy stays open while LOCKED (ADR 0039).
+      'community.chat.manage',
       // Gated `always`: content moderation stays open while LOCKED (Q51/Q23).
       'community.messages.moderate',
       'community.live.moderate',

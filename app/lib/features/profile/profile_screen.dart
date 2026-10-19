@@ -6,6 +6,7 @@ import '../../app/app_config.dart';
 import '../../app/routes.dart';
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
+import '../../core/widgets/foundations/app_avatar.dart';
 import '../../core/widgets/foundations/app_card.dart';
 import '../../core/widgets/foundations/async_view.dart';
 import '../../core/widgets/foundations/mock_ribbon.dart';
@@ -101,15 +102,10 @@ class ProfileScreen extends ConsumerWidget {
                   child: ResponsiveBody(
                     child: Column(
                       children: [
-                        CircleAvatar(
+                        AppAvatar(
+                          name: data.name,
+                          imageUrl: ref.watch(ownAvatarUrlProvider).value,
                           radius: 36,
-                          backgroundColor:
-                              context.colors.onPrimary.withValues(alpha: 0.18),
-                          child: Text(
-                            data.initials,
-                            style: context.text.headlineMedium
-                                ?.copyWith(color: context.colors.onPrimary),
-                          ),
                         ),
                         const SizedBox(height: Insets.md),
                         Text(

@@ -369,7 +369,8 @@ void main() {
     });
 
     test(
-      'creates a community: POST /communities with the title, returns it',
+      'creates a community: POST /communities with the title and kind, '
+      'returns it',
       () async {
         final server = CommunityServer({
           'POST /communities': (_) => jsonResponse(
@@ -385,6 +386,8 @@ void main() {
           ),
         });
         final repo = HttpCommunityRepository(await api(server.client));
+        // A group by default (ADR 0039): the kind rides the create request,
+        // the server decides it.
         final created = await repo.create('حلقة التجويد');
         expect(created.id, 'c-9');
         expect(created.title, 'حلقة التجويد');
@@ -393,10 +396,36 @@ void main() {
         expect(server.calls, ['POST /communities']);
         expect(jsonDecode(server.requests.single.body), {
           'title': 'حلقة التجويد',
+          'kind': 'GROUP',
         });
         expect(server.requests.single.headers['authorization'], 'Bearer a1');
       },
     );
+
+    test('creates a channel: POST /communities carrying kind CHANNEL', () async {
+      final server = CommunityServer({
+        'POST /communities': (_) => jsonResponse(
+          201,
+          communityJson(
+            id: 'c-10',
+            title: 'إعلانات المعهد',
+            standing: 'OWNER',
+            memberCount: 1,
+            chatMode: 'CHANNEL',
+          ),
+        ),
+      });
+      final repo = HttpCommunityRepository(await api(server.client));
+      final created = await repo.create(
+        'إعلانات المعهد',
+        kind: CommunityKind.channel,
+      );
+      expect(created.isChannel, isTrue);
+      expect(jsonDecode(server.requests.single.body), {
+        'title': 'إعلانات المعهد',
+        'kind': 'CHANNEL',
+      });
+    });
 
     test('a refused create keeps the server’s code', () async {
       final server = CommunityServer({
@@ -439,6 +468,20 @@ void main() {
       for (final request in server.requests) {
         expectNoBody(request);
       }
+    });
+
+    test('sets the chat mode: PUT /communities/:id/chat-mode {membersMayPost}', () async {
+      final server = CommunityServer({
+        'PUT /communities/c-1/chat-mode': (_) => jsonResponse(
+          200,
+          communityJson(id: 'c-1', chatMode: 'GROUP_RESTRICTED'),
+        ),
+      });
+      final repo = HttpCommunityRepository(await api(server.client));
+      final restricted = await repo.setChatMode('c-1', membersMayPost: false);
+      expect(restricted.isRestrictedGroup, isTrue);
+      expect(server.calls, ['PUT /communities/c-1/chat-mode']);
+      expect(jsonDecode(server.requests.single.body), {'membersMayPost': false});
     });
 
     test('reads one member’s grants, by cursor', () async {

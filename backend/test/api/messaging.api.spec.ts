@@ -217,7 +217,9 @@ describe('messaging API', () => {
       );
       expect((latest.body.items as { sequence: number }[]).map((m) => m.sequence)).toEqual([5, 6]);
       expect(latest.body).toMatchObject({ hasOlder: true, hasNewer: false });
-      expect(latest.body.senders).toEqual([{ userId: teacher.id, displayName: 'teacher' }]);
+      expect(latest.body.senders).toEqual([
+        { userId: teacher.id, displayName: 'teacher', avatarFileAssetId: null },
+      ]);
 
       const older = await api.call(
         'GET',

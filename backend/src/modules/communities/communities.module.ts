@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../platform/config/app-config';
 import { DATABASE, type Database } from '../../platform/database';
 import { AcademicModule } from '../academic/academic.module';
+import { FilesModule } from '../files/files.module';
 import { IdentityModule } from '../identity/identity.module';
 import { CommunitiesController } from './api/communities.controller';
 import { CommunityGrantsController } from './api/community-grants.controller';
@@ -12,11 +13,14 @@ import { CommunityAuthorizationService } from './application/community-authoriza
 import { CommunityDirectoryService } from './application/community-directory.service';
 import { CommunityMembershipService } from './application/community-membership.service';
 import { CommunityPeople } from './application/community-people';
+import { GetCommunityAvatarLinkUseCase } from './application/community-avatar-link.use-case';
 import {
   ChangeCommunityStatusUseCase,
   CreateCommunityUseCase,
+  EditCommunityProfileUseCase,
   GetCommunityUseCase,
   ListCommunitiesUseCase,
+  SetChatModeUseCase,
   SetCommunityHalaqaUseCase,
 } from './application/community.use-cases';
 import { CommunitiesJournal } from './application/communities-journal';
@@ -65,8 +69,12 @@ import { InMemoryCommunityStore } from './infrastructure/in-memory-community-sto
  * halaqa link (Q50) — on academic's read-only `ACADEMIC_RELATIONSHIPS` contract
  * for one thing only: confirming a referenced halaqa EXISTS before a link is
  * stored (ADR 0033). It learns nothing else of academic — no enrollment, no
- * teaching, no roster — and no other module: no chat, no live session, no
- * attendance; those modules ask Communities, never the reverse.
+ * teaching, no roster. It also depends on files' `FILE_ASSETS` contract (ADR
+ * 0037) to verify a community picture is an image the editor uploaded and to
+ * mint a short-lived link to it — the same contract messaging uses for
+ * attachments, and the dependency runs communities → files (files → identity,
+ * never the reverse, so no cycle). No other module is reached: no chat, no live
+ * session, no attendance; those modules ask Communities, never the reverse.
  * It exports its four contracts only:
  *
  *   COMMUNITY_AUTHORIZATION       may this principal do this act in this community?
@@ -78,7 +86,7 @@ import { InMemoryCommunityStore } from './infrastructure/in-memory-community-sto
  * Postgres, on the Drizzle adapters.
  */
 @Module({
-  imports: [IdentityModule, AcademicModule],
+  imports: [IdentityModule, AcademicModule, FilesModule],
   controllers: [CommunitiesController, CommunityInvitationsController, CommunityGrantsController],
   providers: [
     // Without a database, one in-memory store serves both ports, so what is
@@ -110,6 +118,9 @@ import { InMemoryCommunityStore } from './infrastructure/in-memory-community-sto
     ListCommunitiesUseCase,
     ChangeCommunityStatusUseCase,
     SetCommunityHalaqaUseCase,
+    EditCommunityProfileUseCase,
+    GetCommunityAvatarLinkUseCase,
+    SetChatModeUseCase,
     AddMembersUseCase,
     RemoveMemberUseCase,
     LeaveCommunityUseCase,

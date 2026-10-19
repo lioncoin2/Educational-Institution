@@ -60,6 +60,7 @@ class ConversationState {
     this.loadingOlder = false,
     this.olderFailed = false,
     this.senderNames = const {},
+    this.senderAvatarAssets = const {},
     this.removed = false,
   });
 
@@ -74,6 +75,11 @@ class ConversationState {
   final bool olderFailed;
   final int lastReadSequence;
   final Map<String, String> senderNames;
+
+  /// Sender id → the Files asset id of their picture (or absent/null for none).
+  /// A sender with an entry has a picture to resolve; one without shows
+  /// initials without a round-trip.
+  final Map<String, String?> senderAvatarAssets;
 
   /// Every message up to this sequence is held — the server's pages are
   /// dense, so nothing below it is missing. A message beyond it that is
@@ -101,6 +107,7 @@ class ConversationState {
     bool? olderFailed,
     int? lastReadSequence,
     Map<String, String>? senderNames,
+    Map<String, String?>? senderAvatarAssets,
     int? syncedThrough,
     bool? removed,
   }) => ConversationState(
@@ -113,6 +120,7 @@ class ConversationState {
     olderFailed: olderFailed ?? this.olderFailed,
     lastReadSequence: lastReadSequence ?? this.lastReadSequence,
     senderNames: senderNames ?? this.senderNames,
+    senderAvatarAssets: senderAvatarAssets ?? this.senderAvatarAssets,
     syncedThrough: syncedThrough ?? this.syncedThrough,
     removed: removed ?? this.removed,
   );
@@ -181,6 +189,7 @@ class ConversationController extends AsyncNotifier<ConversationState> {
       hasOlder: page.hasOlder,
       lastReadSequence: page.lastReadSequence,
       senderNames: page.senderNames,
+      senderAvatarAssets: page.senderAvatarAssets,
       // The latest page is complete up to its newest message.
       syncedThrough: page.items.isEmpty ? 0 : page.items.last.sequence,
     );
@@ -209,6 +218,10 @@ class ConversationController extends AsyncNotifier<ConversationState> {
           hasOlder: page.hasOlder,
           loadingOlder: false,
           senderNames: {...now.senderNames, ...page.senderNames},
+          senderAvatarAssets: {
+            ...now.senderAvatarAssets,
+            ...page.senderAvatarAssets,
+          },
         ),
       );
     } on MessagingException {
@@ -582,6 +595,10 @@ class ConversationController extends AsyncNotifier<ConversationState> {
                 if (!confirmed.contains(p.clientMessageId)) p,
             ],
             senderNames: {...current.senderNames, ...next.senderNames},
+            senderAvatarAssets: {
+              ...current.senderAvatarAssets,
+              ...next.senderAvatarAssets,
+            },
             syncedThrough: _advance(pageEnd, merged),
           ),
         );
@@ -694,3 +711,18 @@ final attachmentUrlProvider = FutureProvider.autoDispose
           .attachmentUrl(key.conversationId, key.messageId, key.fileAssetId),
       retry: (_, _) => null,
     );
+
+/// A short-lived link to a sender's picture, resolved at view time like their
+/// name. Keyed by a representative message of that sender (see the timeline),
+/// so one fetch serves all their bubbles. A sender with no picture resolves to
+/// null, and the bubble shows initials.
+final senderAvatarUrlProvider = FutureProvider.autoDispose
+    .family<Uri?, ({String conversationId, String messageId})>((ref, key) async {
+      try {
+        return await ref
+            .watch(messagingRepositoryProvider)
+            .senderAvatarUrl(key.conversationId, key.messageId);
+      } on MessagingException {
+        return null; // no picture (or demo) → initials
+      }
+    }, retry: (_, _) => null);

@@ -109,7 +109,14 @@ export class CountingAccountDirectory implements AccountDirectory {
       const account = this.accounts.get(userId);
       return account === undefined
         ? []
-        : [{ userId, displayName: account.displayName, active: account.active }];
+        : [
+            {
+              userId,
+              displayName: account.displayName,
+              avatarFileAssetId: null,
+              active: account.active,
+            },
+          ];
     });
   }
 

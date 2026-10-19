@@ -44,8 +44,12 @@ describe('the lifecycle (PROVISIONAL, Q46)', () => {
       'community.members.view': 'TTT',
       'community.members.remove': 'TTT',
       'community.lock': 'TTT',
+      // Gate `always`: a profile correction is management, open even while LOCKED (ADR 0038).
+      'community.profile.edit': 'TTT',
       'community.members.invite': 'TFF',
       'community.chat.post': 'TFF',
+      // Gate `always`: managing the posting policy is administration (ADR 0039).
+      'community.chat.manage': 'TTT',
       // Gate `always`: content moderation is management, open even while LOCKED (Q51/Q23).
       'community.messages.moderate': 'TTT',
       'community.live.start': 'TFF',

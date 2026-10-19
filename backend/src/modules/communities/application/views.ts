@@ -3,7 +3,11 @@ import type {
   CommunityOperation,
   CommunityParticipationAct,
 } from '../contracts/capabilities';
-import type { InvitationState, MembershipStanding } from '../contracts/vocabulary';
+import type {
+  CommunityChatMode,
+  InvitationState,
+  MembershipStanding,
+} from '../contracts/vocabulary';
 import type { Community } from '../domain/community';
 import type { CapabilityGrant } from '../domain/grant';
 import { invitationState, type Invitation } from '../domain/invitation';
@@ -23,6 +27,14 @@ export interface MeView {
   /** The operations that are not acts, decided by the same rules as their routes. */
   readonly operations: readonly CommunityOperation[];
   /**
+   * Whether the caller may post in the chat RIGHT NOW (ADR 0039) — the
+   * authoritative signal the composer keys on. True for a GROUP_OPEN member, an
+   * owner, and a delegated publisher; false for an ordinary member of a
+   * GROUP_RESTRICTED group or a CHANNEL, and for everyone while LOCKED. The
+   * server re-decides it on every send, so the UI never enforces it.
+   */
+  readonly canPost: boolean;
+  /**
    * Whether the caller may set or clear this community's academic halaqa link
    * (Q50) — institutional oversight (`communities.manage`), not membership. A
    * UI courtesy so an administration surface can show the control to exactly
@@ -38,6 +50,15 @@ export interface MeView {
 export interface CommunityView {
   readonly id: string;
   readonly title: string;
+  /** A short description shown with the community, or null when unset. */
+  readonly description: string | null;
+  /**
+   * The Files asset id of the community's picture, or null. A reference — a
+   * viewer fetches a short-lived link separately through the avatar route.
+   */
+  readonly avatarFileAssetId: string | null;
+  /** The chat posting mode (ADR 0039): GROUP_OPEN / GROUP_RESTRICTED / CHANNEL. */
+  readonly chatMode: CommunityChatMode;
   readonly status: string;
   readonly lifecycleVersion: number;
   readonly memberCount: number;
@@ -51,6 +72,9 @@ export function communityView(community: Community, me: MeView): CommunityView {
   return {
     id: community.id,
     title: community.title,
+    description: community.description,
+    avatarFileAssetId: community.avatarFileAssetId,
+    chatMode: community.chatMode,
     status: community.status,
     lifecycleVersion: community.lifecycleVersion,
     memberCount: community.memberCount,

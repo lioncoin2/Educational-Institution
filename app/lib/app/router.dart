@@ -30,6 +30,7 @@ import '../features/messaging/conversation_screen.dart';
 import '../features/messaging/conversations_screen.dart';
 import '../features/notifications/notification_settings_screen.dart';
 import '../features/notifications/notifications_screen.dart';
+import '../features/profile/avatar_screen.dart';
 import '../features/profile/change_password_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/profile/sessions_screen.dart';
@@ -394,6 +395,12 @@ GoRouter buildRouter() {
                     name: 'sessions',
                     parentNavigatorKey: _rootNavigatorKey,
                     builder: (context, state) => const SessionsScreen(),
+                  ),
+                  GoRoute(
+                    path: 'avatar',
+                    name: 'profile-avatar',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => const AvatarScreen(),
                   ),
                 ],
               ),

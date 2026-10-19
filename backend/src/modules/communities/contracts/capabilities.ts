@@ -34,15 +34,34 @@ export const COMMUNITY_RESOURCE = 'communities.community';
  * `communities.moderate`, never `messaging.manage` — ADR 0017, ADR 0029), and
  * Messaging consumes it through `COMMUNITY_AUTHORIZATION`. It never grants chat
  * read: reading a community chat stays `community.chat.read` on the membership
- * basis (community-chat.md §7.1). The whole vocabulary is now active; nothing
- * is reserved.
+ * basis (community-chat.md §7.1).
+ *
+ * `community.profile.edit` (Identity & Profile Foundation, ADR 0038): editing a
+ * community's own title, description and picture. The CHECK migration that
+ * allows it as a grant is `drizzle/0024_community_profile.sql`, its rule is in
+ * `domain/act-rules.ts` (the single delegable-capability ceiling
+ * `communities.moderate`, owner-implicit, gate `always` so a locked community's
+ * owner can still correct its profile), and Communities consumes it through
+ * `COMMUNITY_AUTHORIZATION`.
+ *
+ * `community.chat.manage` (Groups & Channels, ADR 0039): changing a GROUP's chat
+ * posting mode — restricting ordinary members to read-only (`GROUP_RESTRICTED`)
+ * and restoring open posting (`GROUP_OPEN`). The CHECK migration that allows it
+ * as a grant is `drizzle/0025_community_chat_mode.sql`; its rule is in
+ * `domain/act-rules.ts` (ceiling `communities.moderate`, owner-implicit,
+ * oversight `communities.manage`, gate `always`). It is distinct from
+ * `community.chat.post` (who publishes) and `community.messages.moderate` (who
+ * deletes/reviews) — managing the policy is not the same as posting or
+ * moderating. The whole vocabulary is now active; nothing is reserved.
  */
 export const COMMUNITY_CAPABILITIES = [
   'community.members.view',
   'community.members.invite',
   'community.members.remove',
   'community.lock',
+  'community.profile.edit',
   'community.chat.post',
+  'community.chat.manage',
   'community.messages.moderate',
   'community.live.start',
   'community.live.moderate',

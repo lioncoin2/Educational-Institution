@@ -3,6 +3,9 @@ import { err, failure, ok, type Result } from '../../../shared/result';
 /** A technical bound matching messaging's group titles — not a policy. */
 export const TITLE_MAX_LENGTH = 100;
 
+/** A technical bound on a community's description — not a policy. */
+export const DESCRIPTION_MAX_LENGTH = 500;
+
 /**
  * Control characters, line separators, and the Unicode direction overrides
  * and isolates — which reorder text (`gpj.exe` read as `exe.jpg`, an Arabic
@@ -27,4 +30,37 @@ export function normalizeTitle(raw: string): Result<string> {
     return invalid('length', `A title is at most ${TITLE_MAX_LENGTH} characters.`);
   }
   return ok(title);
+}
+
+const descriptionInvalid = (reason: string, message: string) =>
+  err(
+    failure('validation', 'communities.description_invalid', message, {
+      field: 'description',
+      reason,
+    }),
+  );
+
+/**
+ * A community's description: trimmed plain text up to 500 characters, or null.
+ * An empty or all-whitespace value is normalized to null (the description is
+ * cleared) — the same control and direction characters a title forbids are
+ * refused here too, so text cannot be reordered or hidden.
+ */
+export function normalizeDescription(raw: string | null): Result<string | null> {
+  if (raw === null) return ok(null);
+  if (FORBIDDEN_IN_TITLES.test(raw)) {
+    return descriptionInvalid(
+      'characters',
+      'A description may not contain control or direction characters.',
+    );
+  }
+  const description = raw.trim();
+  if (description.length === 0) return ok(null);
+  if ([...description].length > DESCRIPTION_MAX_LENGTH) {
+    return descriptionInvalid(
+      'length',
+      `A description is at most ${DESCRIPTION_MAX_LENGTH} characters.`,
+    );
+  }
+  return ok(description);
 }

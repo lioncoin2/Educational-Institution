@@ -6,7 +6,13 @@ const at = (ms: number) => new Date(ms);
 
 describe('stints', () => {
   it('creates a community with its creator as owner, first member and first version', () => {
-    const community = newCommunity({ id: 'c', title: 'حلقة', createdBy: 'u', at: at(5) });
+    const community = newCommunity({
+      id: 'c',
+      title: 'حلقة',
+      chatMode: 'GROUP_OPEN',
+      createdBy: 'u',
+      at: at(5),
+    });
     const owner = ownerStint({ id: 's', communityId: 'c', userId: 'u', at: at(5) });
     expect(community).toMatchObject({
       status: 'OPEN',

@@ -159,8 +159,12 @@ export function messageSentFrame(input: {
     message: wireMessage(message),
     sender:
       input.sender === null
-        ? { userId: message.senderId, displayName: null }
-        : { userId: input.sender.userId, displayName: input.sender.displayName },
+        ? { userId: message.senderId, displayName: null, avatarFileAssetId: null }
+        : {
+            userId: input.sender.userId,
+            displayName: input.sender.displayName,
+            avatarFileAssetId: input.sender.avatarFileAssetId,
+          },
   });
 }
 
@@ -396,7 +400,9 @@ export function communityUnlockedFrame(input: {
  */
 export type AccessChangeCause =
   | { readonly kind: 'granted' | 'revoked'; readonly grantId: string }
-  | { readonly kind: 'transferred'; readonly side: 'from' | 'to' };
+  | { readonly kind: 'transferred'; readonly side: 'from' | 'to' }
+  /** A group's posting policy changed (ADR 0039): everyone's posting may differ. */
+  | { readonly kind: 'posting_mode'; readonly chatMode: string };
 
 /**
  * "What you may do here changed" — a capability granted or revoked, or
@@ -417,7 +423,9 @@ export function communityAccessChangedFrame(input: {
   const cause =
     input.cause.kind === 'transferred'
       ? `transferred:${input.cause.side}:${input.occurredAt.getTime()}`
-      : `${input.cause.kind}:${input.cause.grantId}`;
+      : input.cause.kind === 'posting_mode'
+        ? `posting_mode:${input.cause.chatMode}:${input.occurredAt.getTime()}`
+        : `${input.cause.kind}:${input.cause.grantId}`;
   return frame({
     type: 'community.access.changed',
     eventId: `community.access.changed:${input.communityId}:${input.userId}:${digest(cause)}`,

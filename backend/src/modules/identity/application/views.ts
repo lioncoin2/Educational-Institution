@@ -15,6 +15,8 @@ export interface CurrentUserView {
   readonly id: string;
   readonly displayName: string;
   readonly status: AccountStatus;
+  /** The Files asset id of the account's own profile picture, or null. */
+  readonly avatarFileAssetId: string | null;
   readonly roles: readonly string[];
   readonly permissions: readonly string[];
 }
@@ -62,6 +64,7 @@ export function toCurrentUserView(user: User, permissions: ReadonlySet<string>):
     id: user.id,
     displayName: user.displayName,
     status: user.status,
+    avatarFileAssetId: user.avatarFileAssetId,
     roles: [...roleCodes(user)].sort(),
     permissions: [...permissions].sort(),
   };

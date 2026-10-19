@@ -7,11 +7,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:quran_institution_app/app/app.dart';
 import 'package:quran_institution_app/data/media/media_seams.dart';
 import 'package:quran_institution_app/data/models/data_origin.dart';
+import 'package:quran_institution_app/data/models/live.dart';
 import 'package:quran_institution_app/data/models/messaging.dart';
 import 'package:quran_institution_app/data/realtime/realtime_client.dart';
 import 'package:quran_institution_app/data/realtime/realtime_frames.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_community_repository.dart';
+import 'package:quran_institution_app/data/repositories/mock/mock_live_repository.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_messaging_repository.dart';
+import 'package:quran_institution_app/data/repositories/repositories.dart';
+import 'package:quran_institution_app/features/communities/community_copy.dart';
+import 'package:quran_institution_app/features/communities/community_screen.dart';
+import 'package:quran_institution_app/features/live/live_session_screen.dart';
 import 'package:quran_institution_app/features/messaging/messaging_copy.dart';
 import 'package:quran_institution_app/features/messaging/widgets/message_bubble.dart';
 import 'package:quran_institution_app/providers/app_providers.dart';
@@ -98,6 +104,50 @@ class FakePicker implements AttachmentPicker {
   @override
   Future<OutgoingFile?> pickDocument() async => null;
 }
+
+/// A live backend the test drives: [current] is the session `currentSession`
+/// returns (null = none), so a session can be made to appear and disappear.
+/// `getSession` (used by the controller when an `ended` hint arrives) returns
+/// the held session or, once cleared, an ended view of it. Every other method
+/// is unused by the indicator and throws if reached.
+class _FakeLive implements LiveRepository {
+  _FakeLive(this.communityId);
+
+  final String communityId;
+  LiveSession? current;
+
+  @override
+  Future<LiveSession?> currentSession(String communityId) async => current;
+
+  @override
+  Future<LiveSession> getSession(String sessionId) async =>
+      current ??
+      LiveSession(
+        id: sessionId,
+        communityId: communityId,
+        state: LiveSessionState.ended,
+        hostUserId: 'u-host',
+        startedAt: DateTime.utc(2026),
+        endedAt: DateTime.utc(2026, 1, 1, 1),
+        endReason: LiveSessionEndReason.moderator,
+        speakerCount: 0,
+        me: const LiveMe(),
+      );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError(invocation.memberName.toString());
+}
+
+LiveSession _liveSession(String communityId) => LiveSession(
+  id: 'live-$communityId',
+  communityId: communityId,
+  state: LiveSessionState.live,
+  hostUserId: 'u-host',
+  startedAt: DateTime.utc(2026),
+  speakerCount: 1,
+  me: const LiveMe(),
+);
 
 void main() {
   late ScriptedRepository repo;
@@ -414,6 +464,183 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(MessagingCopy.moderateDelete), findsNothing);
       expect(find.text(MessagingCopy.reviewOriginal), findsNothing);
+    });
+  });
+
+  // Phase 2: the community chat's header (picture + name) opens the community's
+  // own info & management page — the existing one, never a second screen — and
+  // what that page offers is the server's `me` to decide.
+  group('community chat header → info & management (Phase 2)', () {
+    const ownedChat = '${MockCommunityRepository.ownedId}-chat';
+    const openChat = '${MockCommunityRepository.openId}-chat';
+    const header = Key('conversation-community-header');
+
+    testWidgets('tapping the header opens the community info page', (
+      tester,
+    ) async {
+      await open(tester, '/messages/$ownedChat');
+      expect(find.byKey(header), findsOneWidget);
+
+      await tester.tap(find.byKey(header));
+      await tester.pumpAndSettle();
+      // The existing community page — not a duplicate — is now on top.
+      expect(find.byType(CommunityScreen), findsOneWidget);
+    });
+
+    testWidgets('a direct conversation has no tappable community header', (
+      tester,
+    ) async {
+      await open(tester, '/messages/mock-direct');
+      expect(find.byType(TextField), findsWidgets); // the chat did open
+      expect(find.byKey(header), findsNothing);
+    });
+
+    testWidgets('the owner reaches the edit affordance from the header', (
+      tester,
+    ) async {
+      await open(tester, '/messages/$ownedChat');
+      await tester.tap(find.byKey(header));
+      await tester.pumpAndSettle();
+      // The owner holds community.profile.edit, so the page offers editing.
+      expect(find.byTooltip(CommunityCopy.editCommunity), findsOneWidget);
+    });
+
+    testWidgets('a plain member reaches the page but not the edit affordance', (
+      tester,
+    ) async {
+      await open(tester, '/messages/$openChat');
+      await tester.tap(find.byKey(header));
+      await tester.pumpAndSettle();
+      expect(find.byType(CommunityScreen), findsOneWidget);
+      // No capability → the server's `me` withholds editing, and so does the UI.
+      expect(find.byTooltip(CommunityCopy.editCommunity), findsNothing);
+    });
+  });
+
+  // Phase 3: a "live now" bar appears under the app bar of a community chat
+  // only while the server reports a running session for THAT community, opens
+  // the existing live screen, and tracks start/end/reconnect via the shared
+  // liveSessionProvider. It never claims audio/video work (fake provider).
+  group('community live indicator (Phase 3)', () {
+    const ownedChat = '${MockCommunityRepository.ownedId}-chat';
+    final indicator = find.byKey(const Key('community-live-indicator'));
+
+    Override liveWith(Set<String> live) => liveRepositoryProvider
+        .overrideWithValue(MockLiveRepository(liveCommunityIds: live));
+
+    testWidgets('shows a live-now bar when the community has an active session', (
+      tester,
+    ) async {
+      await open(
+        tester,
+        '/messages/$ownedChat',
+        extra: [liveWith({MockCommunityRepository.ownedId})],
+      );
+      expect(indicator, findsOneWidget);
+      expect(find.text(MessagingCopy.liveNow), findsOneWidget);
+    });
+
+    testWidgets('shows nothing when no session is live', (tester) async {
+      await open(
+        tester,
+        '/messages/$ownedChat',
+        extra: [liveWith(const {})],
+      );
+      expect(indicator, findsNothing);
+    });
+
+    testWidgets('does not leak another community\'s live session', (
+      tester,
+    ) async {
+      // openId is live, but the viewer is in ownedId's chat — keyed per id.
+      await open(
+        tester,
+        '/messages/$ownedChat',
+        extra: [liveWith({MockCommunityRepository.openId})],
+      );
+      expect(indicator, findsNothing);
+    });
+
+    testWidgets('a direct conversation has no live indicator', (tester) async {
+      await open(tester, '/messages/mock-direct');
+      expect(indicator, findsNothing);
+    });
+
+    testWidgets('tapping it opens the community live session screen', (
+      tester,
+    ) async {
+      await open(
+        tester,
+        '/messages/$ownedChat',
+        extra: [liveWith({MockCommunityRepository.ownedId})],
+      );
+      await tester.tap(indicator);
+      await tester.pumpAndSettle();
+      expect(find.byType(LiveSessionScreen), findsOneWidget);
+    });
+
+    testWidgets('appears when a session starts and clears when it ends', (
+      tester,
+    ) async {
+      final realtime = FakeRealtimeClient();
+      final fake = _FakeLive(MockCommunityRepository.ownedId);
+      await open(
+        tester,
+        '/messages/$ownedChat',
+        extra: [
+          liveRepositoryProvider.overrideWithValue(fake),
+          realtimeConnectionProvider.overrideWithValue(realtime),
+        ],
+      );
+      expect(indicator, findsNothing);
+
+      // A start hint arrives; the provider re-reads and now sees a session.
+      fake.current = _liveSession(MockCommunityRepository.ownedId);
+      realtime.emit(
+        LiveSessionStartedEvent(
+          eventId: 'live.session.started:s-1',
+          occurredAt: DateTime.now(),
+          communityId: MockCommunityRepository.ownedId,
+          sessionId: 'live-${MockCommunityRepository.ownedId}',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(indicator, findsOneWidget);
+
+      // The session ends; a re-read now finds it ended and the bar clears.
+      fake.current = null;
+      realtime.emit(
+        LiveSessionEndedEvent(
+          eventId: 'live.session.ended:s-1',
+          occurredAt: DateTime.now(),
+          communityId: MockCommunityRepository.ownedId,
+          sessionId: 'live-${MockCommunityRepository.ownedId}',
+          reason: LiveSessionEndReason.moderator,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(indicator, findsNothing);
+    });
+
+    testWidgets('restores the correct state after a reconnect', (tester) async {
+      final realtime = FakeRealtimeClient();
+      final fake = _FakeLive(MockCommunityRepository.ownedId);
+      await open(
+        tester,
+        '/messages/$ownedChat',
+        extra: [
+          liveRepositoryProvider.overrideWithValue(fake),
+          realtimeConnectionProvider.overrideWithValue(realtime),
+        ],
+      );
+      expect(indicator, findsNothing);
+
+      // A session started while the client was away (no event seen). On
+      // reconnect the provider re-reads and the bar comes back correctly.
+      fake.current = _liveSession(MockCommunityRepository.ownedId);
+      realtime.setStatus(RealtimeStatus.reconnected);
+      await tester.pumpAndSettle();
+      expect(indicator, findsOneWidget);
     });
   });
 }

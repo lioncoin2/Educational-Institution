@@ -14,7 +14,15 @@ import 'community_write.dart';
 import 'membership_reconcile.dart';
 
 /// A change to the community itself, on its way to the server.
-enum CommunityWrite { lock, unlock, leave, linkHalaqa, unlinkHalaqa }
+enum CommunityWrite {
+  lock,
+  unlock,
+  leave,
+  linkHalaqa,
+  unlinkHalaqa,
+  editProfile,
+  setChatMode,
+}
 
 class CommunityDetailState {
   const CommunityDetailState({
@@ -195,6 +203,38 @@ class CommunityController extends AsyncNotifier<CommunityDetailState> {
     CommunityWrite.unlinkHalaqa,
     (repository) => repository.unlinkHalaqa(communityId),
   );
+
+  /// Replaces the community's title, description and picture — one request,
+  /// reconciled and shown as [lock] is. [avatarFileAssetId] is a reference the
+  /// caller has already uploaded (via `FilesRepository.uploadImage`), or null
+  /// to clear. The server re-authorises `community.profile.edit`; a refusal
+  /// reads the community again.
+  Future<WriteOutcome<void>> updateProfile({
+    required String title,
+    String? description,
+    String? avatarFileAssetId,
+  }) => _write(
+    CommunityWrite.editProfile,
+    (repository) => repository.updateProfile(
+      communityId,
+      title: title,
+      description: description,
+      avatarFileAssetId: avatarFileAssetId,
+    ),
+  );
+
+  /// Restricts or reopens member posting in a group — one request, reconciled
+  /// and shown as [lock] is. [membersMayPost] true reopens (GROUP_OPEN), false
+  /// restricts (GROUP_RESTRICTED); a channel's posting is fixed and the server
+  /// refuses the transition. The server re-authorises `community.chat.manage`;
+  /// a refusal reads the community again. Not optimistic: the shown chat mode
+  /// and the composer only change once the server's answer is reconciled.
+  Future<WriteOutcome<void>> setChatMode({required bool membersMayPost}) =>
+      _write(
+        CommunityWrite.setChatMode,
+        (repository) =>
+            repository.setChatMode(communityId, membersMayPost: membersMayPost),
+      );
 
   /// Ends the viewer's own membership: one request. Once confirmed the
   /// community is, to the viewer, one that does not exist — it is shown as
@@ -420,3 +460,16 @@ final communityProvider = AsyncNotifierProvider.autoDispose
       CommunityController.new,
       retry: (_, _) => null,
     );
+
+/// A short-lived link to a community's picture, fetched once per display. Null
+/// when the community has none, so the view shows the default (initials).
+final communityAvatarUrlProvider = FutureProvider.autoDispose
+    .family<Uri?, String>((ref, communityId) async {
+      try {
+        return await ref
+            .read(communityRepositoryProvider)
+            .communityAvatarUrl(communityId);
+      } on CommunityException {
+        return null; // no picture → initials
+      }
+    }, retry: (_, _) => null);

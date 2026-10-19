@@ -4,13 +4,21 @@ import type { Permission } from './permissions';
 export const ACCOUNT_DIRECTORY = Symbol('ACCOUNT_DIRECTORY');
 
 /**
- * What another module may know about an account: its id, a name to show, and
- * whether it can currently sign in. Deliberately nothing more — no login
- * identifier (email), no roles, no security state.
+ * What another module may know about an account: its id, a name to show,
+ * the picture to show (a Files asset reference, or null), and whether it can
+ * currently sign in. Deliberately nothing more — no login identifier (email),
+ * no roles, no security state.
+ *
+ * `avatarFileAssetId` is a *reference*, never a URL: a consumer that is allowed
+ * to show this account turns it into a short-lived link through the Files
+ * contract itself (as it already does for attachments), so identity never
+ * mints or leaks a link. Null means no picture — the caller shows the default
+ * (initials) view.
  */
 export interface AccountSummary {
   readonly userId: string;
   readonly displayName: string;
+  readonly avatarFileAssetId: string | null;
   readonly active: boolean;
 }
 

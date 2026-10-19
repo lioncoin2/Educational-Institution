@@ -27,7 +27,11 @@ describe('community chat API', () => {
     teacher = await r.provision('teacher', 'TEACHER', 'الأستاذة عائشة');
     student = await r.provision('student', 'STUDENT', 'مريم');
     outsider = await r.provision('outsider', 'STUDENT', 'زينب');
-    const created = await call('POST', '/communities', admin, { title: 'حلقة التجويد' });
+    // A CHANNEL — publisher-only posting — is what these tests exercise.
+    const created = await call('POST', '/communities', admin, {
+      title: 'حلقة التجويد',
+      kind: 'CHANNEL',
+    });
     communityId = created.body.id as string;
     const added = await call('POST', `/communities/${communityId}/members`, admin, {
       userIds: [teacher.id, student.id],

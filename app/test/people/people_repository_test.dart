@@ -79,6 +79,51 @@ void main() {
       final page = await HttpPeopleRepository(await api(client)).searchTeachers('عب');
       expect(page.items.map((p) => p.userId), ['t-1']);
     });
+
+    test('parses the picture reference: an id for one who has it, null otherwise', () async {
+      final client = MockClient(
+        (_) async => json(200, {
+          'items': [
+            {'userId': 'u-1', 'displayName': 'سارة', 'avatarFileAssetId': 'asset-1'},
+            {'userId': 'u-2', 'displayName': 'سامي', 'avatarFileAssetId': null},
+          ],
+          'nextCursor': null,
+        }),
+      );
+      final page = await HttpPeopleRepository(await api(client)).search('سا');
+      expect(page.items[0].avatarFileAssetId, 'asset-1');
+      expect(page.items[0].hasAvatar, isTrue);
+      expect(page.items[1].avatarFileAssetId, isNull);
+      expect(page.items[1].hasAvatar, isFalse);
+    });
+
+    test('personAvatarUrl reads /people/:id/avatar and returns the short-lived link', () async {
+      final client = MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/people/u-1/avatar');
+        return json(200, {'url': 'https://cdn.example.org/a/u-1.png?sig=x', 'expiresAt': 'soon'});
+      });
+      final url = await HttpPeopleRepository(await api(client)).personAvatarUrl('u-1');
+      expect(url.toString(), 'https://cdn.example.org/a/u-1.png?sig=x');
+    });
+
+    test('personAvatarUrl maps a 404 to PeopleException (no picture → initials)', () async {
+      final client = MockClient(
+        (_) async => json(404, {
+          'error': {
+            'kind': 'not_found',
+            'code': 'people.person_avatar_not_found',
+            'message': 'none',
+          },
+        }),
+      );
+      await expectLater(
+        HttpPeopleRepository(await api(client)).personAvatarUrl('u-9'),
+        throwsA(
+          isA<PeopleException>().having((e) => e.code, 'code', 'people.person_avatar_not_found'),
+        ),
+      );
+    });
   });
 
   group('MockPeopleRepository', () {
@@ -105,6 +150,24 @@ void main() {
       // أحمد (a peer) surfaces in the general search but never as a teacher.
       expect((await repo.search('أح')).items, isNotEmpty);
       expect((await repo.searchTeachers('أح')).items, isEmpty);
+    });
+
+    test('personAvatarUrl returns a link for a person with a picture, else 404', () async {
+      final repo = MockPeopleRepository(latency: Duration.zero);
+      final link = await repo.personAvatarUrl('mock-person-sara');
+      expect(link.toString(), contains('mock-person-sara'));
+      await expectLater(
+        repo.personAvatarUrl('mock-peer-1'), // no picture
+        throwsA(
+          isA<PeopleException>().having((e) => e.code, 'code', 'people.person_avatar_not_found'),
+        ),
+      );
+    });
+
+    test('a search result carries the demo picture reference where one is set', () async {
+      final repo = MockPeopleRepository(latency: Duration.zero);
+      final sara = (await repo.search('سا')).items.firstWhere((p) => p.userId == 'mock-person-sara');
+      expect(sara.hasAvatar, isTrue);
     });
   });
 }

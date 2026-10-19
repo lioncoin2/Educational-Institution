@@ -4,7 +4,11 @@ import { and, asc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import { KeyedMutex } from '../../../platform/concurrency/keyed-mutex';
 import { DATABASE, postgresErrorCode, type Database } from '../../../platform/database';
 import { COMMUNITY_CAPABILITIES, type CommunityCapability } from '../contracts/capabilities';
-import { COMMUNITY_STATUSES, type CommunityStatus } from '../contracts/vocabulary';
+import {
+  COMMUNITY_STATUSES,
+  type CommunityChatMode,
+  type CommunityStatus,
+} from '../contracts/vocabulary';
 import type { HeldGrant } from '../domain/authority';
 import type { Community } from '../domain/community';
 import { effectiveCapabilities, mayGrant, mayRemove } from '../domain/delegation';
@@ -19,6 +23,8 @@ import type {
   CommunityStore,
   Contended,
   CreateInvitationOutcome,
+  ChatModeChange,
+  EditProfileChange,
   GrantOutcome,
   LeaveOutcome,
   OwnerBasis,
@@ -355,6 +361,84 @@ export class DrizzleCommunityRepository implements CommunityStore {
         .update(communities)
         .set({
           halaqaId: input.halaqaId,
+          updatedAt: notBefore(communities.updatedAt, input.at),
+        })
+        .where(eq(communities.id, input.communityId))
+        .returning();
+      return row === undefined
+        ? { kind: 'not_found' }
+        : { kind: 'changed', community: toCommunity(row) };
+    });
+  }
+
+  async editProfile(input: {
+    readonly communityId: string;
+    readonly title: string;
+    readonly description: string | null;
+    readonly avatarFileAssetId: string | null;
+    readonly actor: ActingBasis;
+    readonly actorUserId: string | null;
+    readonly at: Date;
+  }): Promise<EditProfileChange> {
+    return this.write(input.communityId, async (tx) => {
+      // The actor's basis, re-verified under lock (not on oversight) — as a
+      // status change is, so a stint or grant lost since the decision refuses.
+      if (!(await this.verifyBasis(tx, input.communityId, input.actor)).holds) {
+        return { kind: 'basis_lost' };
+      }
+      const [current] = await tx
+        .select()
+        .from(communities)
+        .where(eq(communities.id, input.communityId));
+      if (current === undefined) return { kind: 'not_found' };
+      if (
+        current.title === input.title &&
+        current.description === input.description &&
+        current.avatarFileAssetId === input.avatarFileAssetId
+      ) {
+        return { kind: 'unchanged', community: toCommunity(current) };
+      }
+      const [row] = await tx
+        .update(communities)
+        .set({
+          title: input.title,
+          description: input.description,
+          avatarFileAssetId: input.avatarFileAssetId,
+          updatedAt: notBefore(communities.updatedAt, input.at),
+        })
+        .where(eq(communities.id, input.communityId))
+        .returning();
+      return row === undefined
+        ? { kind: 'not_found' }
+        : { kind: 'changed', community: toCommunity(row) };
+    });
+  }
+
+  async setChatMode(input: {
+    readonly communityId: string;
+    readonly to: CommunityChatMode;
+    readonly actor: ActingBasis;
+    readonly actorUserId: string | null;
+    readonly at: Date;
+  }): Promise<ChatModeChange> {
+    return this.write(input.communityId, async (tx) => {
+      // The actor's basis, re-verified under lock (not on oversight), as a
+      // status or profile change is.
+      if (!(await this.verifyBasis(tx, input.communityId, input.actor)).holds) {
+        return { kind: 'basis_lost' };
+      }
+      const [current] = await tx
+        .select()
+        .from(communities)
+        .where(eq(communities.id, input.communityId));
+      if (current === undefined) return { kind: 'not_found' };
+      if (current.chatMode === input.to) {
+        return { kind: 'unchanged', community: toCommunity(current) };
+      }
+      const [row] = await tx
+        .update(communities)
+        .set({
+          chatMode: input.to,
           updatedAt: notBefore(communities.updatedAt, input.at),
         })
         .where(eq(communities.id, input.communityId))

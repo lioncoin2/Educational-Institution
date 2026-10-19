@@ -5,6 +5,7 @@ import {
   ACCOUNT_DIRECTORY,
   ACCOUNT_DIRECTORY_MAX_IDS,
   type AccountDirectory,
+  type AccountSummary,
 } from '../../identity/contracts/account-directory';
 import { asSeen, type Message } from '../domain/message';
 import { canManageMembers, canPost, type Participant } from '../domain/participant';
@@ -87,9 +88,9 @@ export class MessagingViews {
   ): Promise<{ items: MessageView[]; senders: PersonView[] }> {
     const seen = messages.map(asSeen);
     const assetIds = seen.flatMap((message) => message.attachments.map((a) => a.fileAssetId));
-    const [files, names] = await Promise.all([
+    const [files, senders] = await Promise.all([
       assetIds.length === 0 ? Promise.resolve([]) : this.files.describe([...new Set(assetIds)]),
-      this.names(seen.map((message) => message.senderId)),
+      this.summaries(seen.map((message) => message.senderId)),
     ]);
     const fileById = new Map(files.map((file) => [file.id, file]));
 
@@ -111,7 +112,11 @@ export class MessagingViews {
           file: fileById.get(attachment.fileAssetId) ?? null,
         })),
       })),
-      senders: [...names].map(([userId, displayName]) => ({ userId, displayName })),
+      senders: [...senders.values()].map((account) => ({
+        userId: account.userId,
+        displayName: account.displayName,
+        avatarFileAssetId: account.avatarFileAssetId,
+      })),
     };
   }
 
@@ -164,15 +169,24 @@ export class MessagingViews {
     }));
   }
 
-  /** Display names for these ids, in as few directory calls as the cap allows. */
-  private async names(ids: readonly (string | null)[]): Promise<Map<string, string>> {
+  /** Account summaries for these ids, in as few directory calls as the cap allows. */
+  private async summaries(ids: readonly (string | null)[]): Promise<Map<string, AccountSummary>> {
     const unique = [...new Set(ids.filter((id): id is string => id !== null))];
-    const names = new Map<string, string>();
+    const summaries = new Map<string, AccountSummary>();
     for (let start = 0; start < unique.length; start += ACCOUNT_DIRECTORY_MAX_IDS) {
       const chunk = unique.slice(start, start + ACCOUNT_DIRECTORY_MAX_IDS);
       for (const account of await this.directory.describe(chunk)) {
-        names.set(account.userId, account.displayName);
+        summaries.set(account.userId, account);
       }
+    }
+    return summaries;
+  }
+
+  /** Display names only — the same one directory call, for paths that show no picture. */
+  private async names(ids: readonly (string | null)[]): Promise<Map<string, string>> {
+    const names = new Map<string, string>();
+    for (const [userId, account] of await this.summaries(ids)) {
+      names.set(userId, account.displayName);
     }
     return names;
   }

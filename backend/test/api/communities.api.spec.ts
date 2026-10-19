@@ -114,12 +114,16 @@ describe('communities API', () => {
     });
     expect(Object.keys(created.body.me as object).sort()).toEqual([
       'canManageHalaqa',
+      'canPost',
       'capabilities',
       'joinedAt',
       'operations',
       'participation',
       'standing',
     ]);
+    // A new group is open: its owner — and every member — may post.
+    expect((created.body.me as { canPost: boolean }).canPost).toBe(true);
+    expect(created.body.chatMode).toBe('GROUP_OPEN');
     // The creator is an admin (communities.manage), so the server offers the
     // halaqa-link control to them and to no ordinary member (Q50).
     expect((created.body.me as { canManageHalaqa: boolean }).canManageHalaqa).toBe(true);

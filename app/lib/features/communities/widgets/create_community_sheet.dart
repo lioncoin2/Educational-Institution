@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/extensions/context_ext.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../data/models/communities.dart';
 import '../community_copy.dart';
 import '../state/community_list_controller.dart';
 import '../state/community_write.dart';
@@ -37,6 +38,7 @@ class _CreateCommunitySheet extends ConsumerStatefulWidget {
 class _CreateCommunitySheetState extends ConsumerState<_CreateCommunitySheet> {
   final _field = TextEditingController();
   bool _submitting = false;
+  CommunityKind _kind = CommunityKind.group;
 
   @override
   void dispose() {
@@ -53,7 +55,7 @@ class _CreateCommunitySheetState extends ConsumerState<_CreateCommunitySheet> {
     setState(() => _submitting = true);
     final outcome = await ref
         .read(communityListProvider.notifier)
-        .create(_field.text);
+        .create(_field.text, kind: _kind);
     if (!mounted) return;
     if (outcome is WriteDone) {
       messenger.toast(CommunityCopy.communityCreated);
@@ -99,6 +101,39 @@ class _CreateCommunitySheetState extends ConsumerState<_CreateCommunitySheet> {
               ),
             ),
             const SizedBox(height: Insets.sm),
+            Text(
+              CommunityCopy.communityKindLabel,
+              style: context.text.labelLarge,
+            ),
+            const SizedBox(height: Insets.xs),
+            SegmentedButton<CommunityKind>(
+              segments: const [
+                ButtonSegment(
+                  value: CommunityKind.group,
+                  icon: Icon(Icons.groups_rounded),
+                  label: Text(CommunityCopy.communityKindGroup),
+                ),
+                ButtonSegment(
+                  value: CommunityKind.channel,
+                  icon: Icon(Icons.campaign_rounded),
+                  label: Text(CommunityCopy.communityKindChannel),
+                ),
+              ],
+              selected: {_kind},
+              onSelectionChanged: _submitting
+                  ? null
+                  : (selection) => setState(() => _kind = selection.first),
+            ),
+            const SizedBox(height: Insets.xs),
+            Text(
+              _kind == CommunityKind.channel
+                  ? CommunityCopy.communityKindChannelHint
+                  : CommunityCopy.communityKindGroupHint,
+              style: context.text.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: Insets.md),
             FilledButton.icon(
               key: const Key('create-community-submit'),
               onPressed: _canSubmit ? _submit : null,

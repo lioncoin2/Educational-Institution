@@ -311,6 +311,29 @@ abstract interface class AuthRepository {
   });
 }
 
+/// The signed-in user's own files: profile picture, and uploads they own
+/// (`/files/*`). The upload itself (`/files/uploads` declare → PUT → complete)
+/// is one flow the server verifies (size, signature, that it is an image); only
+/// then may a reference be bound. A refusal throws a `FilesException` with the
+/// server's code.
+abstract interface class FilesRepository {
+  /// Uploads [image] and returns its Files asset id — the reference other
+  /// things (an avatar, a community picture) point at. Does not bind it to
+  /// anything; the caller does that next.
+  Future<String> uploadImage(OutgoingFile image);
+
+  /// Points the signed-in account at [fileAssetId] as its profile picture. The
+  /// server verifies it is an image the caller owns.
+  Future<void> setMyAvatar(String fileAssetId);
+
+  /// Removes the signed-in account's profile picture.
+  Future<void> removeMyAvatar();
+
+  /// A short-lived link to an asset the caller owns — how the app renders its
+  /// own picture (whose reference it already holds from `/auth/me`).
+  Future<Uri> ownAssetLink(String fileAssetId);
+}
+
 /// Admin account provisioning (`/admin/users`) — staff create and view the
 /// institution's accounts. There is no self-registration; this is the only way
 /// an account comes into existence. The server is the authority: it gates the
@@ -450,6 +473,12 @@ abstract interface class MessagingRepository {
     String fileAssetId,
   );
 
+  /// A short-lived link to the picture of the sender of [messageId] in
+  /// [conversationId] — resolved at view time, like the sender's name. Throws
+  /// [MessagingException] `messaging.sender_avatar_not_found` when the sender
+  /// has no picture (the UI then shows initials).
+  Future<Uri> senderAvatarUrl(String conversationId, String messageId);
+
   // ── Moderation (community chat only, ADR 0029) ──────────────────────────
   // The server is the sole authority: it asks Communities for
   // `community.messages.moderate` per call. The app shows these only when the
@@ -494,12 +523,46 @@ abstract interface class CommunityRepository {
   Future<Community> community(String communityId);
 
   /// Creates a community the viewer will own and be the first member of, with
-  /// [title] — for a holder of `communities.create` (OWNER/ADMIN). The server
-  /// normalises and validates the title (1–100 characters) and decides afresh
-  /// on every request; a refusal throws [CommunityException]
-  /// (`identity.permission_denied`, `communities.title_invalid`, a rate limit).
-  /// Not idempotent — each call makes a new community.
-  Future<Community> create(String title);
+  /// [title] and [kind] (ADR 0039) — for a holder of `communities.create`
+  /// (OWNER/ADMIN). A [CommunityKind.group] opens posting to its members; a
+  /// [CommunityKind.channel] restricts publishing to the owner and delegated
+  /// publishers. The server normalises and validates the title (1–100
+  /// characters) and decides afresh on every request; a refusal throws
+  /// [CommunityException] (`identity.permission_denied`,
+  /// `communities.title_invalid`, a rate limit). Not idempotent — each call
+  /// makes a new community.
+  Future<Community> create(String title, {CommunityKind kind = CommunityKind.group});
+
+  /// Restricts ordinary-member posting ([membersMayPost] false → read-only) or
+  /// restores it (true) in a GROUP (ADR 0039) — for a holder of
+  /// `community.chat.manage` in THIS community (surfaced as
+  /// `me.has(CommunityCapability.chatManage)`). A channel cannot be changed and
+  /// is refused; the server re-authorises and decides. A refusal throws
+  /// [CommunityException] (`identity.permission_denied`,
+  /// `communities.capability_required`, `communities.chat_mode_transition_invalid`).
+  /// Returns the community as it now stands — never optimistic.
+  Future<Community> setChatMode(String communityId, {required bool membersMayPost});
+
+  /// Replaces the community's own [title], [description] and picture together —
+  /// for a holder of `community.profile.edit` in THIS community (surfaced as
+  /// `me.has(CommunityCapability.profileEdit)`). [description] and
+  /// [avatarFileAssetId] are null to clear; a new picture's id comes from
+  /// [FilesRepository.uploadImage]. The server re-authorises and verifies a new
+  /// picture is an image the editor owns; a refusal throws [CommunityException]
+  /// (`identity.permission_denied`, `communities.capability_required`,
+  /// `communities.title_invalid`, `communities.avatar_invalid`). Returns the
+  /// community as it now stands.
+  Future<Community> updateProfile(
+    String communityId, {
+    required String title,
+    String? description,
+    String? avatarFileAssetId,
+  });
+
+  /// A short-lived link to the community's picture, for anyone who may view the
+  /// community. Throws [CommunityException] `communities.avatar_not_found` when
+  /// there is none.
+  Future<Uri> communityAvatarUrl(String communityId);
 
   /// The roster, a page at a time — for a viewer whose `me.capabilities`
   /// holds `community.members.view`; anyone else is refused.
@@ -624,6 +687,13 @@ abstract interface class PeopleRepository {
   /// student's `messaging.start_direct_teacher`. Returns only teachers (never
   /// students, administrators or the owner), same minimal {userId, displayName}.
   Future<PeopleSearchPage> searchTeachers(String query, {String? cursor});
+
+  /// A short-lived link to a search result's picture (`GET /people/:userId/avatar`),
+  /// for a caller who may read the directory (`people.read`). Throws
+  /// [PeopleException] `people.person_avatar_not_found` when the person has no
+  /// picture — the view then shows the default (initials). Only call it for a
+  /// result whose [PersonSearchResult.hasAvatar] is true.
+  Future<Uri> personAvatarUrl(String userId);
 }
 
 /// Live sessions — a community's live audio room, read-only

@@ -99,10 +99,38 @@ export const ACT_RULES: Readonly<Record<CommunityAct, ActRule>> = Object.freeze(
     [communities.manage],
   ),
   'community.lock': rule('community.lock', [communities.moderate], [communities.manage]),
+  // Editing a community's own title, description and picture (Identity & Profile
+  // Foundation, ADR 0038). A delegable capability the owner holds and may grant;
+  // the single delegable-capability ceiling `communities.moderate` (ADR 0017).
+  // Oversight reaches it (`communities.manage`), so an overseer can correct a
+  // community's profile without joining — as it can remove a member or lock one.
+  // The gate is `always`: a profile correction stays possible while the
+  // community is LOCKED, as management does.
+  'community.profile.edit': rule(
+    'community.profile.edit',
+    [communities.moderate],
+    [communities.manage],
+  ),
   // The published constant, so messaging's principal-less recipient pages
   // narrow by exactly the ceiling this rule asks of a person (§7.3).
   'community.chat.read': rule('community.chat.read', COMMUNITY_CHAT_READ_CEILING, null),
+  // The PUBLISHER rule for posting: the owner and delegated posters. It governs
+  // a CHANNEL and a GROUP_RESTRICTED community outright, and in a GROUP_OPEN
+  // community it is the fallback the owner/delegates still pass. An ordinary
+  // member of a GROUP_OPEN community posts on the membership basis instead,
+  // through POSTING_MEMBER_RULE (chosen by the authorization service from the
+  // community's chat mode — never by the conversation type). PROVISIONAL (Q51).
   'community.chat.post': rule('community.chat.post', [communities.moderate, messaging.send], null),
+  // Managing a GROUP's posting policy — restrict to read-only / restore open
+  // posting (ADR 0039). A delegable capability (ceiling `communities.moderate`),
+  // reachable by oversight (`communities.manage`) as locking and profile editing
+  // are, gate `always` so an admin can set the policy even while LOCKED. It is
+  // NOT posting and NOT moderation — a distinct administrative act.
+  'community.chat.manage': rule(
+    'community.chat.manage',
+    [communities.moderate],
+    [communities.manage],
+  ),
   // Deleting and reviewing others' messages in the community's chat (Q51/Q23,
   // P12, ADR 0029). A delegable capability the owner holds and may grant; the
   // single delegable-capability ceiling `communities.moderate` (ADR 0017), and
@@ -157,6 +185,21 @@ export const LINK_MANAGEMENT_RULE: ActRule = Object.freeze({
   oversightCeiling: Object.freeze([communities.manage]),
   gate: 'always',
 });
+
+/**
+ * Posting in a GROUP_OPEN community on the MEMBERSHIP basis (ADR 0039): every
+ * active member posts, with a member-appropriate ceiling (`communities.read` +
+ * `messaging.send`) — never `communities.moderate`, and never an individual
+ * grant. The same act name as the publisher rule (`community.chat.post`), but a
+ * participation rule, so the evaluator takes the basis from membership. The gate
+ * stays `chatPostingOpen` (from `GATE_OF_ACT`), so a LOCKED community still
+ * blocks everyone. The authorization service chooses this rule over the
+ * publisher rule only when the community's chat mode is `GROUP_OPEN`.
+ */
+export const POSTING_MEMBER_RULE: ActRule = membershipRule('community.chat.post', [
+  communities.read,
+  messaging.send,
+]);
 
 export function ruleFor(act: CommunityAct): ActRule {
   return ACT_RULES[act];

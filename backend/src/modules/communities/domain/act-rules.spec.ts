@@ -85,6 +85,12 @@ describe('the act rules (PROVISIONAL)', () => {
         owner: true,
         gate: 'always',
       },
+      'community.profile.edit': {
+        standing: 'communities.moderate',
+        oversight: 'communities.manage',
+        owner: true,
+        gate: 'always',
+      },
       'community.chat.read': {
         standing: 'communities.read + messaging.read',
         oversight: null,
@@ -96,6 +102,12 @@ describe('the act rules (PROVISIONAL)', () => {
         oversight: null,
         owner: true,
         gate: 'chatPostingOpen',
+      },
+      'community.chat.manage': {
+        standing: 'communities.moderate',
+        oversight: 'communities.manage',
+        owner: true,
+        gate: 'always',
       },
       'community.messages.moderate': {
         standing: 'communities.moderate',
@@ -214,9 +226,11 @@ describe('the act rules (PROVISIONAL)', () => {
       .map((rule) => rule.act)
       .sort();
     expect(reached).toEqual([
+      'community.chat.manage',
       'community.lock',
       'community.members.remove',
       'community.members.view',
+      'community.profile.edit',
       'community.view',
     ]);
     // The one operation override: listing and revoking links.
@@ -247,7 +261,9 @@ describe('the act vocabulary', () => {
       'community.members.invite',
       'community.members.remove',
       'community.lock',
+      'community.profile.edit',
       'community.chat.post',
+      'community.chat.manage',
       'community.messages.moderate',
       'community.live.start',
       'community.live.moderate',

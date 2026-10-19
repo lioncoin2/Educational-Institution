@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { COMMUNITY_CAPABILITIES, type CommunityCapability } from '../contracts/capabilities';
-import type { CommunityStatus } from '../contracts/vocabulary';
+import type { CommunityChatMode, CommunityStatus } from '../contracts/vocabulary';
 import type { Community } from '../domain/community';
 import { effectiveCapabilities, mayGrant, mayRemove } from '../domain/delegation';
 import {
@@ -31,6 +31,8 @@ import type {
   RemoveOutcome,
   RevokeGrantOutcome,
   RevokeInvitationOutcome,
+  ChatModeChange,
+  EditProfileChange,
   SetHalaqaChange,
   StatusChange,
   TransferOutcome,
@@ -158,6 +160,57 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     const changed: Community = {
       ...community,
       halaqaId: input.halaqaId,
+      updatedAt: later(community.updatedAt, input.at),
+    };
+    this.communityById.set(changed.id, changed);
+    return { kind: 'changed', community: changed };
+  }
+
+  async editProfile(input: {
+    readonly communityId: string;
+    readonly title: string;
+    readonly description: string | null;
+    readonly avatarFileAssetId: string | null;
+    readonly actor: ActingBasis;
+    readonly actorUserId: string | null;
+    readonly at: Date;
+  }): Promise<EditProfileChange> {
+    // The basis first, then the row — the same order the transaction locks in.
+    if (!this.basis(input.communityId, input.actor).holds) return { kind: 'basis_lost' };
+    const community = this.communityById.get(input.communityId);
+    if (community === undefined) return { kind: 'not_found' };
+    if (
+      community.title === input.title &&
+      community.description === input.description &&
+      community.avatarFileAssetId === input.avatarFileAssetId
+    ) {
+      return { kind: 'unchanged', community };
+    }
+    const changed: Community = {
+      ...community,
+      title: input.title,
+      description: input.description,
+      avatarFileAssetId: input.avatarFileAssetId,
+      updatedAt: later(community.updatedAt, input.at),
+    };
+    this.communityById.set(changed.id, changed);
+    return { kind: 'changed', community: changed };
+  }
+
+  async setChatMode(input: {
+    readonly communityId: string;
+    readonly to: CommunityChatMode;
+    readonly actor: ActingBasis;
+    readonly actorUserId: string | null;
+    readonly at: Date;
+  }): Promise<ChatModeChange> {
+    if (!this.basis(input.communityId, input.actor).holds) return { kind: 'basis_lost' };
+    const community = this.communityById.get(input.communityId);
+    if (community === undefined) return { kind: 'not_found' };
+    if (community.chatMode === input.to) return { kind: 'unchanged', community };
+    const changed: Community = {
+      ...community,
+      chatMode: input.to,
       updatedAt: later(community.updatedAt, input.at),
     };
     this.communityById.set(changed.id, changed);

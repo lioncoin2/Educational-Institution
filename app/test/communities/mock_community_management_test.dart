@@ -1084,4 +1084,70 @@ void main() {
       expect(scripted.grantRequests, [MockCommunityRepository.viewer]);
     });
   });
+
+  // ADR 0039: a group opens posting to its members by default; an admin (a
+  // holder of `community.chat.manage`) restricts and restores it; a channel
+  // reserves posting for publishers and its mode is fixed. The demo keeps the
+  // server's rules so the screens built on it behave the same against the API.
+  group('chat mode', () {
+    test('a pre-existing community is a restricted group — a member does not '
+        'post', () async {
+      final c = await repo.community(open); // the viewer is a plain member
+      expect(c.chatMode, CommunityChatMode.groupRestricted);
+      expect(c.isRestrictedGroup, isTrue);
+      expect(c.kind, CommunityKind.group);
+      expect(c.canPost, isFalse); // no community.chat.post
+    });
+
+    test('a new group opens posting to its members; a new channel does not', () async {
+      final group = await repo.create('كروب', kind: CommunityKind.group);
+      expect(group.chatMode, CommunityChatMode.groupOpen);
+      expect(group.kind, CommunityKind.group);
+      expect(group.canPost, isTrue); // the creator is a member of an open group
+
+      final channel = await repo.create('قناة', kind: CommunityKind.channel);
+      expect(channel.isChannel, isTrue);
+      expect(channel.kind, CommunityKind.channel);
+      // The creator is the owner, who publishes in a channel.
+      expect(channel.canPost, isTrue);
+    });
+
+    test('an admin restricts and restores a group — the mode follows', () async {
+      expect((await repo.community(owned)).canManageChat, isTrue);
+
+      final restricted = await repo.setChatMode(owned, membersMayPost: false);
+      expect(restricted.chatMode, CommunityChatMode.groupRestricted);
+      expect(restricted.isRestrictedGroup, isTrue);
+
+      final restored = await repo.setChatMode(owned, membersMayPost: true);
+      expect(restored.chatMode, CommunityChatMode.groupOpen);
+      expect(restored.isRestrictedGroup, isFalse);
+      // The owner publishes in either mode.
+      expect(restored.canPost, isTrue);
+    });
+
+    test('restricting a group removes no member and no read access', () async {
+      final before = await roster(repo, owned);
+      await repo.setChatMode(owned, membersMayPost: false);
+      expect(await roster(repo, owned), before);
+      final c = await repo.community(owned);
+      expect(c.me.takesPart(CommunityParticipation.chatRead), isTrue);
+    });
+
+    test('a channel’s posting is fixed — the transition is refused', () async {
+      final channel = await repo.create('قناة', kind: CommunityKind.channel);
+      await expectLater(
+        repo.setChatMode(channel.id, membersMayPost: false),
+        refusedWith('communities.chat_mode_transition_invalid'),
+      );
+    });
+
+    test('only a holder of community.chat.manage may set the mode', () async {
+      // open: the viewer is a plain member — no chat-manage.
+      await expectLater(
+        repo.setChatMode(open, membersMayPost: false),
+        refusedWith('communities.capability_required'),
+      );
+    });
+  });
 }

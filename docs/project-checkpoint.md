@@ -25,6 +25,32 @@ in-memory). Product scope is the owner's; engineering never invents institutiona
 > 39047171460 green; Sprints 52–61 are committed (`c6d5ee0`) and both Trial tiers run `a8500a9`
 > (released 2026-10-17). A remediation patch is prepared but **uncommitted and undeployed** — see
 > [`trial-remediation-2026-10.md`](trial-remediation-2026-10.md) and register §25.
+>
+> **Phase 1 — Identity & Community Profile Foundation (2026-10-19): implemented in the working tree,
+> UNCOMMITTED, not pushed, not deployed, awaiting owner review** ([ADR 0038](architecture/decisions/0038-identity-and-community-profile-media.md)).
+> User profile pictures, community picture + description + name editing, and the message sender's
+> picture — all on the existing Files module (a picture is a Files `IMAGE` asset referenced by id,
+> never a URL). Backend done and green (`npm run verify`): migrations 0023 (`users.avatar_file_asset_id`)
+> and 0024 (`communities.description` + `avatar_file_asset_id` + the new delegable capability
+> `community.profile.edit`), additive and **not applied to any live/shared database**. Flutter surfaces
+> wired. One product question is left to the owner, not blocking: whether a minor's/student's self-set
+> picture should be as visible as their name already is (Q22/Q31) — the build is conservative (opt-in,
+> default initials, visible only where the name already is). No GROUP/CHANNEL kind, no streaming/LiveKit
+> change, no Quiet Hours — out of scope by instruction.
+>
+> **Phases 2–5 (2026-10-19): implemented in the working tree, UNCOMMITTED, not pushed, awaiting owner
+> review.** P2 — the community-chat top bar is a tappable avatar+name opening the existing community
+> page (no new screen). P3 — a "live now" banner in the community chat over the existing
+> `liveSessionProvider` (no backend change; Trial media stays the fake provider, ADR 0037). P5 —
+> **Groups & Channels** ([ADR 0039](architecture/decisions/0039-groups-and-channels-chat-mode.md)):
+> a community `chat_mode` (GROUP_OPEN / GROUP_RESTRICTED / CHANNEL); a new group is open to member
+> posting (membership basis, no per-member grant), an admin restricts/restores via the new delegable
+> `community.chat.manage`, a channel publishes only to owner + `community.chat.post` grantees; posting
+> stays one capability asked on every send, LOCKED still blocks all; the chat remains a CHANNEL
+> conversation (ADR 0018 intact). Migration **0025** additive — existing communities default
+> `GROUP_RESTRICTED` (preserves exact current behavior; nothing converted, nothing deleted). Reverses
+> ADR 0016's "no kind" in part; resolves Q41 (kind column) + Q51 (posting half). Backend green
+> (`npm run verify`).
 
 - **Branch:** `claude/quranic-education-app-prototype-gkzle8`
 - **HEAD:** `d754284` (Sprint 50 — teacher halaqa view enriched with co-teachers + name). Sprints 42–50

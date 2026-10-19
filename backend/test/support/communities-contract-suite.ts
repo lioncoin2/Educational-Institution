@@ -905,13 +905,17 @@ export function communityContractSuite(
       // The overseer outside reaches all four oversight acts on it; the one
       // inside, those that membership does not give.
       expect(onOversight.sort()).toEqual([
+        'p-overseer community.chat.manage',
         'p-overseer community.lock',
         'p-overseer community.members.remove',
         'p-overseer community.members.view',
+        'p-overseer community.profile.edit',
         'p-overseer community.view',
+        'p-overseer-member community.chat.manage',
         'p-overseer-member community.lock',
         'p-overseer-member community.members.remove',
         'p-overseer-member community.members.view',
+        'p-overseer-member community.profile.edit',
       ]);
     });
 

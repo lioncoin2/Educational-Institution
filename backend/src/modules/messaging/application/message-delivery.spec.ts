@@ -40,7 +40,11 @@ describe('message delivery contract', () => {
         await h.listMessages.execute({ principal: student, conversationId: group.id }),
       );
       expect(delivered?.forMembers).toEqual(timeline.items[0]);
-      expect(delivered?.sender).toEqual({ userId: teacher.userId, displayName: 'الأستاذ' });
+      expect(delivered?.sender).toEqual({
+        userId: teacher.userId,
+        displayName: 'الأستاذ',
+        avatarFileAssetId: null,
+      });
     });
 
     it('carries a file as a reference and a summary — never a link', async () => {

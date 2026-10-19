@@ -7,6 +7,7 @@ import { DATABASE, type Database } from '../../platform/database';
 import { AdminUsersController } from './api/admin-users.controller';
 import { AuthController } from './api/auth.controller';
 import { AccessGuard } from './api/guards/access.guard';
+import { IdentityAccountAvatarWriter } from './application/account-avatar.service';
 import { IdentityAccountDirectory } from './application/account-directory.service';
 import { IdentityAccountSearch } from './application/account-search.service';
 import { AccountAdministration } from './application/admin/account-administration';
@@ -35,6 +36,7 @@ import {
   RevokeMySessionUseCase,
 } from './application/session-management.use-cases';
 import { ACCESS_TOKEN_AUTHENTICATOR } from './contracts/access-tokens';
+import { ACCOUNT_AVATAR_WRITER } from './contracts/account-avatar';
 import { ACCOUNT_DIRECTORY } from './contracts/account-directory';
 import { ACCOUNT_SEARCH } from './contracts/account-search';
 import { AUTHORIZATION_SERVICE } from './contracts/authorization';
@@ -79,15 +81,17 @@ function persistent<T>(
 /**
  * Identity & Access — the composition root.
  *
- * It exports exactly four things: `AUTHORIZATION_SERVICE`, the only way any
+ * It exports exactly five things: `AUTHORIZATION_SERVICE`, the only way any
  * other module asks an access question; `ACCOUNT_DIRECTORY`, the only way one
- * learns who an account is by id (id, display name, active); `ACCOUNT_SEARCH`,
- * the only way one finds accounts by display-name prefix (the same minimal
- * shape — the caller's right to search is decided by the caller, e.g. People's
- * `people.read` gate); and `ACCESS_TOKEN_AUTHENTICATOR`, the HTTP guard's own
- * authentication for transports that are not a request (the realtime
- * connection). Everything else — users, sessions, tokens, the role matrix — is
- * private to this module.
+ * learns who an account is by id (id, display name, avatar reference, active);
+ * `ACCOUNT_AVATAR_WRITER`, the only way one records which Files asset is an
+ * account's picture (Files, which verifies the image, calls it — identity never
+ * depends on Files); `ACCOUNT_SEARCH`, the only way one finds accounts by
+ * display-name prefix (the same minimal shape — the caller's right to search is
+ * decided by the caller, e.g. People's `people.read` gate); and
+ * `ACCESS_TOKEN_AUTHENTICATOR`, the HTTP guard's own authentication for
+ * transports that are not a request (the realtime connection). Everything else
+ * — users, sessions, tokens, the role matrix — is private to this module.
  *
  * No account is seeded and no default credential exists. The first owner is
  * created with `npm run identity:bootstrap-owner` (see backend/README.md).
@@ -156,6 +160,7 @@ function persistent<T>(
     { provide: POLICY_RULES, useValue: PROVISIONAL_POLICY_RULES },
     { provide: AUTHORIZATION_SERVICE, useClass: PolicyAuthorizationService },
     { provide: ACCOUNT_DIRECTORY, useClass: IdentityAccountDirectory },
+    { provide: ACCOUNT_AVATAR_WRITER, useClass: IdentityAccountAvatarWriter },
     { provide: ACCOUNT_SEARCH, useClass: IdentityAccountSearch },
 
     RolePermissions,
@@ -186,6 +191,12 @@ function persistent<T>(
     // application root never reaches into identity's internals.
     { provide: APP_GUARD, useExisting: AccessGuard },
   ],
-  exports: [AUTHORIZATION_SERVICE, ACCOUNT_DIRECTORY, ACCOUNT_SEARCH, ACCESS_TOKEN_AUTHENTICATOR],
+  exports: [
+    AUTHORIZATION_SERVICE,
+    ACCOUNT_DIRECTORY,
+    ACCOUNT_AVATAR_WRITER,
+    ACCOUNT_SEARCH,
+    ACCESS_TOKEN_AUTHENTICATOR,
+  ],
 })
 export class IdentityModule {}

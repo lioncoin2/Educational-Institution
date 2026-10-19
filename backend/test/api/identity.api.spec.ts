@@ -150,13 +150,19 @@ describe('identity API', () => {
       const me = await api.call('GET', '/auth/me', { token: studentLogin.accessToken as string });
       expect(me.status).toBe(200);
       expect(Object.keys(me.body).sort()).toEqual([
+        'avatarFileAssetId',
         'displayName',
         'id',
         'permissions',
         'roles',
         'status',
       ]);
-      expect(me.body).toMatchObject({ id: studentId, status: 'ACTIVE', roles: ['STUDENT'] });
+      expect(me.body).toMatchObject({
+        id: studentId,
+        status: 'ACTIVE',
+        roles: ['STUDENT'],
+        avatarFileAssetId: null,
+      });
       expect(me.body.permissions).toEqual(expect.arrayContaining(['live.join', 'live.raise_hand']));
     });
 

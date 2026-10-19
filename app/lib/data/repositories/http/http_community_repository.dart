@@ -44,9 +44,20 @@ class HttpCommunityRepository implements CommunityRepository {
   );
 
   @override
-  Future<Community> create(String title) => _call(
+  Future<Community> create(String title, {CommunityKind kind = CommunityKind.group}) => _call(
     () async => Community.fromJson(
-      await _api.post('/communities', body: {'title': title}),
+      await _api.post('/communities', body: {'title': title, 'kind': kind.wire}),
+      origin: DataOrigin.records,
+    ),
+  );
+
+  @override
+  Future<Community> setChatMode(String communityId, {required bool membersMayPost}) => _call(
+    () async => Community.fromJson(
+      await _api.put(
+        '${_community(communityId)}/chat-mode',
+        body: {'membersMayPost': membersMayPost},
+      ),
       origin: DataOrigin.records,
     ),
   );
@@ -168,6 +179,34 @@ class HttpCommunityRepository implements CommunityRepository {
     () async => Community.fromJson(
       await _api.post('${_community(communityId)}/unlock'),
       origin: DataOrigin.records,
+    ),
+  );
+
+  @override
+  Future<Community> updateProfile(
+    String communityId, {
+    required String title,
+    String? description,
+    String? avatarFileAssetId,
+  }) => _call(
+    () async => Community.fromJson(
+      await _api.put(
+        '${_community(communityId)}/profile',
+        body: {
+          'title': title,
+          // Explicit nulls: a full replace, so omitting one clears it.
+          'description': description,
+          'avatarFileAssetId': avatarFileAssetId,
+        },
+      ),
+      origin: DataOrigin.records,
+    ),
+  );
+
+  @override
+  Future<Uri> communityAvatarUrl(String communityId) => _call(
+    () async => _api.resolve(
+      (await _api.get('${_community(communityId)}/avatar'))['url']! as String,
     ),
   );
 

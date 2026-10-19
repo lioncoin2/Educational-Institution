@@ -86,7 +86,10 @@ describe('community chats', () => {
     teacher = h.person(Roles.teacher, 'المعلمة');
     student = h.person(Roles.student, 'الطالبة');
     outsider = h.person(Roles.student, 'غريبة');
-    communityId = await h.community(admin, [teacher, student]);
+    // A CHANNEL: publisher-only posting (owner + delegated), members read — the
+    // path these tests exercise. Open-group member posting (ADR 0039) is
+    // covered by its own tests.
+    communityId = await h.community(admin, [teacher, student], 'CHANNEL');
     await h.deliverCommunityEvents();
   });
   afterEach(async () => {
@@ -526,7 +529,7 @@ describe('community chats', () => {
       h = await messagingHarness({ settings: { maxServedMembers: 1 } });
       admin = h.person(Roles.admin);
       student = h.person(Roles.student);
-      communityId = await h.community(admin, [student]);
+      communityId = await h.community(admin, [student], 'CHANNEL');
       await h.deliverCommunityEvents();
       const chatId = (await h.openCommunityChat(admin, communityId)).id;
       expect(expectErr(await send(student, chatId)).code).toBe('messaging.posting_not_allowed');

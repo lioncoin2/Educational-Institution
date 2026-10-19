@@ -80,9 +80,10 @@ void main() {
 
       final owned = await repo.community(MockCommunityRepository.ownedId);
       expect(owned.me.standing, CommunityStanding.owner);
-      // Every capability — the two P9 attendance acts and the P12 message
-      // moderation capability (ADR 0029) among them.
-      expect(owned.me.capabilities, hasLength(10));
+      // Every capability — the two P9 attendance acts, the P12 message
+      // moderation capability (ADR 0029), the profile-edit capability
+      // (ADR 0038) and the chat-manage capability (ADR 0039) among them.
+      expect(owned.me.capabilities, hasLength(12));
       expect(owned.me.has(CommunityCapability.messagesModerate), isTrue);
 
       final delegated = await repo.community(

@@ -37,6 +37,7 @@ import '../data/repositories/http/http_admin_repository.dart';
 import '../data/repositories/http/http_attendance_repository.dart';
 import '../data/repositories/http/http_auth_repository.dart';
 import '../data/repositories/http/http_community_repository.dart';
+import '../data/repositories/http/http_files_repository.dart';
 import '../data/repositories/http/http_live_repository.dart';
 import '../data/repositories/http/http_messaging_repository.dart';
 import '../data/repositories/http/http_notifications_repository.dart';
@@ -46,6 +47,7 @@ import '../data/repositories/mock/mock_admin_repository.dart';
 import '../data/repositories/mock/mock_attendance_repository.dart';
 import '../data/repositories/mock/mock_auth_repository.dart';
 import '../data/repositories/mock/mock_community_repository.dart';
+import '../data/repositories/mock/mock_files_repository.dart';
 import '../data/repositories/mock/mock_live_repository.dart';
 import '../data/repositories/mock/mock_messaging_repository.dart';
 import '../data/repositories/mock/mock_notifications_repository.dart';
@@ -131,6 +133,14 @@ final Provider<AuthRepository> authRepositoryProvider =
           : MockAuthRepository(),
     );
 
+/// The signed-in user's own files — profile picture and owned uploads.
+final Provider<FilesRepository> filesRepositoryProvider =
+    Provider<FilesRepository>(
+      (ref) => ref.watch(backendModeProvider)
+          ? HttpFilesRepository(ref.watch(apiClientProvider))
+          : const MockFilesRepository(),
+    );
+
 // ── Backend access ─────────────────────────────────────────────────────────
 // Overridden in tests with package:http's MockClient.
 
@@ -168,6 +178,22 @@ final FutureProvider<CurrentUser?> sessionUserProvider =
       retry: (_, _) => null,
     );
 
+/// A short-lived link to the signed-in user's own profile picture, or null
+/// when they have none. Resolved from their `avatarFileAssetId`; a failure
+/// degrades to null so the UI simply shows initials.
+final FutureProvider<Uri?> ownAvatarUrlProvider = FutureProvider<Uri?>((
+  ref,
+) async {
+  final user = await ref.watch(sessionUserProvider.future);
+  final assetId = user?.avatarFileAssetId;
+  if (assetId == null) return null;
+  try {
+    return await ref.watch(filesRepositoryProvider).ownAssetLink(assetId);
+  } on Object {
+    return null;
+  }
+});
+
 // ── Messaging ──────────────────────────────────────────────────────────────
 
 final messagingRepositoryProvider = Provider<MessagingRepository>((ref) {
@@ -186,8 +212,11 @@ final messagingRepositoryProvider = Provider<MessagingRepository>((ref) {
     mayReadIn: (id) =>
         communities.meIn(id)?.takesPart(CommunityParticipation.chatRead) ??
         false,
-    mayPostIn: (id) =>
-        communities.meIn(id)?.has(CommunityCapability.chatPost) ?? false,
+    // Posting is mode-aware now (ADR 0039): an open group's member posts on
+    // membership, a restricted group's or a channel's only with the publisher
+    // capability. The community's `me.canPost` already resolves this; the two
+    // mocks tell one story, so the chat's composer follows it.
+    mayPostIn: (id) => communities.meIn(id)?.canPost ?? false,
   );
 });
 

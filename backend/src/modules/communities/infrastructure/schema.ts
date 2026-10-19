@@ -15,6 +15,7 @@ import {
 
 import { COMMUNITY_CAPABILITIES, type CommunityCapability } from '../contracts/capabilities';
 import type {
+  CommunityChatMode,
   CommunityStatus,
   MembershipSource,
   MembershipStanding,
@@ -51,6 +52,21 @@ export const communities = pgTable(
   {
     id: text('id').primaryKey(),
     title: text('title').notNull(),
+    /** A short description shown with the community, or null when unset. */
+    description: text('description'),
+    /**
+     * A Files asset id (the community's picture), or null. NOT a foreign key:
+     * the row it points at belongs to the files module (§17).
+     */
+    avatarFileAssetId: text('avatar_file_asset_id'),
+    /**
+     * The chat posting mode (ADR 0039): GROUP_OPEN / GROUP_RESTRICTED / CHANNEL.
+     * Defaults to GROUP_RESTRICTED so a community created without one — and
+     * every community that pre-dates this column — keeps the pre-0039 behaviour
+     * (only the owner and delegated posters write; members read). New groups and
+     * channels set it explicitly at creation.
+     */
+    chatMode: text('chat_mode').$type<CommunityChatMode>().notNull().default('GROUP_RESTRICTED'),
     status: text('status').$type<CommunityStatus>().notNull(),
     lifecycleVersion: integer('lifecycle_version').notNull().default(1),
     membershipVersion: bigint('membership_version', { mode: 'number' }).notNull().default(0),
@@ -73,7 +89,15 @@ export const communities = pgTable(
     // The oversight listing of every community, newest first — keyset.
     index('communities_created_idx').on(table.createdAt, table.id),
     check('communities_title_length', sql`char_length(${table.title}) between 1 and 100`),
+    check(
+      'communities_description_length',
+      sql`${table.description} is null or char_length(${table.description}) between 1 and 500`,
+    ),
     check('communities_status_valid', sql`${table.status} in ('OPEN', 'LOCKED')`),
+    check(
+      'communities_chat_mode_valid',
+      sql`${table.chatMode} in ('GROUP_OPEN', 'GROUP_RESTRICTED', 'CHANNEL')`,
+    ),
     check('communities_lifecycle_version_positive', sql`${table.lifecycleVersion} >= 1`),
     check('communities_membership_version_nonnegative', sql`${table.membershipVersion} >= 0`),
     check('communities_member_count_nonnegative', sql`${table.memberCount} >= 0`),

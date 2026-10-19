@@ -62,6 +62,7 @@ import type {
   MessagingRepository,
 } from '../../src/modules/messaging/domain/ports';
 import { InMemoryMessagingStore } from '../../src/modules/messaging/infrastructure/in-memory-messaging-store';
+import type { CommunityKind } from '../../src/modules/communities/contracts/vocabulary';
 import { communitiesHarness, type CommunitiesHarness } from './communities-harness';
 import { filesHarness } from './files-harness';
 import { AdjustableClock, RecordingAuditLog, RecordingEvents, expectOk } from './identity-harness';
@@ -118,7 +119,14 @@ export class FakeAccountDirectory implements AccountDirectory {
       const account = this.accounts.get(userId);
       return account === undefined
         ? []
-        : [{ userId, displayName: account.displayName, active: account.active }];
+        : [
+            {
+              userId,
+              displayName: account.displayName,
+              avatarFileAssetId: null,
+              active: account.active,
+            },
+          ];
     });
   }
 
@@ -317,8 +325,12 @@ export async function messagingHarness(
     },
 
     /** A community owned by `owner`, with these members, through Communities' use cases. */
-    async community(owner: Principal, members: readonly Principal[] = []): Promise<string> {
-      const communityId = await communities.community(owner);
+    async community(
+      owner: Principal,
+      members: readonly Principal[] = [],
+      kind: CommunityKind = 'GROUP',
+    ): Promise<string> {
+      const communityId = await communities.community(owner, undefined, kind);
       if (members.length > 0) {
         await communities.addPeople(owner, communityId, ...members.map((member) => member.userId));
       }

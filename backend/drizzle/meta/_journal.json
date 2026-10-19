@@ -162,6 +162,27 @@
       "when": 1791862520143,
       "tag": "0022_q6_quiet_hours_and_conversation_mutes",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792360009209,
+      "tag": "0023_user_avatar",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792361399050,
+      "tag": "0024_community_profile",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792370227635,
+      "tag": "0025_community_chat_mode",
+      "breakpoints": true
     }
   ]
 }

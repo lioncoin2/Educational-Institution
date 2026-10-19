@@ -11,15 +11,19 @@ library;
 
 import 'data_origin.dart';
 
-/// One match on the people search: an id to act on (add, message) and a name to
-/// show. Nothing more — the server's privacy-safe projection.
+/// One match on the people search: an id to act on (add, message), a name to
+/// show, and a reference to the person's picture. Nothing more — the server's
+/// privacy-safe projection.
 class PersonSearchResult {
-  const PersonSearchResult({required this.userId, this.displayName});
+  const PersonSearchResult({required this.userId, this.displayName, this.avatarFileAssetId});
 
   /// Throws [FormatException] when it cannot be identified.
   factory PersonSearchResult.fromJson(Map<String, Object?> json) => PersonSearchResult(
     userId: _required(json, 'userId'),
     displayName: json['displayName'] is String ? json['displayName']! as String : null,
+    avatarFileAssetId: json['avatarFileAssetId'] is String
+        ? json['avatarFileAssetId']! as String
+        : null,
   );
 
   /// For acting on — never shown in place of a name.
@@ -28,6 +32,14 @@ class PersonSearchResult {
   /// The name to show; null when the server resolved none (a neutral fallback
   /// is shown in its place, never an account id).
   final String? displayName;
+
+  /// A reference to the person's picture (a Files asset id), or null for the
+  /// default initials view. Never a URL: the view resolves a short-lived link
+  /// from it through `GET /people/:userId/avatar`, re-authorized there.
+  final String? avatarFileAssetId;
+
+  /// Whether this person has a picture a link can be resolved for.
+  bool get hasAvatar => avatarFileAssetId != null;
 }
 
 /// A keyset page of matches (`{items, nextCursor}`). `nextCursor` is opaque —

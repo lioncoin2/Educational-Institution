@@ -5,21 +5,54 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/extensions/context_ext.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/foundations/app_avatar.dart';
 import '../../../data/models/people.dart';
 import '../../../providers/app_providers.dart';
 import '../academic_people_copy.dart';
 
 /// The institution people directory as a search (`GET /people`, `people.read`,
 /// OWNER/ADMIN), keyed by the trimmed query; blank asks for nothing. It
-/// discloses only {userId, displayName} — the caller does not learn whether the
-/// person is an eligible student or teacher; the server decides that on the
-/// mutation. Refusals keep the server's code.
+/// discloses only {userId, displayName, avatarFileAssetId} — the caller does not
+/// learn whether the person is an eligible student or teacher; the server
+/// decides that on the mutation. Refusals keep the server's code.
 final _directoryProvider = FutureProvider.autoDispose
     .family<PeopleSearchPage, String>((ref, query) {
       final q = query.trim();
       if (q.isEmpty) return Future.value(const PeopleSearchPage(items: []));
       return ref.watch(peopleRepositoryProvider).search(q);
     });
+
+/// A short-lived link to one search result's picture, fetched once per display
+/// and only for a person who has one. Null when there is no picture (or the
+/// link cannot be read), so the avatar shows the default (initials).
+final _personAvatarProvider = FutureProvider.autoDispose.family<Uri?, String>((
+  ref,
+  userId,
+) async {
+  try {
+    return await ref.read(peopleRepositoryProvider).personAvatarUrl(userId);
+  } on PeopleException {
+    return null; // no picture, or not the caller's to read → initials
+  }
+}, retry: (_, _) => null);
+
+/// The leading avatar for a result row: the person's picture when they have one
+/// (resolved through the directory's own authorized link), their initials
+/// otherwise — and on any load failure (AppAvatar's own fallback). No id is
+/// ever shown in place of a name.
+class _PersonAvatar extends ConsumerWidget {
+  const _PersonAvatar({required this.person});
+
+  final PersonSearchResult person;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final imageUrl = person.hasAvatar
+        ? ref.watch(_personAvatarProvider(person.userId)).value
+        : null;
+    return AppAvatar(name: person.displayName, imageUrl: imageUrl, radius: 20);
+  }
+}
 
 /// Opens the people picker and returns the chosen person, or null if dismissed.
 /// The caller then performs the mutation (enrol / assign); selection is never
@@ -128,7 +161,7 @@ class _PersonPickerState extends ConsumerState<_PersonPicker> {
                                 itemBuilder: (context, index) {
                                   final person = page.items[index];
                                   return ListTile(
-                                    leading: const Icon(Icons.person_outline),
+                                    leading: _PersonAvatar(person: person),
                                     title: Text(
                                       person.displayName ??
                                           AcademicPeopleCopy.unnamed,

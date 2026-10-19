@@ -5,6 +5,7 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -16,6 +17,7 @@ import {
 
 import { MAX_MEMBERS_PER_ADD } from '../../application/communities-settings';
 import { COMMUNITY_CAPABILITIES, type CommunityCapability } from '../../contracts/capabilities';
+import { COMMUNITY_KINDS, type CommunityKind } from '../../contracts/vocabulary';
 
 /**
  * Transport shapes for /communities. They bound what a request may carry;
@@ -67,6 +69,22 @@ export class CreateCommunityDto {
   /** The domain holds a title to 1–100 characters: anything else is 422 `communities.title_invalid`. */
   @IsString()
   title!: string;
+
+  /**
+   * GROUP (open member posting) or CHANNEL (publishers only), ADR 0039.
+   * Optional for older clients and defaults to GROUP; any other value is 400.
+   * The product kind is the only mode input a client may supply — it can never
+   * set an arbitrary chat mode, standing, or capability.
+   */
+  @IsOptional()
+  @IsIn(COMMUNITY_KINDS)
+  kind?: CommunityKind;
+}
+
+/** `PUT /communities/:id/chat-mode` — restrict or restore a group's member posting (ADR 0039). */
+export class SetChatModeDto {
+  @IsBoolean()
+  membersMayPost!: boolean;
 }
 
 export class AddMembersDto {
@@ -149,4 +167,32 @@ export class SetHalaqaDto {
   @IsNotEmpty()
   @MaxLength(ID_MAX)
   halaqaId!: string;
+}
+
+/**
+ * `PUT /communities/:id/profile` — a full replace of the community's own title,
+ * description and picture together. `title` is required; `description` and
+ * `avatarFileAssetId` may be null (cleared) or omitted (treated as null). These
+ * bounds are generous transport limits; the domain decides what is valid
+ * (communities.title_invalid, communities.description_invalid) and Files decides
+ * whether the picture is an image the editor owns.
+ */
+export class EditCommunityProfileDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  title!: string;
+
+  @IsOptional()
+  @ValidateIf((dto: EditCommunityProfileDto) => dto.description !== null)
+  @IsString()
+  @MaxLength(2000)
+  description?: string | null;
+
+  @IsOptional()
+  @ValidateIf((dto: EditCommunityProfileDto) => dto.avatarFileAssetId !== null)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(ID_MAX)
+  avatarFileAssetId?: string | null;
 }

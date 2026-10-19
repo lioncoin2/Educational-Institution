@@ -64,6 +64,7 @@ export class DrizzleUserRepository implements UserRepository {
           status: user.status,
           passwordHash: user.passwordHash,
           passwordChangedAt: user.passwordChangedAt,
+          avatarFileAssetId: user.avatarFileAssetId,
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
         });
@@ -97,6 +98,7 @@ export class DrizzleUserRepository implements UserRepository {
           status: user.status,
           passwordHash: user.passwordHash,
           passwordChangedAt: user.passwordChangedAt,
+          avatarFileAssetId: user.avatarFileAssetId,
           updatedAt: user.updatedAt,
         })
         .where(eq(users.id, user.id));
@@ -303,6 +305,7 @@ export class DrizzleUserRepository implements UserRepository {
         .map(({ role, grantedAt, grantedBy }) => ({ role, grantedAt, grantedBy })),
       passwordHash: row.passwordHash,
       passwordChangedAt: row.passwordChangedAt,
+      avatarFileAssetId: row.avatarFileAssetId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     }));

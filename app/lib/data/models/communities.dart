@@ -36,6 +36,41 @@ enum CommunityStatus {
       values.firstWhere((s) => s.wire == value, orElse: () => unknown);
 }
 
+/// The chat posting mode (ADR 0039): a group open to member posting, a group
+/// an admin has made read-only for ordinary members, or a channel where only
+/// publishers post. The app shows the product kind and, for a group, the
+/// current state; the server (`me.canPost`) decides who may actually post.
+enum CommunityChatMode {
+  groupOpen('GROUP_OPEN'),
+  groupRestricted('GROUP_RESTRICTED'),
+  channel('CHANNEL'),
+  unknown('UNKNOWN');
+
+  const CommunityChatMode(this.wire);
+
+  final String wire;
+
+  static CommunityChatMode fromWire(Object? value) =>
+      values.firstWhere((m) => m.wire == value, orElse: () => unknown);
+
+  /// The product kind this mode belongs to — a restricted group is still a group.
+  CommunityKind get kind =>
+      this == CommunityChatMode.channel ? CommunityKind.channel : CommunityKind.group;
+
+  /// Whether a group admin has restricted ordinary-member posting.
+  bool get isRestrictedGroup => this == CommunityChatMode.groupRestricted;
+}
+
+/// What a community is, for display and for choosing at creation.
+enum CommunityKind {
+  group('GROUP'),
+  channel('CHANNEL');
+
+  const CommunityKind(this.wire);
+
+  final String wire;
+}
+
 /// The viewer's belonging: the one owner, or a member. Not a role, not a
 /// capability.
 enum CommunityStanding {
@@ -57,7 +92,9 @@ enum CommunityCapability {
   membersInvite('community.members.invite'),
   membersRemove('community.members.remove'),
   lock('community.lock'),
+  profileEdit('community.profile.edit'),
   chatPost('community.chat.post'),
+  chatManage('community.chat.manage'),
   liveStart('community.live.start'),
   liveModerate('community.live.moderate'),
   attendanceRecord('community.attendance.record'),
@@ -122,6 +159,7 @@ class CommunityMe {
     this.capabilities = const {},
     this.participation = const {},
     this.operations = const {},
+    this.canPost = false,
     this.canManageHalaqa = false,
   });
 
@@ -148,6 +186,7 @@ class CommunityMe {
       CommunityOperation.fromWire,
       CommunityOperation.unknown,
     ),
+    canPost: json['canPost'] == true,
     canManageHalaqa: json['canManageHalaqa'] == true,
   );
 
@@ -166,6 +205,13 @@ class CommunityMe {
   /// Allowed now — never containing [CommunityOperation.unknown]. Missing
   /// from an older server's answer: then nothing is allowed.
   final Set<CommunityOperation> operations;
+
+  /// Whether the viewer may post in the chat now (ADR 0039) — the server's
+  /// authoritative answer, which the composer keys on. True for a member of an
+  /// open group, an owner, and a delegated publisher; false for an ordinary
+  /// member of a restricted group or a channel, and for everyone while LOCKED.
+  /// False on an older server's answer. The server re-checks on every send.
+  final bool canPost;
 
   /// Whether the server offers this viewer the halaqa-link control (Q50) —
   /// institutional oversight (`communities.manage`), not membership. False on
@@ -197,6 +243,9 @@ class Community implements Sourced {
     required this.memberCount,
     required this.createdAt,
     required this.me,
+    this.chatMode = CommunityChatMode.unknown,
+    this.description,
+    this.avatarFileAssetId,
     this.halaqaId,
     this.origin = DataOrigin.records,
   });
@@ -215,12 +264,23 @@ class Community implements Sourced {
     me: json['me'] is Map
         ? CommunityMe.fromJson((json['me']! as Map).cast<String, Object?>())
         : const CommunityMe(standing: CommunityStanding.unknown),
+    chatMode: CommunityChatMode.fromWire(json['chatMode']),
+    // Optional: absent on an older server, or null when unset.
+    description: _optional(json['description']),
+    avatarFileAssetId: _optional(json['avatarFileAssetId']),
     halaqaId: _optional(json['halaqaId']),
     origin: origin,
   );
 
   final String id;
   final String title;
+
+  /// A short description shown with the community, or null when unset.
+  final String? description;
+
+  /// The Files asset id of the community's picture, or null. A reference — a
+  /// signed link is fetched via `CommunityRepository.communityAvatarUrl`.
+  final String? avatarFileAssetId;
   final CommunityStatus status;
 
   /// Moves forward with every lock and unlock — the one version a frame
@@ -231,6 +291,9 @@ class Community implements Sourced {
   final int memberCount;
   final DateTime createdAt;
   final CommunityMe me;
+
+  /// The chat posting mode (ADR 0039): group open/restricted, or channel.
+  final CommunityChatMode chatMode;
 
   /// The academic halaqa this community is associated with, or null (Q50).
   /// Inert metadata set by institutional oversight: it confers no membership,
@@ -247,6 +310,23 @@ class Community implements Sourced {
 
   /// The roster is the viewer's to see now.
   bool get canViewMembers => me.has(CommunityCapability.membersView);
+
+  /// The viewer may edit this community's title, description and picture now.
+  bool get canEditProfile => me.has(CommunityCapability.profileEdit);
+
+  /// Group or channel, for display (a restricted group is still a group).
+  CommunityKind get kind => chatMode.kind;
+
+  bool get isChannel => kind == CommunityKind.channel;
+
+  /// A group whose admin has restricted ordinary-member posting to read-only.
+  bool get isRestrictedGroup => chatMode.isRestrictedGroup;
+
+  /// The viewer may restrict or restore member posting in this group now.
+  bool get canManageChat => me.has(CommunityCapability.chatManage);
+
+  /// The viewer may post in the chat now — the server's authoritative answer.
+  bool get canPost => me.canPost;
 }
 
 class CommunityPage {

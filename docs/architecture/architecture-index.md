@@ -60,9 +60,9 @@ responsibility and what each module must not know live in
 
 - **Path:** `backend/src/modules/communities/`
 - **Nest module:** `communities.module.ts` — exports: `COMMUNITY_AUTHORIZATION`, `COMMUNITY_CAPABILITY_HOLDERS`, `COMMUNITY_DIRECTORY`, `COMMUNITY_MEMBERSHIP`
-- **Public contract (`contracts/`):** `COMMUNITY_ACTS`, `COMMUNITY_AUTHORIZATION`, `COMMUNITY_CAPABILITIES`, `COMMUNITY_CAPABILITY_HOLDERS`, `COMMUNITY_CHAT_READ_CEILING`, `COMMUNITY_DERIVED_ACTS`, `COMMUNITY_DIRECTORY`, `COMMUNITY_MEMBERSHIP`, `COMMUNITY_OPERATIONS`, `COMMUNITY_PARTICIPATION`, `COMMUNITY_RESOURCE`, `COMMUNITY_STATUSES`, `COMMUNITY_VIEW_CEILING`, `CapabilityGranted`, `CapabilityRevoked`, `CommunityAct`, `CommunityAuthorityBasis`, `CommunityAuthorization`, `CommunityCapability`, `CommunityCapabilityHolders`, `CommunityCreated`, `CommunityDerivedAct`, `CommunityDirectory`, `CommunityEvent`, `CommunityEvents`, `CommunityHead`, `CommunityLocked`, `CommunityMembership`, `CommunityOperation`, `CommunityParticipationAct`, `CommunityPermit`, `CommunityStatus`, `CommunitySummary`, `CommunityUnlocked`, `INVITATION_STATES`, `InvitationCreated`, `InvitationRevoked`, `InvitationState`, `LifecycleEffects`, `MAX_AUTHORIZE_BATCH`, `MAX_HOLDER_PAGE`, `MAX_MEMBER_PAGE`, `MEMBERSHIP_SOURCES`, `MEMBERSHIP_STANDINGS`, `MEMBERSHIP_STATUSES`, `MemberAdded`, `MemberRemoved`, `MemberState`, `MembershipChanges`, `MembershipSource`, `MembershipStanding`, `MembershipStatus`, `OwnershipTransferred`, `isCommunityAct`, `isCommunityCapability`, `isCommunityOperation`, `isCommunityParticipationAct`, `isCommunityStatus`, `isInvitationState`, `isMembershipSource`, `isMembershipStanding`, `isMembershipStatus`
-- **Declared domain events:** `communities.capability.granted`, `communities.capability.revoked`, `communities.community.created`, `communities.community.locked`, `communities.community.unlocked`, `communities.invitation.created`, `communities.invitation.revoked`, `communities.member.added`, `communities.member.removed`, `communities.ownership.transferred`
-- **Static imports → modules:** `academic`, `identity`
+- **Public contract (`contracts/`):** `COMMUNITY_ACTS`, `COMMUNITY_AUTHORIZATION`, `COMMUNITY_CAPABILITIES`, `COMMUNITY_CAPABILITY_HOLDERS`, `COMMUNITY_CHAT_MODES`, `COMMUNITY_CHAT_READ_CEILING`, `COMMUNITY_DERIVED_ACTS`, `COMMUNITY_DIRECTORY`, `COMMUNITY_KINDS`, `COMMUNITY_MEMBERSHIP`, `COMMUNITY_OPERATIONS`, `COMMUNITY_PARTICIPATION`, `COMMUNITY_RESOURCE`, `COMMUNITY_STATUSES`, `COMMUNITY_VIEW_CEILING`, `CapabilityGranted`, `CapabilityRevoked`, `CommunityAct`, `CommunityAuthorityBasis`, `CommunityAuthorization`, `CommunityCapability`, `CommunityCapabilityHolders`, `CommunityChatMode`, `CommunityChatModeChanged`, `CommunityCreated`, `CommunityDerivedAct`, `CommunityDirectory`, `CommunityEvent`, `CommunityEvents`, `CommunityHead`, `CommunityKind`, `CommunityLocked`, `CommunityMembership`, `CommunityOperation`, `CommunityParticipationAct`, `CommunityPermit`, `CommunityStatus`, `CommunitySummary`, `CommunityUnlocked`, `INVITATION_STATES`, `InvitationCreated`, `InvitationRevoked`, `InvitationState`, `LifecycleEffects`, `MAX_AUTHORIZE_BATCH`, `MAX_HOLDER_PAGE`, `MAX_MEMBER_PAGE`, `MEMBERSHIP_SOURCES`, `MEMBERSHIP_STANDINGS`, `MEMBERSHIP_STATUSES`, `MemberAdded`, `MemberRemoved`, `MemberState`, `MembershipChanges`, `MembershipSource`, `MembershipStanding`, `MembershipStatus`, `OwnershipTransferred`, `chatModeForKind`, `isCommunityAct`, `isCommunityCapability`, `isCommunityChatMode`, `isCommunityKind`, `isCommunityOperation`, `isCommunityParticipationAct`, `isCommunityStatus`, `isInvitationState`, `isMembershipSource`, `isMembershipStanding`, `isMembershipStatus`, `kindOfChatMode`
+- **Declared domain events:** `communities.capability.granted`, `communities.capability.revoked`, `communities.community.chat_mode_changed`, `communities.community.created`, `communities.community.locked`, `communities.community.unlocked`, `communities.invitation.created`, `communities.invitation.revoked`, `communities.member.added`, `communities.member.removed`, `communities.ownership.transferred`
+- **Static imports → modules:** `academic`, `files`, `identity`
 - **Docs:** [module-boundaries.md#communities](module-boundaries.md#communities)
 
 ### files
@@ -77,8 +77,8 @@ responsibility and what each module must not know live in
 ### identity
 
 - **Path:** `backend/src/modules/identity/`
-- **Nest module:** `identity.module.ts` — exports: `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_DIRECTORY`, `ACCOUNT_SEARCH`, `AUTHORIZATION_SERVICE`
-- **Public contract (`contracts/`):** `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_DIRECTORY`, `ACCOUNT_DIRECTORY_MAX_IDS`, `ACCOUNT_SEARCH`, `ALL_PERMISSIONS`, `AUTHORIZATION_SERVICE`, `AccessTokenAuthenticator`, `AccountDirectory`, `AccountSearch`, `AccountSummary`, `Authenticated`, `Authentication`, `AuthorizationContext`, `AuthorizationService`, `ELIGIBLE_TEACHER`, `Permission`, `Permissions`, `REQUIRE_AUTHENTICATION`, `REQUIRE_PERMISSION`, `RequirePermission`, `SYSTEM_PRINCIPAL_PREFIX`, `SessionReference`, `isPermission`, `isSystemPrincipal`, `systemPrincipal`
+- **Nest module:** `identity.module.ts` — exports: `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_AVATAR_WRITER`, `ACCOUNT_DIRECTORY`, `ACCOUNT_SEARCH`, `AUTHORIZATION_SERVICE`
+- **Public contract (`contracts/`):** `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_AVATAR_WRITER`, `ACCOUNT_DIRECTORY`, `ACCOUNT_DIRECTORY_MAX_IDS`, `ACCOUNT_SEARCH`, `ALL_PERMISSIONS`, `AUTHORIZATION_SERVICE`, `AccessTokenAuthenticator`, `AccountAvatarWriter`, `AccountDirectory`, `AccountSearch`, `AccountSummary`, `Authenticated`, `Authentication`, `AuthorizationContext`, `AuthorizationService`, `ELIGIBLE_TEACHER`, `Permission`, `Permissions`, `REQUIRE_AUTHENTICATION`, `REQUIRE_PERMISSION`, `RequirePermission`, `SYSTEM_PRINCIPAL_PREFIX`, `SessionReference`, `isPermission`, `isSystemPrincipal`, `systemPrincipal`
 - **Declared domain events:** —
 - **Static imports → modules:** —
 - **Docs:** [module-boundaries.md#identity](module-boundaries.md#identity)
@@ -125,7 +125,7 @@ responsibility and what each module must not know live in
 - **Nest module:** `people.module.ts` — exports: —
 - **Public contract (`contracts/`):** —
 - **Declared domain events:** —
-- **Static imports → modules:** `identity`
+- **Static imports → modules:** `files`, `identity`
 - **Docs:** [module-boundaries.md#people](module-boundaries.md#people)
 
 ### realtime
@@ -237,7 +237,7 @@ responsibility and what each module must not know live in
 - **Path:** `app/lib/features/messaging/`
 - **Controllers:** `conversation_controller.dart`, `conversation_list_controller.dart`, `conversation_mutes_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
-- **Static imports → features:** `communities`
+- **Static imports → features:** `communities`, `live`
 
 ### notifications
 
@@ -290,8 +290,8 @@ responsibility and what each module must not know live in
 
 ## Flutter data seam (`app/lib/data/`, `app/lib/app/`)
 
-- **Repository contracts (`data/repositories/repositories.dart`):** `AcademicRepository`, `AdminRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `InstitutionRepository`, `LearningRepository`, `LiveRepository`, `MessagingRepository`, `NotificationsRepository`, `PeopleRepository`, `ProgressRepository`
-- **Routes (`app/routes.dart`):** `academicStructure` → `/admin/academic`, `adminAccounts` → `/admin/accounts`, `announcements` → `/announcements`, `certificates` → `/certificates`, `changePassword` → `/profile/password`, `communities` → `/communities`, `home` → `/home`, `invite` → `/invite`, `messages` → `/messages`, `notificationSettings` → `/notifications/settings`, `notifications` → `/notifications`, `path` → `/path`, `profile` → `/profile`, `programs` → `/programs`, `progress` → `/progress`, `sessions` → `/profile/sessions`, `signIn` → `/sign-in`, `splash` → `/splash`, `studentRecord` → `/my-halaqat/record`, `studentWorkspace` → `/my-halaqat`, `teacherHistory` → `/teaching/history`, `teacherWorkspace` → `/teaching`
+- **Repository contracts (`data/repositories/repositories.dart`):** `AcademicRepository`, `AdminRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `FilesRepository`, `InstitutionRepository`, `LearningRepository`, `LiveRepository`, `MessagingRepository`, `NotificationsRepository`, `PeopleRepository`, `ProgressRepository`
+- **Routes (`app/routes.dart`):** `academicStructure` → `/admin/academic`, `adminAccounts` → `/admin/accounts`, `announcements` → `/announcements`, `avatar` → `/profile/avatar`, `certificates` → `/certificates`, `changePassword` → `/profile/password`, `communities` → `/communities`, `home` → `/home`, `invite` → `/invite`, `messages` → `/messages`, `notificationSettings` → `/notifications/settings`, `notifications` → `/notifications`, `path` → `/path`, `profile` → `/profile`, `programs` → `/programs`, `progress` → `/progress`, `sessions` → `/profile/sessions`, `signIn` → `/sign-in`, `splash` → `/splash`, `studentRecord` → `/my-halaqat/record`, `studentWorkspace` → `/my-halaqat`, `teacherHistory` → `/teaching/history`, `teacherWorkspace` → `/teaching`
 - **Route builders:** `academicHalaqaPeople`, `academicProgram`, `academicStudentHistory`, `academicTeacherHistory`, `adminAccount`, `certificate`, `community`, `communityAttendance`, `communityAttendanceSnapshot`, `communityAttendanceSnapshots`, `communityInvitations`, `communityLive`, `communityMembers`, `conversation`, `episode`, `lesson`, `levels`, `program`, `teacherHalaqaRoster`
 - **Entry points:** `app/lib/main.dart`, `app/lib/app/app.dart`, `app/lib/app/router.dart`, `app/lib/providers/app_providers.dart`
 
@@ -334,3 +334,5 @@ responsibility and what each module must not know live in
 - [0035 — Community membership governance: enrollment, membership and capabilities stay separate (owner decision)](decisions/0035-community-membership-governance-separation.md)
 - [0036 — Quiet hours and conversation mute: institution policy with user override, push-only (owner decision)](decisions/0036-quiet-hours-and-conversation-mute.md)
 - [0037 — The Trial is a deployed environment: full security baseline, media declared explicitly](decisions/0037-trial-environment-and-explicit-fake-media.md)
+- [0038 — Profile pictures and community profile editing, on the Files module](decisions/0038-identity-and-community-profile-media.md)
+- [0039 — Groups vs channels: a community chat mode, posting by capability](decisions/0039-groups-and-channels-chat-mode.md)

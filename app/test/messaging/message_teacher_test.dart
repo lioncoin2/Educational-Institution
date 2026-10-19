@@ -112,4 +112,8 @@ class _UnavailablePeople implements PeopleRepository {
   @override
   Future<PeopleSearchPage> searchTeachers(String query, {String? cursor}) async =>
       throw const PeopleException('unavailable', 'briefly unavailable');
+
+  @override
+  Future<Uri> personAvatarUrl(String userId) async =>
+      throw const PeopleException('unavailable', 'briefly unavailable');
 }

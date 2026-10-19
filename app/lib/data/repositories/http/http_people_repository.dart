@@ -30,6 +30,13 @@ class HttpPeopleRepository implements PeopleRepository {
     ),
   );
 
+  @override
+  Future<Uri> personAvatarUrl(String userId) => _call(
+    () async => Uri.parse(
+      (await _api.get('/people/${Uri.encodeComponent(userId)}/avatar'))['url']! as String,
+    ),
+  );
+
   static const _unreadable = PeopleException(
     'people.unreadable',
     'The server sent something this app cannot read.',

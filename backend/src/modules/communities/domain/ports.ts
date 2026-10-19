@@ -1,5 +1,5 @@
 import type { CommunityCapability } from '../contracts/capabilities';
-import type { CommunityStatus } from '../contracts/vocabulary';
+import type { CommunityChatMode, CommunityStatus } from '../contracts/vocabulary';
 import type { AuthorityRead, HeldGrant } from './authority';
 import type { Community } from './community';
 import type { CapabilityGrant } from './grant';
@@ -72,6 +72,34 @@ export type SetHalaqaChange =
   | { readonly kind: 'changed'; readonly community: Community }
   | { readonly kind: 'unchanged'; readonly community: Community }
   | { readonly kind: 'not_found' }
+  | Contended;
+
+/**
+ * Editing a community's own title, description and picture (ADR 0038). An act
+ * on the owner, grant or oversight basis: the basis is re-verified under lock
+ * (`basis_lost` when it no longer holds, never on oversight). A write that
+ * changes none of the three fields is `unchanged`. A deadlock victim, after
+ * one retry, is `conflict` (the in-memory store never answers it).
+ */
+export type EditProfileChange =
+  | { readonly kind: 'changed'; readonly community: Community }
+  | { readonly kind: 'unchanged'; readonly community: Community }
+  | { readonly kind: 'not_found' }
+  | BasisLost
+  | Contended;
+
+/**
+ * Changing a GROUP's chat posting mode (ADR 0039) — restrict/restore member
+ * posting. An act on the owner, grant or oversight basis, re-verified under
+ * lock (`basis_lost`). A write to the mode it already has is `unchanged`; an
+ * invalid transition (a CHANNEL, or group→channel) is rejected before the
+ * store by the domain `setChatMode` and never reaches here.
+ */
+export type ChatModeChange =
+  | { readonly kind: 'changed'; readonly community: Community }
+  | { readonly kind: 'unchanged'; readonly community: Community }
+  | { readonly kind: 'not_found' }
+  | BasisLost
   | Contended;
 
 export type AddMembersOutcome =
@@ -243,6 +271,38 @@ export interface CommunityStore {
     readonly actorUserId: string | null;
     readonly at: Date;
   }): Promise<SetHalaqaChange>;
+
+  /**
+   * Replaces the community's own title, description and picture together
+   * (`community.profile.edit`, ADR 0038). An act on the owner, grant or
+   * oversight basis: the basis is re-verified under lock, as a status change
+   * is, so a stint or grant lost since the decision yields `basis_lost` (never
+   * on oversight). A write that changes none of the three fields is
+   * `unchanged`. Nothing else about the community changes.
+   */
+  editProfile(input: {
+    readonly communityId: string;
+    readonly title: string;
+    readonly description: string | null;
+    readonly avatarFileAssetId: string | null;
+    readonly actor: ActingBasis;
+    readonly actorUserId: string | null;
+    readonly at: Date;
+  }): Promise<EditProfileChange>;
+
+  /**
+   * Sets a GROUP's chat posting mode (ADR 0039) — `GROUP_OPEN` or
+   * `GROUP_RESTRICTED`. The acting basis is re-verified under lock, as a status
+   * change is. A write to the mode it already has is `unchanged`. The caller
+   * has already rejected an invalid transition via the domain `setChatMode`.
+   */
+  setChatMode(input: {
+    readonly communityId: string;
+    readonly to: CommunityChatMode;
+    readonly actor: ActingBasis;
+    readonly actorUserId: string | null;
+    readonly at: Date;
+  }): Promise<ChatModeChange>;
 
   /**
    * Adds whoever is not already an ACTIVE member — provided the community

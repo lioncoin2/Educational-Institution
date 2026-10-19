@@ -31,7 +31,15 @@ export interface MessageView {
   readonly attachments: readonly AttachmentView[];
 }
 
+/**
+ * Who a message is from, resolved at view time — never stored on the message.
+ * `avatarFileAssetId` is a Files reference (or null: no picture, or the account
+ * is gone); a viewer turns it into a short-lived link through messaging's own
+ * authorized route, exactly as for an attachment. It is the same minimal
+ * identity messaging already shows (a name), now with the picture beside it.
+ */
 export interface PersonView {
   readonly userId: string;
   readonly displayName: string;
+  readonly avatarFileAssetId: string | null;
 }

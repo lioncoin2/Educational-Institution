@@ -61,6 +61,9 @@ export const users = pgTable(
     passwordChangedAt: timestamp('password_changed_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // A Files asset id (the profile picture), or null. A plain reference column,
+    // not a foreign key: the row it points at belongs to the files module.
+    avatarFileAssetId: text('avatar_file_asset_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
