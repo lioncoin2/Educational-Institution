@@ -297,6 +297,8 @@ class Conversation implements Sourced {
     this.counterpartUserId,
     this.lastMessage,
     this.communityId,
+    this.pinnedMessageId,
+    this.pinVersion = 0,
     this.origin = DataOrigin.profile,
   });
 
@@ -325,6 +327,11 @@ class Conversation implements Sourced {
       final String id when id.isNotEmpty => id,
       _ => null,
     },
+    // Additive (ADR 0043): the single pinned message's id, or null.
+    pinnedMessageId: json['pinnedMessageId'] as String?,
+    // The pin's total-order version. An older server omits it — treat that as
+    // 0 (never "newest"), so a missing value can't overwrite a real pin.
+    pinVersion: json['pinVersion'] as int? ?? 0,
   );
 
   final String id;
@@ -350,6 +357,14 @@ class Conversation implements Sourced {
   /// Set when this is a community's chat: who may read it and post in it is
   /// then the community's to say, and it follows the viewer's membership.
   final String? communityId;
+
+  /// The single pinned message's id (ADR 0043), or null. The pin banner
+  /// resolves its preview from the loaded timeline, as a reply quote does.
+  final String? pinnedMessageId;
+
+  /// The pin's total-order version (ADR 0043 §realtime): the client accepts a
+  /// pin change — event or refresh — only when its version is strictly newer.
+  final int pinVersion;
 
   @override
   final DataOrigin origin;
@@ -405,6 +420,8 @@ class Conversation implements Sourced {
           ? message.createdAt
           : activityAt,
       communityId: communityId,
+      pinnedMessageId: pinnedMessageId,
+      pinVersion: pinVersion,
       origin: origin,
     );
   }
@@ -441,6 +458,8 @@ class Conversation implements Sourced {
       createdAt: createdAt,
       activityAt: activityAt,
       communityId: communityId,
+      pinnedMessageId: pinnedMessageId,
+      pinVersion: pinVersion,
       origin: origin,
     );
   }
@@ -461,6 +480,33 @@ class Conversation implements Sourced {
     createdAt: createdAt,
     activityAt: activityAt,
     communityId: communityId,
+    pinnedMessageId: pinnedMessageId,
+    pinVersion: pinVersion,
+    origin: origin,
+  );
+
+  /// This conversation with its single pin set to [messageId] (null = unpinned)
+  /// at [version] — the effect of a `message.pinned` realtime event (ADR 0043).
+  /// Everything else, including the reply relationships of messages, is
+  /// unchanged. The controller calls this only with a strictly newer [version].
+  Conversation withPin(String? messageId, int version) => Conversation(
+    id: id,
+    type: type,
+    title: title,
+    counterpartUserId: counterpartUserId,
+    memberCount: memberCount,
+    myRole: myRole,
+    canPost: canPost,
+    canManageMembers: canManageMembers,
+    lastSequence: lastSequence,
+    lastReadSequence: lastReadSequence,
+    unreadCount: unreadCount,
+    lastMessage: lastMessage,
+    createdAt: createdAt,
+    activityAt: activityAt,
+    communityId: communityId,
+    pinnedMessageId: messageId,
+    pinVersion: version,
     origin: origin,
   );
 }

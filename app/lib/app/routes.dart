@@ -22,11 +22,23 @@ abstract final class Routes {
   static const String announcements = '/announcements';
   static const String messages = '/messages';
   static const String communities = '/communities';
+  static const String commandCenter = '/command-center';
+
+  /// Mass publishing — one file / image / voice recording / notice to several
+  /// communities at once (`POST /messaging/communities/publish`), for a holder
+  /// of `messaging.send`. The server authorizes each community on its own.
+  static const String publish = '/publish';
   static const String adminAccounts = '/admin/accounts';
 
   /// Managing the institution's academic structure (sections → programs →
   /// halaqat), for a holder of `academic.manage`.
   static const String academicStructure = '/admin/academic';
+
+  /// Scheduling of individual dated lessons (operations, ADR 0042), for a holder
+  /// of `operations.schedule_manage`. The server authorizes every call.
+  static const String schedulingList = '/admin/scheduling';
+  static String schedulingLesson(String lessonId) =>
+      '$schedulingList/lessons/${Uri.encodeComponent(lessonId)}';
 
   /// The teacher's own workspace: the halaqat they actively teach
   /// (`academic.teach`). The server answers by the authenticated identity.

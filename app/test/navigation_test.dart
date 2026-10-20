@@ -124,14 +124,31 @@ void main() {
 
     for (final (label, path) in const [
       ('البرامج', '/programs'),
-      ('مساري', '/path'),
-      ('الشهادات', '/certificates'),
+      ('المجتمعات', '/communities'),
+      ('الرسائل', '/messages'),
       ('حسابي', '/profile'),
       ('الرئيسية', '/home'),
     ]) {
       await tapNav(tester, label);
       expect(location(), path, reason: 'التبويب «$label» لم يفتح $path');
     }
+  });
+
+  testWidgets('the five bottom-navigation destinations are in the agreed '
+      'right-to-left order', (tester) async {
+    await boot(tester);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    // The order the labels occur in the tree is the RTL on-screen order: in an
+    // RTL directionality the NavigationBar lays its destinations out right to
+    // left, so the first destination ('الرئيسية') sits on the right.
+    final labels = find
+        .descendant(of: find.byType(NavigationBar), matching: find.byType(Text))
+        .evaluate()
+        .map((e) => (e.widget as Text).data)
+        .toList();
+    expect(labels, ['الرئيسية', 'البرامج', 'المجتمعات', 'الرسائل', 'حسابي']);
   });
 
   testWidgets('the ladder jumps into the levels of a department', (
@@ -141,7 +158,9 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
 
-    await tapNav(tester, 'مساري');
+    // مساري left the bottom bar; it is reached from حسابي now.
+    await tapNav(tester, 'حسابي');
+    await tapText(tester, 'مساري التعليمي');
     expect(location(), '/path');
 
     await tapText(tester, 'قسم تجويد مبتدئ');
@@ -153,11 +172,35 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
 
-    await tapNav(tester, 'الشهادات');
+    // الشهادات left the bottom bar; it is reached from حسابي now.
+    await tapNav(tester, 'حسابي');
+    await tapText(tester, 'الشهادات والإجازات');
     expect(location(), '/certificates');
 
     await tapText(tester, 'إتمام قسم تجويد مبتدئ');
     expect(location(), '/certificates/c1');
+  });
+
+  testWidgets('حسابي reaches مساري and الشهادات, and Back returns to حسابي', (
+    tester,
+  ) async {
+    await boot(tester);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    await tapNav(tester, 'حسابي');
+
+    await tapText(tester, 'مساري التعليمي');
+    expect(location(), '/path');
+    container.read(routerProvider).pop();
+    await tester.pumpAndSettle();
+    expect(location(), '/profile');
+
+    await tapText(tester, 'الشهادات والإجازات');
+    expect(location(), '/certificates');
+    container.read(routerProvider).pop();
+    await tester.pumpAndSettle();
+    expect(location(), '/profile');
   });
 
   testWidgets('profile reaches progress, notifications and announcements', (
@@ -183,16 +226,14 @@ void main() {
     expect(location(), '/notifications');
   });
 
-  testWidgets('profile reaches communities, a community and its chat', (
+  testWidgets('the المجتمعات tab opens a community and its chat', (
     tester,
   ) async {
     await boot(tester);
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
 
-    await tapNav(tester, 'حسابي');
-
-    await tapText(tester, 'مجتمعاتي');
+    await tapNav(tester, 'المجتمعات');
     expect(location(), '/communities');
 
     await tapText(tester, 'مجتمع طلاب التجويد');
@@ -213,8 +254,7 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
 
-    await tapNav(tester, 'حسابي');
-    await tapText(tester, 'مجتمعاتي');
+    await tapNav(tester, 'المجتمعات');
     await tapText(tester, 'مجتمع أسرة الحفظ');
     expect(location(), '/communities/mock-community-family');
 

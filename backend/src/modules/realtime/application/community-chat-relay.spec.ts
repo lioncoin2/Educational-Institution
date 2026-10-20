@@ -151,4 +151,64 @@ describe('a community chat, in real time', () => {
       'version',
     ]);
   });
+
+  it('delivers message.pinned (ADR 0043) — the new id only — to members, and null on unpin', async () => {
+    const present = await h.connect(member.accessToken);
+    const outsider = await h.person(Roles.student);
+    const stranger = await h.connect(outsider.accessToken);
+    const original = await h.messaging.text(owner.principal, chatId, 'pin this notice');
+    await h.settle();
+
+    // The owner pins by ownership; the pin id reaches the member, not the stranger.
+    expect(
+      (
+        await h.messaging.pinMessage.execute({
+          principal: owner.principal,
+          conversationId: chatId,
+          messageId: original.message.id,
+          meta: META,
+        })
+      ).ok,
+    ).toBe(true);
+    await h.settle();
+
+    const pins = present.link.ofType('message.pinned');
+    expect(pins).toHaveLength(1);
+    expect(pins[0]).toMatchObject({
+      type: 'message.pinned',
+      conversationId: chatId,
+      pinnedMessageId: original.message.id,
+      pinVersion: 1,
+    });
+    // An id and a version only — never the message body, never who pinned.
+    const serialized = JSON.stringify(pins[0]);
+    expect(serialized).not.toContain('pin this notice');
+    expect(serialized).not.toContain(owner.userId);
+    expect(Object.keys(pins[0] ?? {}).sort()).toEqual([
+      'conversationId',
+      'eventId',
+      'occurredAt',
+      'pinVersion',
+      'pinnedMessageId',
+      'type',
+      'version',
+    ]);
+    // A stranger in no shared conversation hears nothing (no cross-conversation leak).
+    expect(stranger.link.ofType('message.pinned')).toHaveLength(0);
+
+    // Unpinning delivers pinnedMessageId: null.
+    await h.messaging.unpinMessage.execute({
+      principal: owner.principal,
+      conversationId: chatId,
+      meta: META,
+    });
+    await h.settle();
+    const afterUnpin = present.link.ofType('message.pinned');
+    expect(afterUnpin).toHaveLength(2);
+    expect(afterUnpin[1]).toMatchObject({
+      conversationId: chatId,
+      pinnedMessageId: null,
+      pinVersion: 2,
+    });
+  });
 });

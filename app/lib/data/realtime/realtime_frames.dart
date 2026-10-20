@@ -64,6 +64,7 @@ sealed class ServerFrame {
         'message.sent' => MessageSentEvent._fromJson(json),
         'message.read' => MessageReadEvent._fromJson(json),
         'message.deleted' => MessageDeletedEvent._fromJson(json),
+        'message.pinned' => MessagePinnedEvent._fromJson(json),
         'participant.added' => ParticipantAddedEvent._fromJson(json),
         'participant.removed' => ParticipantRemovedEvent._fromJson(json),
         'notification.created' => NotificationCreatedEvent._fromJson(json),
@@ -314,6 +315,56 @@ final class MessageDeletedEvent extends ConversationEvent {
 
   final String messageId;
   final int sequence;
+}
+
+/// A community chat's single pin changed (ADR 0043): [pinnedMessageId] is the
+/// new authoritative pin, or null when unpinned. An id only — the banner's
+/// preview is resolved from the loaded timeline, never carried in the frame.
+/// [occurredAt] is the server's change time, used to drop a stale event.
+final class MessagePinnedEvent extends ConversationEvent {
+  const MessagePinnedEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.conversationId,
+    required this.pinnedMessageId,
+    required this.pinVersion,
+  });
+
+  /// Null when the envelope lacks a conversation id, carries a `pinnedMessageId`
+  /// that is neither a non-empty string nor null, or lacks an integer
+  /// `pinVersion` — dropped rather than half-applied. The version is required:
+  /// a frame without it cannot be ordered, so it is not trusted.
+  static MessagePinnedEvent? _fromJson(Map<String, Object?> json) {
+    final conversationId = json['conversationId'];
+    final pinVersion = json['pinVersion'];
+    if (conversationId is! String || conversationId.isEmpty || pinVersion is! int) {
+      return null;
+    }
+    final pinned = json['pinnedMessageId'];
+    final String? pinnedMessageId;
+    switch (pinned) {
+      case null:
+        pinnedMessageId = null;
+      case final String id when id.isNotEmpty:
+        pinnedMessageId = id;
+      default:
+        return null; // a present-but-not-a-string id is a malformed frame
+    }
+    return MessagePinnedEvent(
+      eventId: json['eventId']! as String,
+      occurredAt: DateTime.parse(json['occurredAt']! as String),
+      conversationId: conversationId,
+      pinnedMessageId: pinnedMessageId,
+      pinVersion: pinVersion,
+    );
+  }
+
+  /// The new pinned message's id, or null when the conversation was unpinned.
+  final String? pinnedMessageId;
+
+  /// The conversation's pin version after this change — the total order a client
+  /// uses to accept strictly newer pin state (ADR 0043 §realtime).
+  final int pinVersion;
 }
 
 final class ParticipantAddedEvent extends ConversationEvent {

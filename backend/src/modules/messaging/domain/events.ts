@@ -3,6 +3,7 @@ import {
   MessagingEvents,
   type ConversationCreated,
   type MessageDeleted,
+  type MessagePinned,
   type MessageRead,
   type MessageSent,
   type ParticipantAdded,
@@ -114,6 +115,29 @@ export function messageDeleted(
     conversation.id,
     { conversationId: conversation.id, messageId: message.id, sequence: message.sequence },
     message.deletedAt ?? message.createdAt,
+    correlationId,
+  );
+}
+
+/**
+ * The conversation's single pin changed (ADR 0043): `pinnedMessageId` is the new
+ * authoritative pin, or null when unpinned. `at` is the server's change time
+ * (the pin's timestamp), which carries through as the event's `occurredAt` so a
+ * subscriber can drop a stale pin event. Published only after the change is
+ * persisted, and only when it changed something (idempotent no-ops are silent).
+ */
+export function messagePinned(
+  conversationId: string,
+  pinnedMessageId: string | null,
+  pinVersion: number,
+  at: Date,
+  correlationId?: string,
+): MessagePinned {
+  return domainEvent(
+    MessagingEvents.messagePinned,
+    conversationId,
+    { conversationId, pinnedMessageId, pinVersion },
+    at,
     correlationId,
   );
 }

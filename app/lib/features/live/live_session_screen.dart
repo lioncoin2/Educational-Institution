@@ -11,6 +11,7 @@ import '../../core/widgets/layout/app_screen.dart';
 import '../../data/models/live.dart';
 import 'live_copy.dart';
 import 'state/live_session_controller.dart';
+import 'widgets/live_hand_control.dart';
 import 'widgets/live_media_panel.dart';
 import 'widgets/live_moderation_actions.dart';
 import 'widgets/live_roster.dart';
@@ -135,6 +136,11 @@ class _SessionView extends StatelessWidget {
             ],
           ),
         ),
+        // The viewer's own hand — ask for the floor, or lower it / yield once
+        // up. Shown only as the server's `me` allows (canRaiseHand, or an open
+        // hand). Authority stays the server's; granting the floor permits
+        // speaking, but the audio itself is the media seam below.
+        LiveHandControl(session: session),
         // The viewer's own place in the session audio — joining, the
         // microphone and (for a presenter) the screen-share capture, behind
         // the media seam. Unavailable in a build with no provider bound; the

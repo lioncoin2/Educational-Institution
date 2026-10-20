@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quran_institution_app/app/routes.dart';
 import 'package:quran_institution_app/data/models/auth.dart';
@@ -69,5 +70,17 @@ void main() {
     for (final label in _entries.values) {
       expect(find.text(label), findsNothing, reason: label);
     }
+  });
+
+  testWidgets('the quick-links card is a labelled section', (tester) async {
+    await openApp(tester, Routes.profile);
+    // «روابط سريعة» heads the card the way «العرض» and «عن المؤسسة» head theirs,
+    // so the account page reads as consistently labelled sections.
+    await tester.scrollUntilVisible(
+      find.text('روابط سريعة'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('روابط سريعة'), findsOneWidget);
   });
 }

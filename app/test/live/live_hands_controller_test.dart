@@ -62,6 +62,16 @@ class _HandsRepo implements LiveRepository {
       throw UnimplementedError();
   @override
   Future<LiveMediaGrant> join(String sessionId) => throw UnimplementedError();
+  @override
+  Future<LiveHand> raiseHand(String sessionId) => throw UnimplementedError();
+  @override
+  Future<LiveHand?> lowerHand(String sessionId) => throw UnimplementedError();
+  @override
+  Future<LiveHand> grantFloor(String requestId) => throw UnimplementedError();
+  @override
+  Future<LiveHand> declineHand(String requestId) => throw UnimplementedError();
+  @override
+  Future<LiveHand> revokeFloor(String requestId) => throw UnimplementedError();
 }
 
 LiveHand _hand(String id, String userId) => LiveHand(

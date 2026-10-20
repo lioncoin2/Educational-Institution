@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quran_institution_app/app/app.dart';
+import 'package:quran_institution_app/core/widgets/foundations/app_avatar.dart';
 import 'package:quran_institution_app/data/media/media_seams.dart';
 import 'package:quran_institution_app/data/models/data_origin.dart';
 import 'package:quran_institution_app/data/models/live.dart';
@@ -56,6 +57,7 @@ class ScriptedRepository extends MockMessagingRepository {
     String conversationId, {
     required String clientMessageId,
     required String body,
+    String? replyToMessageId,
   }) async {
     if (failSends > 0) {
       failSends--;
@@ -65,6 +67,7 @@ class ScriptedRepository extends MockMessagingRepository {
       conversationId,
       clientMessageId: clientMessageId,
       body: body,
+      replyToMessageId: replyToMessageId,
     );
   }
 }
@@ -465,6 +468,39 @@ void main() {
       expect(find.text(MessagingCopy.moderateDelete), findsNothing);
       expect(find.text(MessagingCopy.reviewOriginal), findsNothing);
     });
+
+    // Pinned messages (ADR 0043): a moderator pins and unpins; the banner shows
+    // the pinned message's preview; a plain member is offered no pin action.
+    testWidgets('a moderator pins a message, the banner shows it, then unpins', (
+      tester,
+    ) async {
+      await open(tester, '/messages/$ownedChat');
+      expect(find.byKey(const Key('pinned-message-banner')), findsNothing);
+
+      await tester.longPress(find.text(line));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('message-pin-action')));
+      await tester.pumpAndSettle();
+
+      // The banner appears, previewing the pinned message.
+      final banner = find.byKey(const Key('pinned-message-banner'));
+      expect(banner, findsOneWidget);
+      expect(find.descendant(of: banner, matching: find.text(line)), findsOneWidget);
+
+      // The moderator unpins from the banner; it disappears, the message stays.
+      await tester.tap(find.byKey(const Key('pinned-message-unpin')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('pinned-message-banner')), findsNothing);
+      expect(find.text(line), findsOneWidget); // the message itself is untouched
+    });
+
+    testWidgets('a plain member is offered no pin action', (tester) async {
+      await open(tester, '/messages/$openChat');
+      await tester.longPress(find.byType(MessageBubble).first);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('message-pin-action')), findsNothing);
+      expect(find.byKey(const Key('message-unpin-action')), findsNothing);
+    });
   });
 
   // Phase 2: the community chat's header (picture + name) opens the community's
@@ -641,6 +677,283 @@ void main() {
       realtime.setStatus(RealtimeStatus.reconnected);
       await tester.pumpAndSettle();
       expect(indicator, findsOneWidget);
+    });
+  });
+
+  // The Telegram-inspired rendering, over real model fields only: a reply quote
+  // (replyToMessageId), consecutive-sender grouping, and an avatar in every
+  // chat header. No reactions, pins or read receipts are rendered — the model
+  // carries none.
+  group('chat rendering', () {
+    testWidgets('a reply shows a quote of the message it answers', (
+      tester,
+    ) async {
+      await open(tester, '/messages/mock-group');
+      // The seeded reply sits earlier in the history; scroll up to it.
+      final quote = find.byKey(const Key('message-reply-preview'));
+      await tester.scrollUntilVisible(
+        quote,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(quote, findsOneWidget);
+      // The quote names the original sender (the teacher it answers).
+      expect(
+        find.descendant(of: quote, matching: find.text('الأستاذ عبدالله')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'a reply to a deleted message quotes it as a tombstone, never its content',
+      (tester) async {
+        const ownedChat = '${MockCommunityRepository.ownedId}-chat';
+        const line = 'نلتقي بعد صلاة المغرب لمراجعة الورد.';
+
+        // A reply is sent to the seeded message, then that target is moderated
+        // away — the deleted-reply lifecycle the audit (P3-2) covers.
+        final target = (await repo.messages(ownedChat)).items.first;
+        await repo.sendText(
+          ownedChat,
+          clientMessageId: 'reply-del-render',
+          body: 'ما شاء الله',
+          replyToMessageId: target.id,
+        );
+        await repo.deleteMessage(ownedChat, target.id);
+
+        await open(tester, '/messages/$ownedChat');
+
+        // The reply still renders with a quote, but the quote resolves to the
+        // neutral tombstone label — the deleted words appear nowhere on screen.
+        final quote = find.byKey(const Key('message-reply-preview'));
+        expect(quote, findsOneWidget);
+        expect(
+          find.descendant(of: quote, matching: find.text('رسالة محذوفة')),
+          findsOneWidget,
+        );
+        expect(find.text(line), findsNothing);
+        expect(find.text('تم حذف هذه الرسالة'), findsOneWidget);
+      },
+    );
+
+    testWidgets('consecutive messages from one sender show the name once', (
+      tester,
+    ) async {
+      // The channel is three posts in a row from the same sender.
+      await open(tester, '/messages/mock-channel');
+      expect(find.text('إدارة المعهد'), findsOneWidget);
+      expect(find.text('يبدأ التسجيل في دورة التجويد المكثفة يوم الأحد.'),
+          findsOneWidget);
+    });
+
+    testWidgets('every chat header carries an avatar, direct chats included', (
+      tester,
+    ) async {
+      await open(tester, '/messages/mock-direct');
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: find.byType(AppAvatar)),
+        findsOneWidget,
+      );
+      // A direct header is not a tappable community button.
+      expect(
+        find.byKey(const Key('conversation-community-header')),
+        findsNothing,
+      );
+    });
+  });
+
+  // The reply workflow end to end over the mock backend: start from a message,
+  // see the quote above the composer, send, and watch the reply render with its
+  // quote. Reply is backed for text messages (the server validates the target).
+  group('reply workflow', () {
+    const target = 'تنبيه الحلقة رقم 36: راجعوا الوجه المقرر قبل الفجر.';
+
+    Future<void> startReply(WidgetTester tester) async {
+      await tester.longPress(find.text(target));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('message-reply-action')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('long-press → رد shows a quote banner above the composer', (
+      tester,
+    ) async {
+      await open(tester, '/messages/mock-group');
+      await startReply(tester);
+      final banner = find.byKey(const Key('composer-reply-banner'));
+      expect(banner, findsOneWidget);
+      expect(
+        find.descendant(
+          of: banner,
+          matching: find.text(MessagingCopy.replyingTo('الأستاذ عبدالله')),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('cancelling the reply removes the banner', (tester) async {
+      await open(tester, '/messages/mock-group');
+      await startReply(tester);
+      await tester.tap(find.byKey(const Key('composer-reply-cancel')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('composer-reply-banner')), findsNothing);
+    });
+
+    testWidgets('sending the reply quotes the original and clears the banner', (
+      tester,
+    ) async {
+      await open(tester, '/messages/mock-group');
+      await startReply(tester);
+      await tester.enterText(find.byType(TextField), 'شكرًا على التنبيه');
+      await tester.pump();
+      await tester.tap(find.byTooltip('إرسال'));
+      await tester.pumpAndSettle();
+
+      // Banner gone; the reply is in the timeline, quoting the original sender.
+      expect(find.byKey(const Key('composer-reply-banner')), findsNothing);
+      expect(find.text('شكرًا على التنبيه'), findsOneWidget);
+      expect(find.byKey(const Key('message-reply-preview')), findsWidgets);
+
+      // The relationship reached the backend on the right message.
+      final stored = await repo.messages('mock-group');
+      final original = stored.items.firstWhere((m) => m.body == target);
+      final reply = stored.items.firstWhere(
+        (m) => m.body == 'شكرًا على التنبيه',
+      );
+      expect(reply.replyToMessageId, original.id);
+    });
+
+    testWidgets('a read-only channel offers no reply action', (tester) async {
+      await open(tester, '/messages/mock-channel');
+      await tester.longPress(
+        find.text('يبدأ التسجيل في دورة التجويد المكثفة يوم الأحد.'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('message-reply-action')), findsNothing);
+    });
+
+    testWidgets('replying then attaching an image sends the image as a reply', (
+      tester,
+    ) async {
+      await open(
+        tester,
+        '/messages/mock-group',
+        extra: [attachmentPickerProvider.overrideWithValue(FakePicker())],
+      );
+      await startReply(tester);
+      expect(find.byKey(const Key('composer-reply-banner')), findsOneWidget);
+
+      // Attach an image while the reply is active — the target survives picking.
+      await tester.tap(find.byTooltip('إرفاق ملف'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('صورة'));
+      await tester.pumpAndSettle();
+
+      // The banner cleared; the image message carries the reply relationship.
+      expect(find.byKey(const Key('composer-reply-banner')), findsNothing);
+      final stored = await repo.messages('mock-group');
+      final original = stored.items.firstWhere((m) => m.body == target);
+      final image = stored.items.lastWhere(
+        (m) => m.type == MessageType.image,
+      );
+      expect(image.replyToMessageId, original.id);
+    });
+  });
+
+  // Real-time pin synchronization (ADR 0043): a remote message.pinned event
+  // updates the banner without reopening; ordering and cross-conversation
+  // isolation and reconnect recovery behave per the event contract.
+  group('pinned messages — realtime', () {
+    const ownedChat = '${MockCommunityRepository.ownedId}-chat';
+    const pinnedId = '${MockCommunityRepository.ownedId}-chat-m1';
+    const pinnedBody = 'نلتقي بعد صلاة المغرب لمراجعة الورد.';
+    late FakeRealtimeClient realtime;
+    setUp(() => realtime = FakeRealtimeClient());
+    List<Override> live() => [
+      realtimeConnectionProvider.overrideWithValue(realtime),
+    ];
+
+    MessagePinnedEvent pinEvent(
+      String? id, {
+      required int version,
+      String? conversation,
+      DateTime? at,
+    }) => MessagePinnedEvent(
+      eventId: 'message.pinned:${conversation ?? ownedChat}:$version',
+      occurredAt: at ?? DateTime(2026, 1, 1, version),
+      conversationId: conversation ?? ownedChat,
+      pinnedMessageId: id,
+      pinVersion: version,
+    );
+
+    testWidgets('a remote pin shows the banner, then a remote unpin removes it', (
+      tester,
+    ) async {
+      await open(tester, '/messages/$ownedChat', extra: live());
+      expect(find.byKey(const Key('pinned-message-banner')), findsNothing);
+
+      realtime.emit(pinEvent(pinnedId, version: 1));
+      await tester.pumpAndSettle();
+      final banner = find.byKey(const Key('pinned-message-banner'));
+      expect(banner, findsOneWidget);
+      expect(find.descendant(of: banner, matching: find.text(pinnedBody)), findsOneWidget);
+
+      realtime.emit(pinEvent(null, version: 2));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('pinned-message-banner')), findsNothing);
+    });
+
+    testWidgets('a replacement event updates the preview', (tester) async {
+      await open(tester, '/messages/$ownedChat', extra: live());
+      realtime.emit(pinEvent(pinnedId, version: 1));
+      await tester.pumpAndSettle();
+      // A replacement to a message id not loaded → truthful fallback preview.
+      realtime.emit(pinEvent('no-such-message', version: 2));
+      await tester.pumpAndSettle();
+      final banner = find.byKey(const Key('pinned-message-banner'));
+      expect(banner, findsOneWidget);
+      expect(find.descendant(of: banner, matching: find.text(pinnedBody)), findsNothing);
+      expect(
+        find.descendant(of: banner, matching: find.text(MessagingCopy.pinnedUnavailable)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a pin event for another conversation is ignored', (tester) async {
+      await open(tester, '/messages/$ownedChat', extra: live());
+      realtime.emit(pinEvent(pinnedId, version: 1, conversation: 'some-other-chat'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('pinned-message-banner')), findsNothing);
+    });
+
+    testWidgets('an older version does not regress newer state, even at an '
+        'equal timestamp', (tester) async {
+      await open(tester, '/messages/$ownedChat', extra: live());
+      final sameInstant = DateTime(2026, 5, 1, 9);
+      // Newer pin (version 2) applied first.
+      realtime.emit(pinEvent(pinnedId, version: 2, at: sameInstant));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('pinned-message-banner')), findsOneWidget);
+      // An older unpin (version 1) at the SAME timestamp must NOT clear it:
+      // version, not time, decides.
+      realtime.emit(pinEvent(null, version: 1, at: sameInstant));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('pinned-message-banner')), findsOneWidget);
+      // A duplicate of the newer event is idempotent.
+      realtime.emit(pinEvent(pinnedId, version: 2, at: sameInstant));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('pinned-message-banner')), findsOneWidget);
+    });
+
+    testWidgets('reconnect recovers a pin set while disconnected', (tester) async {
+      await open(tester, '/messages/$ownedChat', extra: live());
+      expect(find.byKey(const Key('pinned-message-banner')), findsNothing);
+      // A change missed while away: the server now has a pin.
+      await repo.pinMessage(ownedChat, pinnedId);
+      realtime.setStatus(RealtimeStatus.reconnected);
+      await tester.pumpAndSettle();
+      // The re-read on reconnect recovers it authoritatively.
+      expect(find.byKey(const Key('pinned-message-banner')), findsOneWidget);
     });
   });
 }

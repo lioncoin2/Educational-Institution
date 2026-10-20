@@ -857,6 +857,180 @@ void main() {
     });
   });
 
+  // ── Speaking: the floor ─────────────────────────────────────────────────
+  // Each floor command returns a `{request}` envelope (grant/revoke also carry
+  // a `media` field, which the app ignores); the request parses as a LiveHand.
+  Map<String, Object?> requestBody({
+    String id = 'h-1',
+    String state = 'pending',
+    String? grantedAt,
+  }) => {
+    'id': id,
+    'sessionId': 's-1',
+    'userId': 'u-1',
+    'state': state,
+    'requestedAt': '2026-01-01T00:01:00.000Z',
+    'grantedAt': grantedAt,
+    'decidedAt': null,
+  };
+
+  group('HttpLiveRepository.raiseHand', () {
+    test('POSTs …/hand, encodes the id, parses the request', () async {
+      final (client, seen) = recording(201, {'request': requestBody()});
+      final repo = HttpLiveRepository(await api(client));
+
+      final hand = await repo.raiseHand('s/1');
+      expect(hand.id, 'h-1');
+      expect(hand.state, SpeakerRequestState.pending);
+      expect(seen.single.method, 'POST');
+      expect(seen.single.url.path, '/live/sessions/s%2F1/hand');
+      expect(seen.single.headers['authorization'], 'Bearer a1');
+    });
+
+    test('a 200 (hand already up) parses too', () async {
+      final (client, _) = recording(200, {'request': requestBody()});
+      final repo = HttpLiveRepository(await api(client));
+      expect((await repo.raiseHand('s-1')).id, 'h-1');
+    });
+
+    test('an unreadable envelope (no request) is live.unreadable', () async {
+      final repo = HttpLiveRepository(await api(serving(200, const {})));
+      await expectLater(
+        repo.raiseHand('s-1'),
+        throwsA(
+          isA<LiveException>().having((e) => e.code, 'code', 'live.unreadable'),
+        ),
+      );
+    });
+
+    test('maps the refusal ladder (403/404/409/412) by code', () async {
+      Future<void> expectCode(int status, String code) async {
+        final repo = HttpLiveRepository(
+          await api(
+            serving(status, {
+              'error': {'code': code, 'message': 'x'},
+            }),
+          ),
+        );
+        await expectLater(
+          repo.raiseHand('s-1'),
+          throwsA(isA<LiveException>().having((e) => e.code, 'code', code)),
+        );
+      }
+
+      await expectCode(403, 'communities.capability_required');
+      await expectCode(404, 'live.session_not_found');
+      await expectCode(409, 'live.hand_conflict');
+      await expectCode(412, 'live.session_not_live');
+    });
+  });
+
+  group('HttpLiveRepository.lowerHand', () {
+    test('DELETEs …/hand and parses the withdrawn request', () async {
+      final (client, seen) = recording(200, {
+        'request': requestBody(state: 'withdrawn'),
+      });
+      final repo = HttpLiveRepository(await api(client));
+
+      final hand = await repo.lowerHand('s/1');
+      expect(hand, isNotNull);
+      expect(hand!.state, SpeakerRequestState.withdrawn);
+      expect(seen.single.method, 'DELETE');
+      expect(seen.single.url.path, '/live/sessions/s%2F1/hand');
+    });
+
+    test('{request: null} (none was up) decodes null', () async {
+      final repo = HttpLiveRepository(
+        await api(serving(200, {'request': null})),
+      );
+      expect(await repo.lowerHand('s-1'), isNull);
+    });
+  });
+
+  group('HttpLiveRepository.grantFloor', () {
+    test('POSTs /requests/:id/grant (ignoring media), parses the request', () async {
+      final (client, seen) = recording(200, {
+        'request': requestBody(
+          state: 'granted',
+          grantedAt: '2026-01-01T00:02:00.000Z',
+        ),
+        'media': 'granted',
+      });
+      final repo = HttpLiveRepository(await api(client));
+
+      final hand = await repo.grantFloor('h/9');
+      expect(hand.state, SpeakerRequestState.granted);
+      expect(hand.grantedAt, isNotNull);
+      expect(seen.single.method, 'POST');
+      expect(seen.single.url.path, '/live/requests/h%2F9/grant');
+    });
+
+    test('a not-found request surfaces by code', () async {
+      final repo = HttpLiveRepository(
+        await api(
+          serving(404, {
+            'error': {'code': 'live.request_not_found', 'message': 'no'},
+          }),
+        ),
+      );
+      await expectLater(
+        repo.grantFloor('h-1'),
+        throwsA(
+          isA<LiveException>().having(
+            (e) => e.code,
+            'code',
+            'live.request_not_found',
+          ),
+        ),
+      );
+    });
+  });
+
+  group('HttpLiveRepository.declineHand', () {
+    test('POSTs /requests/:id/decline and parses the request', () async {
+      final (client, seen) = recording(200, {
+        'request': requestBody(state: 'declined'),
+      });
+      final repo = HttpLiveRepository(await api(client));
+
+      final hand = await repo.declineHand('h-1');
+      expect(hand.state, SpeakerRequestState.declined);
+      expect(seen.single.method, 'POST');
+      expect(seen.single.url.path, '/live/requests/h-1/decline');
+    });
+  });
+
+  group('HttpLiveRepository.revokeFloor', () {
+    test('POSTs /requests/:id/revoke (ignoring media), parses the request', () async {
+      final (client, seen) = recording(200, {
+        'request': requestBody(state: 'revoked'),
+        'media': 'revoked',
+      });
+      final repo = HttpLiveRepository(await api(client));
+
+      final hand = await repo.revokeFloor('h-1');
+      expect(hand.state, SpeakerRequestState.revoked);
+      expect(seen.single.method, 'POST');
+      expect(seen.single.url.path, '/live/requests/h-1/revoke');
+    });
+
+    test('not a moderator surfaces isForbidden', () async {
+      final repo = HttpLiveRepository(
+        await api(
+          serving(403, {
+            'error': {'code': 'live.not_a_moderator', 'message': 'no'},
+          }),
+        ),
+      );
+      await expectLater(
+        repo.revokeFloor('h-1'),
+        throwsA(
+          isA<LiveException>().having((e) => e.isForbidden, 'isForbidden', isTrue),
+        ),
+      );
+    });
+  });
+
   group('HttpLiveRepository.join (media credential)', () {
     Map<String, Object?> ticket() => {
       'sessionId': 's-1',

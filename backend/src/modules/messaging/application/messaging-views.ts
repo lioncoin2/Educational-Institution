@@ -76,6 +76,8 @@ export class MessagingViews {
         lastReadSequence: me.lastReadSequence,
         unreadCount: row.unreadCount,
         lastMessage: row.lastMessage === null ? null : preview(row.lastMessage, names),
+        pinnedMessageId: conversation.pinnedMessageId,
+        pinVersion: conversation.pinVersion,
         createdAt: conversation.createdAt,
         activityAt: conversation.lastMessageAt ?? conversation.createdAt,
       };

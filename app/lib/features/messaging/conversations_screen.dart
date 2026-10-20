@@ -10,6 +10,7 @@ import '../../core/widgets/foundations/empty_state.dart';
 import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/layout/responsive_body.dart';
 import '../../providers/app_providers.dart';
+import '../auth/sign_in_prompt.dart';
 import 'messaging_copy.dart';
 import 'state/conversation_list_controller.dart';
 import 'widgets/connection_banner.dart';
@@ -59,11 +60,10 @@ class ConversationsScreen extends ConsumerWidget {
                 value: ref.watch(sessionUserProvider),
                 onRetry: () => ref.invalidate(sessionUserProvider),
                 builder: (context, user) => user == null
-                    ? EmptyState(
-                        icon: Icons.lock_outline_rounded,
-                        title: 'سجّل الدخول لعرض رسائلك',
-                        actionLabel: 'تسجيل الدخول',
-                        onAction: () => context.push(Routes.signIn),
+                    // The same shared sign-in prompt the communities tab uses,
+                    // so the two sibling tabs meet a signed-out viewer alike.
+                    ? const SingleChildScrollView(
+                        child: SignInPrompt(title: 'سجّلي الدخول لعرض رسائلك'),
                       )
                     : const Column(
                         children: [

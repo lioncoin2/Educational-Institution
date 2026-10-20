@@ -2,15 +2,20 @@ import { describeWithPostgres, scratchDatabase, type ScratchDatabase } from '../
 import { startRealtimeApi, type Account, type RealtimeApi } from '../support/realtime-api';
 
 /**
- * The community-chat POSTING contract (Q51), end to end over REAL PostgreSQL and
- * the exact HTTP routes the Flutter app drives — the runtime guard for the
- * "members read, owner/granted-posters post" policy the app surfaces as the
- * locked composer (`conversation.canPost` → `MessagingCopy.cannotPostHere`).
+ * The community-chat POSTING contract (Q51 posting half as resolved by ADR 0039),
+ * end to end over REAL PostgreSQL and the exact HTTP routes the Flutter app
+ * drives — the runtime guard for the "members read, owner/granted-posters post"
+ * publisher rule the app surfaces as the locked composer
+ * (`conversation.canPost` → `MessagingCopy.cannotPostHere`).
  *
- *   owner creates a community → adds a plain member and a second member →
- *   grants ONLY the second member `community.chat.post` → the chat is opened
- *   (materialized as a CHANNEL conversation) and its membership projection
- *   converges, then:
+ * Since ADR 0039 that rule governs a GROUP_RESTRICTED group and a CHANNEL; a NEW
+ * group is GROUP_OPEN, where every active member posts on the membership basis
+ * (owner-approved, register §28). So the guarded community is restricted first:
+ *
+ *   owner creates a group → restricts member posting (GROUP_RESTRICTED) → adds a
+ *   plain member and a second member → grants ONLY the second member
+ *   `community.chat.post` → the chat is opened (materialized as a CHANNEL
+ *   conversation) and its membership projection converges, then:
  *
  *     • the OWNER (implicit holder) reads `canPost:true` and a post lands (201);
  *     • a PLAIN member reads `canPost:false` and a post is refused 403
@@ -20,6 +25,10 @@ import { startRealtimeApi, type Account, type RealtimeApi } from '../support/rea
  *     • a NON-member can neither read the conversation nor its messages nor post
  *       — the channel never leaks to someone outside the community.
  *
+ * Alongside, the same plain member in a NEW group (default GROUP_OPEN, persisted
+ * as such) reads `canPost:true` and posts with no grant, and in a CHANNEL reads
+ * `canPost:false` and is refused 403 — the three modes on the real database.
+ *
  * It asserts the response FIELDS the client reads (`canPost` on the conversation,
  * the forbidden error CODE, the persisted message in the timeline), not HTTP
  * status alone. `community-chat.spec` proves the same policy at the use-case
@@ -27,14 +36,15 @@ import { startRealtimeApi, type Account, type RealtimeApi } from '../support/rea
  * persistence and the HTTP serialization agree with it on a real database — the
  * way `messaging-attachments-postgres` backs `messaging.api.spec`.
  *
- * It ENCODES the current Q51 policy; it does not change it. If the policy were
- * weakened so a plain member could post, the `canPost:false` / 403 assertions
- * here would fail — which is the point of a permanent guard. Booted against a
+ * It ENCODES the current policy; it does not change it. If the publisher rule were
+ * weakened so a plain member could post in a restricted group or a channel, the
+ * `canPost:false` / 403 assertions here would fail — which is the point of a
+ * permanent guard. Booted against a
  * fresh scratch database, isolated per run and dropped afterwards; no
  * pre-existing server, no shared data, no production/staging secret.
  */
 describeWithPostgres(
-  'community-chat posting contract over PostgreSQL (Q51: members read, owner/grant post)',
+  'community-chat posting contract over PostgreSQL (restricted: members read, owner/grant post)',
   () => {
     let scratch: ScratchDatabase;
     let r: RealtimeApi;
@@ -45,8 +55,12 @@ describeWithPostgres(
     // so the grantee is a TEACHER) and is then explicitly granted it.
     let poster: Account;
     let outsider: Account; // never added to the community
-    let communityId: string;
+    let communityId: string; // a group restricted to publishers (GROUP_RESTRICTED)
     let chatId: string;
+    let openGroupId: string; // a new group left at its default (GROUP_OPEN)
+    let openChatId: string;
+    let channelId: string; // a CHANNEL
+    let channelChatId: string;
 
     const OWNER_LINE = 'رسالة من المالك';
     const POSTER_LINE = 'رسالة من العضو الممنوح';
@@ -59,9 +73,9 @@ describeWithPostgres(
      * — fed asynchronously from community membership — to reach `expected`, so the
      * posting permits resolve against a converged channel. Returns the CHANNEL id.
      */
-    async function openChatWithMembers(expected: number): Promise<string> {
+    async function openChatWithMembers(expected: number, id = communityId): Promise<string> {
       for (let attempt = 0; attempt < 50; attempt++) {
-        const res = await r.api.call('GET', `/messaging/communities/${communityId}/conversation`, {
+        const res = await r.api.call('GET', `/messaging/communities/${id}/conversation`, {
           token: r.owner.token,
         });
         expect(res.status).toBe(200);
@@ -72,15 +86,15 @@ describeWithPostgres(
     }
 
     /** GET the community chat as `who`, returning the parsed ConversationResponse. */
-    async function conversationAs(who: Account) {
-      return r.api.call('GET', `/messaging/communities/${communityId}/conversation`, {
+    async function conversationAs(who: Account, id = communityId) {
+      return r.api.call('GET', `/messaging/communities/${id}/conversation`, {
         token: who.token,
       });
     }
 
     /** POST a text message as `who` through the ordinary conversation route. */
-    async function postAs(who: Account, body: string) {
-      return r.api.call('POST', `/messaging/conversations/${chatId}/messages/text`, {
+    async function postAs(who: Account, body: string, conversationId = chatId) {
+      return r.api.call('POST', `/messaging/conversations/${conversationId}/messages/text`, {
         token: who.token,
         body: { clientMessageId: `cc-post-${Math.random().toString(36).slice(2)}`, body },
       });
@@ -95,11 +109,31 @@ describeWithPostgres(
       outsider = await r.provision('cc-post-outsider', 'STUDENT', 'غير عضو');
 
       communityId = await r.createCommunity(r.owner, 'حلقة النشر');
+      // A new group is open (ADR 0039); restrict it so the publisher rule decides.
+      const restricted = await r.api.call('PUT', `/communities/${communityId}/chat-mode`, {
+        token: r.owner.token,
+        body: { membersMayPost: false },
+      });
+      expect(restricted.status).toBe(200);
+      expect(restricted.body.chatMode).toBe('GROUP_RESTRICTED');
       await r.addToCommunity(r.owner, communityId, [member, poster]);
       // Grant ONLY the second member the posting capability (Q51: explicit grant).
       await r.grantCapabilities(r.owner, communityId, poster.id, ['community.chat.post']);
 
       chatId = await openChatWithMembers(3); // owner (creator) + member + poster
+
+      openGroupId = await r.createCommunity(r.owner, 'مجموعة مفتوحة');
+      await r.addToCommunity(r.owner, openGroupId, [member]);
+      openChatId = await openChatWithMembers(2, openGroupId); // owner + member
+
+      const channel = await r.api.call('POST', '/communities', {
+        token: r.owner.token,
+        body: { title: 'قناة الإعلانات', kind: 'CHANNEL' },
+      });
+      expect(channel.status).toBe(201);
+      channelId = channel.body.id as string;
+      await r.addToCommunity(r.owner, channelId, [member]);
+      channelChatId = await openChatWithMembers(2, channelId); // owner + member
     }, 120_000);
 
     afterAll(async () => {
@@ -178,6 +212,36 @@ describeWithPostgres(
       // Never accepted; a non-member is refused (403) or told nothing exists (404).
       expect(post.status).not.toBe(201);
       expect([403, 404]).toContain(post.status);
+    });
+
+    it('a NEW group persists as GROUP_OPEN: a plain member canPost=true and posts with no grant', async () => {
+      const community = await r.api.call('GET', `/communities/${openGroupId}`, {
+        token: member.token,
+      });
+      expect(community.status).toBe(200);
+      expect(community.body.chatMode).toBe('GROUP_OPEN');
+      expect((community.body.me as { canPost: boolean }).canPost).toBe(true);
+
+      const view = await conversationAs(member, openGroupId);
+      expect(view.status).toBe(200);
+      expect(view.body.canPost).toBe(true);
+
+      const posted = await postAs(member, 'رسالة عضو في مجموعة مفتوحة', openChatId);
+      expect(posted.status).toBe(201);
+      const timeline = await r.timeline(r.owner, openChatId);
+      expect(timeline.some((m) => m.body === 'رسالة عضو في مجموعة مفتوحة')).toBe(true);
+    });
+
+    it('a CHANNEL refuses a plain member (canPost=false, 403) and admits the owner', async () => {
+      const view = await conversationAs(member, channelId);
+      expect(view.status).toBe(200);
+      expect(view.body.canPost).toBe(false);
+
+      const refused = await postAs(member, 'محاولة عضو في قناة', channelChatId);
+      expect(refused.status).toBe(403);
+      expect(errorOf(refused.body)?.code).toBe('messaging.posting_not_allowed');
+
+      expect((await postAs(r.owner, 'إعلان من المالك', channelChatId)).status).toBe(201);
     });
   },
 );

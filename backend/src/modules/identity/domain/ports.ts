@@ -1,4 +1,5 @@
 import type { Page, PageRequest } from '../../../shared';
+import type { AccountStatus } from './account-status';
 import type { AuthSession, AuthSessionId, RevocationReason } from './auth-session';
 import type { LoginIdentifier } from './login-identifier';
 import type { RoleCode } from './role';
@@ -47,6 +48,12 @@ export interface UserRepository {
   ): Promise<Page<User>>;
   /** True when at least one ACTIVE account holds `role`. */
   anyActiveWithRole(role: RoleCode): Promise<boolean>;
+  /**
+   * How many accounts hold each status — the owner's directory tally. An
+   * aggregate in one grouped query, never a listing and never a person; a
+   * status with no accounts may be absent from the map.
+   */
+  countByStatus(): Promise<ReadonlyMap<AccountStatus, number>>;
 }
 
 export interface AuthSessionRepository {

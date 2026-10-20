@@ -12,6 +12,8 @@ import {
   Min,
 } from 'class-validator';
 
+import { MAX_PUBLISH_TARGETS } from '../../application/publish-to-communities.use-case';
+
 /**
  * Transport shapes for /messaging. They bound what a request may carry; the
  * domain decides what is valid and answers with precise codes
@@ -92,6 +94,39 @@ export class SendMediaDto extends SendBaseDto {
   @IsString()
   @MaxLength(TEXT_MAX)
   caption?: string | null;
+}
+
+/**
+ * Publish one notice/file/image/voice recording to several communities at once.
+ * `body` is the text of a TEXT publish, or the caption of a media one;
+ * `fileAssetId` is required for the media kinds. The domain decides the rest and
+ * answers per community.
+ */
+export class PublishToCommunitiesDto {
+  /** The batch's idempotency key; resend it verbatim to retry. */
+  @IsString()
+  @MaxLength(ID_MAX)
+  clientBatchId!: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_PUBLISH_TARGETS)
+  @IsString({ each: true })
+  @MaxLength(ID_MAX, { each: true })
+  communityIds!: string[];
+
+  @IsIn(['TEXT', 'IMAGE', 'VOICE', 'FILE'])
+  kind!: 'TEXT' | 'IMAGE' | 'VOICE' | 'FILE';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(TEXT_MAX)
+  body?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(ID_MAX)
+  fileAssetId?: string | null;
 }
 
 export class MarkReadDto {

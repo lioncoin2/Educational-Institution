@@ -1994,6 +1994,20 @@ review window and retention are [ADR 0029](decisions/0029-community-message-mode
 with [Q23](#q23--moderation-deletion-and-review). Posting rules are unchanged;
 only the moderation half of this question is now answered.
 
+**Answered — posting half (2026-10-20, [ADR 0039](decisions/0039-groups-and-channels-chat-mode.md), Accepted by the owner).**
+Who may post now depends on the community's `chatMode`. A **new group is
+`GROUP_OPEN`**: every ACTIVE member posts on the membership basis
+(`POSTING_MEMBER_RULE`, ceiling `communities.read` + `messaging.send`, no grant).
+A `GROUP_RESTRICTED` group and a `CHANNEL` keep the publisher rule above (the
+owner, or a `community.chat.post` grantee). LOCKED still blocks everyone, and
+messaging still asks `community.chat.post` on every send. Communities that
+existed before migration 0025 default to `GROUP_RESTRICTED`, so their behaviour
+is unchanged. The product behaviour is the owner's, recorded in
+[owner-decision-register §28](../owner-decision-register.md#28-groups--channels-posting--new-groups-open-by-default-owner-approved-2026-10-19-adr-0039).
+With moderation (ADR 0029) and posting (ADR 0039) answered, the entry stays open
+only for "exactly one chat" and "does size matter". Both remain the PROVISIONAL
+defaults above.
+
 ---
 
 ## Q52 — Community chat history for newcomers and returners

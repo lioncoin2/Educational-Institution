@@ -39,6 +39,10 @@ abstract final class CommunityCopy {
   static const joinedLabel = 'تاريخ الانضمام';
   static const capabilitiesTitle = 'صلاحياتي';
 
+  /// Heads the group of primary actions (chat, members, live, attendance), so
+  /// it reads as a labelled section like عضويتي and صلاحياتي above it.
+  static const actionsTitle = 'ما يمكنني فعله هنا';
+
   static const openChat = 'فتح محادثة المجتمع';
   static const viewMembers = 'عرض الأعضاء';
   static const viewLive = 'الجلسة المباشرة';

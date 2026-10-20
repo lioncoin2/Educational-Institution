@@ -24,7 +24,9 @@ import type {
   MessagingReadModel,
   MessagingRepository,
   ProjectionRow,
+  PinOutcome,
   SoftDeleteOutcome,
+  UnpinOutcome,
 } from '../domain/ports';
 
 const key = (conversationId: string, userId: string) => `${conversationId}\u0000${userId}`;
@@ -210,6 +212,54 @@ export class InMemoryMessagingStore implements MessagingRepository, MessagingRea
     timeline[index] = deleted;
     this.timelines.set(input.conversationId, timeline);
     return { kind: 'deleted', message: deleted, alreadyDeleted: false };
+  }
+
+  async pinMessage(input: {
+    readonly conversationId: ConversationId;
+    readonly messageId: MessageId;
+    readonly pinnedBy: string;
+    readonly at: Date;
+  }): Promise<PinOutcome> {
+    if (this.conversations.get(input.conversationId) === undefined) {
+      return { kind: 'conversation_not_found' };
+    }
+    const message = await this.findMessage(input.conversationId, input.messageId);
+    if (message === null || message.deletedAt !== null) return { kind: 'message_not_found' };
+    // Re-read AFTER the await: the read-modify-write of the version must see the
+    // latest committed state, mirroring the row lock the Postgres store takes —
+    // so two concurrent pins serialize to consecutive versions, never a conflict.
+    const conversation = this.conversations.get(input.conversationId);
+    if (conversation === undefined) return { kind: 'conversation_not_found' };
+    // Idempotent: re-pinning the current pin changes nothing, including the version.
+    if (conversation.pinnedMessageId === input.messageId) {
+      return { kind: 'pinned', conversation, message, alreadyPinned: true };
+    }
+    const updated: Conversation = {
+      ...conversation,
+      pinnedMessageId: input.messageId,
+      pinnedBy: input.pinnedBy,
+      pinnedAt: input.at,
+      pinVersion: conversation.pinVersion + 1,
+    };
+    this.conversations.set(conversation.id, updated);
+    return { kind: 'pinned', conversation: updated, message, alreadyPinned: false };
+  }
+
+  async unpinMessage(conversationId: ConversationId): Promise<UnpinOutcome> {
+    const conversation = this.conversations.get(conversationId);
+    if (conversation === undefined) return { kind: 'conversation_not_found' };
+    if (conversation.pinnedMessageId === null) {
+      return { kind: 'unpinned', conversation, alreadyUnpinned: true };
+    }
+    const updated: Conversation = {
+      ...conversation,
+      pinnedMessageId: null,
+      pinnedBy: null,
+      pinnedAt: null,
+      pinVersion: conversation.pinVersion + 1,
+    };
+    this.conversations.set(conversationId, updated);
+    return { kind: 'unpinned', conversation: updated, alreadyUnpinned: false };
   }
 
   async purgeDeletedBefore(deletedBefore: Date, limit: number): Promise<number> {

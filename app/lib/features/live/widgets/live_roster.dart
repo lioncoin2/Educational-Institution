@@ -186,6 +186,37 @@ class _HandCard extends ConsumerWidget {
               spacing: Insets.sm,
               runSpacing: Insets.sm,
               children: [
+                // The floor (Q56): a waiting hand may be given the floor or
+                // passed over; a speaker holding it may have it taken back.
+                // The command carries the hand's own id (the request), not the
+                // user id; onActed re-reads the queue, never fabricating it.
+                if (hand.state == SpeakerRequestState.pending) ...[
+                  _RosterCommand(
+                    key: Key('live-grant-floor-${hand.id}'),
+                    label: LiveCopy.grantFloor,
+                    icon: Icons.record_voice_over_outlined,
+                    successMessage: LiveCopy.grantFloorDone,
+                    action: (c) => c.grantFloor(hand.id),
+                    onDone: onActed,
+                  ),
+                  _RosterCommand(
+                    key: Key('live-decline-hand-${hand.id}'),
+                    label: LiveCopy.declineHand,
+                    icon: Icons.do_not_disturb_on_outlined,
+                    successMessage: LiveCopy.declineHandDone,
+                    action: (c) => c.declineHand(hand.id),
+                    onDone: onActed,
+                  ),
+                ],
+                if (hand.state == SpeakerRequestState.granted)
+                  _RosterCommand(
+                    key: Key('live-revoke-floor-${hand.id}'),
+                    label: LiveCopy.revokeFloor,
+                    icon: Icons.voice_over_off_outlined,
+                    successMessage: LiveCopy.revokeFloorDone,
+                    action: (c) => c.revokeFloor(hand.id),
+                    onDone: onActed,
+                  ),
                 if (isPresenter)
                   _RosterCommand(
                     key: Key('live-revoke-presenter-${hand.userId}'),

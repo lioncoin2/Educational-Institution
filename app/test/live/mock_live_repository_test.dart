@@ -164,4 +164,45 @@ void main() {
       },
     );
   });
+
+  group('MockLiveRepository the floor (raise / lower / moderate)', () {
+    test('a listener may raise a hand; once up, me reflects it', () async {
+      final r = repo();
+      final before = await r.currentSession('mock-community-live');
+      expect(before!.me.canRaiseHand, isTrue);
+      expect(before.me.hand, isNull);
+
+      final hand = await r.raiseHand('sess-42');
+      expect(hand.state, SpeakerRequestState.pending);
+      expect(hand.sessionId, 'sess-42');
+
+      final after = await r.currentSession('mock-community-live');
+      expect(after!.me.hand, isNotNull);
+      expect(after.me.hand!.state, SpeakerRequestState.pending);
+      expect(after.me.canRaiseHand, isFalse);
+    });
+
+    test('lowering a raised hand clears it; lowering none answers null', () async {
+      final r = repo();
+      await r.raiseHand('sess-42');
+      final lowered = await r.lowerHand('sess-42');
+      expect(lowered, isNotNull);
+      expect(lowered!.state, SpeakerRequestState.withdrawn);
+
+      final after = await r.currentSession('mock-community-live');
+      expect(after!.me.hand, isNull);
+      expect(after.me.canRaiseHand, isTrue);
+
+      // Nothing up now: lowering again answers null.
+      expect(await r.lowerHand('sess-42'), isNull);
+    });
+
+    test('grant / decline / revoke echo the request in its new state', () async {
+      final r = repo();
+      expect((await r.grantFloor('h-1')).state, SpeakerRequestState.granted);
+      expect((await r.grantFloor('h-1')).grantedAt, isNotNull);
+      expect((await r.declineHand('h-1')).state, SpeakerRequestState.declined);
+      expect((await r.revokeFloor('h-1')).state, SpeakerRequestState.revoked);
+    });
+  });
 }

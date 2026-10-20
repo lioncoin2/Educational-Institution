@@ -82,6 +82,10 @@ export function newCommunityChat(input: {
     memberCount: 0,
     communityId: input.communityId,
     projectedMembershipVersion: 0,
+    pinnedMessageId: null,
+    pinnedBy: null,
+    pinnedAt: null,
+    pinVersion: 0,
   };
 }
 

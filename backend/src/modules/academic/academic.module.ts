@@ -10,6 +10,7 @@ import { AcademicAccess } from './application/academic-access';
 import { AcademicJournal } from './application/academic-journal';
 import { AcademicPeople } from './application/academic-people';
 import { AcademicRelationshipsService } from './application/academic-relationships.service';
+import { AcademicStructureSummaryService } from './application/academic-structure-summary.service';
 import {
   GetCatalogueUseCase,
   GetHalaqaUseCase,
@@ -49,6 +50,7 @@ import {
   ListTeacherAssignmentsUseCase,
 } from './application/teaching.use-cases';
 import { ACADEMIC_RELATIONSHIPS } from './contracts/relationships';
+import { ACADEMIC_STRUCTURE_SUMMARY } from './contracts/reporting';
 import {
   ACADEMIC_READ_MODEL,
   ACADEMIC_REPOSITORY,
@@ -131,7 +133,8 @@ import { InMemoryAcademicStore } from './infrastructure/in-memory-academic-store
         new DevelopmentStructureSeed(!config.database.configured, seed),
     },
     { provide: ACADEMIC_RELATIONSHIPS, useClass: AcademicRelationshipsService },
+    { provide: ACADEMIC_STRUCTURE_SUMMARY, useClass: AcademicStructureSummaryService },
   ],
-  exports: [ACADEMIC_RELATIONSHIPS],
+  exports: [ACADEMIC_RELATIONSHIPS, ACADEMIC_STRUCTURE_SUMMARY],
 })
 export class AcademicModule {}

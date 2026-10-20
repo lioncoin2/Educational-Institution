@@ -42,6 +42,8 @@ import '../data/repositories/http/http_live_repository.dart';
 import '../data/repositories/http/http_messaging_repository.dart';
 import '../data/repositories/http/http_notifications_repository.dart';
 import '../data/repositories/http/http_people_repository.dart';
+import '../data/repositories/http/http_reporting_repository.dart';
+import '../data/repositories/http/http_scheduling_repository.dart';
 import '../data/repositories/mock/mock_academic_repository.dart';
 import '../data/repositories/mock/mock_admin_repository.dart';
 import '../data/repositories/mock/mock_attendance_repository.dart';
@@ -52,6 +54,8 @@ import '../data/repositories/mock/mock_live_repository.dart';
 import '../data/repositories/mock/mock_messaging_repository.dart';
 import '../data/repositories/mock/mock_notifications_repository.dart';
 import '../data/repositories/mock/mock_people_repository.dart';
+import '../data/repositories/mock/mock_reporting_repository.dart';
+import '../data/repositories/mock/mock_scheduling_repository.dart';
 import '../data/repositories/mock/mock_repositories.dart';
 import '../data/repositories/repositories.dart';
 
@@ -69,6 +73,15 @@ final Provider<AcademicRepository> academicRepositoryProvider =
       (ref) => ref.watch(backendModeProvider)
           ? HttpAcademicRepository(ref.watch(apiClientProvider))
           : MockAcademicRepository(),
+    );
+
+/// Scheduling of dated lessons (ADR 0042) — owner/admin only; the server
+/// authorizes every call.
+final Provider<SchedulingRepository> schedulingRepositoryProvider =
+    Provider<SchedulingRepository>(
+      (ref) => ref.watch(backendModeProvider)
+          ? HttpSchedulingRepository(ref.watch(apiClientProvider))
+          : MockSchedulingRepository(),
     );
 
 /// The institution is described by its profile in both modes; the person is
@@ -283,6 +296,17 @@ final attendanceRepositoryProvider = Provider<AttendanceRepository>(
   (ref) => ref.watch(backendModeProvider)
       ? HttpAttendanceRepository(ref.watch(apiClientProvider))
       : MockAttendanceRepository(),
+);
+
+// ── Reporting (Owner Command Center) ─────────────────────────────────────────
+// The owner's read-only dashboard (`/reporting/command-center`). Every widget
+// is the server's fact, filtered server-side to the viewer's permissions; the
+// state in features/command_center reads this.
+
+final reportingRepositoryProvider = Provider<ReportingRepository>(
+  (ref) => ref.watch(backendModeProvider)
+      ? HttpReportingRepository(ref.watch(apiClientProvider))
+      : const MockReportingRepository(),
 );
 
 // ── Realtime ───────────────────────────────────────────────────────────────

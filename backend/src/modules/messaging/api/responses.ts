@@ -2,6 +2,10 @@ import type { DownloadLink } from '../../files/contracts/file-assets';
 import type { FileKind } from '../../files/contracts/file-kind';
 import type { ConversationType, MessageType, ParticipantRole } from '../contracts/vocabulary';
 import type {
+  PublicationReport,
+  PublicationStatus,
+} from '../application/publish-to-communities.use-case';
+import type {
   AttachmentView,
   ConversationView,
   MessagePage,
@@ -13,6 +17,42 @@ import type {
 } from '../application/views';
 
 /** Wire shapes: explicit, flat, ISO-8601 instants. */
+
+export interface PublicationOutcomeResponse {
+  readonly communityId: string;
+  readonly status: PublicationStatus;
+  readonly retryable: boolean;
+  readonly messageId: string | null;
+}
+
+export interface PublicationResponse {
+  readonly batchId: string;
+  readonly results: readonly PublicationOutcomeResponse[];
+  /** A convenience tally the client need not recompute. */
+  readonly summary: { readonly total: number; readonly posted: number; readonly failed: number };
+}
+
+/**
+ * The mass-publish outcome. "posted" counts both a new post and an idempotent
+ * retry that found its earlier post (`already_posted`); everything else is a
+ * community that did not receive this publish.
+ */
+export function toPublicationResponse(report: PublicationReport): PublicationResponse {
+  const results = report.results.map((outcome) => ({
+    communityId: outcome.communityId,
+    status: outcome.status,
+    retryable: outcome.retryable,
+    messageId: outcome.messageId,
+  }));
+  const posted = results.filter(
+    (r) => r.status === 'posted' || r.status === 'already_posted',
+  ).length;
+  return {
+    batchId: report.batchId,
+    results,
+    summary: { total: results.length, posted, failed: results.length - posted },
+  };
+}
 
 export interface AttachmentResponse {
   readonly fileAssetId: string;
@@ -98,6 +138,10 @@ export interface ConversationResponse {
   readonly lastReadSequence: number;
   readonly unreadCount: number;
   readonly lastMessage: MessagePreviewResponse | null;
+  /** The pinned message's id (ADR 0043), or null; the client resolves its preview. */
+  readonly pinnedMessageId: string | null;
+  /** The pin's total-order version: a client accepts strictly newer pin state. */
+  readonly pinVersion: number;
   readonly createdAt: string;
   readonly activityAt: string;
 }

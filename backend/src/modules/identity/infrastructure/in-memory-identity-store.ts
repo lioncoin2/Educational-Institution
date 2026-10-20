@@ -1,5 +1,5 @@
 import type { Page, PageRequest } from '../../../shared';
-import { AccountStatuses } from '../domain/account-status';
+import { AccountStatuses, type AccountStatus } from '../domain/account-status';
 import {
   isSessionActive,
   revokeSession,
@@ -67,6 +67,14 @@ export class InMemoryUserRepository implements UserRepository {
 
   async save(user: User): Promise<void> {
     this.byId.set(user.id, user);
+  }
+
+  async countByStatus(): Promise<ReadonlyMap<AccountStatus, number>> {
+    const counts = new Map<AccountStatus, number>();
+    for (const user of this.byId.values()) {
+      counts.set(user.status, (counts.get(user.status) ?? 0) + 1);
+    }
+    return counts;
   }
 
   async list(page: PageRequest): Promise<Page<User>> {

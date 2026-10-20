@@ -65,6 +65,10 @@ describe('a community chat', () => {
       memberCount: 0,
       communityId: 'c-1',
       projectedMembershipVersion: 0,
+      pinnedMessageId: null,
+      pinnedBy: null,
+      pinnedAt: null,
+      pinVersion: 0,
     });
     expect(isCommunityChat(chat)).toBe(true);
     expect(isCommunityChat({ communityId: null })).toBe(false);

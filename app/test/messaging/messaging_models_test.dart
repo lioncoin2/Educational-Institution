@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quran_institution_app/data/models/data_origin.dart';
 import 'package:quran_institution_app/data/models/messaging.dart';
+import 'package:quran_institution_app/features/messaging/messaging_copy.dart';
 
 /// The shapes below are the backend's wire contract, verbatim
 /// (backend/src/modules/messaging/api/responses.ts).
@@ -190,5 +191,93 @@ void main() {
     expect(after.lastMessage?.sequence, parsed.lastMessage?.sequence);
     expect(after.activityAt, parsed.activityAt);
     expect(after.lastSequence, parsed.lastSequence);
+  });
+
+  // The quote shown when a reply answers a message, for every media kind. Reads
+  // only what the message carries — a document's real name, a voice duration —
+  // and invents nothing.
+  group('quotePreview for a reply target', () {
+    Message msg(
+      MessageType type, {
+      String? body,
+      List<Attachment> attachments = const [],
+      bool deleted = false,
+    }) => Message(
+      id: 'm',
+      conversationId: 'c',
+      sequence: 1,
+      senderId: 's',
+      type: type,
+      createdAt: DateTime(2026),
+      body: body,
+      attachments: attachments,
+      deletedAt: deleted ? DateTime(2026) : null,
+    );
+
+    test('text quotes its body', () {
+      expect(
+        MessagingCopy.quotePreview(msg(MessageType.text, body: 'سلام')),
+        'سلام',
+      );
+    });
+
+    test('an image shows a truthful image label', () {
+      expect(MessagingCopy.quotePreview(msg(MessageType.image)), 'صورة');
+    });
+
+    test('a document shows its real filename', () {
+      final doc = msg(
+        MessageType.file,
+        attachments: const [
+          Attachment(
+            fileAssetId: 'f',
+            available: true,
+            kind: AttachmentKind.document,
+            displayName: 'الخطة.pdf',
+          ),
+        ],
+      );
+      expect(MessagingCopy.quotePreview(doc), 'الخطة.pdf');
+    });
+
+    test('a document with no name falls back to a generic label', () {
+      final doc = msg(
+        MessageType.file,
+        attachments: const [
+          Attachment(
+            fileAssetId: 'f',
+            available: true,
+            kind: AttachmentKind.document,
+          ),
+        ],
+      );
+      expect(MessagingCopy.quotePreview(doc), 'ملف');
+    });
+
+    test('a voice message shows its label and duration', () {
+      final voice = msg(
+        MessageType.voice,
+        attachments: const [
+          Attachment(
+            fileAssetId: 'v',
+            available: true,
+            kind: AttachmentKind.voice,
+            durationMs: 42000,
+          ),
+        ],
+      );
+      final preview = MessagingCopy.quotePreview(voice);
+      expect(preview, startsWith('رسالة صوتية'));
+      expect(preview, contains('·')); // the duration is appended
+    });
+
+    test('a deleted target is reported as deleted, never its content', () {
+      expect(
+        MessagingCopy.quotePreview(
+          msg(MessageType.text, body: 'سر', deleted: true),
+        ),
+        'رسالة محذوفة',
+      );
+    });
   });
 }

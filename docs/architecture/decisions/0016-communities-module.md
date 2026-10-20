@@ -2,9 +2,19 @@
 
 **State: ACCEPTED (2026-09-23) — implemented in phases (P2 core, P3 delegation). What a phase has not delivered does not exist yet; [the hub's §25](../communities-live-attendance.md#25-implementation-phases) records which phases have landed.**
 
-**Status:** Accepted
+**Status:** Accepted; superseded in part by [0039](0039-groups-and-channels-chat-mode.md) (2026-10-20)
 **Accepted:** 2026-09-23, by the user (the architecture design was approved to proceed; the Q40 ruling is recorded in [0016](0016-communities-module.md)).
 **Date:** 2026-09-23
+
+> **Superseded in part by [0039](0039-groups-and-channels-chat-mode.md)**,
+> accepted 2026-10-20. 0039 replaces this record's "a community has no
+> `kind`" (decisions 1 and 3). A community now carries a `chat_mode`
+> (`GROUP_OPEN | GROUP_RESTRICTED | CHANNEL`, migration 0025), because posting
+> behaviour now differs by product.
+>
+> 0039 also adopts the alternative this record rejected, "a `kind` field".
+> Below is this record as accepted on 2026-09-23. It is not rewritten; notes
+> mark the parts 0039 replaces.
 
 > **Q40 ruling (2026-09-23, by the user):**
 > 1. Communities is **not** blocked by the academic reconciliation hold; it
@@ -100,6 +110,10 @@ Everything below is proposed. None of it exists today.
    it would collide with the first and pre-answer the second. "Group" stays the
    brief's product word only. A community has no `kind`.
 
+   > **Superseded by [0039](0039-groups-and-channels-chat-mode.md):** the last
+   > sentence only. A community carries a `chat_mode`; the aggregate is still a
+   > Community, not a Group.
+
 2. **Wiring.** CommunitiesModule imports IdentityModule only and exports only
    contract tokens: `COMMUNITY_AUTHORIZATION`, `COMMUNITY_MEMBERSHIP`,
    `COMMUNITY_DIRECTORY` and, from P3, `COMMUNITY_CAPABILITY_HOLDERS`. Event
@@ -116,6 +130,10 @@ Everything below is proposed. None of it exists today.
    `status_changed_*`. There is no owner column (ownership is standing on a
    stint, [0017](0017-community-scoped-authorization.md)), no kind and no
    halaqa id.
+
+   > **Superseded by [0039](0039-groups-and-channels-chat-mode.md):** "no
+   > kind". The row gains `chat_mode`, non-null with a CHECK, defaulting to
+   > `GROUP_RESTRICTED` for existing rows.
 
 4. **Membership is one row per stint.** `community_members` holds one row per
    stay: status `ACTIVE | LEFT | REMOVED`, standing `OWNER | MEMBER`, source
@@ -273,6 +291,9 @@ If accepted:
   behaviour depends on it, who may post is decided per act
   ([0017](0017-community-scoped-authorization.md)), and it would pre-answer
   Q36.
+  > **Adopted by [0039](0039-groups-and-channels-chat-mode.md):** posting
+  > behaviour now depends on the product (group vs channel), and Q36 is
+  > answered by [0015](0015-academic-structure-reconciliation.md).
 - **One membership row per (community, user), upserted on rejoin** (messaging's
   model). Rejected: it overwrites who added or removed whom, cannot say
   reliably that someone last left as REMOVED, and gives capability grants no

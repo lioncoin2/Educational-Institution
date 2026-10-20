@@ -403,6 +403,121 @@ describe('community message moderation (Q51/Q23)', () => {
     });
   });
 
+  // Replying to a deleted message is deliberately ALLOWED (a reply must not be a
+  // way to probe which messages exist, and keeping the thread readable is the
+  // intent): `checkReply` finds a tombstone like any other message. What must
+  // never happen is the deleted content travelling back through that reply — the
+  // reply carries only `replyToMessageId`, and the target reads as a tombstone.
+  describe('replies to a deleted message (ADR 0029)', () => {
+    it('accepts a reply to a deleted message, and the tombstone leaks nothing', async () => {
+      const target = await post('the question that was deleted');
+      await h.moderateMessage.execute({
+        principal: moderator,
+        conversationId: chatId,
+        messageId: target,
+        meta: META,
+      });
+
+      // The reply is accepted and keeps its reference to the (now tombstoned) target.
+      const reply = expectOk(
+        await h.sendText.execute({
+          principal: owner,
+          conversationId: chatId,
+          clientMessageId: 'reply-to-a-tombstone-text',
+          body: 'a reply to a ghost',
+          replyToMessageId: target,
+          meta: META,
+        }),
+      );
+      expect(reply.message.replyToMessageId).toBe(target);
+
+      // The timeline shows the target as a content-free tombstone, the reply
+      // pointing at it — and the deleted words appear nowhere, not even through
+      // the reply's metadata.
+      const items = await timeline(student);
+      const tombstone = items.find((m) => m.id === target);
+      expect(tombstone).toMatchObject({ body: null, attachments: [] });
+      expect(tombstone?.deletedAt).not.toBeNull();
+      expect(items.find((m) => m.id === reply.message.id)?.replyToMessageId).toBe(target);
+      expect(JSON.stringify(items)).not.toContain('the question that was deleted');
+    });
+
+    it('accepts a reply to a deleted MEDIA message; no attachment reference survives', async () => {
+      const image = await h.files.upload(owner, { kind: 'IMAGE', contentType: 'image/png' });
+      const sent = expectOk(
+        await h.sendImage.execute({
+          principal: owner,
+          conversationId: chatId,
+          clientMessageId: 'media-target-to-delete',
+          fileAssetId: image.id,
+          caption: 'a caption that must not resurface',
+          meta: META,
+        }),
+      );
+      // The live message does carry the attachment, so the tombstone test is meaningful.
+      expect(sent.message.attachments.map((a) => a.fileAssetId)).toEqual([image.id]);
+
+      await h.moderateMessage.execute({
+        principal: moderator,
+        conversationId: chatId,
+        messageId: sent.message.id,
+        meta: META,
+      });
+
+      const reply = expectOk(
+        await h.sendText.execute({
+          principal: owner,
+          conversationId: chatId,
+          clientMessageId: 'reply-to-a-deleted-image',
+          body: 'replying to the image',
+          replyToMessageId: sent.message.id,
+          meta: META,
+        }),
+      );
+      expect(reply.message.replyToMessageId).toBe(sent.message.id);
+
+      const items = await timeline(student);
+      const tombstone = items.find((m) => m.id === sent.message.id);
+      expect(tombstone).toMatchObject({ body: null, attachments: [] });
+      // Neither the caption nor the file reference reaches a reader through the
+      // tombstone or the reply that points at it.
+      const serialized = JSON.stringify(items);
+      expect(serialized).not.toContain('a caption that must not resurface');
+      expect(serialized).not.toContain(image.id);
+    });
+
+    it('preserves an existing reply relationship when its target is later deleted', async () => {
+      const target = await post('original words, soon to be gone');
+      const reply = expectOk(
+        await h.sendText.execute({
+          principal: owner,
+          conversationId: chatId,
+          clientMessageId: 'reply-made-before-delete',
+          body: 'my standing answer',
+          replyToMessageId: target,
+          meta: META,
+        }),
+      );
+
+      // Now the target is moderated away.
+      await h.moderateMessage.execute({
+        principal: moderator,
+        conversationId: chatId,
+        messageId: target,
+        meta: META,
+      });
+
+      // The reply survives intact and still points at the target; the target is
+      // a tombstone and its words are gone from every read path.
+      const items = await timeline(student);
+      expect(items.find((m) => m.id === target)).toMatchObject({ body: null, attachments: [] });
+      const seenReply = items.find((m) => m.id === reply.message.id);
+      expect(seenReply?.body).toBe('my standing answer');
+      expect(seenReply?.replyToMessageId).toBe(target);
+      expect(JSON.stringify(items)).not.toContain('original words, soon to be gone');
+    });
+  });
+
   describe('retention', () => {
     /** Wipe everything retention finds now; returns messages wiped. */
     async function sweep(): Promise<number> {

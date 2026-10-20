@@ -20,6 +20,7 @@ export const MessagingEvents = {
   messageSent: 'messaging.message.sent',
   messageRead: 'messaging.message.read',
   messageDeleted: 'messaging.message.deleted',
+  messagePinned: 'messaging.message.pinned',
 } as const;
 
 export type ConversationCreated = DomainEvent<
@@ -90,10 +91,33 @@ export type MessageDeleted = DomainEvent<
   }
 >;
 
+/**
+ * A community chat's single pin changed (ADR 0043): the new authoritative
+ * pinned message id, or null when unpinned. An id only — never the message's
+ * body, never who pinned it (that is in the audit trail). The event's
+ * `occurredAt` is the server's change time, which a subscriber uses to drop a
+ * stale event; the authoritative state is always the conversation's own, which
+ * a client re-reads on reconnect.
+ */
+export type MessagePinned = DomainEvent<
+  typeof MessagingEvents.messagePinned,
+  {
+    readonly conversationId: string;
+    readonly pinnedMessageId: string | null;
+    /**
+     * The conversation's pin version AFTER this change (ADR 0043 §realtime): a
+     * total order, so a subscriber accepts a strictly newer version and two
+     * same-instant changes are never ambiguous. Read from the committed row.
+     */
+    readonly pinVersion: number;
+  }
+>;
+
 export type MessagingEvent =
   | ConversationCreated
   | ParticipantAdded
   | ParticipantRemoved
   | MessageSent
   | MessageRead
-  | MessageDeleted;
+  | MessageDeleted
+  | MessagePinned;

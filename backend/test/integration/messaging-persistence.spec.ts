@@ -98,6 +98,9 @@ describeWithPostgres('messaging and files on Postgres', () => {
         'conversations_direct_pair_shape',
         'conversations_title_shape',
         'conversations_activity_consistent',
+        'conversations_pin_consistent',
+        'conversations_pin_version_nonnegative',
+        'conversations_pinned_message_id_messages_id_fk',
         'conversation_participants_conversation_id_user_id_pk',
         'conversation_participants_read_state_valid',
         'conversation_participants_conversation_id_conversations_id_fk',
@@ -256,6 +259,103 @@ describeWithPostgres('messaging and files on Postgres', () => {
       expect(
         (await repository.appendMessage(text(conversation.conversation.id, member, 'late'))).kind,
       ).toBe('not_participant');
+    });
+  });
+
+  describe('pinning — a reference stored on the conversation (ADR 0043)', () => {
+    async function append(conversationId: string, owner: string, body: string) {
+      const outcome = await repository.appendMessage(text(conversationId, owner, body));
+      if (outcome.kind !== 'appended') throw new Error(`append ${outcome.kind}`);
+      return outcome.message.id;
+    }
+
+    it('pins, re-reads, replaces and unpins, never deleting the message', async () => {
+      const owner = `pin-owner-${ids.next()}`;
+      const conversation = group(owner, []);
+      const id = conversation.conversation.id;
+      await repository.createConversation(conversation);
+      const m1 = await append(id, owner, 'pin me');
+      const m2 = await append(id, owner, 'or me');
+
+      // A fresh conversation starts at version 0.
+      expect((await repository.findConversation(id))?.pinVersion).toBe(0);
+
+      const pinned = await repository.pinMessage({
+        conversationId: id,
+        messageId: m1,
+        pinnedBy: owner,
+        at: AT,
+      });
+      expect(pinned.kind).toBe('pinned');
+      expect((await repository.findConversation(id))?.pinnedMessageId).toBe(m1);
+      expect((await repository.findConversation(id))?.pinVersion).toBe(1);
+
+      // Pinning another replaces it (most-recent wins) and advances the version.
+      await repository.pinMessage({ conversationId: id, messageId: m2, pinnedBy: owner, at: AT });
+      expect((await repository.findConversation(id))?.pinnedMessageId).toBe(m2);
+      expect((await repository.findConversation(id))?.pinVersion).toBe(2);
+
+      // Unpin clears all three columns; the message still exists, untouched.
+      const unpinned = await repository.unpinMessage(id);
+      expect(unpinned.kind).toBe('unpinned');
+      const after = await repository.findConversation(id);
+      expect(after?.pinnedMessageId).toBeNull();
+      expect(after?.pinnedBy).toBeNull();
+      expect(after?.pinnedAt).toBeNull();
+      expect(after?.pinVersion).toBe(3);
+      expect((await repository.findMessage(id, m2))?.deletedAt ?? null).toBeNull();
+    });
+
+    it('advances the version only on a real change — never on an idempotent no-op', async () => {
+      const owner = `pin-ver-${ids.next()}`;
+      const conversation = group(owner, []);
+      const id = conversation.conversation.id;
+      await repository.createConversation(conversation);
+      const m1 = await append(id, owner, 'the pin');
+
+      await repository.pinMessage({ conversationId: id, messageId: m1, pinnedBy: owner, at: AT });
+      expect((await repository.findConversation(id))?.pinVersion).toBe(1);
+
+      // Re-pinning the same message is a no-op: the version does not move.
+      const repeat = await repository.pinMessage({
+        conversationId: id,
+        messageId: m1,
+        pinnedBy: owner,
+        at: AT,
+      });
+      expect(repeat.kind).toBe('pinned');
+      expect((await repository.findConversation(id))?.pinVersion).toBe(1);
+
+      await repository.unpinMessage(id);
+      expect((await repository.findConversation(id))?.pinVersion).toBe(2);
+
+      // Unpinning again when nothing is pinned is a no-op: still 2.
+      const repeatUnpin = await repository.unpinMessage(id);
+      expect(repeatUnpin.kind).toBe('unpinned');
+      expect((await repository.findConversation(id))?.pinVersion).toBe(2);
+    });
+
+    // The row-lock serialization of competing pins is proven deterministically in
+    // the use-case suite (pin-message.spec.ts, "serializes two competing pins")
+    // against the in-memory store, which mirrors the `for('update')` read-modify-
+    // write. A timing-raced Promise.all here would only exercise the connection
+    // pool, not the ordering guarantee, so it is intentionally not repeated.
+
+    it('refuses a message that is not in the conversation', async () => {
+      const owner = `pin-x-${ids.next()}`;
+      const a = group(owner, []);
+      const b = group(owner, []);
+      await repository.createConversation(a);
+      await repository.createConversation(b);
+      const elsewhere = await append(b.conversation.id, owner, 'elsewhere');
+      const outcome = await repository.pinMessage({
+        conversationId: a.conversation.id,
+        messageId: elsewhere,
+        pinnedBy: owner,
+        at: AT,
+      });
+      expect(outcome.kind).toBe('message_not_found');
+      expect((await repository.findConversation(a.conversation.id))?.pinnedMessageId).toBeNull();
     });
   });
 

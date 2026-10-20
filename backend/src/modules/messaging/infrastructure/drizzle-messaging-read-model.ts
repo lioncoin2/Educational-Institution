@@ -280,6 +280,7 @@ export class DrizzleMessagingReadModel implements MessagingReadModel {
       select
         c.id, c.type, c.title, c.created_by, c.created_at, c.direct_user_low, c.direct_user_high,
         c.last_sequence, c.last_message_at, c.member_count, c.community_id, c.projected_membership_version,
+        c.pinned_message_id, c.pinned_at, c.pinned_by, c.pin_version,
         p.user_id as member_user_id, p.role, p.joined_at, p.left_at, p.added_by, p.last_read_sequence, p.hidden_through_sequence,
         p.source_version, p.source_membership_id, p.source_joined_at,
         counterpart.user_id as counterpart_user_id,
@@ -361,6 +362,10 @@ function toSummaryRow(row: Record<string, unknown>): ConversationSummaryRow {
       memberCount: num(row.member_count),
       communityId: strOrNull(row.community_id),
       projectedMembershipVersion: numOrNull(row.projected_membership_version),
+      pinnedMessageId: strOrNull(row.pinned_message_id),
+      pinnedBy: strOrNull(row.pinned_by),
+      pinnedAt: dateOrNull(row.pinned_at),
+      pinVersion: num(row.pin_version),
     },
     me: {
       conversationId,

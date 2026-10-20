@@ -19,6 +19,12 @@ class MockFilesRepository implements FilesRepository {
   Future<String> uploadImage(OutgoingFile image) async => throw _unavailable;
 
   @override
+  Future<String> upload(OutgoingFile file) async =>
+      // The demo keeps no storage, but a mass-publish needs a reference to
+      // attach; a deterministic, clearly-invented id lets the demo flow run.
+      'demo-asset-${file.kind.wire.toLowerCase()}';
+
+  @override
   Future<void> setMyAvatar(String fileAssetId) async => throw _unavailable;
 
   @override

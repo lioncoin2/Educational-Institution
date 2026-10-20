@@ -254,14 +254,25 @@ them.
 
 ## operations
 
-**State:** contract only.
+**State:** scheduling of individual dated lessons implemented
+([ADR 0042](decisions/0042-operations-scheduled-lessons.md)); attendance records still contract only
+(Q70).
 
 **Responsibility.** The institution in motion: scheduling, sessions,
 attendance. Who is enrolled in a halaqa is academic's
-([ADR 0014](decisions/0014-academic-core-v1.md)); operations will ask
+([ADR 0014](decisions/0014-academic-core-v1.md)); operations asks
 `ACADEMIC_RELATIONSHIPS` rather than keep its own copy.
 
-**Owned entities.** `ScheduledSession`, `AttendanceRecord`.
+**Scheduling (built).** `/operations/lessons` (create / list / get / reschedule / cancel), every route
+behind `operations.schedule_manage` (OWNER/ADMIN). Owns the `operations_lessons` table (migration 0026):
+the lesson's local date/time, the IANA zone captured at creation, the resolved `scheduled_at`, and a
+`SCHEDULED → CANCELLED` lifecycle (never deleted). Validates halaqa existence through
+`ACADEMIC_RELATIONSHIPS.halaqaExists` only — no foreign key into academic. Its default zone comes from the
+neutral `AppConfig.institution.timezone` (injected as `INSTITUTION_TIMEZONE`), never from the
+notifications quiet-hours resource. It exports no token yet, emits no event, creates no attendance,
+notification or live session.
+
+**Owned entities.** `ScheduledLesson` (built), `ScheduledSession`, `AttendanceRecord` (not built).
 
 **Public contract.** `AttendanceState`, `SessionRef`, `AttendanceAmendment` —
 the last of which requires a reason and an amender for every after-the-fact
@@ -311,12 +322,20 @@ a path, not a URL, not bytes.
 
 ## messaging
 
-**State:** implemented — Messaging V1, plus community chats (P4). Domain,
-use cases, Postgres and in-memory adapters, HTTP, events, tests on real
-Postgres. See [messaging.md](messaging.md),
+**State:** implemented — Messaging V1, plus community chats (P4) and mass
+publishing to communities (ADR 0041). Domain, use cases, Postgres and in-memory
+adapters, HTTP, events, tests on real Postgres. See [messaging.md](messaging.md),
 [ADR 0011](decisions/0011-messaging-v1.md), and for community chats
-[community-chat.md](community-chat.md) and
-[ADR 0018](decisions/0018-community-chat-projection.md).
+[community-chat.md](community-chat.md),
+[ADR 0018](decisions/0018-community-chat-projection.md) and
+[ADR 0041](decisions/0041-mass-publish-to-communities.md).
+
+**Mass publishing.** `POST /messaging/communities/publish` (edge `messaging.send`)
+posts one message — text, or one image/voice/document — to several communities at
+once, authorizing each on its own `community.chat.post` via Communities'
+`authorizeEach` and posting through the same `MessageSender` path; a per-community
+outcome, idempotent by a deterministic per-community key. It adds no module edge
+(reuses `communities/contracts` and `files/contracts`) and no new policy.
 
 **Responsibility.** Direct conversations, groups and channels: membership,
 server-decided ordering, idempotent sends, read state, and who may read an
@@ -715,28 +734,42 @@ stops "when a session ends, notify the supervisor" from being buried inside
 
 ## reporting
 
-**State:** contract only.
+**State:** implemented — Owner Command Center v1 (ADR 0040) + actions/accounts (ADR 0041). Was contract-only.
 
-**Responsibility.** Read models, KPIs, and the Owner Command Center.
+**Responsibility.** Read models and the Owner Command Center.
 
 **Public contract.** `WidgetCategory`, `WidgetDescriptor`, `WidgetData`,
-`WidgetProvider`, `WIDGET_PROVIDERS`.
+`WidgetProvider`, `WIDGET_PROVIDERS`, `CommandActionDescriptor`, `COMMAND_ACTIONS`.
 
-The command centre is a **registry, not a screen**. A module contributes by
-registering a descriptor plus a resolver. Adding "pending decisions" later means
-registering one more widget — never editing a dashboard component. That is the
-stated requirement (the dashboard must grow without being rewritten) expressed
-as a type.
+The command centre is a **registry, not a screen**. A module contributes a
+widget by registering a `WidgetProvider` (a descriptor + a resolver); adding one
+later is one more provider, never a change to the resolver (`GetCommandCenterUseCase`)
+or the screen. The providers are bound **inside `ReportingModule`** (there is no
+`multi:true` precedent, and a contributing module exporting reporting's token
+would break the "a module exports only its own contracts' tokens" boundary
+test), so reporting owns the registry and no other module depends on it.
 
-`WidgetDescriptor.requiredPermission` means the dashboard hides what the viewer
-may not see, and the check is the same centralized one every other route uses.
+`GET /reporting/command-center` is gated `reports.read` at the edge; the use case
+re-checks it and, per `WidgetDescriptor.requiredPermission` (and, for quick
+actions, `CommandActionDescriptor.requiredPermission`), hides any widget OR action
+the viewer may not see — the same centralized check every route uses. An empty set
+is a valid answer, never an error. The actions are a second registry alongside the
+widgets: static descriptors filtered by permission (a client maps an action id to a
+screen; the operation re-authorizes on use), so no cross-module dependency is added
+for them.
 
-**Depends on.** every module's `contracts/`, read-only.
+**Depends on.** other modules' `contracts/`, read-only (today: `identity`
+`AUTHORIZATION_SERVICE` + `ACCOUNT_DIRECTORY_SUMMARY`; `communities`
+`COMMUNITY_MEMBERSHIP`; `academic` `ACADEMIC_STRUCTURE_SUMMARY`). Acyclic;
+dependency-cruiser-clean.
 
-**Must not know.** How any module stores its data. Reporting builds its own
-projections from events; it does not query eight modules' tables at request
-time. That is the rule that keeps reporting from becoming the thing that makes
-every other module unextractable.
+**Must not know.** How any module stores its data. v1 resolves each widget from
+a **bounded count/summary** read of another module's public contract at request
+time — never that module's tables, and never a figure it invented (a count of
+existing authorized data only; present/absent and KPIs stay owner-gated, Q70). A
+heavier future widget may build its own event-sourced projection rather than a
+request-time read, but it still reads only `contracts/` and events — the rule
+that keeps reporting from making every other module unextractable.
 
 ---
 

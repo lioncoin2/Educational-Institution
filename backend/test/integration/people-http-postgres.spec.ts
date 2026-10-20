@@ -135,10 +135,13 @@ describeWithPostgres('people API over PostgreSQL (HTTP → Drizzle)', () => {
       expect(found).not.toContain(ids.inactive);
     });
 
-    it('discloses only {userId, displayName} — no email, role or status', async () => {
+    it('discloses only {userId, displayName, avatarFileAssetId} — no email, role or status', async () => {
       const res = await api.call('GET', '/people/teachers?q=سا', { token: tokens.student });
       for (const item of items(res.body)) {
-        expect(Object.keys(item).sort()).toEqual(['displayName', 'userId']);
+        // The avatar is an opaque Files asset id (ADR 0038): it travels with the
+        // name wherever the name is shown, and is resolved to a link only through
+        // the authorized avatar route — never an email, role or status.
+        expect(Object.keys(item).sort()).toEqual(['avatarFileAssetId', 'displayName', 'userId']);
       }
       expect(res.raw).not.toContain('@institution.test');
       expect(res.raw).not.toContain('email');

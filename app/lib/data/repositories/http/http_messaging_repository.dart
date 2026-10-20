@@ -1,5 +1,7 @@
 import '../../api/api_client.dart';
+import '../../models/data_origin.dart';
 import '../../models/messaging.dart';
+import '../../models/publication.dart';
 import '../repositories.dart';
 
 /// [MessagingRepository] against the real backend (`/messaging/*`, `/files/*`).
@@ -85,11 +87,16 @@ class HttpMessagingRepository implements MessagingRepository {
     String conversationId, {
     required String clientMessageId,
     required String body,
+    String? replyToMessageId,
   }) => _call(
     () async => Message.fromJson(
       await _api.post(
         '${_conversation(conversationId)}/messages/text',
-        body: {'clientMessageId': clientMessageId, 'body': body},
+        body: {
+          'clientMessageId': clientMessageId,
+          'body': body,
+          'replyToMessageId': ?replyToMessageId,
+        },
       ),
     ),
   );
@@ -99,7 +106,15 @@ class HttpMessagingRepository implements MessagingRepository {
     String conversationId, {
     required String clientMessageId,
     required OutgoingFile recording,
-  }) => _sendMedia(conversationId, 'voice', clientMessageId, recording, null);
+    String? replyToMessageId,
+  }) => _sendMedia(
+    conversationId,
+    'voice',
+    clientMessageId,
+    recording,
+    null,
+    replyToMessageId,
+  );
 
   @override
   Future<Message> sendImage(
@@ -107,7 +122,15 @@ class HttpMessagingRepository implements MessagingRepository {
     required String clientMessageId,
     required OutgoingFile image,
     String? caption,
-  }) => _sendMedia(conversationId, 'image', clientMessageId, image, caption);
+    String? replyToMessageId,
+  }) => _sendMedia(
+    conversationId,
+    'image',
+    clientMessageId,
+    image,
+    caption,
+    replyToMessageId,
+  );
 
   @override
   Future<Message> sendFile(
@@ -115,7 +138,15 @@ class HttpMessagingRepository implements MessagingRepository {
     required String clientMessageId,
     required OutgoingFile file,
     String? caption,
-  }) => _sendMedia(conversationId, 'file', clientMessageId, file, caption);
+    String? replyToMessageId,
+  }) => _sendMedia(
+    conversationId,
+    'file',
+    clientMessageId,
+    file,
+    caption,
+    replyToMessageId,
+  );
 
   @override
   Future<int> markRead(String conversationId, int sequence) => _call(() async {
@@ -124,6 +155,27 @@ class HttpMessagingRepository implements MessagingRepository {
       body: {'sequence': sequence},
     );
     return json['lastReadSequence']! as int;
+  });
+
+  @override
+  Future<PublicationReport> publishToCommunities({
+    required String clientBatchId,
+    required List<String> communityIds,
+    required String kind,
+    String? body,
+    String? fileAssetId,
+  }) => _call(() async {
+    final json = await _api.post(
+      '/messaging/communities/publish',
+      body: {
+        'clientBatchId': clientBatchId,
+        'communityIds': communityIds,
+        'kind': kind,
+        'body': ?body,
+        'fileAssetId': ?fileAssetId,
+      },
+    );
+    return PublicationReport.fromJson(json, origin: DataOrigin.records);
   });
 
   @override
@@ -169,12 +221,25 @@ class HttpMessagingRepository implements MessagingRepository {
     ),
   );
 
+  @override
+  Future<void> pinMessage(String conversationId, String messageId) => _call(
+    () async => _api.post(
+      '${_conversation(conversationId)}/messages/'
+      '${Uri.encodeComponent(messageId)}/pin',
+    ),
+  );
+
+  @override
+  Future<void> unpinMessage(String conversationId) =>
+      _call(() async => _api.delete('${_conversation(conversationId)}/pin'));
+
   Future<Message> _sendMedia(
     String conversationId,
     String route,
     String clientMessageId,
     OutgoingFile file,
     String? caption,
+    String? replyToMessageId,
   ) => _call(() async {
     final assetId = _uploads[clientMessageId] ??= await _upload(file);
     final message = Message.fromJson(
@@ -184,6 +249,7 @@ class HttpMessagingRepository implements MessagingRepository {
           'clientMessageId': clientMessageId,
           'fileAssetId': assetId,
           'caption': ?caption,
+          'replyToMessageId': ?replyToMessageId,
         },
       ),
     );

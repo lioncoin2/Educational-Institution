@@ -19,6 +19,7 @@ import {
   type ConversationCreated,
   type MessageDelivery,
   type MessageDeleted,
+  type MessagePinned,
   type MessageRead,
   type MessageRecipients,
   type MessageSent,
@@ -29,6 +30,7 @@ import { ConnectionManager } from './connection-manager';
 import {
   conversationCreatedFrame,
   messageDeletedFrame,
+  messagePinnedFrame,
   messageReadFrame,
   messageSentFrame,
   participantAddedFrame,
@@ -87,6 +89,7 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
       MessagingEvents.conversationCreated,
       MessagingEvents.messageSent,
       MessagingEvents.messageDeleted,
+      MessagingEvents.messagePinned,
       MessagingEvents.messageRead,
       MessagingEvents.participantAdded,
       MessagingEvents.participantRemoved,
@@ -141,6 +144,8 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
         return this.messageSent(event);
       case MessagingEvents.messageDeleted:
         return this.messageDeleted(event);
+      case MessagingEvents.messagePinned:
+        return this.messagePinned(event);
       case MessagingEvents.messageRead: {
         const payload = messageReadPayload(event);
         if (payload === null) return this.malformed(event);
@@ -226,6 +231,27 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  private async messagePinned(event: DomainEvent): Promise<void> {
+    const payload = messagePinnedPayload(event);
+    if (payload === null) return this.malformed(event);
+
+    // Every current member connected here — the pin banner shows to all readers.
+    // The frame carries the new pin id only (never content, never who pinned),
+    // so a member who cannot see that message still learns the pin changed and
+    // renders a truthful fallback. Restricted to THIS conversation's members.
+    const online = await this.onlineMembers(payload.conversationId);
+    if (online.length === 0) return;
+    this.connections.sendToUsers(
+      online,
+      messagePinnedFrame({
+        occurredAt: event.occurredAt,
+        conversationId: payload.conversationId,
+        pinnedMessageId: payload.pinnedMessageId,
+        pinVersion: payload.pinVersion,
+      }),
+    );
+  }
+
   /**
    * The conversation's current members — who can see `visibleSequence`,
    * when given — that are connected to this instance (gate G1). Messaging
@@ -301,6 +327,19 @@ function messageDeletedPayload(event: DomainEvent): MessageDeleted['payload'] | 
     return null;
   }
   return p as MessageDeleted['payload'];
+}
+
+function messagePinnedPayload(event: DomainEvent): MessagePinned['payload'] | null {
+  const p = fieldsOf<MessagePinned['payload']>(event, MessagingEvents.messagePinned);
+  if (
+    p === null ||
+    typeof p.conversationId !== 'string' ||
+    (p.pinnedMessageId !== null && typeof p.pinnedMessageId !== 'string') ||
+    !isCount(p.pinVersion)
+  ) {
+    return null;
+  }
+  return p as MessagePinned['payload'];
 }
 
 function messageReadPayload(event: DomainEvent): MessageRead['payload'] | null {

@@ -41,6 +41,10 @@ import {
   ModerateMessageUseCase,
   ReviewDeletedMessageUseCase,
 } from '../../src/modules/messaging/application/moderate-message.use-cases';
+import {
+  PinMessageUseCase,
+  UnpinMessageUseCase,
+} from '../../src/modules/messaging/application/pin-message.use-cases';
 import { MessagingViews } from '../../src/modules/messaging/application/messaging-views';
 import {
   GetConversationUseCase,
@@ -297,6 +301,8 @@ export async function messagingHarness(
     ),
     moderateMessage: new ModerateMessageUseCase(repository, communityChats, audit, events, clock),
     reviewMessage: new ReviewDeletedMessageUseCase(repository, communityChats, views, audit, clock),
+    pinMessage: new PinMessageUseCase(repository, communityChats, audit, events, clock),
+    unpinMessage: new UnpinMessageUseCase(repository, communityChats, audit, events, clock),
     retentionSweeper: new MessageRetentionSweeper(repository, clock),
 
     /**

@@ -29,3 +29,21 @@ export interface WidgetProvider {
 }
 
 export const WIDGET_PROVIDERS = Symbol('WIDGET_PROVIDERS');
+
+/**
+ * A quick action — a shortcut from the command centre to a real operation the
+ * viewer may perform (publishing to communities, creating one, administering
+ * accounts…). The command centre lists only the actions whose
+ * `requiredPermission` the viewer holds; the action itself re-authorizes when
+ * invoked, so this is a convenience, never the boundary. `id` is a stable key a
+ * client maps to its own route — the server states which actions exist and who
+ * may see them, not how the client navigates.
+ */
+export interface CommandActionDescriptor {
+  readonly id: string;
+  readonly title: string;
+  readonly requiredPermission: string;
+}
+
+/** The static catalogue of command-centre actions, bound inside ReportingModule. */
+export const COMMAND_ACTIONS = Symbol('COMMAND_ACTIONS');

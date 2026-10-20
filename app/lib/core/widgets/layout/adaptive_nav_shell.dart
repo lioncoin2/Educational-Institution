@@ -37,14 +37,14 @@ class AdaptiveNavShell extends StatelessWidget {
       selectedIcon: Icons.grid_view_rounded,
     ),
     NavItem(
-      label: 'مساري',
-      icon: Icons.stairs_outlined,
-      selectedIcon: Icons.stairs_rounded,
+      label: 'المجتمعات',
+      icon: Icons.groups_outlined,
+      selectedIcon: Icons.groups_rounded,
     ),
     NavItem(
-      label: 'الشهادات',
-      icon: Icons.workspace_premium_outlined,
-      selectedIcon: Icons.workspace_premium_rounded,
+      label: 'الرسائل',
+      icon: Icons.forum_outlined,
+      selectedIcon: Icons.forum_rounded,
     ),
     NavItem(
       label: 'حسابي',

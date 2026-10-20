@@ -3,7 +3,7 @@ import { and, asc, eq, gt, ilike, inArray, or, sql } from 'drizzle-orm';
 
 import { DATABASE, isUniqueViolation, type Database } from '../../../platform/database';
 import type { Page, PageRequest } from '../../../shared';
-import { AccountStatuses } from '../domain/account-status';
+import { AccountStatuses, type AccountStatus } from '../domain/account-status';
 import type { LoginIdentifier } from '../domain/login-identifier';
 import type { CreateUserOutcome, UserRepository } from '../domain/ports';
 import type { RoleCode } from '../domain/role';
@@ -154,6 +154,16 @@ export class DrizzleUserRepository implements UserRepository {
    * Keyset pagination by (created_at, id): stable under concurrent inserts and
    * constant-cost at any depth, unlike OFFSET.
    */
+  async countByStatus(): Promise<ReadonlyMap<AccountStatus, number>> {
+    const rows = await this.db
+      .select({ status: users.status, count: sql<number>`count(*)::int` })
+      .from(users)
+      .groupBy(users.status);
+    const counts = new Map<AccountStatus, number>();
+    for (const row of rows) counts.set(row.status, Number(row.count));
+    return counts;
+  }
+
   async list(page: PageRequest): Promise<Page<User>> {
     const cursor = decodeCursor(page.cursor);
     const rows = await this.db

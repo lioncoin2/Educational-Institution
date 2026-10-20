@@ -145,6 +145,51 @@ abstract final class MessagingCopy {
   static const String liveNowHint = 'اضغط لعرض الجلسة';
   static const String liveNowSemantics = 'بث مباشر في هذا الكروب — اضغط لعرض الجلسة';
 
+  /// The reader themself, as the author of a quoted message in a reply.
+  static const String you = 'أنت';
+
+  /// The quoted message in a reply is not in the loaded window (or was removed):
+  /// the reference is kept, its content truthfully reported as unavailable
+  /// rather than invented.
+  static const String quoteUnavailable = 'الرسالة الأصلية غير متاحة';
+
+  /// The reply action on a message, and the composer banner while replying.
+  static const String reply = 'رد';
+  static const String replyingTitle = 'الرد على رسالة';
+  static String replyingTo(String name) => 'الرد على $name';
+  static const String cancelReply = 'إلغاء الرد';
+
+  // ── Pinned messages (ADR 0043) ─────────────────────────────────────────
+  static const String pin = 'تثبيت الرسالة';
+  static const String unpin = 'إلغاء التثبيت';
+  static const String pinnedTitle = 'رسالة مثبتة';
+  static const String unpinTooltip = 'إلغاء التثبيت';
+  static const String pinnedUnavailable = 'الرسالة المثبتة غير متاحة';
+  static const String pinDone = 'تم تثبيت الرسالة';
+  static const String unpinDone = 'تم إلغاء التثبيت';
+  static const String pinLoading = 'جارٍ تحميل الرسالة المثبتة…';
+
+  /// A one-line quote of the message a reply points to: its text, or a truthful
+  /// label for a media message — a document's real filename, an image label, or
+  /// a voice label with its duration when the data carries one. Reads only what
+  /// the loaded [Message] holds; nothing is invented.
+  static String quotePreview(Message message) {
+    if (message.isDeleted) return 'رسالة محذوفة';
+    final attachment = message.attachments.firstOrNull;
+    final kind = switch (message.type) {
+      MessageType.voice => attachment?.durationMs != null
+          ? 'رسالة صوتية · ${duration(attachment!.durationMs)}'
+          : 'رسالة صوتية',
+      MessageType.image => 'صورة',
+      MessageType.file => attachment?.displayName ?? 'ملف',
+      MessageType.unknown => 'رسالة',
+      MessageType.text => null,
+    };
+    final text = message.body?.trim();
+    if (kind == null) return text ?? '';
+    return text == null || text.isEmpty ? kind : '$kind: $text';
+  }
+
   /// A list preview: the text, or what kind of message it was.
   static String preview(MessagePreview? message) {
     if (message == null) return 'لا توجد رسائل بعد';

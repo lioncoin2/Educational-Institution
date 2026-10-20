@@ -23,6 +23,10 @@ export function toConversation(row: ConversationRow): Conversation {
     memberCount: row.memberCount,
     communityId: row.communityId,
     projectedMembershipVersion: row.projectedMembershipVersion,
+    pinnedMessageId: row.pinnedMessageId,
+    pinnedBy: row.pinnedBy,
+    pinnedAt: row.pinnedAt,
+    pinVersion: row.pinVersion,
   };
 }
 
@@ -40,6 +44,10 @@ export function conversationRow(conversation: Conversation): ConversationRow {
     memberCount: conversation.memberCount,
     communityId: conversation.communityId,
     projectedMembershipVersion: conversation.projectedMembershipVersion,
+    pinnedMessageId: conversation.pinnedMessageId,
+    pinnedBy: conversation.pinnedBy,
+    pinnedAt: conversation.pinnedAt,
+    pinVersion: conversation.pinVersion,
   };
 }
 

@@ -41,6 +41,14 @@ export interface ConversationView {
   /** Capped: from UNREAD_COUNT_CAP on, show "99+". */
   readonly unreadCount: number;
   readonly lastMessage: MessagePreview | null;
+  /**
+   * The id of the single pinned message (ADR 0043), or null. The client renders
+   * the pin banner by resolving this id against the loaded timeline (as it does
+   * a reply quote), so no message content is duplicated into the conversation.
+   */
+  readonly pinnedMessageId: string | null;
+  /** The pin's total-order version (ADR 0043): a client accepts strictly newer. */
+  readonly pinVersion: number;
   readonly createdAt: Date;
   /** When anything last happened — the list's order. */
   readonly activityAt: Date;

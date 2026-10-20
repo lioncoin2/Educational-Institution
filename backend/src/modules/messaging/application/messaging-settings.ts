@@ -42,6 +42,8 @@ export const MessagingAudit = {
   moderationParticipantRemoved: 'messaging.moderation.participant_removed',
   moderationMessageDeleted: 'messaging.moderation.message_deleted',
   moderationMessageReviewed: 'messaging.moderation.message_reviewed',
+  messagePinned: 'messaging.pin.pinned',
+  messageUnpinned: 'messaging.pin.unpinned',
 } as const;
 
 export const CONVERSATION_RESOURCE = 'messaging.conversation';

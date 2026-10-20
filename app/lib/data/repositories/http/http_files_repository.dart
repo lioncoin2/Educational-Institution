@@ -18,6 +18,9 @@ class HttpFilesRepository implements FilesRepository {
   Future<String> uploadImage(OutgoingFile image) => _call(() => _upload(image));
 
   @override
+  Future<String> upload(OutgoingFile file) => _call(() => _upload(file));
+
+  @override
   Future<void> setMyAvatar(String fileAssetId) =>
       _call(() => _api.put('/files/me/avatar', body: {'fileAssetId': fileAssetId}));
 

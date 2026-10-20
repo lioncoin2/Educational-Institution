@@ -1,11 +1,14 @@
 # 0039 — Groups vs channels: a community chat mode, posting by capability
 
-**Status:** Proposed — 2026-10-19 (Groups & Channels, owner-approved product behaviour). **Amends
+**Status:** Accepted — 2026-10-20 (owner decision; proposed 2026-10-19, Groups & Channels). **Amends
 [ADR 0016](0016-communities-module.md) in part** (reverses its decision 1, "A community has no
 `kind`", and its rejected `kind` alternative) and **extends [ADR 0017](0017-community-scoped-authorization.md)**
 (adds a membership basis for posting in an open group). Leaves [ADR 0018](0018-community-chat-projection.md)
 intact (the community chat stays a CHANNEL conversation). Resolves **Q41**'s "kinds, if the
 institution defines them, are a vocabulary column and a CHECK" and the **posting half of Q51**.
+
+**Accepted:** 2026-10-20, by the user — as written, including the chat-mode design, the
+authorization behaviour and the compatibility rules. The paragraph below is the record as proposed.
 
 **Acceptance is the owner's.** The owner approved the product behaviour (groups open by default,
 admins restrict/restore; channels publish-only). The schema and authorization design below are the

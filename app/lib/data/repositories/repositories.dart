@@ -3,6 +3,7 @@ import '../models/admin.dart';
 import '../models/attendance.dart';
 import '../models/auth.dart';
 import '../models/certificate.dart';
+import '../models/command_center.dart';
 import '../models/communities.dart';
 import '../models/data_origin.dart';
 import '../models/feed.dart';
@@ -15,6 +16,8 @@ import '../models/notifications.dart';
 import '../models/people.dart';
 import '../models/progress.dart';
 import '../models/program.dart';
+import '../models/publication.dart';
+import '../models/scheduling.dart';
 import '../models/student.dart';
 
 /// Repository contracts.
@@ -322,6 +325,12 @@ abstract interface class FilesRepository {
   /// anything; the caller does that next.
   Future<String> uploadImage(OutgoingFile image);
 
+  /// Uploads any [file] (image, document or voice recording) and returns its
+  /// Files asset id — the same declare→PUT→complete flow as [uploadImage], for
+  /// any accepted kind. Upload once, then reference the id wherever it is
+  /// attached (e.g. a mass publish to several communities).
+  Future<String> upload(OutgoingFile file);
+
   /// Points the signed-in account at [fileAssetId] as its profile picture. The
   /// server verifies it is an image the caller owns.
   Future<void> setMyAvatar(String fileAssetId);
@@ -440,12 +449,18 @@ abstract interface class MessagingRepository {
     String conversationId, {
     required String clientMessageId,
     required String body,
+
+    /// The id of a message in THIS conversation this one answers, when it is a
+    /// reply. The server validates it (same conversation, visible to the
+    /// sender) — the client never forges the relationship.
+    String? replyToMessageId,
   });
 
   Future<Message> sendVoice(
     String conversationId, {
     required String clientMessageId,
     required OutgoingFile recording,
+    String? replyToMessageId,
   });
 
   Future<Message> sendImage(
@@ -453,14 +468,36 @@ abstract interface class MessagingRepository {
     required String clientMessageId,
     required OutgoingFile image,
     String? caption,
+    String? replyToMessageId,
   });
 
-  /// A document or an audio file.
+  /// A document or an audio file. [replyToMessageId], when set, answers a
+  /// message in this conversation (the server validates it, as it does for
+  /// text — same conversation, visible to the sender).
   Future<Message> sendFile(
     String conversationId, {
     required String clientMessageId,
     required OutgoingFile file,
     String? caption,
+    String? replyToMessageId,
+  });
+
+  /// Publish one notice / image / voice recording / document to several
+  /// communities at once ("النشر الجماعي", `POST /messaging/communities/publish`).
+  /// The server authorizes each community on its own `community.chat.post`, so
+  /// the report carries a per-community outcome: partial failure is normal, not
+  /// an error. Retrying with the SAME [clientBatchId] re-posts nothing a
+  /// community already received (idempotent), so only transient failures need a
+  /// resend. Media is uploaded first (see [FilesRepository.upload]); pass its
+  /// [fileAssetId] and the matching [kind] ('IMAGE'/'VOICE'/'FILE'), or [kind]
+  /// 'TEXT' with a [body]. A request-level problem (empty body, an attachment
+  /// the viewer does not own) throws [MessagingException].
+  Future<PublicationReport> publishToCommunities({
+    required String clientBatchId,
+    required List<String> communityIds,
+    required String kind,
+    String? body,
+    String? fileAssetId,
   });
 
   /// Returns the watermark after the call — never lower than before.
@@ -502,6 +539,16 @@ abstract interface class MessagingRepository {
     String conversationId,
     String messageId,
   );
+
+  /// Pin a message in a community's chat (ADR 0043). The server authorizes via
+  /// `community.messages.moderate` and validates that the message is a live
+  /// message of this conversation; it replaces any current pin (one per
+  /// conversation) and is idempotent. Throws [MessagingException] on refusal.
+  Future<void> pinMessage(String conversationId, String messageId);
+
+  /// Clear the community chat's pin (ADR 0043). Never deletes the message;
+  /// idempotent. Throws [MessagingException] on refusal.
+  Future<void> unpinMessage(String conversationId);
 }
 
 /// Communities — the groups the signed-in person belongs to
@@ -738,8 +785,9 @@ abstract interface class LiveRepository {
   // truth (the live controller reconciles). These return the server's own
   // answer, never an optimistic guess. A refusal throws [LiveException] with
   // the server's code (403 forbidden, 404 gone, 409 conflict, 412
-  // precondition, 503 unavailable). Speaking/hand moderation (grant, revoke,
-  // decline, raise, lower) is the media/floor flow and is NOT here.
+  // precondition, 503 unavailable). The speaking (floor) flow — a participant
+  // raising or lowering their own hand, and a moderator granting, declining or
+  // revoking it — is the section below.
 
   /// Ends the session — any of its moderators (`POST …/end`). Returns the
   /// session as the server now sees it; ending an ended session succeeds too.
@@ -776,6 +824,39 @@ abstract interface class LiveRepository {
   /// A moderator revokes [userId]'s screen-share grant (Q56, `DELETE
   /// …/screen-share/:userId`); nothing open for them succeeds too.
   Future<LiveSession> revokePresenter(String sessionId, String userId);
+
+  // ── Speaking: the floor (raise a hand, and moderate it) ─────────────────
+  // The server is the sole authority. A command returns the speaker request
+  // as the server now records it; the authoritative `me.hand`, the speaker
+  // count and the moderators' queue arrive through the session read and the
+  // hands re-read, never fabricated here. A refusal throws [LiveException]
+  // with the server's code. The floor permits speaking (audio); the audio
+  // itself is the media seam, unavailable in this build — a granted floor is a
+  // standing the server tracks, never a claim that audio flows.
+
+  /// The caller raises a hand — asks for the floor (`POST …/hand`,
+  /// `live.raise_hand`). Idempotent: a hand already up returns that one.
+  /// Returns the speaker request as stored; the authoritative `me.hand` then
+  /// arrives through the session read.
+  Future<LiveHand> raiseHand(String sessionId);
+
+  /// The caller lowers their OWN hand, or yields the floor (`DELETE …/hand`).
+  /// Returns the now-withdrawn request, or null when none was up. No permit —
+  /// it only reduces the caller's own standing.
+  Future<LiveHand?> lowerHand(String sessionId);
+
+  /// A moderator gives the floor to a waiting hand (`POST
+  /// /live/requests/:requestId/grant`, `live.moderate`); [requestId] is the
+  /// hand's own id (from the roster). A repeat is accepted unchanged.
+  Future<LiveHand> grantFloor(String requestId);
+
+  /// A moderator passes over a waiting hand (`POST
+  /// /live/requests/:requestId/decline`): the request is closed, no floor given.
+  Future<LiveHand> declineHand(String requestId);
+
+  /// A moderator takes the floor back (`POST /live/requests/:requestId/revoke`);
+  /// the speaker stays in the room as a listener.
+  Future<LiveHand> revokeFloor(String requestId);
 
   // ── Media ──────────────────────────────────────────────────────────────
 
@@ -885,4 +966,61 @@ abstract interface class NotificationsRepository {
   /// Restores push for one conversation (`DELETE /notifications/mutes/:id`,
   /// idempotent). Throws [NotificationsException] on refusal.
   Future<void> unmuteConversation(String conversationId);
+}
+
+/// Reporting — the Owner Command Center read model
+/// (`GET /reporting/command-center`).
+///
+/// READ-ONLY. It asks the server for the widgets the viewer may see, each
+/// already resolved to its current facts; the server authorizes (`reports.read`
+/// at the edge, and each widget filtered to the viewer's permissions), so the
+/// app never decides who may see what. A refusal — forbidden, unavailable,
+/// unauthenticated — throws [ReportingException] with the server's code, never
+/// a fabricated or empty dashboard.
+abstract interface class ReportingRepository {
+  /// The command center as the server resolves it for the caller now. An empty
+  /// set of widgets is a valid answer (nothing registered, or nothing the
+  /// viewer may see), not an error.
+  Future<CommandCenter> commandCenter();
+}
+
+/// Scheduling of individual dated lessons (ADR 0042).
+///
+/// Every call requires `operations.schedule_manage` server-side (owner/admin);
+/// the app only surfaces it to a holder as a courtesy. A refusal — forbidden,
+/// not found, a nonexistent/past time, a bad timezone — throws a
+/// [SchedulingException] with the server's code; nothing is fabricated.
+abstract interface class SchedulingRepository {
+  DataOrigin get origin;
+
+  /// A page of lessons ordered by scheduled instant, optionally one halaqa's.
+  Future<LessonPage> lessons({String? halaqaId, String? cursor});
+
+  /// One lesson by id. Throws `operations.lesson_not_found` if there is none.
+  Future<ScheduledLesson> lesson(String id);
+
+  /// Schedule a dated lesson for one halaqa. `date` is 'YYYY-MM-DD', `time` is
+  /// 'HH:MM', `timezone` an IANA zone id. `clientRequestId` makes a retried
+  /// create idempotent.
+  Future<ScheduledLesson> schedule({
+    required String halaqaId,
+    String? title,
+    required String date,
+    required String time,
+    required String timezone,
+    String? clientRequestId,
+  });
+
+  /// Reschedule an existing lesson's time/zone and (optionally) its title.
+  /// `title` null clears it; a SCHEDULED lesson only.
+  Future<ScheduledLesson> reschedule(
+    String id, {
+    required String date,
+    required String time,
+    required String timezone,
+    String? title,
+  });
+
+  /// Cancel a lesson — an auditable state transition, never a delete.
+  Future<ScheduledLesson> cancel(String id);
 }

@@ -14,14 +14,37 @@ class FlakyMessagingRepository extends MockMessagingRepository {
   FlakyMessagingRepository() : super(latency: Duration.zero);
 
   int failNextSends = 0;
+  int failNextMedia = 0;
   final List<String> sentKeys = [];
   final List<int> readRequests = [];
+
+  @override
+  Future<Message> sendImage(
+    String conversationId, {
+    required String clientMessageId,
+    required OutgoingFile image,
+    String? caption,
+    String? replyToMessageId,
+  }) async {
+    if (failNextMedia > 0) {
+      failNextMedia--;
+      throw const MessagingException('network.unreachable', 'offline');
+    }
+    return super.sendImage(
+      conversationId,
+      clientMessageId: clientMessageId,
+      image: image,
+      caption: caption,
+      replyToMessageId: replyToMessageId,
+    );
+  }
 
   @override
   Future<Message> sendText(
     String conversationId, {
     required String clientMessageId,
     required String body,
+    String? replyToMessageId,
   }) async {
     sentKeys.add(clientMessageId);
     if (failNextSends > 0) {
@@ -32,6 +55,7 @@ class FlakyMessagingRepository extends MockMessagingRepository {
       conversationId,
       clientMessageId: clientMessageId,
       body: body,
+      replyToMessageId: replyToMessageId,
     );
   }
 
@@ -191,6 +215,104 @@ void main() {
       await controller().sendText('   ');
       expect(current().pending, isEmpty);
       expect(repo.sentKeys, isEmpty);
+    });
+
+    // ── Replies ─────────────────────────────────────────────────────────
+    test('starting and cancelling a reply toggles the draft', () async {
+      await load();
+      final target = current().messages.last;
+      controller().startReply(ReplyDraft(targetId: target.id, preview: 'x'));
+      expect(current().replyDraft?.targetId, target.id);
+      controller().cancelReply();
+      expect(current().replyDraft, isNull);
+    });
+
+    test(
+      'a successful reply clears the draft and stores the relationship',
+      () async {
+        await load();
+        final target = current().messages.last;
+        controller().startReply(ReplyDraft(targetId: target.id, preview: 'x'));
+        await controller().sendText('تم بإذن الله');
+        expect(current().replyDraft, isNull); // cleared on send
+        final sent = current().messages.firstWhere(
+          (m) => m.body == 'تم بإذن الله',
+        );
+        expect(sent.replyToMessageId, target.id);
+      },
+    );
+
+    test('a failed reply keeps its target on the pending message, and a retry '
+        'resends it', () async {
+      await load();
+      final target = current().messages.last;
+      controller().startReply(ReplyDraft(targetId: target.id, preview: 'x'));
+      repo.failNextSends = 1;
+      await controller().sendText('سأراجع');
+      // The banner cleared; the relationship lives on the failed pending.
+      expect(current().replyDraft, isNull);
+      final failed = current().pending.single;
+      expect(failed.status, DeliveryStatus.failed);
+      expect(failed.replyToMessageId, target.id);
+      // Retry resends the SAME reply (same client key, same target).
+      await controller().retry(failed.clientMessageId);
+      expect(current().pending, isEmpty);
+      final sent = current().messages.firstWhere((m) => m.body == 'سأراجع');
+      expect(sent.replyToMessageId, target.id);
+    });
+
+    OutgoingFile photo() => OutgoingFile(
+      bytes: Uint8List(8),
+      fileName: 'photo.png',
+      contentType: 'image/png',
+      kind: AttachmentKind.image,
+    );
+
+    test(
+      'a media reply carries replyToMessageId to the stored message',
+      () async {
+        await load();
+        final target = current().messages.last;
+        controller().startReply(ReplyDraft(targetId: target.id, preview: 'x'));
+        await controller().sendFile(photo());
+        expect(current().replyDraft, isNull); // cleared on send
+        final sent = current().messages.last;
+        expect(sent.type, MessageType.image);
+        expect(sent.replyToMessageId, target.id);
+      },
+    );
+
+    test('a failed media reply keeps its target on the pending message, and a '
+        'retry resends it', () async {
+      await load();
+      final target = current().messages.last;
+      controller().startReply(ReplyDraft(targetId: target.id, preview: 'x'));
+      repo.failNextMedia = 1;
+      await controller().sendFile(photo());
+      final failed = current().pending.single;
+      expect(failed.status, DeliveryStatus.failed);
+      expect(failed.type, MessageType.image);
+      expect(failed.replyToMessageId, target.id);
+      // Retry resends the same media reply, keeping the relationship.
+      await controller().retry(failed.clientMessageId);
+      expect(current().pending, isEmpty);
+      final sent = current().messages.last;
+      expect(sent.type, MessageType.image);
+      expect(sent.replyToMessageId, target.id);
+    });
+
+    test('reply state does not leak across conversations', () async {
+      await load();
+      controller().startReply(
+        ReplyDraft(targetId: current().messages.last.id, preview: 'x'),
+      );
+      // A different conversation has its own, empty reply state.
+      container.listen(conversationProvider('mock-direct'), (_, _) {});
+      final direct = await container.read(
+        conversationProvider('mock-direct').future,
+      );
+      expect(direct.replyDraft, isNull);
+      expect(current().replyDraft, isNotNull); // the group's is untouched
     });
 
     test('marks the newest message read, and clears the list badge', () async {

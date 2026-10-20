@@ -85,6 +85,49 @@ class _RecordingLive implements LiveRepository {
     return _session();
   }
 
+  @override
+  Future<LiveHand> raiseHand(String sessionId) async {
+    calls.add('raiseHand:$sessionId');
+    if (error != null) _maybeThrow();
+    return _request('h-self', SpeakerRequestState.pending);
+  }
+
+  @override
+  Future<LiveHand?> lowerHand(String sessionId) async {
+    calls.add('lowerHand:$sessionId');
+    if (error != null) _maybeThrow();
+    return _request('h-self', SpeakerRequestState.withdrawn);
+  }
+
+  @override
+  Future<LiveHand> grantFloor(String requestId) async {
+    calls.add('grantFloor:$requestId');
+    if (error != null) _maybeThrow();
+    return _request(requestId, SpeakerRequestState.granted);
+  }
+
+  @override
+  Future<LiveHand> declineHand(String requestId) async {
+    calls.add('declineHand:$requestId');
+    if (error != null) _maybeThrow();
+    return _request(requestId, SpeakerRequestState.declined);
+  }
+
+  @override
+  Future<LiveHand> revokeFloor(String requestId) async {
+    calls.add('revokeFloor:$requestId');
+    if (error != null) _maybeThrow();
+    return _request(requestId, SpeakerRequestState.revoked);
+  }
+
+  LiveHand _request(String id, SpeakerRequestState state) => LiveHand(
+    id: id,
+    sessionId: 's-1',
+    userId: 'u-1',
+    state: state,
+    requestedAt: DateTime.utc(2026),
+  );
+
   // Reads are the state layer's business, never the command layer's.
   @override
   Future<LiveSession?> currentSession(String communityId) =>
@@ -162,6 +205,24 @@ void main() {
       expect(granted.presenterUserIds, ['u-2']);
       await controller().revokePresenter('s-1', 'u-2');
       expect(repo.calls, ['grantPresenter:s-1:u-2', 'revokePresenter:s-1:u-2']);
+    });
+
+    test('raiseHand / lowerHand forward the session id', () async {
+      final raised = await controller().raiseHand('s-1');
+      expect(raised.state, SpeakerRequestState.pending);
+      final lowered = await controller().lowerHand('s-1');
+      expect(lowered!.state, SpeakerRequestState.withdrawn);
+      expect(repo.calls, ['raiseHand:s-1', 'lowerHand:s-1']);
+    });
+
+    test('grantFloor / declineHand / revokeFloor forward the request id', () async {
+      final granted = await controller().grantFloor('h-1');
+      expect(granted.state, SpeakerRequestState.granted);
+      final declined = await controller().declineHand('h-2');
+      expect(declined.state, SpeakerRequestState.declined);
+      final revoked = await controller().revokeFloor('h-3');
+      expect(revoked.state, SpeakerRequestState.revoked);
+      expect(repo.calls, ['grantFloor:h-1', 'declineHand:h-2', 'revokeFloor:h-3']);
     });
   });
 

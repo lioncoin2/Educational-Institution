@@ -19,9 +19,11 @@ import '../../core/widgets/patterns/info_row.dart';
 import '../../data/models/student.dart';
 import '../../providers/app_providers.dart';
 import '../academic_admin/academic_admin_copy.dart';
+import '../scheduling/scheduling_copy.dart';
 import '../admin/admin_copy.dart';
+import '../command_center/command_center_copy.dart';
+import '../publish/publish_copy.dart';
 import '../auth/sign_in_prompt.dart';
-import '../communities/community_copy.dart';
 import '../notifications/state/unread_count_controller.dart';
 import '../student/student_copy.dart';
 import '../teacher/teacher_copy.dart';
@@ -46,11 +48,32 @@ class ProfileScreen extends ConsumerWidget {
         (session) => session.value?.can('users.read') ?? false,
       ),
     );
+    // The Owner Command Center is offered to a holder of `reports.read`
+    // (OWNER/ADMIN/SUPERVISOR); the server re-authorises and shows only the
+    // widgets the viewer may see. A hidden entry is a courtesy, never the gate.
+    final canSeeCommandCenter = ref.watch(
+      sessionUserProvider.select(
+        (session) => session.value?.can('reports.read') ?? false,
+      ),
+    );
+    // Mass publishing is offered to staff who can be publishers
+    // (`communities.moderate` — the CHANNEL publisher ceiling); the server still
+    // authorizes each community on its own `community.chat.post`.
+    final canPublish = ref.watch(
+      sessionUserProvider.select(
+        (session) => session.value?.can('communities.moderate') ?? false,
+      ),
+    );
     // Managing the academic structure is offered only to a holder of
     // `academic.manage` (OWNER/ADMIN); the server re-authorises every write.
     final canManageAcademic = ref.watch(
       sessionUserProvider.select(
         (session) => session.value?.can('academic.manage') ?? false,
+      ),
+    );
+    final canSchedule = ref.watch(
+      sessionUserProvider.select(
+        (session) => session.value?.can('operations.schedule_manage') ?? false,
       ),
     );
     // A teacher (or assistant teacher) may open their own teaching workspace;
@@ -146,6 +169,10 @@ class ProfileScreen extends ConsumerWidget {
             // ── روابط سريعة ────────────────────────────────────────────
             SliverGutter(
               top: Insets.xxl,
+              child: const SectionHeader(title: 'روابط سريعة'),
+            ),
+            SliverGutter(
+              top: Insets.lg,
               child: AppCard(
                 padding: EdgeInsets.zero,
                 child: Column(
@@ -156,16 +183,19 @@ class ProfileScreen extends ConsumerWidget {
                       onTap: () => context.push(Routes.progress),
                     ),
                     const Divider(indent: Insets.giant),
+                    // مساري و الشهادات live here now (they left the bottom bar,
+                    // which carries المجتمعات and الرسائل instead). Pushed, so
+                    // Back returns to حسابي.
                     _NavRow(
                       icon: Icons.stairs_rounded,
                       label: 'مساري التعليمي',
-                      onTap: () => context.go(Routes.path),
+                      onTap: () => context.push(Routes.path),
                     ),
                     const Divider(indent: Insets.giant),
                     _NavRow(
                       icon: Icons.workspace_premium_outlined,
                       label: 'الشهادات والإجازات',
-                      onTap: () => context.go(Routes.certificates),
+                      onTap: () => context.push(Routes.certificates),
                     ),
                     const Divider(indent: Insets.giant),
                     _NavRow(
@@ -180,18 +210,22 @@ class ProfileScreen extends ConsumerWidget {
                       badge: unreadNotifications,
                       onTap: () => context.push(Routes.notifications),
                     ),
-                    const Divider(indent: Insets.giant),
-                    _NavRow(
-                      icon: Icons.forum_outlined,
-                      label: 'الرسائل',
-                      onTap: () => context.push(Routes.messages),
-                    ),
-                    const Divider(indent: Insets.giant),
-                    _NavRow(
-                      icon: Icons.groups_outlined,
-                      label: CommunityCopy.screenTitle,
-                      onTap: () => context.push(Routes.communities),
-                    ),
+                    if (canSeeCommandCenter) ...[
+                      const Divider(indent: Insets.giant),
+                      _NavRow(
+                        icon: Icons.dashboard_outlined,
+                        label: CommandCenterCopy.title,
+                        onTap: () => context.push(Routes.commandCenter),
+                      ),
+                    ],
+                    if (canPublish) ...[
+                      const Divider(indent: Insets.giant),
+                      _NavRow(
+                        icon: Icons.campaign_outlined,
+                        label: PublishCopy.title,
+                        onTap: () => context.push(Routes.publish),
+                      ),
+                    ],
                     if (canSeeAccounts) ...[
                       const Divider(indent: Insets.giant),
                       _NavRow(
@@ -222,6 +256,14 @@ class ProfileScreen extends ConsumerWidget {
                         icon: Icons.account_tree_outlined,
                         label: AcademicAdminCopy.screenTitle,
                         onTap: () => context.push(Routes.academicStructure),
+                      ),
+                    ],
+                    if (canSchedule) ...[
+                      const Divider(indent: Insets.giant),
+                      _NavRow(
+                        icon: Icons.event_available_outlined,
+                        label: SchedulingCopy.title,
+                        onTap: () => context.push(Routes.schedulingList),
                       ),
                     ],
                   ],

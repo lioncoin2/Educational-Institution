@@ -23,8 +23,8 @@ responsibility and what each module must not know live in
 ### academic
 
 - **Path:** `backend/src/modules/academic/`
-- **Nest module:** `academic.module.ts` — exports: `ACADEMIC_RELATIONSHIPS`
-- **Public contract (`contracts/`):** `ACADEMIC_RELATIONSHIPS`, `ACADEMIC_RELATIONSHIPS_MAX_PAGE`, `ASSIGNMENT_STATUSES`, `AcademicEvent`, `AcademicEvents`, `AcademicRelationships`, `AssignmentEnded`, `AssignmentStatus`, `ENROLLMENT_OUTCOMES`, `ENROLLMENT_STATUSES`, `EnrollmentEnded`, `EnrollmentOutcome`, `EnrollmentStatus`, `HalaqaCreated`, `HalaqaStatusChanged`, `HalaqaUpdated`, `ProgramCreated`, `ProgramStatusChanged`, `ProgramUpdated`, `SECTION_KINDS`, `STRUCTURE_STATUSES`, `SectionCreated`, `SectionKind`, `SectionStatusChanged`, `SectionUpdated`, `StructureField`, `StructureStatus`, `StudentEnrolled`, `TEACHING_ROLES`, `TeacherAssigned`, `TeachingRole`, `isEnrollmentOutcome`, `isSectionKind`, `isTeachingRole`
+- **Nest module:** `academic.module.ts` — exports: `ACADEMIC_RELATIONSHIPS`, `ACADEMIC_STRUCTURE_SUMMARY`
+- **Public contract (`contracts/`):** `ACADEMIC_RELATIONSHIPS`, `ACADEMIC_RELATIONSHIPS_MAX_PAGE`, `ACADEMIC_STRUCTURE_SUMMARY`, `ASSIGNMENT_STATUSES`, `AcademicEvent`, `AcademicEvents`, `AcademicRelationships`, `AcademicStructureReporting`, `AcademicStructureSummary`, `AssignmentEnded`, `AssignmentStatus`, `ENROLLMENT_OUTCOMES`, `ENROLLMENT_STATUSES`, `EnrollmentEnded`, `EnrollmentOutcome`, `EnrollmentStatus`, `HalaqaCreated`, `HalaqaStatusChanged`, `HalaqaUpdated`, `ProgramCreated`, `ProgramStatusChanged`, `ProgramUpdated`, `SECTION_KINDS`, `STRUCTURE_STATUSES`, `SectionCreated`, `SectionKind`, `SectionStatusChanged`, `SectionUpdated`, `StructureCount`, `StructureField`, `StructureStatus`, `StudentEnrolled`, `TEACHING_ROLES`, `TeacherAssigned`, `TeachingRole`, `isEnrollmentOutcome`, `isSectionKind`, `isTeachingRole`
 - **Declared domain events:** `academic.halaqa.activated`, `academic.halaqa.created`, `academic.halaqa.deactivated`, `academic.halaqa.updated`, `academic.program.activated`, `academic.program.created`, `academic.program.deactivated`, `academic.program.updated`, `academic.section.activated`, `academic.section.created`, `academic.section.deactivated`, `academic.section.updated`, `academic.student.enrolled`, `academic.student.enrollment_ended`, `academic.teacher.assigned`, `academic.teacher.assignment_ended`
 - **Static imports → modules:** `identity`
 - **Docs:** [module-boundaries.md#academic](module-boundaries.md#academic)
@@ -77,8 +77,8 @@ responsibility and what each module must not know live in
 ### identity
 
 - **Path:** `backend/src/modules/identity/`
-- **Nest module:** `identity.module.ts` — exports: `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_AVATAR_WRITER`, `ACCOUNT_DIRECTORY`, `ACCOUNT_SEARCH`, `AUTHORIZATION_SERVICE`
-- **Public contract (`contracts/`):** `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_AVATAR_WRITER`, `ACCOUNT_DIRECTORY`, `ACCOUNT_DIRECTORY_MAX_IDS`, `ACCOUNT_SEARCH`, `ALL_PERMISSIONS`, `AUTHORIZATION_SERVICE`, `AccessTokenAuthenticator`, `AccountAvatarWriter`, `AccountDirectory`, `AccountSearch`, `AccountSummary`, `Authenticated`, `Authentication`, `AuthorizationContext`, `AuthorizationService`, `ELIGIBLE_TEACHER`, `Permission`, `Permissions`, `REQUIRE_AUTHENTICATION`, `REQUIRE_PERMISSION`, `RequirePermission`, `SYSTEM_PRINCIPAL_PREFIX`, `SessionReference`, `isPermission`, `isSystemPrincipal`, `systemPrincipal`
+- **Nest module:** `identity.module.ts` — exports: `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_AVATAR_WRITER`, `ACCOUNT_DIRECTORY`, `ACCOUNT_DIRECTORY_SUMMARY`, `ACCOUNT_SEARCH`, `AUTHORIZATION_SERVICE`
+- **Public contract (`contracts/`):** `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_AVATAR_WRITER`, `ACCOUNT_DIRECTORY`, `ACCOUNT_DIRECTORY_MAX_IDS`, `ACCOUNT_DIRECTORY_SUMMARY`, `ACCOUNT_SEARCH`, `ALL_PERMISSIONS`, `AUTHORIZATION_SERVICE`, `AccessTokenAuthenticator`, `AccountAvatarWriter`, `AccountDirectory`, `AccountDirectorySummary`, `AccountSearch`, `AccountStatusCounts`, `AccountSummary`, `Authenticated`, `Authentication`, `AuthorizationContext`, `AuthorizationService`, `ELIGIBLE_TEACHER`, `Permission`, `Permissions`, `REQUIRE_AUTHENTICATION`, `REQUIRE_PERMISSION`, `RequirePermission`, `SYSTEM_PRINCIPAL_PREFIX`, `SessionReference`, `isPermission`, `isSystemPrincipal`, `systemPrincipal`
 - **Declared domain events:** —
 - **Static imports → modules:** —
 - **Docs:** [module-boundaries.md#identity](module-boundaries.md#identity)
@@ -96,8 +96,8 @@ responsibility and what each module must not know live in
 
 - **Path:** `backend/src/modules/messaging/`
 - **Nest module:** `messaging.module.ts` — exports: `MESSAGE_DELIVERY`, `MESSAGE_RECIPIENTS`
-- **Public contract (`contracts/`):** `AttachmentView`, `CONVERSATION_TYPES`, `ConversationCreated`, `ConversationPosition`, `ConversationType`, `MAX_RECIPIENT_PAGE`, `MESSAGE_DELIVERY`, `MESSAGE_RECIPIENTS`, `MESSAGE_TYPES`, `MessageDeleted`, `MessageDelivery`, `MessageForDelivery`, `MessageRead`, `MessageRecipients`, `MessageSearch`, `MessageSearchHit`, `MessageSearchQuery`, `MessageSent`, `MessageType`, `MessageView`, `MessagingEvent`, `MessagingEvents`, `PARTICIPANT_ROLES`, `ParticipantAdded`, `ParticipantRemoved`, `ParticipantRole`, `PersonView`, `RecipientPage`
-- **Declared domain events:** `messaging.conversation.created`, `messaging.message.deleted`, `messaging.message.read`, `messaging.message.sent`, `messaging.participant.added`, `messaging.participant.removed`
+- **Public contract (`contracts/`):** `AttachmentView`, `CONVERSATION_TYPES`, `ConversationCreated`, `ConversationPosition`, `ConversationType`, `MAX_RECIPIENT_PAGE`, `MESSAGE_DELIVERY`, `MESSAGE_RECIPIENTS`, `MESSAGE_TYPES`, `MessageDeleted`, `MessageDelivery`, `MessageForDelivery`, `MessagePinned`, `MessageRead`, `MessageRecipients`, `MessageSearch`, `MessageSearchHit`, `MessageSearchQuery`, `MessageSent`, `MessageType`, `MessageView`, `MessagingEvent`, `MessagingEvents`, `PARTICIPANT_ROLES`, `ParticipantAdded`, `ParticipantRemoved`, `ParticipantRole`, `PersonView`, `RecipientPage`
+- **Declared domain events:** `messaging.conversation.created`, `messaging.message.deleted`, `messaging.message.pinned`, `messaging.message.read`, `messaging.message.sent`, `messaging.participant.added`, `messaging.participant.removed`
 - **Static imports → modules:** `communities`, `files`, `identity`
 - **Docs:** [module-boundaries.md#messaging](module-boundaries.md#messaging)
 
@@ -116,7 +116,7 @@ responsibility and what each module must not know live in
 - **Nest module:** `operations.module.ts` — exports: —
 - **Public contract (`contracts/`):** —
 - **Declared domain events:** —
-- **Static imports → modules:** —
+- **Static imports → modules:** `academic`, `identity`
 - **Docs:** [module-boundaries.md#operations](module-boundaries.md#operations)
 
 ### people
@@ -143,7 +143,7 @@ responsibility and what each module must not know live in
 - **Nest module:** `reporting.module.ts` — exports: —
 - **Public contract (`contracts/`):** —
 - **Declared domain events:** —
-- **Static imports → modules:** —
+- **Static imports → modules:** `academic`, `communities`, `identity`
 - **Docs:** [module-boundaries.md#reporting](module-boundaries.md#reporting)
 
 ## Flutter features (`app/lib/features/`)
@@ -187,6 +187,13 @@ responsibility and what each module must not know live in
 
 - **Path:** `app/lib/features/certificates/`
 - **Controllers:** —
+- **Static imports → areas:** `app`, `core`, `data`, `providers`
+- **Static imports → features:** —
+
+### command_center
+
+- **Path:** `app/lib/features/command_center/`
+- **Controllers:** `command_center_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
 - **Static imports → features:** —
 
@@ -237,7 +244,7 @@ responsibility and what each module must not know live in
 - **Path:** `app/lib/features/messaging/`
 - **Controllers:** `conversation_controller.dart`, `conversation_list_controller.dart`, `conversation_mutes_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
-- **Static imports → features:** `communities`, `live`
+- **Static imports → features:** `auth`, `communities`, `live`
 
 ### notifications
 
@@ -251,7 +258,7 @@ responsibility and what each module must not know live in
 - **Path:** `app/lib/features/profile/`
 - **Controllers:** `sessions_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
-- **Static imports → features:** `academic_admin`, `admin`, `auth`, `communities`, `notifications`, `student`, `teacher`
+- **Static imports → features:** `academic_admin`, `admin`, `auth`, `command_center`, `notifications`, `publish`, `scheduling`, `student`, `teacher`
 
 ### programs
 
@@ -266,6 +273,20 @@ responsibility and what each module must not know live in
 - **Controllers:** —
 - **Static imports → areas:** `core`, `data`, `providers`
 - **Static imports → features:** —
+
+### publish
+
+- **Path:** `app/lib/features/publish/`
+- **Controllers:** `publish_controller.dart`
+- **Static imports → areas:** `core`, `data`, `providers`
+- **Static imports → features:** —
+
+### scheduling
+
+- **Path:** `app/lib/features/scheduling/`
+- **Controllers:** `scheduling_controller.dart`
+- **Static imports → areas:** `app`, `core`, `data`, `providers`
+- **Static imports → features:** `auth`
 
 ### splash
 
@@ -290,9 +311,9 @@ responsibility and what each module must not know live in
 
 ## Flutter data seam (`app/lib/data/`, `app/lib/app/`)
 
-- **Repository contracts (`data/repositories/repositories.dart`):** `AcademicRepository`, `AdminRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `FilesRepository`, `InstitutionRepository`, `LearningRepository`, `LiveRepository`, `MessagingRepository`, `NotificationsRepository`, `PeopleRepository`, `ProgressRepository`
-- **Routes (`app/routes.dart`):** `academicStructure` → `/admin/academic`, `adminAccounts` → `/admin/accounts`, `announcements` → `/announcements`, `avatar` → `/profile/avatar`, `certificates` → `/certificates`, `changePassword` → `/profile/password`, `communities` → `/communities`, `home` → `/home`, `invite` → `/invite`, `messages` → `/messages`, `notificationSettings` → `/notifications/settings`, `notifications` → `/notifications`, `path` → `/path`, `profile` → `/profile`, `programs` → `/programs`, `progress` → `/progress`, `sessions` → `/profile/sessions`, `signIn` → `/sign-in`, `splash` → `/splash`, `studentRecord` → `/my-halaqat/record`, `studentWorkspace` → `/my-halaqat`, `teacherHistory` → `/teaching/history`, `teacherWorkspace` → `/teaching`
-- **Route builders:** `academicHalaqaPeople`, `academicProgram`, `academicStudentHistory`, `academicTeacherHistory`, `adminAccount`, `certificate`, `community`, `communityAttendance`, `communityAttendanceSnapshot`, `communityAttendanceSnapshots`, `communityInvitations`, `communityLive`, `communityMembers`, `conversation`, `episode`, `lesson`, `levels`, `program`, `teacherHalaqaRoster`
+- **Repository contracts (`data/repositories/repositories.dart`):** `AcademicRepository`, `AdminRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `FilesRepository`, `InstitutionRepository`, `LearningRepository`, `LiveRepository`, `MessagingRepository`, `NotificationsRepository`, `PeopleRepository`, `ProgressRepository`, `ReportingRepository`, `SchedulingRepository`
+- **Routes (`app/routes.dart`):** `academicStructure` → `/admin/academic`, `adminAccounts` → `/admin/accounts`, `announcements` → `/announcements`, `avatar` → `/profile/avatar`, `certificates` → `/certificates`, `changePassword` → `/profile/password`, `commandCenter` → `/command-center`, `communities` → `/communities`, `home` → `/home`, `invite` → `/invite`, `messages` → `/messages`, `notificationSettings` → `/notifications/settings`, `notifications` → `/notifications`, `path` → `/path`, `profile` → `/profile`, `programs` → `/programs`, `progress` → `/progress`, `publish` → `/publish`, `schedulingList` → `/admin/scheduling`, `sessions` → `/profile/sessions`, `signIn` → `/sign-in`, `splash` → `/splash`, `studentRecord` → `/my-halaqat/record`, `studentWorkspace` → `/my-halaqat`, `teacherHistory` → `/teaching/history`, `teacherWorkspace` → `/teaching`
+- **Route builders:** `academicHalaqaPeople`, `academicProgram`, `academicStudentHistory`, `academicTeacherHistory`, `adminAccount`, `certificate`, `community`, `communityAttendance`, `communityAttendanceSnapshot`, `communityAttendanceSnapshots`, `communityInvitations`, `communityLive`, `communityMembers`, `conversation`, `episode`, `lesson`, `levels`, `program`, `schedulingLesson`, `teacherHalaqaRoster`
 - **Entry points:** `app/lib/main.dart`, `app/lib/app/app.dart`, `app/lib/app/router.dart`, `app/lib/providers/app_providers.dart`
 
 ## Architecture Decision Records (`docs/architecture/decisions/`)
@@ -336,3 +357,7 @@ responsibility and what each module must not know live in
 - [0037 — The Trial is a deployed environment: full security baseline, media declared explicitly](decisions/0037-trial-environment-and-explicit-fake-media.md)
 - [0038 — Profile pictures and community profile editing, on the Files module](decisions/0038-identity-and-community-profile-media.md)
 - [0039 — Groups vs channels: a community chat mode, posting by capability](decisions/0039-groups-and-channels-chat-mode.md)
+- [0040 — Owner Command Center: a reporting widget registry over existing facts](decisions/0040-owner-command-center-reporting-registry.md)
+- [0041 — Mass publishing: one post to several communities, authorized per community](decisions/0041-mass-publish-to-communities.md)
+- [0042 — Operations: scheduling of individual dated lessons](decisions/0042-operations-scheduled-lessons.md)
+- [0043 — Pinned messages: one server-authoritative pin per conversation, reconciled by a monotonic version](decisions/0043-pinned-messages.md)

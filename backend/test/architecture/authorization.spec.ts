@@ -111,7 +111,9 @@ describe('route authorization', () => {
       'modules/messaging/api/conversations.controller.ts#ConversationsController',
       'modules/notifications/api/institution-notification-settings.controller.ts#InstitutionNotificationSettingsController',
       'modules/notifications/api/notifications.controller.ts#NotificationsController',
+      'modules/operations/api/operations.controller.ts#OperationsController',
       'modules/people/api/people.controller.ts#PeopleController',
+      'modules/reporting/api/reporting.controller.ts#ReportingController',
       'platform/health/health.controller.ts#HealthController',
     ]);
     expect(routes.length).toBeGreaterThanOrEqual(20);
@@ -210,6 +212,25 @@ describe('route authorization', () => {
     });
   });
 
+  // Scheduling of dated lessons: every route — read and write alike — requires
+  // operations.schedule_manage (owner/admin only), so a guessed lesson id
+  // reveals nothing to anyone who may not manage the schedule. No new access
+  // level, nothing merely authenticated or public.
+  it('holds every operations route to operations.schedule_manage', () => {
+    const operations = Object.fromEntries(
+      routes
+        .filter((route) => route.name.startsWith('OperationsController.'))
+        .map((route) => [route.name, route.permission]),
+    );
+    expect(operations).toEqual({
+      'OperationsController.schedule': 'operations.schedule_manage',
+      'OperationsController.list': 'operations.schedule_manage',
+      'OperationsController.get': 'operations.schedule_manage',
+      'OperationsController.reschedule': 'operations.schedule_manage',
+      'OperationsController.cancel': 'operations.schedule_manage',
+    });
+  });
+
   // Reading is academic.read (and each use case narrows it further: a teacher
   // to their own halaqat, everyone to their own record); every change is
   // academic.manage. Nothing academic is public or merely authenticated.
@@ -301,16 +322,21 @@ describe('route authorization', () => {
 
   // A community's chat is opened with messaging.read at the edge — never
   // public, never merely authenticated — and the use case asks Communities for
-  // community.chat.read before anything is read or created. It is the only
-  // route messaging adds for community chats: nothing in messaging adds,
+  // community.chat.read before anything is read or created. Mass publishing to
+  // several communities is a send, so its edge is messaging.send; the use case
+  // then authorizes each community on its own community.chat.post. These are the
+  // only routes messaging adds for community chats: nothing in messaging adds,
   // removes or lists their members.
-  it('holds the community chat route to messaging.read, and adds no other', () => {
+  it('holds the community chat routes to messaging.read and messaging.send, and adds no other', () => {
     const communityChat = Object.fromEntries(
       routes
         .filter((route) => route.name.startsWith('CommunityChatController.'))
         .map((route) => [route.name, route.permission]),
     );
-    expect(communityChat).toEqual({ 'CommunityChatController.conversation': 'messaging.read' });
+    expect(communityChat).toEqual({
+      'CommunityChatController.conversation': 'messaging.read',
+      'CommunityChatController.publishToCommunities': 'messaging.send',
+    });
   });
 
   // Live's edge: seeing and joining a session is live.join, asking for the

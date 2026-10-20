@@ -15,6 +15,10 @@ import '../features/attendance/snapshots_screen.dart';
 import '../features/auth/sign_in_screen.dart';
 import '../features/certificates/certificate_detail_screen.dart';
 import '../features/certificates/certificates_screen.dart';
+import '../features/command_center/command_center_screen.dart';
+import '../features/publish/publish_screen.dart';
+import '../features/scheduling/scheduling_detail_screen.dart';
+import '../features/scheduling/scheduling_list_screen.dart';
 import '../features/communities/communities_screen.dart';
 import '../features/communities/community_invitations_screen.dart';
 import '../features/communities/community_members_screen.dart';
@@ -80,6 +84,34 @@ GoRouter buildRouter() {
         name: 'announcements',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const AnnouncementsScreen(),
+      ),
+      GoRoute(
+        path: Routes.commandCenter,
+        name: 'command-center',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const CommandCenterScreen(),
+      ),
+      GoRoute(
+        path: Routes.publish,
+        name: 'publish',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const PublishScreen(),
+      ),
+      GoRoute(
+        path: Routes.schedulingList,
+        name: 'scheduling',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const SchedulingListScreen(),
+        routes: [
+          GoRoute(
+            path: 'lessons/:lessonId',
+            name: 'scheduling-lesson',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) => SchedulingDetailScreen(
+              lessonId: state.pathParameters['lessonId']!,
+            ),
+          ),
+        ],
       ),
       GoRoute(
         path: Routes.adminAccounts,
@@ -178,91 +210,29 @@ GoRouter buildRouter() {
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const ProgressScreen(),
       ),
+      // مساري و الشهادات — full-screen routes reached from the Account page.
+      // They were bottom-nav branches; the bottom bar now carries المجتمعات and
+      // الرسائل in their place (profile pushes these above the tab bar so Back
+      // returns to حسابي). The paths are unchanged, so deep links still resolve.
       GoRoute(
-        path: Routes.messages,
-        name: 'messages',
+        path: Routes.path,
+        name: 'path',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const ConversationsScreen(),
-        routes: [
-          GoRoute(
-            path: ':conversationId',
-            name: 'conversation',
-            parentNavigatorKey: _rootNavigatorKey,
-            builder: (context, state) => ConversationScreen(
-              conversationId: state.pathParameters['conversationId']!,
-            ),
-          ),
-        ],
+        builder: (context, state) => const LearningPathScreen(),
       ),
       GoRoute(
-        path: Routes.communities,
-        name: 'communities',
+        path: Routes.certificates,
+        name: 'certificates',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const CommunitiesScreen(),
+        builder: (context, state) => const CertificatesScreen(),
         routes: [
           GoRoute(
-            path: ':communityId',
-            name: 'community',
+            path: ':certificateId',
+            name: 'certificate',
             parentNavigatorKey: _rootNavigatorKey,
-            builder: (context, state) => CommunityScreen(
-              communityId: state.pathParameters['communityId']!,
+            builder: (context, state) => CertificateDetailScreen(
+              certificateId: state.pathParameters['certificateId']!,
             ),
-            routes: [
-              GoRoute(
-                path: 'members',
-                name: 'community-members',
-                parentNavigatorKey: _rootNavigatorKey,
-                builder: (context, state) => CommunityMembersScreen(
-                  communityId: state.pathParameters['communityId']!,
-                ),
-              ),
-              GoRoute(
-                path: 'invitations',
-                name: 'community-invitations',
-                parentNavigatorKey: _rootNavigatorKey,
-                builder: (context, state) => CommunityInvitationsScreen(
-                  communityId: state.pathParameters['communityId']!,
-                ),
-              ),
-              GoRoute(
-                path: 'live',
-                name: 'community-live',
-                parentNavigatorKey: _rootNavigatorKey,
-                builder: (context, state) => LiveSessionScreen(
-                  communityId: state.pathParameters['communityId']!,
-                ),
-              ),
-              GoRoute(
-                path: 'attendance',
-                name: 'community-attendance',
-                parentNavigatorKey: _rootNavigatorKey,
-                builder: (context, state) => RecordAttendanceScreen(
-                  communityId: state.pathParameters['communityId']!,
-                ),
-                routes: [
-                  GoRoute(
-                    path: 'snapshots',
-                    name: 'community-attendance-snapshots',
-                    parentNavigatorKey: _rootNavigatorKey,
-                    builder: (context, state) => AttendanceSnapshotsScreen(
-                      communityId: state.pathParameters['communityId']!,
-                      liveSessionId: state.uri.queryParameters['session'],
-                    ),
-                    routes: [
-                      GoRoute(
-                        path: ':snapshotId',
-                        name: 'community-attendance-snapshot',
-                        parentNavigatorKey: _rootNavigatorKey,
-                        builder: (context, state) =>
-                            AttendanceSnapshotDetailScreen(
-                              snapshotId: state.pathParameters['snapshotId']!,
-                            ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
           ),
         ],
       ),
@@ -345,30 +315,101 @@ GoRouter buildRouter() {
             ],
           ),
 
-          // 2 — مساري
+          // 2 — المجتمعات (the community list is the tab; details push above it)
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: Routes.path,
-                name: 'path',
-                builder: (context, state) => const LearningPathScreen(),
+                path: Routes.communities,
+                name: 'communities',
+                builder: (context, state) => const CommunitiesScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':communityId',
+                    name: 'community',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => CommunityScreen(
+                      communityId: state.pathParameters['communityId']!,
+                    ),
+                    routes: [
+                      GoRoute(
+                        path: 'members',
+                        name: 'community-members',
+                        parentNavigatorKey: _rootNavigatorKey,
+                        builder: (context, state) => CommunityMembersScreen(
+                          communityId: state.pathParameters['communityId']!,
+                        ),
+                      ),
+                      GoRoute(
+                        path: 'invitations',
+                        name: 'community-invitations',
+                        parentNavigatorKey: _rootNavigatorKey,
+                        builder: (context, state) => CommunityInvitationsScreen(
+                          communityId: state.pathParameters['communityId']!,
+                        ),
+                      ),
+                      GoRoute(
+                        path: 'live',
+                        name: 'community-live',
+                        parentNavigatorKey: _rootNavigatorKey,
+                        builder: (context, state) => LiveSessionScreen(
+                          communityId: state.pathParameters['communityId']!,
+                        ),
+                      ),
+                      GoRoute(
+                        path: 'attendance',
+                        name: 'community-attendance',
+                        parentNavigatorKey: _rootNavigatorKey,
+                        builder: (context, state) => RecordAttendanceScreen(
+                          communityId: state.pathParameters['communityId']!,
+                        ),
+                        routes: [
+                          GoRoute(
+                            path: 'snapshots',
+                            name: 'community-attendance-snapshots',
+                            parentNavigatorKey: _rootNavigatorKey,
+                            builder: (context, state) =>
+                                AttendanceSnapshotsScreen(
+                                  communityId:
+                                      state.pathParameters['communityId']!,
+                                  liveSessionId:
+                                      state.uri.queryParameters['session'],
+                                ),
+                            routes: [
+                              GoRoute(
+                                path: ':snapshotId',
+                                name: 'community-attendance-snapshot',
+                                parentNavigatorKey: _rootNavigatorKey,
+                                builder: (context, state) =>
+                                    AttendanceSnapshotDetailScreen(
+                                      snapshotId:
+                                          state.pathParameters['snapshotId']!,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),
 
-          // 3 — الشهادات
+          // 3 — الرسائل (the conversation list is the tab; a thread pushes above)
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: Routes.certificates,
-                name: 'certificates',
-                builder: (context, state) => const CertificatesScreen(),
+                path: Routes.messages,
+                name: 'messages',
+                builder: (context, state) => const ConversationsScreen(),
                 routes: [
                   GoRoute(
-                    path: ':certificateId',
-                    name: 'certificate',
-                    builder: (context, state) => CertificateDetailScreen(
-                      certificateId: state.pathParameters['certificateId']!,
+                    path: ':conversationId',
+                    name: 'conversation',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => ConversationScreen(
+                      conversationId: state.pathParameters['conversationId']!,
                     ),
                   ),
                 ],

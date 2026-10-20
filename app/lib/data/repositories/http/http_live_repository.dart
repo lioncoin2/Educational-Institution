@@ -140,6 +140,71 @@ class HttpLiveRepository implements LiveRepository {
         return LiveSession.fromJson(json, origin: DataOrigin.records);
       });
 
+  // ── Speaking: the floor (raise a hand, and moderate it) ─────────────────
+  // Bodyless POST/DELETE to the exact routes. Each returns a `{request}`
+  // envelope (grant/revoke also carry a media outcome, which this non-media
+  // build ignores); the request is parsed as a [LiveHand]. The authoritative
+  // `me.hand` and the queue arrive through the session read and the hands
+  // re-read, never from a command's own result.
+
+  @override
+  Future<LiveHand> raiseHand(String sessionId) => _call(() async {
+    final json = await _api.post(
+      '/live/sessions/${Uri.encodeComponent(sessionId)}/hand',
+    );
+    return _request(json);
+  });
+
+  @override
+  Future<LiveHand?> lowerHand(String sessionId) => _call(() async {
+    final json = await _api.delete(
+      '/live/sessions/${Uri.encodeComponent(sessionId)}/hand',
+    );
+    return _requestOrNull(json);
+  });
+
+  @override
+  Future<LiveHand> grantFloor(String requestId) => _call(() async {
+    final json = await _api.post(
+      '/live/requests/${Uri.encodeComponent(requestId)}/grant',
+    );
+    return _request(json);
+  });
+
+  @override
+  Future<LiveHand> declineHand(String requestId) => _call(() async {
+    final json = await _api.post(
+      '/live/requests/${Uri.encodeComponent(requestId)}/decline',
+    );
+    return _request(json);
+  });
+
+  @override
+  Future<LiveHand> revokeFloor(String requestId) => _call(() async {
+    final json = await _api.post(
+      '/live/requests/${Uri.encodeComponent(requestId)}/revoke',
+    );
+    return _request(json);
+  });
+
+  /// The `request` of a floor envelope, as a [LiveHand]. A missing or malformed
+  /// request is a [FormatException] (→ `live.unreadable` through [_call]).
+  static LiveHand _request(Map<String, Object?> json) {
+    final request = json['request'];
+    if (request is! Map) {
+      throw const FormatException('live: missing "request"');
+    }
+    return LiveHand.fromJson(request.cast<String, Object?>());
+  }
+
+  /// The `request` of a floor envelope when present, or null (`{request: null}`
+  /// — the caller had no hand up to lower).
+  static LiveHand? _requestOrNull(Map<String, Object?> json) {
+    final request = json['request'];
+    if (request is! Map) return null;
+    return LiveHand.fromJson(request.cast<String, Object?>());
+  }
+
   // ── Media ──────────────────────────────────────────────────────────────
 
   @override

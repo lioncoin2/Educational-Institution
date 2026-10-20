@@ -5,4 +5,5 @@
  */
 export * from './events';
 export * from './relationships';
+export * from './reporting';
 export * from './vocabulary';

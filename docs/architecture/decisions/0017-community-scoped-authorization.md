@@ -113,6 +113,10 @@ Everything below is proposed. None of it exists today.
      `attendance.*` permission ([Q69]); `community.messages.moderate`, until
      Q51 and Q23 are answered.
 
+   > **Extended by [0039](0039-groups-and-channels-chat-mode.md):** a new
+   > delegable capability, `community.chat.manage` (restrict or restore a
+   > group's member posting).
+
    The acts never mix with identity permissions. Most have three segments,
    which identity's shape CHECK can never accept, but **`community.view` and
    `community.lock` have two** and would match it, so segment count alone is
@@ -153,6 +157,13 @@ Everything below is proposed. None of it exists today.
    | `live.join` | `communities.read` + `live.join` | as a member | none | yes |
    | `live.remain` (P6) | as `live.join` | as a member | none | while `runningLiveContinues` |
    | `live.raise_hand` | `communities.read` + `live.raise_hand` | as a member | none | yes |
+
+   > **Extended by [0039](0039-groups-and-channels-chat-mode.md):** the
+   > `chat.post` row is the publisher rule, which still governs a CHANNEL and
+   > a `GROUP_RESTRICTED` group. In a `GROUP_OPEN` group, `chat.post` is
+   > decided by a membership rule instead (`POSTING_MEMBER_RULE`, ceiling
+   > `communities.read` + `messaging.send`, no grant). The same gate applies,
+   > so LOCKED still blocks everyone.
 
    The columns are answered by [Q43] (oversight), [Q44] (ceilings), [Q46]
    (LOCKED), [Q51] (posting) and [Q54] (live). Listing and revoking links is

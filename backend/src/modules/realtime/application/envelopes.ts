@@ -193,6 +193,29 @@ export function messageDeletedFrame(input: {
   });
 }
 
+/**
+ * A community chat's pin changed (ADR 0043): the new pinned id, or null when
+ * unpinned. An id only — never content. The `eventId` is unique per change
+ * (conversation + the new pin + the change time) so a client dedupes replays,
+ * and `occurredAt` is the server's change time for stale-event ordering.
+ */
+export function messagePinnedFrame(input: {
+  readonly occurredAt: Date;
+  readonly conversationId: string;
+  readonly pinnedMessageId: string | null;
+  readonly pinVersion: number;
+}): string {
+  return frame({
+    type: 'message.pinned',
+    // Unique per change: the conversation and its monotonic pin version.
+    eventId: `message.pinned:${input.conversationId}:${input.pinVersion}`,
+    occurredAt: input.occurredAt.toISOString(),
+    conversationId: input.conversationId,
+    pinnedMessageId: input.pinnedMessageId,
+    pinVersion: input.pinVersion,
+  });
+}
+
 export function conversationCreatedFrame(input: {
   readonly occurredAt: Date;
   readonly conversationId: string;

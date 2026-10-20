@@ -19,6 +19,7 @@ import { CommunityChatSweeper } from './application/community-chat-sweeper';
 import { CommunityChatSync } from './application/community-chat-sync';
 import { GetCommunityChatUseCase } from './application/community-chat.use-case';
 import { CommunityChats } from './application/community-chats';
+import { PublishToCommunitiesUseCase } from './application/publish-to-communities.use-case';
 import { ConversationAccess } from './application/conversation-access';
 import {
   ConversationFactory,
@@ -39,6 +40,7 @@ import {
   ModerateMessageUseCase,
   ReviewDeletedMessageUseCase,
 } from './application/moderate-message.use-cases';
+import { PinMessageUseCase, UnpinMessageUseCase } from './application/pin-message.use-cases';
 import { MessagingViews } from './application/messaging-views';
 import {
   GetConversationUseCase,
@@ -144,8 +146,11 @@ import { InMemoryMessagingStore } from './infrastructure/in-memory-messaging-sto
     GetAttachmentLinkUseCase,
     GetSenderAvatarLinkUseCase,
     GetCommunityChatUseCase,
+    PublishToCommunitiesUseCase,
     ModerateMessageUseCase,
     ReviewDeletedMessageUseCase,
+    PinMessageUseCase,
+    UnpinMessageUseCase,
     { provide: MESSAGE_RECIPIENTS, useClass: MessageRecipientsService },
     { provide: MESSAGE_DELIVERY, useClass: MessageDeliveryService },
   ],

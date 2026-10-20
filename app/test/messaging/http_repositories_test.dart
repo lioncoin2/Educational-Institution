@@ -280,6 +280,57 @@ void main() {
       expect(sent.sequence, 7);
     });
 
+    test('mass-publishes to communities: posts the batch, parses per-community outcomes', () async {
+      final server = FakeServer({
+        'POST /messaging/communities/publish': (request) {
+          expect(jsonDecode(request.body), {
+            'clientBatchId': 'batch-1',
+            'communityIds': ['c1', 'c2'],
+            'kind': 'IMAGE',
+            'body': 'لوحة',
+            'fileAssetId': 'asset-9',
+          });
+          return json(201, {
+            'batchId': 'batch-1',
+            'results': [
+              {'communityId': 'c1', 'status': 'posted', 'retryable': false, 'messageId': 'm1'},
+              {'communityId': 'c2', 'status': 'forbidden', 'retryable': false},
+            ],
+            'summary': {'total': 2, 'posted': 1, 'failed': 1},
+          });
+        },
+      });
+      final report = await (await repository(server)).publishToCommunities(
+        clientBatchId: 'batch-1',
+        communityIds: ['c1', 'c2'],
+        kind: 'IMAGE',
+        body: 'لوحة',
+        fileAssetId: 'asset-9',
+      );
+      expect(report.batchId, 'batch-1');
+      expect(report.posted, 1);
+      expect(report.failed, 1);
+      expect(report.results.first.status.wire, 'posted');
+    });
+
+    test('a publish refusal maps to MessagingException with the server code', () async {
+      final server = FakeServer({
+        'POST /messaging/communities/publish': (_) =>
+            error(422, 'messaging.attachment_not_found'),
+      });
+      await expectLater(
+        (await repository(server)).publishToCommunities(
+          clientBatchId: 'b',
+          communityIds: ['c1'],
+          kind: 'IMAGE',
+          fileAssetId: 'nope',
+        ),
+        throwsA(
+          isA<MessagingException>().having((e) => e.code, 'code', 'messaging.attachment_not_found'),
+        ),
+      );
+    });
+
     test('maps refusals to MessagingException with the server code', () async {
       final server = FakeServer({
         'POST /messaging/conversations/c-1/messages/text': (_) =>

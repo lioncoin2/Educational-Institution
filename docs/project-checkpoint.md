@@ -20,6 +20,120 @@ in-memory). Product scope is the owner's; engineering never invents institutiona
 
 ## Repository state (verify before trusting)
 
+> **Release authorization & finite plan — 2026-10-20 (owner decision, register §29; newest block).**
+> The owner explicitly **included** three features in the first **web-first Trial** release and accepted the
+> Trial runtime contract. ADR statuses moved `Proposed → Accepted`: **0040** (Owner Command Center), **0041**
+> (Mass Publishing), **0043** (Pinned Messages), and **0037** (Trial env: `NODE_ENV=trial` +
+> `LIVE_MEDIA_PROVIDER=fake` + `TRUST_PROXY=1`). 0042 was already Accepted. Recorded in the register (§29),
+> the ADR files, and the ADR index. **No code/schema/permission changed by the authorization.**
+>
+> **Release candidate (verified this session):** the current working tree (HEAD `9b4a6de` + the accumulated
+> changes). It contains all three features end-to-end — reporting registry (`GET /reporting/command-center`),
+> mass publish (`POST /messaging/communities/publish`), pinned messages (pin/unpin routes + `pin_version`) —
+> their contracts, and migrations **0026→0029** (additive; 0028/0029 back the pin). Engineering gates are
+> green on the tree this session: backend 6/6 static + 4113 unit/API; **full PostgreSQL integration 29 suites
+> / 419 tests / 0 failed** (disposable `postgres:16`); Flutter analyze clean + 1773 tests. The one real
+> blocker found (stale `people-http-postgres` avatar-key assertion vs the committed ADR 0038 contract) was
+> fixed this session.
+>
+> **Finite release plan (no step executed — each state-changing boundary needs explicit owner approval):**
+> 1. **Commit** the candidate as ONE release SHA — MUST include this session's `people-http-postgres` fix and
+>    the ADR 0043 + register/index edits, or CI's PG gate stays red. *(approval: owner → commit/push)*
+> 2. **CI green on that SHA:** `npm run verify` (format, lint, typecheck, depcruise, jest) + full PostgreSQL
+>    integration (`POSTGRES_REQUIRED=1`, `--maxWorkers=3`) + `flutter analyze` + `flutter test` + real-LiveKit
+>    job (unaffected; no media code changed).
+> 3. **Build image from the committed SHA only** (`git archive`, never the dirty tree): tag
+>    `institution-api:trial-<sha>`. **Never rebuild `:latest`** (staging uses it).
+> 4. **Backups before rollout** (evidence kept): `pg_dump -Fc` of the Trial DB, a copy of the current web dir,
+>    and the current image id. *(approval: operator)*
+> 5. **Migrations — Trial DB only:** `(cd backend && DATABASE_URL=<trial-db, loopback 127.0.0.1:5433> npm run
+>    db:migrate)` applies **0026→0029 in journal order**; additive, verified on a disposable DB this session.
+>    Never run against staging/production/shared DBs. *(approval: owner → migrate)*
+> 6. **Security/runtime:** layer `infra/compose.trial.environment.yaml` (`NODE_ENV=trial`,
+>    `LIVE_MEDIA_PROVIDER=fake`, `TRUST_PROXY=1`) after `compose.trial.yaml`; non-revealing secret check
+>    (lengths/flags only). nginx header snippet `infra/nginx/trial.security-headers.conf` applied **only with
+>    D-8**.
+> 7. **Rollout:** recreate only `trial-api` with the new image + env (`up -d --no-deps trial-api`); confirm the
+>    boot line names the declared fake provider and no `ConfigurationError`. *(approval: owner → deploy)*
+> 8. **Health + smoke:** `/api/health/live` 200, `/api/health/ready` 200 `checks.database: ok`; then the
+>    authenticated smoke test **only with D-1** (it writes to the Trial DB).
+> 9. **Rollback:** recreate `trial-api` with the previous image override **without** the trial env layer; swap
+>    web dirs back; remove the nginx include + `nginx -t` + reload (HSTS 1-day ramp).
+>
+> **Owner decisions (2026-10-20):** D-4 **approved** (web-first Trial is the release format); D-1 **approved
+> conditionally** (smoke test only after a taken+verified Trial backup); D-8 **approved conditionally** (nginx
+> headers only after compatibility validation + a verified rollback plan); commit/push **conditionally
+> authorized** after the owner reviews the exact release changes. Deferred/post-trial (not blockers): real
+> push, native media, production LiveKit, GROUP C/D/G.
+>
+> **Release-diff review (2026-10-20, read-only):** the release candidate = the whole current working tree
+> (one entangled, green unit; shared files — `router.dart`, `repositories.dart`, `profile_screen.dart`,
+> `app_providers.dart`, `conversation_screen.dart`, `message_bubble.dart`, `mock_messaging_repository.dart` —
+> prevent clean per-feature separation). It includes the four required ADRs (0037/0040/0041/0043) **plus**
+> entangled, owner-accepted/green work: ADR 0042 scheduling, reply/deleted-message (P3-1/P3-2), live
+> hand/floor (Flutter surfacing of existing routes), bottom-nav, conversation-mute surfacing, and the
+> 2026-10-18 Trial-hardening remediation (account isolation, `TRUST_PROXY`, CORS PATCH, identifier
+> withholding, sign-in recovery, readiness, nginx headers, `compose.trial.environment.yaml`). **No
+> unrelated, accidental, or secret changes were found; nothing needs exclusion** (no stray `.env`/`.log`/
+> `.pem`/scratch files, no debug/focus markers, no hardcoded secrets, no missing tracked files). Recommended
+> commit: **one atomic release commit** of the whole tree (or coherent groups accepting hunk-split risk).
+> **Nothing committed, pushed, built, migrated or deployed by this pass.**
+
+> **Current state, reconciled 2026-10-20 (newest; supersedes the notes below for HEAD/worktree facts):**
+> branch `claude/trial-integration-sprints-52-61`, HEAD **`9b4a6de` = origin** (community profiles, group
+> modes, people avatars — ADR 0038/0039). The working tree holds **~151 uncommitted entries** (101 modified,
+> ~50 untracked), **0 staged**, in sync with upstream (0/0). This large body is **local only — not committed,
+> pushed, or deployed**: Owner Command Center/reporting (ADR 0040), mass publish (0041), operations scheduling
+> (0042), pinned messages + realtime reconciliation (0043), reply/deleted-message work (P3-1/P3-2), live
+> hand/floor (Flutter-only), bottom-nav restructure, plus migrations **0026→0029** (additive, backward-compatible,
+> **not applied to any shared DB**).
+>
+> **ADR reconciliation (this session):** 0042 **Accepted** (owner, 2026-10-20); **0040, 0041, 0043 are
+> `Proposed` — implemented yet NOT owner-accepted** (no approval entry in `owner-decision-register.md` /
+> `open-questions.md`). ADR 0043 (pinned messages) **had no file**; it was **written this session as
+> `Proposed`** (`docs/architecture/decisions/0043-pinned-messages.md`, back-documents the implemented design,
+> separating observed facts from policy) and added to the ADR README index + generated `architecture-index.md`
+> (`npm run arch:index:check` green). Enabling 0040/0041/0043 in production remains an owner decision.
+>
+> **Verified this session on the current tree (fresh, not historical):** backend static gates 6/6 green
+> (typecheck, lint, format:check, arch:graph, arch:index:check) + `jest` **4113 passed / 420 skipped / 0
+> failed**; `flutter analyze` clean; full Flutter suite **1773 passed / 1 skipped**. Operations Scheduling
+> deep-verified: unit/domain/application **44 passed**; **PostgreSQL integration run locally** on a disposable
+> `postgres:16` container (not a shared DB) — operations-postgres + messaging-persistence + community-chat-posting
+> + identity-persistence = **71 passed across 4 suites** (schema/CHECKs/keyset/seed-grants/migration-delta; pin
+> round-trip + `pin_version` constraint; posting authz; permission-seed↔constants). **No defects found.**
+> PG suites skip locally without `TEST_DATABASE_URL`; CI runs them with `POSTGRES_REQUIRED=1`.
+>
+> **Resume point / next action:** the accumulated body is engineering-green but **uncommitted and not
+> integration-verified E2E**; the safe dependency-ordered next unit is reviewing/landing **Operations scheduling
+> first** (migrations start the 0026→0029 chain), then Reporting (+identity/academic summary contracts), Mass
+> publish, then the coupled messaging unit (pinned+reply+deleted share files), per the accumulated-changes
+> integration plan. Real end-to-end against a live backend, an installable APK/iOS artifact, real push, and
+> native media remain **BLOCKED (external/environment)**; GROUP C/D/G features remain **BLOCKED (owner decision)**.
+> Nothing in this block was committed, pushed, merged, or deployed.
+>
+> **Release-closure pass (2026-10-20) — first release = the web-first Trial.** The finite release-blocker
+> list was established and worked to closure:
+> - **BLOCKER (engineering) — CLOSED:** the full PostgreSQL integration gate failed on one test —
+>   `people-http-postgres.spec.ts` asserted `/people/teachers` items were exactly `{userId, displayName}`,
+>   but the committed ADR 0038 contract (controller docstring + `search-people.use-case.spec.ts`) exposes
+>   `avatarFileAssetId` too (an opaque Files reference, shown where the name is shown; no email/role/status).
+>   The stale assertion was aligned to the approved contract (privacy assertions preserved). **Evidence of
+>   closure:** `people-http-postgres.spec.ts` 5/5 pass isolated, and the **whole integration set now
+>   29 suites / 419 tests pass / 0 failed** on a disposable `postgres:16` (`--maxWorkers=3`; the earlier
+>   full-parallel run's 12 "suite failed to run" were `beforeAll` 20s hook timeouts = pool contention, all
+>   green in isolation). The one-time full-parallel contention is an environment artifact, not a defect.
+> - **No other engineering blocker:** backend 6/6 static gates + 4113 unit/API tests, Flutter analyze +
+>   1773 tests, Operations unit 44, ADR 0043 written + indexed (`arch:index:check` green) — all green this
+>   session on the current tree.
+> - **Remaining gates = NOT engineering:** (a) **OWNER DECISION** — accept ADR 0040/0041/0043 (implemented
+>   yet `Proposed`) to authorize those features; and the release ACTION (commit/push/deploy) is a human
+>   authority this session does not hold. (b) **EXTERNAL/ENVIRONMENT (POST-TRIAL or resource-gated)** —
+>   E2E vs a live backend, an installable APK/iOS artifact, real push delivery, native media, production
+>   LiveKit. These are not defects and were not treated as fixable blockers.
+> - **Verdict: the code is a GREEN engineering release-candidate; the release is BLOCKED on owner decisions
+>   + the deploy action + the external/post-trial items above.** Not claimed production-ready on tests alone.
+
 > **Current state, verified 2026-10-18 (supersedes the HEAD/branch lines below until they are
 > reconciled):** branch `claude/trial-integration-sprints-52-61`, HEAD `a8500a9` = origin, CI run
 > 39047171460 green; Sprints 52–61 are committed (`c6d5ee0`) and both Trial tiers run `a8500a9`

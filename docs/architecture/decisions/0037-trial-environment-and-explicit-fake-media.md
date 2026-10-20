@@ -1,7 +1,8 @@
 # 0037 — The Trial is a deployed environment: full security baseline, media declared explicitly
 
-**Status:** Proposed — 2026-10-18 (engineering remediation; applies when the owner approves the
-remediation patch and the Trial redeploy). Amends the environment model of P7.1 decision 2
+**Status:** Accepted — 2026-10-20 (owner decision, register §29: authorizes the Trial runtime contract
+`NODE_ENV=trial` + `LIVE_MEDIA_PROVIDER=fake` + `TRUST_PROXY=1`). Proposed 2026-10-18 (engineering
+remediation), applied with the Trial redeploy. Amends the environment model of P7.1 decision 2
 (`app-config.ts` `isDeployed`) and the media-provider binding of the P6 audit D19
 (`live.module.ts` `rtcProviderFor`). Supersedes nothing; every other ADR is unchanged.
 

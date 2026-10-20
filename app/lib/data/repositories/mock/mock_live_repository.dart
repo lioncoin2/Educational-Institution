@@ -28,6 +28,13 @@ class MockLiveRepository implements LiveRepository {
   /// [start] adds to it, so a started session is then discoverable.
   final Set<String> _live;
 
+  /// The demo viewer's own raised hand, or null. [raiseHand]/[lowerHand] move
+  /// it, and the session reads reflect it in `me` — so the demo's raise/lower
+  /// control is coherent without a realtime feed. Moderating OTHER people's
+  /// hands (grant/decline/revoke) is echoed but not persisted into the queue,
+  /// exactly as the demo's other moderator commands are.
+  LiveMyHand? _myHand;
+
   @override
   Future<LiveSession> start(String communityId) async {
     await Future<void>.delayed(latency);
@@ -63,7 +70,7 @@ class MockLiveRepository implements LiveRepository {
       hostUserId: 'mock-teacher',
       startedAt: clock().subtract(const Duration(minutes: 12)),
       speakerCount: 1,
-      me: const LiveMe(role: LiveParticipantRole.listener),
+      me: _listenerMe,
       origin: DataOrigin.mock,
     );
   }
@@ -78,10 +85,18 @@ class MockLiveRepository implements LiveRepository {
       hostUserId: 'mock-teacher',
       startedAt: clock().subtract(const Duration(minutes: 12)),
       speakerCount: 1,
-      me: const LiveMe(role: LiveParticipantRole.listener),
+      me: _listenerMe,
       origin: DataOrigin.mock,
     );
   }
+
+  /// The demo listener's `me`: may raise a hand while none is up, and carries
+  /// the raised hand once it is — so the raise/lower control demonstrates both.
+  LiveMe get _listenerMe => LiveMe(
+    role: LiveParticipantRole.listener,
+    canRaiseHand: _myHand == null,
+    hand: _myHand,
+  );
 
   @override
   Future<LiveHandsPage> hands(
@@ -192,6 +207,74 @@ class MockLiveRepository implements LiveRepository {
   @override
   Future<LiveSession> revokePresenter(String sessionId, String userId) =>
       _presenting(sessionId, const []);
+
+  // ── Speaking: the floor (raise a hand, and moderate it) ─────────────────
+  // The viewer's own hand is remembered (so the control is coherent); echoing
+  // a moderator's grant/decline/revoke of ANOTHER person's hand does not mutate
+  // the demo queue, like the demo's other moderator commands. No media happens.
+
+  @override
+  Future<LiveHand> raiseHand(String sessionId) async {
+    await Future<void>.delayed(latency);
+    final hand = LiveHand(
+      id: 'mock-hand-self-$sessionId',
+      sessionId: sessionId,
+      userId: 'mock-self',
+      state: SpeakerRequestState.pending,
+      requestedAt: clock(),
+    );
+    _myHand = LiveMyHand(requestId: hand.id, state: hand.state);
+    return hand;
+  }
+
+  @override
+  Future<LiveHand?> lowerHand(String sessionId) async {
+    await Future<void>.delayed(latency);
+    final had = _myHand;
+    _myHand = null;
+    if (had == null) return null;
+    return LiveHand(
+      id: had.requestId,
+      sessionId: sessionId,
+      userId: 'mock-self',
+      state: SpeakerRequestState.withdrawn,
+      requestedAt: clock(),
+      decidedAt: clock(),
+    );
+  }
+
+  @override
+  Future<LiveHand> grantFloor(String requestId) =>
+      _decided(requestId, SpeakerRequestState.granted, granted: true);
+
+  @override
+  Future<LiveHand> declineHand(String requestId) =>
+      _decided(requestId, SpeakerRequestState.declined);
+
+  @override
+  Future<LiveHand> revokeFloor(String requestId) =>
+      _decided(requestId, SpeakerRequestState.revoked);
+
+  /// A moderator's decision on a hand, echoed as the server would answer — the
+  /// request in its new state. The demo queue itself is not mutated.
+  Future<LiveHand> _decided(
+    String requestId,
+    SpeakerRequestState state, {
+    bool granted = false,
+  }) async {
+    await Future<void>.delayed(latency);
+    final now = clock();
+    return LiveHand(
+      id: requestId,
+      sessionId: 'mock-session-mock-community-live',
+      userId: 'mock-student-b',
+      state: state,
+      requestedAt: now.subtract(const Duration(minutes: 2)),
+      grantedAt: granted ? now : null,
+      decidedAt: now,
+      displayName: 'طالبة (تجريبي)',
+    );
+  }
 
   // ── Media ──────────────────────────────────────────────────────────────
 

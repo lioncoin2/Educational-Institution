@@ -83,6 +83,50 @@ class _FakeLive implements LiveRepository {
       _run('revokePresenter:$sessionId:$userId', _session());
 
   @override
+  Future<LiveHand> raiseHand(String sessionId) =>
+      _run('raiseHand:$sessionId', _hand(id: 'h-self', userId: 'u-self'));
+
+  @override
+  Future<LiveHand?> lowerHand(String sessionId) => _run(
+    'lowerHand:$sessionId',
+    _hand(
+      id: 'h-self',
+      userId: 'u-self',
+      state: SpeakerRequestState.withdrawn,
+    ),
+  );
+
+  @override
+  Future<LiveHand> grantFloor(String requestId) => _run(
+    'grantFloor:$requestId',
+    _hand(
+      id: requestId,
+      userId: 'u-1',
+      state: SpeakerRequestState.granted,
+    ),
+  );
+
+  @override
+  Future<LiveHand> declineHand(String requestId) => _run(
+    'declineHand:$requestId',
+    _hand(
+      id: requestId,
+      userId: 'u-1',
+      state: SpeakerRequestState.declined,
+    ),
+  );
+
+  @override
+  Future<LiveHand> revokeFloor(String requestId) => _run(
+    'revokeFloor:$requestId',
+    _hand(
+      id: requestId,
+      userId: 'u-1',
+      state: SpeakerRequestState.revoked,
+    ),
+  );
+
+  @override
   Future<LiveSession> start(String communityId) => throw UnimplementedError();
 
   @override
@@ -132,6 +176,8 @@ LiveSession _session({
   bool canEnd = false,
   bool canPresent = false,
   bool presenting = false,
+  bool canRaiseHand = false,
+  LiveMyHand? hand,
   LiveModeration? moderation,
   List<String> presenterUserIds = const [],
 }) => LiveSession(
@@ -153,6 +199,8 @@ LiveSession _session({
     canEnd: canEnd,
     canPresent: canPresent,
     presenting: presenting,
+    canRaiseHand: canRaiseHand,
+    hand: hand,
   ),
   origin: origin,
 );
@@ -437,6 +485,124 @@ void main() {
     });
   });
 
+  group('the viewer’s hand (raise / lower / yield)', () {
+    testWidgets('canRaiseHand shows the raise control, not a lower', (
+      tester,
+    ) async {
+      await pump(tester, fake(_session(canRaiseHand: true)));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('live-raise-hand')), findsOneWidget);
+      expect(find.byKey(const Key('live-lower-hand')), findsNothing);
+      expect(find.text(LiveCopy.raiseHand), findsOneWidget);
+    });
+
+    testWidgets('a listener with neither a hand nor canRaiseHand sees nothing', (
+      tester,
+    ) async {
+      await pump(tester, fake(_session()));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('live-raise-hand')), findsNothing);
+      expect(find.byKey(const Key('live-lower-hand')), findsNothing);
+      expect(find.text(LiveCopy.handSection), findsNothing);
+    });
+
+    testWidgets('raise: invokes raiseHand and says done', (tester) async {
+      final repo = await pump(tester, fake(_session(canRaiseHand: true)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('live-raise-hand')));
+      await tester.pumpAndSettle();
+      expect(repo.calls, ['raiseHand:s-1']);
+      expect(find.text(LiveCopy.raiseHandDone), findsOneWidget);
+    });
+
+    testWidgets('a pending hand shows its status and the lower control', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        fake(
+          _session(
+            hand: const LiveMyHand(
+              requestId: 'r-1',
+              state: SpeakerRequestState.pending,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(LiveCopy.handStatusPending), findsOneWidget);
+      expect(find.byKey(const Key('live-lower-hand')), findsOneWidget);
+      expect(find.byKey(const Key('live-raise-hand')), findsNothing);
+      expect(find.text(LiveCopy.lowerHand), findsOneWidget);
+    });
+
+    testWidgets('lower: invokes lowerHand', (tester) async {
+      final repo = await pump(
+        tester,
+        fake(
+          _session(
+            hand: const LiveMyHand(
+              requestId: 'r-1',
+              state: SpeakerRequestState.pending,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('live-lower-hand')));
+      await tester.pumpAndSettle();
+      expect(repo.calls, ['lowerHand:s-1']);
+      expect(find.text(LiveCopy.lowerHandDone), findsOneWidget);
+    });
+
+    testWidgets('a granted hand shows the floor status and the yield control', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        fake(
+          _session(
+            hand: const LiveMyHand(
+              requestId: 'r-1',
+              state: SpeakerRequestState.granted,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(LiveCopy.handStatusGranted), findsOneWidget);
+      expect(find.text(LiveCopy.yieldFloor), findsOneWidget);
+      expect(find.byKey(const Key('live-lower-hand')), findsOneWidget);
+    });
+
+    testWidgets('a refusal is said through the server’s code', (tester) async {
+      final repo = fake(_session(canRaiseHand: true))
+        ..commandError = const LiveException('live.session_not_live', 'x');
+      await pump(tester, repo);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('live-raise-hand')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(LiveCopy.commandError('live.session_not_live')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a successful raise does not fabricate the hand locally', (
+      tester,
+    ) async {
+      // The command returns a pending hand, but the screen must NOT apply it —
+      // only reconciliation changes `me`. The raise control therefore stays.
+      final repo = await pump(tester, fake(_session(canRaiseHand: true)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('live-raise-hand')));
+      await tester.pumpAndSettle();
+      expect(repo.calls, ['raiseHand:s-1']);
+      expect(find.byKey(const Key('live-raise-hand')), findsOneWidget);
+      expect(find.text(LiveCopy.handStatusPending), findsNothing);
+    });
+  });
+
   group('layout & accessibility', () {
     testWidgets('renders all controls RTL on a narrow phone with no overflow', (
       tester,
@@ -589,6 +755,68 @@ void main() {
       expect(find.text(LiveCopy.revokePresenterDone), findsOneWidget);
     });
 
+    testWidgets('a pending hand offers grant and decline, by request id', (
+      tester,
+    ) async {
+      final repo = fake(_session(canModerate: true))
+        ..handsResult = LiveHandsPage(
+          items: [_hand(id: 'h1', userId: 'u-1')],
+          nextCursor: null,
+        );
+      await pump(tester, repo);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('live-grant-floor-h1')), findsOneWidget);
+      expect(find.byKey(const Key('live-decline-hand-h1')), findsOneWidget);
+      expect(find.byKey(const Key('live-revoke-floor-h1')), findsNothing);
+
+      await tester.ensureVisible(find.byKey(const Key('live-grant-floor-h1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('live-grant-floor-h1')));
+      await tester.pumpAndSettle();
+      expect(repo.calls, ['grantFloor:h1']);
+      expect(find.text(LiveCopy.grantFloorDone), findsOneWidget);
+    });
+
+    testWidgets('decline a pending hand, by request id', (tester) async {
+      final repo = fake(_session(canModerate: true))
+        ..handsResult = LiveHandsPage(
+          items: [_hand(id: 'h1', userId: 'u-1')],
+          nextCursor: null,
+        );
+      await pump(tester, repo);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('live-decline-hand-h1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('live-decline-hand-h1')));
+      await tester.pumpAndSettle();
+      expect(repo.calls, ['declineHand:h1']);
+      expect(find.text(LiveCopy.declineHandDone), findsOneWidget);
+    });
+
+    testWidgets('a granted hand offers revoke the floor, by request id', (
+      tester,
+    ) async {
+      final repo = fake(_session(canModerate: true))
+        ..handsResult = LiveHandsPage(
+          items: [
+            _hand(id: 'h9', userId: 'u-1', state: SpeakerRequestState.granted),
+          ],
+          nextCursor: null,
+        );
+      await pump(tester, repo);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('live-revoke-floor-h9')), findsOneWidget);
+      expect(find.byKey(const Key('live-grant-floor-h9')), findsNothing);
+      expect(find.byKey(const Key('live-decline-hand-h9')), findsNothing);
+
+      await tester.ensureVisible(find.byKey(const Key('live-revoke-floor-h9')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('live-revoke-floor-h9')));
+      await tester.pumpAndSettle();
+      expect(repo.calls, ['revokeFloor:h9']);
+      expect(find.text(LiveCopy.revokeFloorDone), findsOneWidget);
+    });
+
     testWidgets('the host is never a target — their row carries no commands', (
       tester,
     ) async {
@@ -605,6 +833,9 @@ void main() {
         find.byKey(const Key('live-grant-presenter-u-host')),
         findsNothing,
       );
+      // Nor a floor command — the host holds the floor by right.
+      expect(find.byKey(const Key('live-grant-floor-h1')), findsNothing);
+      expect(find.byKey(const Key('live-decline-hand-h1')), findsNothing);
     });
 
     testWidgets('after a command the roster is re-read, not fabricated', (

@@ -142,6 +142,18 @@ export interface AppConfig {
      */
     readonly communityChatMaxServedMembers: number;
   };
+  /**
+   * The institution's own IANA timezone — the wall-clock zone its day runs in.
+   * Used as the DEFAULT zone a new scheduled lesson is placed in when the client
+   * does not name one (operations scheduling, ADR 0042). A deployment setting
+   * (INSTITUTION_TIMEZONE), validated as an IANA zone; null when unset, and
+   * scheduling then requires the client to name a zone explicitly. Deliberately
+   * SEPARATE from the notifications quiet-hours timezone (that resource is
+   * owner-rejected for any new use); unifying them is a future owner decision.
+   */
+  readonly institution: {
+    readonly timezone: string | null;
+  };
 }
 
 export class ConfigurationError extends Error {
@@ -188,6 +200,27 @@ function readInt(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === '') return fallback;
   const parsed = Number.parseInt(raw, 10);
   return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+/**
+ * The institution's configured IANA timezone, or null when unset. A set value
+ * must be an IANA zone the runtime knows; a fixed offset ('+03:00') is refused
+ * because a wall-clock schedule is only DST-correct against a named zone.
+ */
+function readInstitutionTimezone(raw: string | undefined, problems: string[]): string | null {
+  const value = (raw ?? '').trim();
+  if (value === '') return null;
+  if (/^[+-]/.test(value) || value.length > 64) {
+    problems.push('INSTITUTION_TIMEZONE must be an IANA zone name, not a fixed offset');
+    return null;
+  }
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return value;
+  } catch {
+    problems.push(`INSTITUTION_TIMEZONE is not a known IANA timezone: ${value}`);
+    return null;
+  }
 }
 
 /** An origin is scheme + host (+ port): nothing more, and never "*". */
@@ -484,6 +517,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       signingSecret: storageSigningSecret,
     }),
     messaging: Object.freeze({ communityChatMaxServedMembers }),
+    institution: Object.freeze({
+      timezone: readInstitutionTimezone(env.INSTITUTION_TIMEZONE, problems),
+    }),
   });
 
   if (problems.length > 0) throw new ConfigurationError(problems);

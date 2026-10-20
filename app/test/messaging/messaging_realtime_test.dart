@@ -56,11 +56,13 @@ class LiveRepository extends MockMessagingRepository {
     String conversationId, {
     required String clientMessageId,
     required String body,
+    String? replyToMessageId,
   }) async {
     final stored = await super.sendText(
       conversationId,
       clientMessageId: clientMessageId,
       body: body,
+      replyToMessageId: replyToMessageId,
     );
     lastStored = stored;
     await holdSends?.future;

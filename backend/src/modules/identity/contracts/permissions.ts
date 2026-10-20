@@ -122,6 +122,19 @@ export const Permissions = {
   reports: {
     read: 'reports.read',
   },
+  /**
+   * Operations — the institution in motion. `scheduleManage` is the single
+   * scheduling capability: creating, rescheduling and cancelling individual
+   * dated lessons (ADR 0042). Held only by OWNER (all permissions) and ADMIN
+   * (the ALL-minus-settings/messaging filter keeps it); no other role is
+   * granted it. The owner named this `operations.schedule.manage`; the code is
+   * `operations.schedule_manage` because the `permissions_code_shape` CHECK
+   * (migration 0001, immutable) allows a single dot — one `namespace.action` —
+   * so the sub-noun is joined with an underscore. The meaning is unchanged.
+   */
+  operations: {
+    scheduleManage: 'operations.schedule_manage',
+  },
 } as const;
 
 type Leaves<T> = T extends string ? T : { [K in keyof T]: Leaves<T[K]> }[keyof T];

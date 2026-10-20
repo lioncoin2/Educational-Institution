@@ -56,6 +56,27 @@ export const conversations = pgTable(
     communityId: text('community_id'),
     /** How far a community chat's projection reaches (§6.1, C6); null exactly when community_id is. */
     projectedMembershipVersion: bigint('projected_membership_version', { mode: 'number' }),
+    /**
+     * The single pinned message of this conversation (ADR 0043), or null. A
+     * reference to a message of THIS conversation — never a copy of its content.
+     * `ON DELETE SET NULL` is defensive only: a message row is never hard-deleted
+     * (a moderator delete tombstones it, keeping the row), so in practice the pin
+     * survives and the banner then shows the tombstone. The three columns move
+     * together (pinned ⇔ by ⇔ at).
+     */
+    pinnedMessageId: text('pinned_message_id').references((): AnyPgColumn => messages.id, {
+      onDelete: 'set null',
+    }),
+    pinnedAt: timestamp('pinned_at', { withTimezone: true }),
+    pinnedBy: text('pinned_by'),
+    /**
+     * A per-conversation counter that increments atomically ONLY when the pinned
+     * state actually changes (ADR 0043 §realtime). It is the total order of pin
+     * changes: an event, a read and a reconnect all carry it, so a client accepts
+     * strictly newer pin state and a same-instant change is never ambiguous. A
+     * no-op (re-pinning the current pin) does not advance it.
+     */
+    pinVersion: bigint('pin_version', { mode: 'number' }).notNull().default(0),
   },
   (table) => [
     unique('conversations_direct_pair_unique').on(table.directUserLow, table.directUserHigh),
@@ -84,6 +105,12 @@ export const conversations = pgTable(
       'conversations_activity_consistent',
       sql`(${table.lastSequence} = 0) = (${table.lastMessageAt} is null)`,
     ),
+    // The pin's three columns are all set or all null together (ADR 0043).
+    check(
+      'conversations_pin_consistent',
+      sql`(${table.pinnedMessageId} is null) = (${table.pinnedAt} is null) and (${table.pinnedMessageId} is null) = (${table.pinnedBy} is null)`,
+    ),
+    check('conversations_pin_version_nonnegative', sql`${table.pinVersion} >= 0`),
   ],
 );
 

@@ -37,6 +37,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   /// "new messages" divider, which stays put while the watermark moves.
   int? _unreadAfter;
 
+  /// Attached to the pinned message's bubble, so the banner can scroll to it.
+  final GlobalKey _pinnedKey = GlobalKey();
+
   @override
   Widget build(BuildContext context) {
     final provider = conversationProvider(widget.conversationId);
@@ -138,42 +141,76 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
       body: AsyncView(
         value: value,
         onRetry: () => ref.invalidate(provider),
-        builder: (context, state) => Column(
-          children: [
-            if (communityId != null) _LiveNowBanner(communityId: communityId),
-            const ConnectionBanner(),
-            Expanded(
-              child: _Timeline(
-                state: state,
-                unreadAfter: _unreadAfter,
-                canModerate: canModerate,
-                canStartDm: canStartDm,
+        builder: (context, state) {
+          // Whether to offer the composer. The conversation's own `canPost`
+          // governs a direct conversation, and a community publisher (a holder
+          // of `community.chat.post`) in any mode. On top of that, a plain
+          // member of an OPEN group posts on membership alone (ADR 0039) — a
+          // case the conversation's capability-based `canPost` may miss — so
+          // the community's `me.canPost` opens it too, but only while the group
+          // is open (its mode is a stable fact, so this can never wrongly offer
+          // a composer in a channel or a restricted group). The server
+          // re-authorises every send regardless. The same gate offers the reply
+          // long-press.
+          final canPostHere =
+              !state.removed &&
+              (state.conversation.canPost ||
+                  ((communityPosting?.canPost ?? false) &&
+                      !(communityPosting?.isChannel ?? false) &&
+                      !(communityPosting?.isRestrictedGroup ?? false)));
+          final pinnedId = state.conversation.pinnedMessageId;
+          return Column(
+            children: [
+              if (communityId != null)
+                _LiveNowBanner(communityId: communityId),
+              const ConnectionBanner(),
+              // The pinned-message banner (ADR 0043): a compact bar under the
+              // header, its preview resolved from the loaded timeline like a
+              // reply quote. When the pinned message is not loaded (or removed),
+              // `pinned` is null and the banner shows the pin-specific truthful
+              // fallback. Only moderators (canModerate) may unpin.
+              if (pinnedId != null)
+                _PinnedBanner(
+                  pinned:
+                      state.messages.any((m) => m.id == pinnedId)
+                      ? _repliedById(
+                          pinnedId,
+                          {for (final m in state.messages) m.id: m},
+                          state,
+                        )
+                      : null,
+                  canUnpin: canModerate,
+                  onTap: () => _scrollToPinned(pinnedId),
+                  onUnpin: () => _unpin(),
+                ),
+              Expanded(
+                child: _Timeline(
+                  state: state,
+                  unreadAfter: _unreadAfter,
+                  canReply: canPostHere,
+                  canModerate: canModerate,
+                  canStartDm: canStartDm,
+                  pinnedMessageId: pinnedId,
+                  pinnedKey: _pinnedKey,
+                  onPin: _pin,
+                  onUnpin: _unpin,
+                ),
               ),
-            ),
-            if (state.removed)
-              const _Notice(
-                icon: Icons.person_off_outlined,
-                text: 'لم تعد عضوًا في هذه المحادثة.',
-              )
-            // Whether to offer the composer. The conversation's own `canPost`
-            // governs a direct conversation, and a community publisher (a
-            // holder of `community.chat.post`) in any mode. On top of that, a
-            // plain member of an OPEN group posts on membership alone (ADR
-            // 0039) — a case the conversation's capability-based `canPost` may
-            // miss — so the community's `me.canPost` opens it too, but only
-            // while the group is open (its mode is a stable fact, so this can
-            // never wrongly offer a composer in a channel or a restricted
-            // group). The server re-authorises every send regardless.
-            else if (state.conversation.canPost ||
-                ((communityPosting?.canPost ?? false) &&
-                    !(communityPosting?.isChannel ?? false) &&
-                    !(communityPosting?.isRestrictedGroup ?? false)))
-              Composer(
-                onSendText: (text) =>
-                    ref.read(provider.notifier).sendText(text),
-                onSendFile: (file) =>
-                    ref.read(provider.notifier).sendFile(file),
-              )
+              if (state.removed)
+                const _Notice(
+                  icon: Icons.person_off_outlined,
+                  text: 'لم تعد عضوًا في هذه المحادثة.',
+                )
+              else if (canPostHere)
+                Composer(
+                  replyDraft: state.replyDraft,
+                  onCancelReply: () =>
+                      ref.read(provider.notifier).cancelReply(),
+                  onSendText: (text) =>
+                      ref.read(provider.notifier).sendText(text),
+                  onSendFile: (file) =>
+                      ref.read(provider.notifier).sendFile(file),
+                )
             // Read-only, and why — as much as is known without guessing. A
             // channel reserves posting for the owner and publishers; a
             // restricted group limits it to its moderators; otherwise the
@@ -197,13 +234,14 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                 icon: Icons.lock_outline_rounded,
                 text: MessagingCopy.cannotPostHere,
               )
-            else
-              const _Notice(
-                icon: Icons.campaign_outlined,
-                text: 'هذه قناة إعلانات: يمكنك القراءة فقط.',
-              ),
-          ],
-        ),
+              else
+                const _Notice(
+                  icon: Icons.campaign_outlined,
+                  text: 'هذه قناة إعلانات: يمكنك القراءة فقط.',
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -214,44 +252,58 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   /// one). What that page then offers is the server's `me` to decide, not this
   /// screen's. For any other conversation the title is plain text.
   Widget _title(Conversation? conversation) {
+    if (conversation == null) {
+      return const Text(
+        MessagingCopy.conversationFallbackTitle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+
     final label = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          conversation?.title ?? MessagingCopy.conversationFallbackTitle,
+          conversation.title ?? MessagingCopy.conversationFallbackTitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        if (conversation != null)
-          Text(
-            MessagingCopy.typeLabel(conversation.type, conversation.memberCount),
-            style: context.text.labelSmall,
-          ),
+        Text(
+          MessagingCopy.typeLabel(conversation.type, conversation.memberCount),
+          style: context.text.labelSmall,
+        ),
       ],
     );
 
-    final communityId = conversation?.communityId;
-    if (conversation == null || communityId == null) return label;
+    final communityId = conversation.communityId;
+    // Every chat carries an avatar: the community's picture for a community
+    // chat, the title's initials otherwise (no counterpart picture is fetched
+    // for a direct chat, so none is invented).
+    final header = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppAvatar(
+          name: conversation.title,
+          imageUrl: communityId == null
+              ? null
+              : ref.watch(communityAvatarUrlProvider(communityId)).value,
+          radius: 18,
+        ),
+        const SizedBox(width: Insets.sm),
+        Flexible(child: label),
+      ],
+    );
 
+    // Only a community chat's header is a button into the community page.
+    if (communityId == null) return header;
     return InkWell(
       key: const Key('conversation-community-header'),
       onTap: () => context.push(Routes.community(communityId)),
       child: Semantics(
         button: true,
         label: MessagingCopy.communityInfo,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppAvatar(
-              name: conversation.title,
-              imageUrl: ref.watch(communityAvatarUrlProvider(communityId)).value,
-              radius: 18,
-            ),
-            const SizedBox(width: Insets.sm),
-            Flexible(child: label),
-          ],
-        ),
+        child: header,
       ),
     );
   }
@@ -268,6 +320,153 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     } on NotificationsException {
       messenger.toast(MessagingCopy.muteToggleFailed);
     }
+  }
+
+  /// Pins [messageId] through the controller; the banner follows the server's
+  /// authoritative re-read. A refusal is said through its code.
+  Future<void> _pin(String messageId) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(conversationProvider(widget.conversationId).notifier).pinMessage(messageId);
+      messenger.toast(MessagingCopy.pinDone);
+    } on MessagingException catch (error) {
+      messenger.toast(MessagingCopy.error(error.code));
+    }
+  }
+
+  Future<void> _unpin() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(conversationProvider(widget.conversationId).notifier).unpinMessage();
+      messenger.toast(MessagingCopy.unpinDone);
+    } on MessagingException catch (error) {
+      messenger.toast(MessagingCopy.error(error.code));
+    }
+  }
+
+  /// Brings the pinned message into view. If it is not in the loaded page, older
+  /// history is loaded (bounded) until it is; a still-unavailable target (far
+  /// back, or deleted and purged) is reported truthfully, never faked.
+  Future<void> _scrollToPinned(String messageId) async {
+    final provider = conversationProvider(widget.conversationId);
+    final messenger = ScaffoldMessenger.of(context);
+    bool loaded() =>
+        ref.read(provider).value?.messages.any((m) => m.id == messageId) ?? false;
+    var guard = 0;
+    while (!loaded() && (ref.read(provider).value?.hasOlder ?? false) && guard < 20) {
+      guard += 1;
+      await ref.read(provider.notifier).loadOlder();
+    }
+    if (!mounted) return;
+    if (!loaded()) {
+      messenger.toast(MessagingCopy.pinnedUnavailable);
+      return;
+    }
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final target = _pinnedKey.currentContext;
+    if (target != null && target.mounted) {
+      await Scrollable.ensureVisible(
+        target,
+        alignment: 0.3,
+        duration: Motion.card,
+      );
+    } else {
+      // Loaded but not built (far up a long timeline): tell the viewer it is
+      // now in the history to scroll to, rather than jumping unpredictably.
+      messenger.toast(MessagingCopy.pinLoading);
+    }
+  }
+}
+
+/// The pinned-message banner (ADR 0043): a compact, distinct bar under the
+/// header showing the single pinned message's sender and a one-line preview,
+/// resolved from the loaded timeline (never fabricated — a target outside the
+/// window reads "unavailable"). Tapping scrolls to the message; a moderator may
+/// unpin from here. Hidden entirely when nothing is pinned (the caller decides).
+class _PinnedBanner extends StatelessWidget {
+  const _PinnedBanner({
+    required this.pinned,
+    required this.canUnpin,
+    required this.onTap,
+    required this.onUnpin,
+  });
+
+  final RepliedMessage? pinned;
+  final bool canUnpin;
+  final VoidCallback onTap;
+  final VoidCallback onUnpin;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Material(
+      key: const Key('pinned-message-banner'),
+      color: colors.surfaceContainerHigh,
+      child: InkWell(
+        onTap: onTap,
+        child: Semantics(
+          button: true,
+          label: MessagingCopy.pinnedTitle,
+          child: Padding(
+            padding: const EdgeInsetsDirectional.only(
+              start: Insets.md,
+              end: Insets.xs,
+              top: Insets.sm,
+              bottom: Insets.sm,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 3,
+                  height: 34,
+                  margin: const EdgeInsetsDirectional.only(end: Insets.sm),
+                  decoration: BoxDecoration(
+                    color: colors.primary,
+                    borderRadius: Radii.pill,
+                  ),
+                ),
+                Icon(Icons.push_pin_rounded, size: 18, color: colors.primary),
+                const SizedBox(width: Insets.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        pinned?.senderName ?? MessagingCopy.pinnedTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.labelSmall?.copyWith(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        pinned?.preview ?? MessagingCopy.pinnedUnavailable,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (canUnpin)
+                  IconButton(
+                    key: const Key('pinned-message-unpin'),
+                    tooltip: MessagingCopy.unpinTooltip,
+                    visualDensity: VisualDensity.compact,
+                    onPressed: onUnpin,
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -352,12 +551,30 @@ class _Timeline extends ConsumerWidget {
   const _Timeline({
     required this.state,
     required this.unreadAfter,
+    this.canReply = false,
     this.canModerate = false,
     this.canStartDm = false,
+    this.pinnedMessageId,
+    this.pinnedKey,
+    this.onPin,
+    this.onUnpin,
   });
 
   final ConversationState state;
   final int? unreadAfter;
+
+  /// The pinned message's id (ADR 0043), and the key to attach to its bubble so
+  /// the banner can scroll to it.
+  final String? pinnedMessageId;
+  final GlobalKey? pinnedKey;
+
+  /// Pin a message / clear the pin (moderators), or null when the viewer may not.
+  final void Function(String messageId)? onPin;
+  final VoidCallback? onUnpin;
+
+  /// The viewer may post here, so a long-press offers a reply. Matches exactly
+  /// the condition that shows the composer; the server re-authorises the send.
+  final bool canReply;
 
   /// The viewer may moderate this community chat (ADR 0029): a delete on any
   /// message, and a review of a deleted one. Always false outside a community
@@ -395,6 +612,17 @@ class _Timeline extends ConsumerWidget {
         }
       }
     }
+    // Consecutive messages from the same sender read as one block: the later
+    // ones drop the sender header and sit closer. Keyed by id so the reversed
+    // render below stays unchanged.
+    final byId = {for (final m in state.messages) m.id: m};
+    final continuesRun = <String, bool>{};
+    for (var j = 0; j < state.messages.length; j++) {
+      final previous = j > 0 ? state.messages[j - 1] : null;
+      continuesRun[state.messages[j].id] =
+          previous != null &&
+          previous.senderId == state.messages[j].senderId;
+    }
     final firstUnread = state.messages
         .where(
           (m) =>
@@ -410,16 +638,43 @@ class _Timeline extends ConsumerWidget {
         PendingBubble(
           key: ValueKey('pending-${pending.clientMessageId}'),
           pending: pending,
+          repliedTo: _repliedById(pending.replyToMessageId, byId, state),
           onRetry: () => notifier.retry(pending.clientMessageId),
           onDiscard: () => notifier.discard(pending.clientMessageId),
         ),
       for (final message in state.messages.reversed) ...[
         MessageBubble(
-          key: ValueKey(message.id),
+          key: message.id == pinnedMessageId && pinnedKey != null
+              ? pinnedKey
+              : ValueKey(message.id),
           message: message,
           mine: state.isMine(message),
           senderName: showNames && !state.isMine(message)
               ? state.senderNames[message.senderId]
+              : null,
+          showHeader: !(continuesRun[message.id] ?? false),
+          groupedWithPrevious: continuesRun[message.id] ?? false,
+          repliedTo: _repliedFor(message, byId, state),
+          onPin:
+              canModerate &&
+                  !message.isDeleted &&
+                  message.id != pinnedMessageId &&
+                  onPin != null
+              ? () => onPin!(message.id)
+              : null,
+          onUnpin: canModerate && message.id == pinnedMessageId
+              ? onUnpin
+              : null,
+          onReply: canReply && !message.isDeleted
+              ? () => notifier.startReply(
+                  ReplyDraft(
+                    targetId: message.id,
+                    senderName: state.isMine(message)
+                        ? MessagingCopy.you
+                        : state.senderNames[message.senderId],
+                    preview: MessagingCopy.quotePreview(message),
+                  ),
+                )
               : null,
           senderAvatarUrl: avatarMessageId[message.senderId] != null
               ? ref
@@ -476,6 +731,36 @@ class _Timeline extends ConsumerWidget {
 }
 
 /// The top of the timeline: loads older messages as it scrolls into view.
+/// The quote for a reply, resolved from the real `replyToMessageId`: the
+/// original's sender (when it is in the loaded window and not the reader's own)
+/// and a one-line preview. Null when the message is not a reply. Outside the
+/// window the reference is kept but shown without a name — never invented.
+RepliedMessage? _repliedFor(
+  Message message,
+  Map<String, Message> byId,
+  ConversationState state,
+) => _repliedById(message.replyToMessageId, byId, state);
+
+/// The quote for a reply id. Null when there is no reply; a truthful
+/// "unavailable" quote when the target is outside the loaded window or removed.
+RepliedMessage? _repliedById(
+  String? replyId,
+  Map<String, Message> byId,
+  ConversationState state,
+) {
+  if (replyId == null) return null;
+  final original = byId[replyId];
+  if (original == null) {
+    return const RepliedMessage(preview: MessagingCopy.quoteUnavailable);
+  }
+  return RepliedMessage(
+    senderName: state.isMine(original)
+        ? MessagingCopy.you
+        : state.senderNames[original.senderId],
+    preview: MessagingCopy.quotePreview(original),
+  );
+}
+
 class _OlderMessages extends ConsumerStatefulWidget {
   const _OlderMessages({required this.state});
 

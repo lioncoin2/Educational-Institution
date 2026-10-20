@@ -74,7 +74,7 @@ void main() {
         () => messaging.conversation(dawnChat),
         () => messaging.messages(dawnChat),
         () => messaging.markRead(dawnChat, 1),
-        () => messaging.sendText(dawnChat, clientMessageId: 'k-0', body: 'x'),
+        () => messaging.sendText(dawnChat, clientMessageId: 'wire-key-0', body: 'x'),
       ]) {
         await expectLater(
           attempt(),
@@ -95,14 +95,14 @@ void main() {
       // Posting as the community says — the owner's own chat included.
       expect((await messaging.conversation(ownedChat)).canPost, isFalse);
       await expectLater(
-        messaging.sendText(ownedChat, clientMessageId: 'k-1', body: 'x'),
+        messaging.sendText(ownedChat, clientMessageId: 'wire-key-1', body: 'x'),
         refusedWith('messaging.posting_not_allowed'),
       );
       posts = true;
       expect((await messaging.conversation(dawnChat)).canPost, isTrue);
       final sent = await messaging.sendText(
         dawnChat,
-        clientMessageId: 'k-2',
+        clientMessageId: 'wire-key-2',
         body: 'السلام عليكم',
       );
       expect(sent.body, 'السلام عليكم');
@@ -150,7 +150,7 @@ void main() {
           (await messaging().conversation(ownedChat)).canPost;
 
       expect(await canPost(), isTrue);
-      await messaging().sendText(ownedChat, clientMessageId: 'k-1', body: 'x');
+      await messaging().sendText(ownedChat, clientMessageId: 'wire-key-1', body: 'x');
 
       await communities.lock(owned);
       expect(await canPost(), isFalse);
@@ -160,7 +160,7 @@ void main() {
       await communities.transferOwnership(owned, heir);
       expect(await canPost(), isFalse);
       await expectLater(
-        messaging().sendText(ownedChat, clientMessageId: 'k-2', body: 'x'),
+        messaging().sendText(ownedChat, clientMessageId: 'wire-key-2', body: 'x'),
         refusedWith('messaging.posting_not_allowed'),
       );
     });

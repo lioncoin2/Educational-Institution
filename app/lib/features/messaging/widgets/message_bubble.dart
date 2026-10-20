@@ -9,6 +9,20 @@ import '../../../providers/app_providers.dart';
 import '../messaging_copy.dart';
 import '../state/conversation_controller.dart';
 
+/// A quoted message shown inside a reply's bubble: who it was from (when
+/// known) and a one-line preview. Resolved from the real `replyToMessageId`
+/// the server stores and returns; it carries no data the model does not.
+class RepliedMessage {
+  const RepliedMessage({this.senderName, required this.preview});
+
+  /// The original sender's name, or null when it is the reader's own message
+  /// or the name is not in the loaded window.
+  final String? senderName;
+
+  /// A short, already-truncated-at-source preview of the original.
+  final String preview;
+}
+
 /// A confirmed message. The reader's own messages sit at the END side —
 /// left in this right-to-left app, as Arabic chat apps place them — with no
 /// manual mirroring: directional alignment does it.
@@ -19,7 +33,13 @@ class MessageBubble extends StatelessWidget {
     required this.mine,
     this.senderName,
     this.senderAvatarUrl,
+    this.repliedTo,
+    this.showHeader = true,
+    this.groupedWithPrevious = false,
     this.onTapAuthor,
+    this.onReply,
+    this.onPin,
+    this.onUnpin,
     this.onModerateDelete,
     this.onReview,
   });
@@ -27,8 +47,21 @@ class MessageBubble extends StatelessWidget {
   final Message message;
   final bool mine;
 
-  /// Shown above others' messages in groups and channels.
+  /// Shown above others' messages in groups and channels — but only on the
+  /// first message of a run from the same sender ([showHeader]).
   final String? senderName;
+
+  /// The message this one is a reply to, when it is one and the original is
+  /// known. Rendered as a quote inside the bubble.
+  final RepliedMessage? repliedTo;
+
+  /// Whether to draw the sender header (avatar + name). False for the later
+  /// messages of a consecutive run, so a group reads as one block.
+  final bool showHeader;
+
+  /// Whether the previous message was from the same sender: the bubbles then
+  /// sit closer together, the way a chat groups a run.
+  final bool groupedWithPrevious;
 
   /// A short-lived link to the sender's picture, beside their name. Null shows
   /// their initials (no picture, or the demo).
@@ -40,6 +73,16 @@ class MessageBubble extends StatelessWidget {
   /// start one). The server still decides who the viewer may actually reach.
   final VoidCallback? onTapAuthor;
 
+  /// Starts a reply to this message, or null when the viewer cannot post here.
+  /// Offered on a long-press for any message that is not deleted.
+  final VoidCallback? onReply;
+
+  /// Pin this message (ADR 0043), or null when the viewer may not pin or it is
+  /// already the pinned one. [onUnpin] clears the pin when this IS the pinned
+  /// message. Both are moderator actions, offered on the long-press.
+  final VoidCallback? onPin;
+  final VoidCallback? onUnpin;
+
   /// A moderator's long-press actions (ADR 0029), or null when the viewer may
   /// not moderate. [onModerateDelete] deletes a live message; [onReview]
   /// reveals a tombstoned one's original. At most one applies to a message.
@@ -48,11 +91,21 @@ class MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasActions = onModerateDelete != null || onReview != null;
+    final canReply = onReply != null && !message.isDeleted;
+    final hasActions =
+        canReply ||
+        onPin != null ||
+        onUnpin != null ||
+        onModerateDelete != null ||
+        onReview != null;
     return _BubbleFrame(
       mine: mine,
       header: _header(context),
-      onLongPress: hasActions ? () => _showModerationSheet(context) : null,
+      groupedWithPrevious: groupedWithPrevious,
+      reply: message.isDeleted || repliedTo == null
+          ? null
+          : _ReplyPreview(replied: repliedTo!, mine: mine),
+      onLongPress: hasActions ? () => _showActionSheet(context) : null,
       footer: Text(
         MessagingCopy.clock(context, message.createdAt),
         style: context.text.labelSmall,
@@ -73,6 +126,7 @@ class MessageBubble extends StatelessWidget {
   /// one with that person, with a small chat glyph to signal so; otherwise it
   /// is plain text. The server decides who the viewer may actually reach.
   Widget? _header(BuildContext context) {
+    if (!showHeader) return null;
     final name = senderName;
     if (name == null) return null;
     final label = Text(
@@ -112,15 +166,46 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  /// The moderator's actions for this message, on a long-press. At most one
-  /// applies — delete for a live message, review for a tombstoned one.
-  void _showModerationSheet(BuildContext context) {
+  /// The long-press actions for this message: reply (for anyone who may post
+  /// here), and the moderator's delete/review (ADR 0029) where held.
+  void _showActionSheet(BuildContext context) {
+    final canReply = onReply != null && !message.isDeleted;
     showModalBottomSheet<void>(
       context: context,
       builder: (sheetContext) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (canReply)
+              ListTile(
+                key: const Key('message-reply-action'),
+                leading: const Icon(Icons.reply_rounded),
+                title: const Text(MessagingCopy.reply),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  onReply!();
+                },
+              ),
+            if (onPin != null)
+              ListTile(
+                key: const Key('message-pin-action'),
+                leading: const Icon(Icons.push_pin_outlined),
+                title: const Text(MessagingCopy.pin),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  onPin!();
+                },
+              ),
+            if (onUnpin != null)
+              ListTile(
+                key: const Key('message-unpin-action'),
+                leading: const Icon(Icons.push_pin_rounded),
+                title: const Text(MessagingCopy.unpin),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  onUnpin!();
+                },
+              ),
             if (onReview != null)
               ListTile(
                 leading: const Icon(Icons.history_rounded),
@@ -159,11 +244,16 @@ class PendingBubble extends StatelessWidget {
     required this.pending,
     required this.onRetry,
     required this.onDiscard,
+    this.repliedTo,
   });
 
   final PendingMessage pending;
   final VoidCallback onRetry;
   final VoidCallback onDiscard;
+
+  /// The quote of the message this pending reply answers, so a sending or
+  /// failed reply shows the same quote its confirmed self will.
+  final RepliedMessage? repliedTo;
 
   @override
   Widget build(BuildContext context) {
@@ -172,6 +262,9 @@ class PendingBubble extends StatelessWidget {
     return _BubbleFrame(
       mine: true,
       faded: !failed,
+      reply: repliedTo == null
+          ? null
+          : _ReplyPreview(replied: repliedTo!, mine: true),
       footer: failed
           ? Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
@@ -227,7 +320,9 @@ class _BubbleFrame extends StatelessWidget {
     required this.child,
     required this.footer,
     this.header,
+    this.reply,
     this.faded = false,
+    this.groupedWithPrevious = false,
     this.onLongPress,
   });
 
@@ -235,7 +330,14 @@ class _BubbleFrame extends StatelessWidget {
   final Widget child;
   final Widget footer;
   final Widget? header;
+
+  /// A quote of the message this one replies to, drawn above the content.
+  final Widget? reply;
   final bool faded;
+
+  /// Tightens the gap above the bubble when it continues a run from the same
+  /// sender, so consecutive messages read as one block.
+  final bool groupedWithPrevious;
 
   /// A long-press on the bubble (the moderator's actions), or null.
   final VoidCallback? onLongPress;
@@ -267,6 +369,7 @@ class _BubbleFrame extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (header != null) ...[header!, const SizedBox(height: 2)],
+          if (reply != null) ...[reply!, const SizedBox(height: Insets.xs)],
           DefaultTextStyle.merge(style: context.text.bodyMedium, child: child),
           const SizedBox(height: Insets.xs),
           Align(alignment: AlignmentDirectional.centerEnd, child: footer),
@@ -281,12 +384,68 @@ class _BubbleFrame extends StatelessWidget {
             child: bubble,
           );
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: EdgeInsets.only(top: groupedWithPrevious ? 1 : 6, bottom: 1),
       child: Align(
         alignment: mine
             ? AlignmentDirectional.centerEnd
             : AlignmentDirectional.centerStart,
         child: Opacity(opacity: faded ? 0.7 : 1, child: pressable),
+      ),
+    );
+  }
+}
+
+/// A quoted reply inside a bubble: an accent bar, the original sender's name
+/// (when known), and a one-line preview. Styled from tokens so it reads on
+/// both the reader's and others' bubble colours.
+class _ReplyPreview extends StatelessWidget {
+  const _ReplyPreview({required this.replied, required this.mine});
+
+  final RepliedMessage replied;
+  final bool mine;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = mine
+        ? context.colors.onPrimaryContainer
+        : context.colors.primary;
+    return Container(
+      key: const Key('message-reply-preview'),
+      width: double.infinity,
+      padding: const EdgeInsetsDirectional.fromSTEB(
+        Insets.sm,
+        Insets.xs,
+        Insets.sm,
+        Insets.xs,
+      ),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.10),
+        borderRadius: Radii.brSm,
+        border: BorderDirectional(start: BorderSide(color: accent, width: 3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (replied.senderName case final name?)
+            Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.text.labelSmall?.copyWith(
+                color: accent,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          Text(
+            replied.preview,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.text.bodySmall?.copyWith(
+              color: context.colors.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }

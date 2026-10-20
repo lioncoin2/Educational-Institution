@@ -111,6 +111,35 @@ abstract final class LiveCopy {
   static const revokePresenter = 'سحب دور العرض';
   static const revokePresenterDone = 'تم سحب دور العرض.';
 
+  // ── The floor: a participant's hand, and moderating it ─────────────────
+  // A participant asks for the floor (raise a hand); a moderator gives it,
+  // passes over it, or takes it back. The floor permits speaking (audio), which
+  // is the media seam — unavailable in this build — never a claim audio flows.
+
+  /// The viewer's own hand control (raise / lower). Shown only when the
+  /// server's `me.canRaiseHand` allows it, or a hand is already up.
+  static const handSection = 'المشاركة بالكلام';
+  static const raiseHand = 'طلب الكلمة';
+  static const raiseHandHint = 'اطلب الإذن للتحدث في الجلسة.';
+  static const raiseHandDone = 'رُفعت يدك؛ بانتظار قرار المشرف.';
+  static const lowerHand = 'خفض اليد';
+  static const lowerHandDone = 'خفضت يدك.';
+  static const yieldFloor = 'التخلّي عن الكلمة';
+  static const yieldFloorDone = 'تخلّيت عن الكلمة.';
+
+  /// The status of the viewer's own hand, in words.
+  static const handStatusPending = 'طلبك لأخذ الكلمة بانتظار قرار المشرف.';
+  static const handStatusGranted =
+      'لديك الكلمة الآن (الصوت المباشر غير متاح في هذا الإصدار بعد).';
+
+  /// A moderator's per-hand commands on the roster.
+  static const grantFloor = 'منح الكلمة';
+  static const grantFloorDone = 'تم منح الكلمة.';
+  static const declineHand = 'رفض الطلب';
+  static const declineHandDone = 'رُفض طلب الكلمة.';
+  static const revokeFloor = 'سحب الكلمة';
+  static const revokeFloorDone = 'تم سحب الكلمة.';
+
   /// What became of a moderator command — the server's code, in words. Kept
   /// apart from [error] (which is about failing to DISPLAY the session).
   static String commandError(String? code) => switch (code) {

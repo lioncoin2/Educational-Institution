@@ -24,6 +24,7 @@ class PendingMessage {
     required this.createdAt,
     this.body,
     this.file,
+    this.replyToMessageId,
     this.status = DeliveryStatus.sending,
     this.errorCode,
   });
@@ -33,6 +34,10 @@ class PendingMessage {
   final DateTime createdAt;
   final String? body;
   final OutgoingFile? file;
+
+  /// The message this one answers (text replies only) — kept on the pending
+  /// message so a retry resends the reply, not a bare copy.
+  final String? replyToMessageId;
   final DeliveryStatus status;
   final String? errorCode;
 
@@ -43,9 +48,25 @@ class PendingMessage {
         createdAt: createdAt,
         body: body,
         file: file,
+        replyToMessageId: replyToMessageId,
         status: status,
         errorCode: errorCode,
       );
+}
+
+/// A reply being composed: the message it will answer, with the sender and a
+/// one-line preview resolved by the screen (never invented). Held in the
+/// conversation's state so the composer banner and the send share one source.
+class ReplyDraft {
+  const ReplyDraft({
+    required this.targetId,
+    required this.preview,
+    this.senderName,
+  });
+
+  final String targetId;
+  final String? senderName;
+  final String preview;
 }
 
 class ConversationState {
@@ -62,6 +83,7 @@ class ConversationState {
     this.senderNames = const {},
     this.senderAvatarAssets = const {},
     this.removed = false,
+    this.replyDraft,
   });
 
   final Conversation conversation;
@@ -91,6 +113,10 @@ class ConversationState {
   /// can be sent.
   final bool removed;
 
+  /// The reply being composed, or null when not replying. Cleared on send or
+  /// cancel; never carried across conversations (each has its own state).
+  final ReplyDraft? replyDraft;
+
   int get newestSequence => messages.isEmpty ? 0 : messages.last.sequence;
 
   /// A message is held beyond an unfilled gap.
@@ -110,6 +136,8 @@ class ConversationState {
     Map<String, String?>? senderAvatarAssets,
     int? syncedThrough,
     bool? removed,
+    ReplyDraft? replyDraft,
+    bool clearReplyDraft = false,
   }) => ConversationState(
     conversation: conversation ?? this.conversation,
     viewerId: viewerId,
@@ -123,6 +151,7 @@ class ConversationState {
     senderAvatarAssets: senderAvatarAssets ?? this.senderAvatarAssets,
     syncedThrough: syncedThrough ?? this.syncedThrough,
     removed: removed ?? this.removed,
+    replyDraft: clearReplyDraft ? null : (replyDraft ?? this.replyDraft),
   );
 }
 
@@ -148,6 +177,7 @@ class ConversationController extends AsyncNotifier<ConversationState> {
   bool _catchUpAgain = false;
   Future<void>? _refreshingConversation;
   bool _refreshConversationAgain = false;
+
 
   /// Communities locked, unlocked or with changed access while the
   /// conversation was loading: its read may have been answered before, so
@@ -241,21 +271,48 @@ class ConversationController extends AsyncNotifier<ConversationState> {
   Future<void> refreshNewer() =>
       (state.value?.removed ?? false) ? _sync() : _catchUp();
 
+  /// Begins a reply to [draft]'s target. Ignored when the viewer cannot post
+  /// or has left — the server is still the authority on the send itself.
+  void startReply(ReplyDraft draft) {
+    final current = state.value;
+    if (current == null || current.removed || !current.conversation.canPost) {
+      return;
+    }
+    state = AsyncData(current.copyWith(replyDraft: draft));
+  }
+
+  /// Drops the reply being composed, leaving any pending/failed reply intact
+  /// (its relationship lives on its own pending message).
+  void cancelReply() {
+    final current = state.value;
+    if (current == null || current.replyDraft == null) return;
+    state = AsyncData(current.copyWith(clearReplyDraft: true));
+  }
+
   Future<void> sendText(String text) async {
     final body = text.trim();
     if (body.isEmpty) return;
+    // The reply, if one is being composed, rides on this message and is baked
+    // into the pending record so a retry resends it. The draft clears on
+    // enqueue (the relationship is now the pending message's).
+    final replyTo = state.value?.replyDraft?.targetId;
     await _enqueue(
       PendingMessage(
         clientMessageId: newClientId(),
         type: MessageType.text,
         body: body,
+        replyToMessageId: replyTo,
         createdAt: DateTime.now(),
       ),
     );
   }
 
   /// A picked file or a finished recording; the kind decides the message type.
+  /// A reply being composed rides on it too (images, documents and recordings
+  /// all answer a message exactly as text does), baked into the pending record
+  /// so an upload failure and its retry keep the relationship.
   Future<void> sendFile(OutgoingFile file, {String? caption}) async {
+    final replyTo = state.value?.replyDraft?.targetId;
     await _enqueue(
       PendingMessage(
         clientMessageId: newClientId(),
@@ -266,6 +323,7 @@ class ConversationController extends AsyncNotifier<ConversationState> {
         },
         body: caption,
         file: file,
+        replyToMessageId: replyTo,
         createdAt: DateTime.now(),
       ),
     );
@@ -333,6 +391,22 @@ class ConversationController extends AsyncNotifier<ConversationState> {
     await _repository.deleteMessage(conversationId, messageId);
     if (!ref.mounted) return;
     _markDeleted(messageId, DateTime.now().toUtc());
+  }
+
+  /// Pins [messageId] (ADR 0043). The server authorizes and validates; on
+  /// success the conversation is re-read so the banner reflects the server's
+  /// pin. A refusal throws [MessagingException] for the caller to report.
+  Future<void> pinMessage(String messageId) async {
+    await _repository.pinMessage(conversationId, messageId);
+    if (!ref.mounted) return;
+    await _refreshConversation();
+  }
+
+  /// Clears the pin (ADR 0043). Never deletes the message; re-reads on success.
+  Future<void> unpinMessage() async {
+    await _repository.unpinMessage(conversationId);
+    if (!ref.mounted) return;
+    await _refreshConversation();
   }
 
   /// Replaces the held message [messageId] with a tombstone if it is held and
@@ -404,6 +478,23 @@ class ConversationController extends AsyncNotifier<ConversationState> {
         // mark the held message a tombstone. Not held → no-op (a re-read shows
         // it). The original is reachable only through the audited review.
         _markDeleted(event.messageId, event.occurredAt);
+      case MessagePinnedEvent():
+        // Another moderator pinned, unpinned or replaced the pin (ADR 0043).
+        // Accept it only when its version is STRICTLY NEWER than the state's —
+        // the single ordering rule, so a duplicate, an older, or an equal-time
+        // frame never regresses newer state. The banner's preview is resolved
+        // from the loaded timeline, so an id for a message not held shows a
+        // truthful fallback — never fabricated content.
+        if (event.pinVersion > current.conversation.pinVersion) {
+          state = AsyncData(
+            current.copyWith(
+              conversation: current.conversation.withPin(
+                event.pinnedMessageId,
+                event.pinVersion,
+              ),
+            ),
+          );
+        }
       case ParticipantRemovedEvent() when event.userId == current.viewerId:
         _markRemoved();
       default:
@@ -442,7 +533,13 @@ class ConversationController extends AsyncNotifier<ConversationState> {
   }
 
   void _onStatus(RealtimeStatus status) {
-    if (status.isLive) unawaited(_sync());
+    if (status.isLive) {
+      unawaited(_sync());
+      // Re-read the conversation too, so a pin change (ADR 0043) — or a lock,
+      // mode or membership change — that happened while disconnected is
+      // recovered authoritatively, not only new messages.
+      unawaited(_refreshConversation());
+    }
   }
 
   /// The conversation itself again (title, member count, whether the viewer
@@ -474,7 +571,17 @@ class ConversationController extends AsyncNotifier<ConversationState> {
       if (!ref.mounted) return;
       final now = state.value;
       if (now == null || now.removed) return;
-      state = AsyncData(now.copyWith(conversation: fresh));
+      // The refresh is an authoritative SNAPSHOT, not licence to overwrite a
+      // newer pin already applied from an event: take all of `fresh` EXCEPT the
+      // pin when the held pin version is newer (ADR 0043 §realtime). A snapshot
+      // this stale for the pin keeps the newer pinned id and version.
+      final reconciled = fresh.pinVersion >= now.conversation.pinVersion
+          ? fresh
+          : fresh.withPin(
+              now.conversation.pinnedMessageId,
+              now.conversation.pinVersion,
+            );
+      state = AsyncData(now.copyWith(conversation: reconciled));
     } while (_refreshConversationAgain && ref.mounted);
   }
 
@@ -612,7 +719,15 @@ class ConversationController extends AsyncNotifier<ConversationState> {
   Future<void> _enqueue(PendingMessage message) async {
     final current = state.value;
     if (current == null || current.removed) return;
-    state = AsyncData(current.copyWith(pending: [...current.pending, message]));
+    // Sending anything clears the reply banner: a text reply has baked the
+    // relationship into its pending message; an attachment carries none (the
+    // media routes take no reply), so no stale banner is left hanging.
+    state = AsyncData(
+      current.copyWith(
+        pending: [...current.pending, message],
+        clearReplyDraft: true,
+      ),
+    );
     await _deliver(message);
   }
 
@@ -625,23 +740,27 @@ class ConversationController extends AsyncNotifier<ConversationState> {
           conversationId,
           clientMessageId: message.clientMessageId,
           recording: file!,
+          replyToMessageId: message.replyToMessageId,
         ),
         MessageType.image => repository.sendImage(
           conversationId,
           clientMessageId: message.clientMessageId,
           image: file!,
           caption: message.body,
+          replyToMessageId: message.replyToMessageId,
         ),
         MessageType.file => repository.sendFile(
           conversationId,
           clientMessageId: message.clientMessageId,
           file: file!,
           caption: message.body,
+          replyToMessageId: message.replyToMessageId,
         ),
         _ => repository.sendText(
           conversationId,
           clientMessageId: message.clientMessageId,
           body: message.body ?? '',
+          replyToMessageId: message.replyToMessageId,
         ),
       };
       if (!ref.mounted) return;

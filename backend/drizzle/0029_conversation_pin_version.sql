@@ -1,0 +1,2 @@
+ALTER TABLE "conversations" ADD COLUMN "pin_version" bigint DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "conversations" ADD CONSTRAINT "conversations_pin_version_nonnegative" CHECK ("conversations"."pin_version" >= 0);

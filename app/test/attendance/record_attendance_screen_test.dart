@@ -75,6 +75,16 @@ class _FakeLive implements LiveRepository {
 
   @override
   Future<LiveMediaGrant> join(String sessionId) => throw UnimplementedError();
+  @override
+  Future<LiveHand> raiseHand(String sessionId) => throw UnimplementedError();
+  @override
+  Future<LiveHand?> lowerHand(String sessionId) => throw UnimplementedError();
+  @override
+  Future<LiveHand> grantFloor(String requestId) => throw UnimplementedError();
+  @override
+  Future<LiveHand> declineHand(String requestId) => throw UnimplementedError();
+  @override
+  Future<LiveHand> revokeFloor(String requestId) => throw UnimplementedError();
 }
 
 /// A community that answers any id with a fixed `me`, so the screen's capability

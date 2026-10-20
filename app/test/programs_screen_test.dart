@@ -201,6 +201,42 @@ void main() {
     }
   });
 
+  // ── Opening a section never dead-ends on an empty levels screen ──────────
+  // Regression: the detail screen's "view levels" button once also lit up on a
+  // profile-only `levelsCount`, so علوم اللغة والنحو (prog-nahw: the profile
+  // claims 5 levels, the structure records 0 halaqat) offered the button and
+  // then landed on the empty levels screen. The way in must follow the halaqat
+  // the levels screen actually lists.
+  testWidgets('a program whose profile claims levels but has no recorded '
+      'halaqat offers no way into an empty levels screen', (tester) async {
+    await openPrograms(tester);
+    container.read(routerProvider).go('/programs/prog-nahw');
+    await tester.pumpAndSettle();
+    expect(location(), '/programs/prog-nahw');
+
+    // The honest, disabled affordance — not the enabled "view levels" button.
+    expect(find.text('عرض المسار والمستويات'), findsNothing);
+    expect(find.text('الحلقات غير متاحة للعرض بعد'), findsOneWidget);
+
+    // Its profile "5 مستويات" figure is still shown (a printed-profile fact),
+    // so the honest label must not claim the profile mentions none.
+    expect(find.text('لا توجد مستويات مذكورة في الملف'), findsNothing);
+  });
+
+  testWidgets('a program with recorded halaqat still offers the way into its '
+      'levels', (tester) async {
+    await openPrograms(tester);
+    container.read(routerProvider).go('/programs/dep-tajweed-2');
+    await tester.pumpAndSettle();
+
+    final cta = find.text('عرض المسار والمستويات');
+    expect(cta, findsOneWidget);
+    await tester.ensureVisible(cta);
+    await tester.tap(cta);
+    await tester.pumpAndSettle();
+    expect(location(), '/programs/dep-tajweed-2/levels');
+  });
+
   // ── Green scoped, no leak into the shared nav ────────────────────────────
   testWidgets('الأخضر محصور في البرامج ولا يتسرّب للهيكل المشترك',
       (tester) async {

@@ -10,6 +10,7 @@ import 'package:quran_institution_app/core/theme/app_theme.dart';
 import 'package:quran_institution_app/core/widgets/foundations/mock_ribbon.dart';
 import 'package:quran_institution_app/core/widgets/patterns/path_stepper.dart';
 import 'package:quran_institution_app/data/sources/profile_data.dart';
+import 'package:quran_institution_app/features/learning_path/learning_path_screen.dart';
 import 'package:quran_institution_app/features/learning_path/widgets/path_continue_card.dart';
 import 'package:quran_institution_app/features/learning_path/widgets/path_hero_band.dart';
 import 'package:quran_institution_app/features/learning_path/widgets/path_overview_card.dart';
@@ -74,7 +75,12 @@ void main() {
     );
     await tester.pump(const Duration(seconds: 3)); // clear the splash timer
     await tester.pumpAndSettle();
-    container.read(routerProvider).go('/path');
+    // مساري left the bottom bar; it is reached from حسابي now. Open it the way
+    // the app does — on a shell tab, pushed above the shared navigation — so the
+    // shared shell stays mounted beneath (the green-scope test probes it).
+    container.read(routerProvider).go('/profile');
+    await tester.pumpAndSettle();
+    container.read(routerProvider).push('/path');
     await tester.pumpAndSettle();
   }
 
@@ -127,7 +133,7 @@ void main() {
 
     // The string test/layout_test.dart asserts for /path, kept verbatim.
     expect(find.textContaining('المنهج المتدرّج'), findsWidgets);
-    expect(find.text('مساري'), findsWidgets); // hero heading + nav label
+    expect(find.text('مساري'), findsWidgets); // the screen's hero heading
 
     // Real page-6 figures, scoped: a bare find.text('5') would also match the
     // stepper's marker for the fifth department.
@@ -399,10 +405,15 @@ void main() {
       AppColors.accentGreen,
     );
 
-    // The shared navigation shell sits above the scoped Theme and must keep
-    // the app's plum — this is what proves no other tab is affected.
+    // The green is introduced locally: the ambient app Theme — the one above
+    // this screen's own scoped Theme, shared with every other screen and the
+    // navigation shell — must still be the app's plum. (مساري now opens above
+    // the shell rather than as a tab, so the shell is probed through the
+    // ambient Theme its بطاقات also read, not a NavigationBar beneath.)
     expect(
-      Theme.of(tester.element(find.byType(NavigationBar))).colorScheme.primary,
+      Theme.of(
+        tester.element(find.byType(LearningPathScreen)),
+      ).colorScheme.primary,
       AppColors.primary,
     );
   });

@@ -183,6 +183,34 @@
       "when": 1792370227635,
       "tag": "0025_community_chat_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792448853728,
+      "tag": "0026_operations_lessons",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1792448905961,
+      "tag": "0027_seed_operations_schedule_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1792471994893,
+      "tag": "0028_conversation_pinned_message",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792477353090,
+      "tag": "0029_conversation_pin_version",
+      "breakpoints": true
     }
   ]
 }

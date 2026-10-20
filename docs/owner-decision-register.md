@@ -1027,6 +1027,157 @@ ADR 0036 do not yet reflect the rejection.
 
 ---
 
+## 26. Mass publishing to communities — owner decision, built (2026-10-19, ADR 0041)
+
+The owner directed building **mass publishing of files, images and voice recordings to several communities
+at once**, with per-community authorization, correct partial-failure handling and retry. This answers
+roadmap domain 3's open "broadcast/announcement" item (whose Next action was an owner decision) and is
+recorded in [ADR 0041](architecture/decisions/0041-mass-publish-to-communities.md) (Proposed). **No role
+grant, permission, migration or notification policy changed.**
+
+- **Distinct from «نظام الضخ».** The EXCLUDED «نظام الضخ بين الأقسام» (register §22, Sprint 38;
+  owner-information §S5, Q25/Q26) is the **academic student-progression move** between halaqat/sections —
+  part of the deferred educational core (GROUP C). This decision is **content broadcasting** to community
+  chats. They share a word, not a feature; §22 is untouched and «نظام الضخ» stays excluded.
+- **What was built.** `POST /messaging/communities/publish` (edge `messaging.send`) posts one message —
+  text, or one image/voice/document — to a chosen set of communities, each authorized on its own
+  `community.chat.post` through the existing `MessageSender` path. Partial failure is a per-community
+  outcome (posted / already_posted / forbidden / not_found / locked / over_capacity / rate_limited /
+  unavailable), never a thrown batch; a deterministic per-community idempotency key makes retry safe
+  (no duplicates). A media attachment is uploaded once and the one reference published to every target.
+- **No new policy.** `messaging.send` + the existing per-community `community.chat.post`; no migration; and
+  **no notification change** — each post behaves exactly like a human posting the same message in each
+  community, so the Q28 large-channel / priority / always-deliver questions stay OPEN and untouched. Every
+  message still has a real member-sender allowed to post (ADR 0011 dec 6 / Q53) — no senderless broadcast.
+- **Command center completed alongside (ADR 0040 follow-on).** A server-gated **actions** registry
+  (quick actions to real operations, each hidden unless the viewer holds its permission — including
+  `publish.communities`) and an **accounts** summary widget (`users.manage`), via a new read-only identity
+  contract `ACCOUNT_DIRECTORY_SUMMARY` (a grouped count; no new permission, no migration).
+- **Still owner-gated / unchanged:** a persistent announcement *feed* (not requested); GROUP C (DEFERRED,
+  «نظام الضخ» EXCLUDED); GROUP D/G; scheduling build (§24, NOT approved); parent messaging & quiet-hours
+  residue (Q6). This section records a delivery and opens no new decision.
+
+---
+
+## 27. Scheduling of individual dated lessons — owner decisions D1–D5, built (2026-10-20, ADR 0042)
+
+The owner approved the open scheduling decisions prepared in
+[`scheduling-decision-brief.md`](scheduling-decision-brief.md) (D1–D5), which supersedes §24's "NOT
+approved for build" for exactly this scope. Recorded in
+[ADR 0042](architecture/decisions/0042-operations-scheduled-lessons.md) (Accepted).
+
+| Point | Owner decision | How built |
+| --- | --- | --- |
+| Scope | Individual, explicitly dated lessons; one halaqa each; **no recurrence** | `operations_lessons` (migration 0026); halaqa existence via `ACADEMIC_RELATIONSHIPS.halaqaExists` |
+| Who schedules | A dedicated capability, owner/admin only | `operations.schedule_manage` (migration 0027; OWNER + ADMIN, no other role); reads gated too |
+| Storage | Local date/time + the IANA zone **captured at creation** + the resolved `timestamptz` instant | three columns + `scheduled_at`; a later institution-zone change never moves a lesson |
+| DST | Reject nonexistent (gap) times; ambiguous (fold) → the **earlier** instant | pure resolver `domain/time-resolution.ts` (`Intl` tz data, no `Date` string parsing) |
+| Past | Reject new/rescheduled lessons at or before now (injected `Clock`, strict) | `domain/scheduling-policy.ts` — the seam for a future horizon/conflict rule |
+| Conflicts | **None** in this release; kept separate from validation | not built — "conflict" needs an owner definition |
+| Lifecycle | Cancellation is an auditable transition, not a delete | `SCHEDULED → CANCELLED` (terminal) with `cancelled_at/by`; DB CHECK keeps them consistent |
+
+**Conflicts found and resolved (reported, not silently worked around):**
+
+1. **Institution-timezone source.** The only institution timezone lived in the owner-**rejected** quiet-hours
+   resource (§25, roadmap §8), whose update even requires a quiet-hours window. Scheduling therefore reads a
+   new, neutral deployment setting `INSTITUTION_TIMEZONE` (`AppConfig.institution.timezone`, IANA-validated,
+   wired into `infra/compose.yaml`); when unset, a create must name a zone (`operations.timezone_required`).
+   Unifying it with the quiet-hours timezone is a future owner decision.
+2. **Permission code shape.** The owner named the capability `operations.schedule.manage`; the immutable
+   `permissions_code_shape` CHECK (migration 0001) allows a single dot, so the stored code is
+   `operations.schedule_manage` — same meaning.
+
+**Still owner-gated (unchanged):** scheduling horizon; conflict detection; teacher authorship (Q31);
+scheduling notifications (Q28); derived attendance (Q70/Q71/Q72); assignments (GROUP D); automation /
+task tracking (Q71/Q3); "emergency management". Attendance stays separate from scheduling and from live
+connectivity (ADR 0020 dec 3 / 0023).
+
+---
+
+## 28. Groups & channels posting — new groups open by default (owner-approved 2026-10-19, ADR 0039)
+
+The owner approved the Groups & Channels product behaviour in the Phase 5 brief (2026-10-19, "Final
+Owner-Approved Product Requirements"). It was built in `9b4a6de` and recorded in
+[ADR 0039](architecture/decisions/0039-groups-and-channels-chat-mode.md), which the owner **Accepted**
+on 2026-10-20 (see below). It answers the **posting half of Q51** and Q41's "kind" column. This section
+records those approvals.
+
+| Point | Owner decision (brief, verbatim intent) | How built / enforced |
+| --- | --- | --- |
+| New group | "New groups must be open for member participation by default"; "every active, authorized group member can send messages without receiving an individual publishing grant" | `chatModeForKind('GROUP') → GROUP_OPEN` (a create without a kind is a GROUP); `POSTING_MEMBER_RULE`: membership basis, ceiling `communities.read` + `messaging.send` |
+| Restricted group | Admins can restrict ordinary members and restore them; a restricted group stays a group; read access and membership are kept | `PUT /communities/:id/chat-mode` (`community.chat.manage`); `GROUP_RESTRICTED` → publisher rule (owner or a `community.chat.post` grantee, ceiling `communities.moderate` + `messaging.send`) |
+| Channel | Only the owner and authorized publishers/admins publish; members read | `CHANNEL` → the same publisher rule; the product kind is immutable |
+| Existing communities | No conversion; current effective permissions preserved | migration 0025 column default `GROUP_RESTRICTED` (= the pre-0039 Q51 rule) |
+| Enforcement | "The backend is authoritative"; hiding the composer is not enough | `SendMessage` re-asks `community.chat.post` on every send (`CommunityChats.mayPost` → 403 `messaging.posting_not_allowed`); `canPost` is a derived hint from the same evaluator; LOCKED blocks everyone |
+
+**Effective result for an ordinary ACTIVE `STUDENT` member** (role grants include `communities.read` and
+`messaging.send`, but not `communities.moderate`):
+
+- **New group (`GROUP_OPEN`):** may post. `canPost=true`.
+- **`GROUP_RESTRICTED`:** may not post. `canPost=false`, and a send is refused with 403. A `STUDENT` cannot
+  even be granted `community.chat.post`, because that grant's ceiling requires `communities.moderate`.
+- **`CHANNEL`:** same as `GROUP_RESTRICTED`.
+
+All three modes are proven on real Postgres by `test/integration/community-chat-posting-postgres.spec.ts`
+and in-memory by `test/api/community-chat-mode.api.spec.ts`.
+
+**Test reconciliation (2026-10-20).** `community-chat-posting-postgres.spec.ts` was written before ADR 0039
+(`c6d5ee0`). It still expected `canPost=false` for a plain member of a community created without a kind,
+which is now an open group. That was a stale test, not a permission defect. It now restricts its guarded
+community first, so the Q51 publisher guard is unchanged, and adds the open-group and channel cases. No
+production code changed.
+
+**Governance gap closed (2026-10-20).** On 2026-10-20 the gap was that the owner had approved the
+*product behaviour* but not ADR 0039's schema/authorization design. The owner then accepted ADR 0039 **as
+written**, including:
+
+- the chat-mode design (the `chat_mode` column and the delegable `community.chat.manage`);
+- the authorization behaviour;
+- the compatibility rules (existing rows `GROUP_RESTRICTED`, nothing converted).
+
+0039 is now `Accepted`. Following `decisions/README.md`'s partial-supersession process:
+
+- ADR 0016 is marked "superseded in part by 0039" (its "no `kind`", decisions 1 and 3, and the rejected
+  `kind` alternative);
+- ADR 0017 carries "Extended by 0039" notes (the new capability, and the open-group `chat.post` rule).
+
+Q51 stays open only for its PROVISIONAL "one chat" and size defaults.
+
+---
+
+## 29. First web-first Trial release — owner includes Command Center, Mass Publishing, Pinned Messages (2026-10-20)
+
+**Owner decision (2026-10-20, explicit).** The first web-first Trial release **includes** all three features:
+
+- **Owner Command Center** — [ADR 0040](architecture/decisions/0040-owner-command-center-reporting-registry.md);
+- **Mass Publishing to multiple communities** — [ADR 0041](architecture/decisions/0041-mass-publish-to-communities.md);
+- **Pinned Messages** — [ADR 0043](architecture/decisions/0043-pinned-messages.md).
+
+Accordingly these three ADRs move **`Proposed` → `Accepted`** (dated 2026-10-20, by the owner), per
+`decisions/README.md` ("becomes Accepted when the user accepts it, dated in the ADR"). Each was already
+implemented in the working tree (uncommitted); this records the authorization, not a code change. Their
+contracts/migrations are additive: 0040/0041 add **no** migration; 0043 carries migrations **0028/0029**
+(additive, backward-compatible), which run with the release migrate step against the **Trial DB only**.
+
+**Trial runtime contract — [ADR 0037](architecture/decisions/0037-trial-environment-and-explicit-fake-media.md)
+accepted.** The owner authorizes the Trial to run **`NODE_ENV=trial`** with **`LIVE_MEDIA_PROVIDER=fake`**
+(and **`TRUST_PROXY=1`** behind nginx). ADR 0037 moves `Proposed` → `Accepted` for the Trial environment.
+Real audio/video does not flow on the Trial by this choice (ADR 0037); it is refused in production.
+
+**Still requiring an explicit owner decision (NOT taken here)** — these gate release *acceptance/rollout*, not
+feature inclusion, and are carried from [`trial-remediation-2026-10.md`](trial-remediation-2026-10.md) §5:
+
+- **D-4** — whether a **web-first** Trial is an accepted release format (the only written criterion,
+  roadmap §5 row TRIAL, demands an installable APK/iOS build). Undecided.
+- **D-1** — authorization for the **authenticated smoke test** (writes a conversation/message/mute/session to
+  the Trial DB). Undecided — without it no runtime journey is verified and the Trial cannot be accepted.
+- **D-8** — authorization to **apply the nginx security-header snippet** and perform the redeploy. Undecided.
+
+No code, schema, permission or product policy changed by this entry. Committing, building the image,
+migrating the Trial DB, and deploying are state-changing steps **pending separate explicit approval**.
+
+---
+
 > This register is advisory and reversible. Closing a question means: record an ADR in `decisions/`,
 > make the (usually small) change, and delete the entry from `open-questions.md` with the ADR number —
 > per that file's "How to close one."

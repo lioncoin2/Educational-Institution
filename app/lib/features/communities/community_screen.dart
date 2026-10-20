@@ -241,6 +241,8 @@ class _Details extends ConsumerWidget {
             me.has(CommunityCapability.liveModerate) ||
             me.has(CommunityCapability.attendanceView)) ...[
           const SizedBox(height: Insets.xxl),
+          const SectionHeader(title: CommunityCopy.actionsTitle),
+          const SizedBox(height: Insets.md),
           if (community.canOpenChat) _OpenChatButton(communityId: community.id),
           if (community.canOpenChat && community.canViewMembers)
             const SizedBox(height: Insets.md),

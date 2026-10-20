@@ -385,6 +385,86 @@ describe('sending messages', () => {
       expect(answer.message.replyToMessageId).toBe(question.message.id);
     });
 
+    it('replies with an image, a voice recording and a document — the same relationship as text', async () => {
+      const { teacher, student, group } = await setting();
+      const question = await h.text(teacher, group.id, 'أرسلوا تلاوتكم');
+
+      const image = await h.files.upload(student, { kind: 'IMAGE', contentType: 'image/png' });
+      const voice = await h.files.upload(student, { kind: 'VOICE', contentType: 'audio/mp4' });
+      const doc = await h.files.upload(student, {
+        kind: 'DOCUMENT',
+        contentType: 'application/pdf',
+      });
+
+      const sent = [
+        expectOk(
+          await h.sendImage.execute({
+            principal: student,
+            conversationId: group.id,
+            clientMessageId: 'reply-image-00000000000000000000000000',
+            fileAssetId: image.id,
+            replyToMessageId: question.message.id,
+            meta: META,
+          }),
+        ),
+        expectOk(
+          await h.sendVoice.execute({
+            principal: student,
+            conversationId: group.id,
+            clientMessageId: 'reply-voice-00000000000000000000000000',
+            fileAssetId: voice.id,
+            replyToMessageId: question.message.id,
+            meta: META,
+          }),
+        ),
+        expectOk(
+          await h.sendFile.execute({
+            principal: student,
+            conversationId: group.id,
+            clientMessageId: 'reply-file-000000000000000000000000000',
+            fileAssetId: doc.id,
+            replyToMessageId: question.message.id,
+            meta: META,
+          }),
+        ),
+      ];
+      for (const answer of sent) {
+        expect(answer.message.replyToMessageId).toBe(question.message.id);
+      }
+    });
+
+    it("refuses a media reply to another conversation's message", async () => {
+      const { teacher, student, group } = await setting();
+      const elsewhere = await h.group(teacher, [], 'Private notes');
+      const secret = await h.text(teacher, elsewhere.id, 'not for students');
+      const photo = await h.files.upload(student, { kind: 'IMAGE', contentType: 'image/png' });
+
+      const result = await h.sendImage.execute({
+        principal: student,
+        conversationId: group.id,
+        clientMessageId: 'reply-cross-0000000000000000000000000',
+        fileAssetId: photo.id,
+        replyToMessageId: secret.message.id,
+        meta: META,
+      });
+      expect(expectErr(result).code).toBe('messaging.reply_target_not_found');
+    });
+
+    it('a media send without a reply keeps its existing behaviour (no reply)', async () => {
+      const { student, group } = await setting();
+      const photo = await h.files.upload(student, { kind: 'IMAGE', contentType: 'image/png' });
+      const sent = expectOk(
+        await h.sendImage.execute({
+          principal: student,
+          conversationId: group.id,
+          clientMessageId: 'plain-image-00000000000000000000000000',
+          fileAssetId: photo.id,
+          meta: META,
+        }),
+      );
+      expect(sent.message.replyToMessageId).toBeNull();
+    });
+
     it("refuses a reply to another conversation's message, or to one the sender cannot see", async () => {
       const { teacher, student, group } = await setting();
       const elsewhere = await h.group(teacher, [], 'Private notes');

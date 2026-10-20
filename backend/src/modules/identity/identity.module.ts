@@ -9,6 +9,7 @@ import { AuthController } from './api/auth.controller';
 import { AccessGuard } from './api/guards/access.guard';
 import { IdentityAccountAvatarWriter } from './application/account-avatar.service';
 import { IdentityAccountDirectory } from './application/account-directory.service';
+import { IdentityAccountDirectorySummary } from './application/account-directory-summary.service';
 import { IdentityAccountSearch } from './application/account-search.service';
 import { AccountAdministration } from './application/admin/account-administration';
 import { AccountViews } from './application/admin/account-views';
@@ -38,6 +39,7 @@ import {
 import { ACCESS_TOKEN_AUTHENTICATOR } from './contracts/access-tokens';
 import { ACCOUNT_AVATAR_WRITER } from './contracts/account-avatar';
 import { ACCOUNT_DIRECTORY } from './contracts/account-directory';
+import { ACCOUNT_DIRECTORY_SUMMARY } from './contracts/account-directory-summary';
 import { ACCOUNT_SEARCH } from './contracts/account-search';
 import { AUTHORIZATION_SERVICE } from './contracts/authorization';
 import {
@@ -162,6 +164,7 @@ function persistent<T>(
     { provide: ACCOUNT_DIRECTORY, useClass: IdentityAccountDirectory },
     { provide: ACCOUNT_AVATAR_WRITER, useClass: IdentityAccountAvatarWriter },
     { provide: ACCOUNT_SEARCH, useClass: IdentityAccountSearch },
+    { provide: ACCOUNT_DIRECTORY_SUMMARY, useClass: IdentityAccountDirectorySummary },
 
     RolePermissions,
     AccountAdministration,
@@ -196,6 +199,7 @@ function persistent<T>(
     ACCOUNT_DIRECTORY,
     ACCOUNT_AVATAR_WRITER,
     ACCOUNT_SEARCH,
+    ACCOUNT_DIRECTORY_SUMMARY,
     ACCESS_TOKEN_AUTHENTICATOR,
   ],
 })

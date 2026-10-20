@@ -53,6 +53,12 @@ category (unchanged — this file defers to each for its own category):
 Where it and a legacy source disagree, the disagreement is recorded in §12; it is resolved from
 source code, Accepted ADRs, and dated evidence — never by picking the newer-looking document.
 
+For the owner's work mapped by **feature domain** (Owner Command Center, school-day/emergency, mass
+publishing, absences/substitutes, assignments, Section→Program→Halaqa, people/delegation, communities &
+live, attendance/reports, automation) see [`owner-features-roadmap.md`](owner-features-roadmap.md) — a
+feature-domain lens over this file and the decision register (status, evidence, dependencies, acceptance
+per domain). It states status only; it decides nothing.
+
 ---
 
 ## 2. Executive status

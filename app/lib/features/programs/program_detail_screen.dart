@@ -55,8 +55,24 @@ class _Body extends StatelessWidget {
 
   final Program program;
 
-  bool get _hasLevels =>
-      (program.halaqatCount ?? 0) > 0 || (program.levelsCount ?? 0) > 0;
+  // The levels screen lists the program's halaqat and nothing else, so the way
+  // in is offered only when the structure actually records halaqat. A profile
+  // `levelsCount` is a printed-profile figure (ADR 0015, split sources) that can
+  // exist with no halaqat recorded — gating on it too sent companion programs
+  // like علوم اللغة والنحو to an empty levels screen.
+  bool get _hasLevels => (program.halaqatCount ?? 0) > 0;
+
+  // When there is no way in: the profile may still *claim* levels (then the
+  // halaqat simply are not recorded yet) or mention none at all.
+  bool get _profileClaimsLevels => (program.levelsCount ?? 0) > 0;
+
+  String get _noLevelsLabel => _profileClaimsLevels
+      ? 'الحلقات غير متاحة للعرض بعد'
+      : 'لا توجد مستويات مذكورة في الملف';
+
+  String get _noLevelsNote => _profileClaimsLevels
+      ? 'الملف التعريفي يذكر مستويات هذا البرنامج، ولم تُسجَّل حلقاتها بعد'
+      : 'لم يرد في الملف التعريفي تفصيل مستويات هذا البرنامج';
 
   @override
   Widget build(BuildContext context) {
@@ -157,11 +173,9 @@ class _Body extends StatelessWidget {
                 label: const Text('عرض المسار والمستويات'),
               )
             : OutlinedButton.icon(
-                onPressed: () => context.toast(
-                  'لم يرد في الملف التعريفي تفصيل مستويات هذا البرنامج',
-                ),
+                onPressed: () => context.toast(_noLevelsNote),
                 icon: const Icon(Icons.info_outline_rounded),
-                label: const Text('لا توجد مستويات مذكورة في الملف'),
+                label: Text(_noLevelsLabel),
               ),
       ),
     );

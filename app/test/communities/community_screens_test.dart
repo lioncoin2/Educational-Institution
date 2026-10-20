@@ -128,6 +128,8 @@ void main() {
       }
       expect(find.text(CommunityCopy.openChat), findsOneWidget);
       expect(find.text(CommunityCopy.viewMembers), findsOneWidget);
+      // The actions group is a labelled section, like عضويتي and صلاحياتي.
+      expect(find.text(CommunityCopy.actionsTitle), findsOneWidget);
       expect(find.text(CommunityCopy.lockedNotice), findsNothing);
       expect(find.textContaining('مجتمع تجريبي'), findsOneWidget);
     });

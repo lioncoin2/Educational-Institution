@@ -44,6 +44,20 @@ export interface Conversation {
    * community up to this version (§6.1, C6). Null exactly when `communityId` is.
    */
   readonly projectedMembershipVersion: number | null;
+  /**
+   * The single pinned message (ADR 0043): a reference to a message of this
+   * conversation, or null. `pinnedBy`/`pinnedAt` record who pinned it and when;
+   * all three move together.
+   */
+  readonly pinnedMessageId: string | null;
+  readonly pinnedBy: string | null;
+  readonly pinnedAt: Date | null;
+  /**
+   * The total order of pin changes (ADR 0043 §realtime): increments only when
+   * the pinned state actually changes. A newer version supersedes an older one,
+   * resolving the ambiguity two equal timestamps would leave.
+   */
+  readonly pinVersion: number;
 }
 
 export interface NewConversation {
@@ -86,6 +100,10 @@ function conversation(
     memberCount,
     communityId: null,
     projectedMembershipVersion: null,
+    pinnedMessageId: null,
+    pinnedBy: null,
+    pinnedAt: null,
+    pinVersion: 0,
   };
 }
 

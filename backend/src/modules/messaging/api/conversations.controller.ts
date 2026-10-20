@@ -35,6 +35,7 @@ import {
   ModerateMessageUseCase,
   ReviewDeletedMessageUseCase,
 } from '../application/moderate-message.use-cases';
+import { PinMessageUseCase, UnpinMessageUseCase } from '../application/pin-message.use-cases';
 import {
   GetConversationUseCase,
   ListConversationsUseCase,
@@ -107,6 +108,8 @@ export class ConversationsController {
     private readonly senderAvatarLink: GetSenderAvatarLinkUseCase,
     private readonly moderateMessage: ModerateMessageUseCase,
     private readonly reviewDeletedMessage: ReviewDeletedMessageUseCase,
+    private readonly pinMessageUseCase: PinMessageUseCase,
+    private readonly unpinMessageUseCase: UnpinMessageUseCase,
   ) {}
 
   @Get()
@@ -354,6 +357,42 @@ export class ConversationsController {
         await this.reviewDeletedMessage.execute({ principal, conversationId, messageId, meta }),
       ),
     );
+  }
+
+  /**
+   * Pin a message in a community's chat (ADR 0043). The same
+   * `community.messages.moderate` authority a delete needs, asked of Communities
+   * — never a projected row. 204 whether the pin applied now or was already the
+   * current pin (idempotent). A message that is not a live message of this chat,
+   * or a conversation that is not a community chat the caller may not moderate,
+   * is 404; a member without the capability is 403; Communities unreachable 503.
+   */
+  @Post(':conversationId/messages/:messageId/pin')
+  @Authenticated()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async pinMessage(
+    @CurrentPrincipal() principal: Principal,
+    @Param('conversationId') conversationId: string,
+    @Param('messageId') messageId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ): Promise<void> {
+    unwrap(await this.pinMessageUseCase.execute({ principal, conversationId, messageId, meta }));
+  }
+
+  /**
+   * Clear the community chat's pin (ADR 0043). Unpinning never deletes the
+   * message. 204 whether a pin was cleared or there was none (idempotent). Same
+   * authority and 404/403/503 shape as pinning.
+   */
+  @Delete(':conversationId/pin')
+  @Authenticated()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async unpinMessage(
+    @CurrentPrincipal() principal: Principal,
+    @Param('conversationId') conversationId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ): Promise<void> {
+    unwrap(await this.unpinMessageUseCase.execute({ principal, conversationId, meta }));
   }
 
   @Post(':conversationId/read')

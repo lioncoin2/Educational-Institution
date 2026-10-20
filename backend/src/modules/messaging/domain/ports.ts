@@ -28,6 +28,27 @@ export type SoftDeleteOutcome =
   /** No message with that id in that conversation. */
   | { readonly kind: 'not_found' };
 
+export type PinOutcome =
+  /** The conversation's pin now points at `message`; `alreadyPinned` when it already did. */
+  | {
+      readonly kind: 'pinned';
+      readonly conversation: Conversation;
+      readonly message: Message;
+      readonly alreadyPinned: boolean;
+    }
+  /** No live message with that id in that conversation (absent or deleted). */
+  | { readonly kind: 'message_not_found' }
+  | { readonly kind: 'conversation_not_found' };
+
+export type UnpinOutcome =
+  /** The pin is cleared; `alreadyUnpinned` when there was nothing pinned. */
+  | {
+      readonly kind: 'unpinned';
+      readonly conversation: Conversation;
+      readonly alreadyUnpinned: boolean;
+    }
+  | { readonly kind: 'conversation_not_found' };
+
 export type AddParticipantsOutcome =
   | {
       readonly kind: 'added';
@@ -142,6 +163,23 @@ export interface MessagingRepository {
     readonly deletedBy: string;
     readonly at: Date;
   }): Promise<SoftDeleteOutcome>;
+
+  /**
+   * Pin ONE message of a conversation (ADR 0043), replacing any current pin
+   * (most-recent wins). The message must be a live message of THIS conversation
+   * — absent, another conversation's, or already deleted is `message_not_found`,
+   * so a pin never becomes a way to learn a message exists. Idempotent: pinning
+   * the message already pinned reports `alreadyPinned` and changes nothing.
+   */
+  pinMessage(input: {
+    readonly conversationId: ConversationId;
+    readonly messageId: MessageId;
+    readonly pinnedBy: string;
+    readonly at: Date;
+  }): Promise<PinOutcome>;
+
+  /** Clear the conversation's pin. Idempotent: nothing pinned reports `alreadyUnpinned`. */
+  unpinMessage(conversationId: ConversationId): Promise<UnpinOutcome>;
 
   /**
    * Retention: hard-delete the CONTENT of messages soft-deleted on or before

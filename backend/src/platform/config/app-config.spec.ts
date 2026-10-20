@@ -26,6 +26,21 @@ describe('loadConfig', () => {
     expect(config.http.trustProxy).toBe(false);
   });
 
+  it('defaults the institution timezone to null when unset', () => {
+    expect(loadConfig({}).institution).toEqual({ timezone: null });
+  });
+
+  it('accepts a valid IANA institution timezone', () => {
+    expect(loadConfig({ INSTITUTION_TIMEZONE: 'Asia/Riyadh' }).institution.timezone).toBe(
+      'Asia/Riyadh',
+    );
+  });
+
+  it('rejects a fixed-offset or unknown institution timezone', () => {
+    expect(() => loadConfig({ INSTITUTION_TIMEZONE: '+03:00' })).toThrow(ConfigurationError);
+    expect(() => loadConfig({ INSTITUTION_TIMEZONE: 'Not/AZone' })).toThrow(ConfigurationError);
+  });
+
   // HS256 is only as strong as its key (RFC 7518 §3.2: at least 256 bits).
   it('refuses a JWT secret shorter than 32 bytes in production', () => {
     expect(() =>

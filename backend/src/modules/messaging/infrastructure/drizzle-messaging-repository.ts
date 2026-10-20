@@ -19,7 +19,9 @@ import type {
   CreateDirectOutcome,
   MarkReadOutcome,
   MessagingRepository,
+  PinOutcome,
   SoftDeleteOutcome,
+  UnpinOutcome,
 } from '../domain/ports';
 import {
   conversationRow,
@@ -370,6 +372,82 @@ export class DrizzleMessagingRepository implements MessagingRepository {
     return existing === null
       ? { kind: 'not_found' }
       : { kind: 'deleted', message: existing, alreadyDeleted: true };
+  }
+
+  async pinMessage(input: {
+    readonly conversationId: ConversationId;
+    readonly messageId: MessageId;
+    readonly pinnedBy: string;
+    readonly at: Date;
+  }): Promise<PinOutcome> {
+    return this.db.transaction(async (tx) => {
+      // Lock the conversation so a concurrent pin/unpin on the same row serializes
+      // — the pin_version increments are then strictly ordered, one per change.
+      const [existing] = await tx
+        .select()
+        .from(conversations)
+        .where(eq(conversations.id, input.conversationId))
+        .for('update')
+        .limit(1);
+      if (existing === undefined) return { kind: 'conversation_not_found' };
+
+      // Only a LIVE message of THIS conversation may be pinned (a cross-conversation
+      // id, an unknown id, or a tombstone is "not found" — no probe). The message
+      // rows are not touched by this transaction, so a committed read is safe.
+      const message = await this.findMessage(input.conversationId, input.messageId);
+      if (message === null || message.deletedAt !== null) {
+        return { kind: 'message_not_found' };
+      }
+
+      // Idempotent: re-pinning the current pin changes nothing — not the stamps,
+      // and not the version — so no event follows.
+      if (existing.pinnedMessageId === input.messageId) {
+        return {
+          kind: 'pinned',
+          conversation: toConversation(existing),
+          message,
+          alreadyPinned: true,
+        };
+      }
+      const [row] = await tx
+        .update(conversations)
+        .set({
+          pinnedMessageId: input.messageId,
+          pinnedBy: input.pinnedBy,
+          pinnedAt: input.at,
+          pinVersion: sql`${conversations.pinVersion} + 1`,
+        })
+        .where(eq(conversations.id, input.conversationId))
+        .returning();
+      return { kind: 'pinned', conversation: toConversation(row), message, alreadyPinned: false };
+    });
+  }
+
+  async unpinMessage(conversationId: ConversationId): Promise<UnpinOutcome> {
+    return this.db.transaction(async (tx) => {
+      const [before] = await tx
+        .select()
+        .from(conversations)
+        .where(eq(conversations.id, conversationId))
+        .for('update')
+        .limit(1);
+      if (before === undefined) return { kind: 'conversation_not_found' };
+      // Idempotent: nothing pinned changes nothing, and does not advance the version.
+      if (before.pinnedMessageId === null) {
+        return { kind: 'unpinned', conversation: toConversation(before), alreadyUnpinned: true };
+      }
+      const [row] = await tx
+        .update(conversations)
+        .set({
+          pinnedMessageId: null,
+          pinnedBy: null,
+          pinnedAt: null,
+          pinVersion: sql`${conversations.pinVersion} + 1`,
+        })
+        .where(eq(conversations.id, conversationId))
+        .returning();
+      return { kind: 'unpinned', conversation: toConversation(row), alreadyUnpinned: false };
+    });
   }
 
   async purgeDeletedBefore(deletedBefore: Date, limit: number): Promise<number> {
