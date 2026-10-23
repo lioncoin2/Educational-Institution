@@ -127,26 +127,44 @@ describe('generator agent', () => {
   });
 
   it('an unexplained process in its group fires the generator watchdog (abort, class A, validity)', async () => {
-    const { agent, sent } = harness(1);
-    agent.handle({
-      type: 'assign',
-      runId: '0123456789abcdef',
-      rung: 'S1',
-      agentIndex: 0,
-      workers: [],
-      settings: SETTINGS,
-    });
-    for (let t = 0; t < 10 && !sent.some((m) => m.type === 'abort'); t += 1) {
-      agent.handle({ type: 'heartbeat', t: Date.now() });
-      await sleep(40);
+    // Deterministic timing. The watchdog samples on a real setInterval
+    // (sampleIntervalMs), and G-proc/gUnexplainedProcs is an INSTANT rule
+    // (sustainOf === SUSTAIN.instant === 1), so the abort is due on the FIRST
+    // sample. Fake timers drive that sample exactly, instead of racing a
+    // ~400ms wall-clock budget against scheduler load — which made this flaky
+    // inside the full parallel suite (it passed alone, failed under load) while
+    // the injected process-group input is already deterministic.
+    jest.useFakeTimers();
+    try {
+      const { agent, sent } = harness(1);
+      agent.handle({
+        type: 'assign',
+        runId: '0123456789abcdef',
+        rung: 'S1',
+        agentIndex: 0,
+        workers: [],
+        settings: SETTINGS,
+      });
+      // Let assign resolve (startStun + record) so its sampling interval is
+      // registered; before any sample is taken there is no abort.
+      await jest.advanceTimersByTimeAsync(0);
+      expect(sent.some((m) => m.type === 'abort')).toBe(false);
+
+      // Exactly one sampling interval → one RED observation of the unexplained
+      // process. With sustain 1 that single observation fires the abort (and the
+      // 150ms dead-man cannot pre-empt it at t=sampleIntervalMs).
+      await jest.advanceTimersByTimeAsync(SETTINGS.sampleIntervalMs);
+      const abort = sent.find((m) => m.type === 'abort');
+      expect(abort).toMatchObject({
+        type: 'abort',
+        reason: { rule: 'G-proc', classHint: 'A', validity: true },
+      });
+
+      agent.handle({ type: 'shutdown', reason: 'test' });
+      await jest.advanceTimersByTimeAsync(SETTINGS.sampleIntervalMs);
+    } finally {
+      jest.useRealTimers();
     }
-    const abort = sent.find((m) => m.type === 'abort');
-    expect(abort).toMatchObject({
-      type: 'abort',
-      reason: { rule: 'G-proc', classHint: 'A', validity: true },
-    });
-    agent.handle({ type: 'shutdown', reason: 'test' });
-    await sleep(50);
   });
 
   it('the dead-man stops it once: bye then exit(0), STUN closed', async () => {
