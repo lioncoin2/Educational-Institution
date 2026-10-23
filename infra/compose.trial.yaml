@@ -40,6 +40,16 @@ services:
       REDIS_PASSWORD: ${TRIAL_REDIS_PASSWORD:?set in infra/env/trial.env}
     volumes:
       - trial-redisdata:/data
+    # Secret-safe readiness probe (same convention as the data-tier redis in
+    # infra/compose.data.yaml): the password is read at run time from the
+    # REDIS_PASSWORD env var via REDISCLI_AUTH, never placed in argv, `docker
+    # inspect` Cmd, or logs — the $$ keeps compose from interpolating it.
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     restart: unless-stopped
     security_opt: [no-new-privileges:true]
 
@@ -67,6 +77,21 @@ services:
     # Loopback only: the host nginx fronts it at https://trial.adlink4.com/api.
     ports:
       - "127.0.0.1:3100:3000"
+    # Readiness probe (same convention as the api service in infra/compose.yaml):
+    # Node 22's built-in fetch against the port the API listens on — no curl/wget
+    # in the image. A 2xx response exits 0 (healthy); a non-2xx or a connection
+    # error exits 1 (unhealthy). An unhealthy status is a signal only: it does not
+    # restart the container (restart is on process exit).
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
     security_opt: [no-new-privileges:true]
 

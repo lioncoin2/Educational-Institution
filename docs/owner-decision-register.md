@@ -1171,7 +1171,12 @@ feature inclusion, and are carried from [`trial-remediation-2026-10.md`](trial-r
   roadmap §5 row TRIAL, demands an installable APK/iOS build). Undecided.
 - **D-1** — authorization for the **authenticated smoke test** (writes a conversation/message/mute/session to
   the Trial DB). Undecided — without it no runtime journey is verified and the Trial cannot be accepted.
-- **D-8** — authorization to **apply the nginx security-header snippet** and perform the redeploy. Undecided.
+- **D-8** — authorization to **apply the nginx security-header snippet** and perform the redeploy.
+  ~~Undecided.~~ **Resolved 2026-10-20 — approved conditionally** (nginx headers only after compatibility
+  validation + a verified rollback plan; `docs/project-checkpoint.md`), and **applied on Trial 2026-10-18**:
+  the snippet is live, `include`d in both `location /` and `location /api/` of the Trial server block, with
+  HSTS held at `max-age=86400` (the 1-day ramp; a raise to one year is not yet due). Trial only — no
+  production or Staging deployment and no broader authorization implied.
 
 No code, schema, permission or product policy changed by this entry. Committing, building the image,
 migrating the Trial DB, and deploying are state-changing steps **pending separate explicit approval**.
