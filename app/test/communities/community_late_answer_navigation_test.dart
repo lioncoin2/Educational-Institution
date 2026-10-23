@@ -21,8 +21,6 @@ void main() {
   const owned = MockCommunityRepository.ownedId;
   const open = MockCommunityRepository.openId;
   const invited = MockCommunityRepository.invitedId;
-  const ownedTitle = 'مجتمع أسرة الحفظ';
-  const openTitle = 'مجتمع طلاب التجويد';
   const teacherName = 'الأستاذة عائشة';
   const studentName = 'فاطمة الأنصاري';
   const teacherId = '${MockCommunityRepository.founder}-2';
@@ -111,7 +109,9 @@ void main() {
       tester,
     ) async {
       await start(tester, '/communities');
-      await tester.tap(find.text(ownedTitle));
+      // Reach the community page directly (opening a community by its row now
+      // goes to its conversation; its page is tested in the screens suite).
+      container.read(routerProvider).push('/communities/$owned');
       await tester.pumpAndSettle();
       final hold = await heldHandOver(tester);
       await back(tester);
@@ -171,7 +171,9 @@ void main() {
     testWidgets('after the viewer went on to another community: stays '
         'there', (tester) async {
       await start(tester, '/communities');
-      await tester.tap(find.text(openTitle));
+      final router = container.read(routerProvider);
+      // Reach each community page directly (a row now opens the conversation).
+      router.push('/communities/$open');
       await tester.pumpAndSettle();
       final hold = repo.holdWrites = Completer<void>();
       await tester.tap(find.text(CommunityCopy.leave));
@@ -180,7 +182,7 @@ void main() {
       await frames(tester);
       expect(repo.writes, ['leave $open']);
       await back(tester);
-      await tester.tap(find.text(ownedTitle));
+      router.push('/communities/$owned');
       await frames(tester);
       expect(location(), '/communities/$owned');
       hold.complete();

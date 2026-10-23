@@ -369,6 +369,11 @@ Conversation withCanPost(Conversation c, bool canPost) => Conversation(
   createdAt: c.createdAt,
   activityAt: c.activityAt,
   communityId: c.communityId,
+  // Preserve every other field the helper only means to change `canPost` on —
+  // the community kind (so a group chat's header stays a group) and the pin.
+  communityKind: c.communityKind,
+  pinnedMessageId: c.pinnedMessageId,
+  pinVersion: c.pinVersion,
   origin: c.origin,
 );
 

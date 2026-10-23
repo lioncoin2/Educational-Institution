@@ -105,12 +105,13 @@ void main() {
       expect(find.text('مجتمع حلقة المساء'), findsOneWidget);
     });
 
-    testWidgets('opens a community from its row', (tester) async {
+    testWidgets('opens a community’s conversation from its row', (tester) async {
       await open_(tester, '/communities');
       await tester.tap(find.text('مجتمع طلاب التجويد'));
       await tester.pumpAndSettle();
-      expect(location(), '/communities/$open');
-      expect(find.text(CommunityCopy.openChat), findsOneWidget);
+      // Opening a community goes straight to its primary view — its
+      // conversation — not its settings/overview page.
+      expect(location(), '/messages/$open-chat');
     });
   });
 

@@ -92,6 +92,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('مجتمع حلقة الفجر'), findsOneWidget); // listed now
     await tapText('مجتمع أسرة الحفظ');
+    // A community row now opens its conversation; its page (links, management)
+    // is an explicit step from the chat header.
+    await tap(find.byKey(const Key('conversation-community-header')));
     await tapText(CommunityCopy.invitationLinks);
     expect(
       location(),
@@ -166,6 +169,7 @@ void main() {
     container.read(routerProvider).go('/communities');
     await tester.pumpAndSettle();
     await tapText('مجتمع طلاب التجويد');
+    await tap(find.byKey(const Key('conversation-community-header')));
     await tapText(CommunityCopy.leave);
     await tapText(CommunityCopy.confirmLeave);
     expect(location(), '/communities');

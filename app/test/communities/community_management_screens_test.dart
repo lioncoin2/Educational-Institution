@@ -298,9 +298,9 @@ void main() {
 
     testWidgets('asks before leaving, then goes to the list — which no '
         'longer has it', (tester) async {
-      await open_(tester, '/communities');
-      await tester.tap(find.text('مجتمع طلاب التجويد'));
-      await tester.pumpAndSettle();
+      // Reach the community page directly (opening a community by its row now
+      // goes to its conversation; leaving lives on the page).
+      await open_(tester, '/communities/$open');
       await tester.tap(find.text(CommunityCopy.leave));
       await tester.pumpAndSettle();
       expect(

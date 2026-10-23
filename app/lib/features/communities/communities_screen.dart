@@ -2,16 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../app/routes.dart';
+import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/widgets/foundations/async_view.dart';
 import '../../core/widgets/foundations/empty_state.dart';
 import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/layout/responsive_body.dart';
+import '../../data/models/communities.dart';
 import '../../providers/app_providers.dart';
 import '../auth/sign_in_prompt.dart';
 import '../messaging/widgets/connection_banner.dart';
 import 'community_copy.dart';
+import 'state/community_chat_opener.dart';
 import 'state/community_list_controller.dart';
 import 'widgets/community_states.dart';
 import 'widgets/community_tile.dart';
@@ -133,10 +135,9 @@ class _CommunityList extends ConsumerWidget {
               return ResponsiveBody(
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: Insets.sm),
-                  child: CommunityTile(
+                  child: _OpenableCommunityTile(
                     key: ValueKey(community.id),
                     community: community,
-                    onTap: () => context.push(Routes.community(community.id)),
                   ),
                 ),
               );
@@ -173,5 +174,49 @@ class _Footer extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+/// A community row that opens the community's PRIMARY view — its conversation —
+/// on tap. It asks messaging for the chat first (the same canonical resolve the
+/// in-chat header and the community page's "open chat" button use), so a group
+/// and a channel both land on their content view. The community page (its
+/// profile, membership and management — what reads as "settings") is reached
+/// from the conversation header, an explicit action, never the default on tap.
+/// Disabled while it asks, so one tap is one request; a refusal is said in
+/// words and nothing opens.
+class _OpenableCommunityTile extends ConsumerStatefulWidget {
+  const _OpenableCommunityTile({super.key, required this.community});
+
+  final Community community;
+
+  @override
+  ConsumerState<_OpenableCommunityTile> createState() =>
+      _OpenableCommunityTileState();
+}
+
+class _OpenableCommunityTileState
+    extends ConsumerState<_OpenableCommunityTile> {
+  bool _opening = false;
+
+  Future<void> _open() async {
+    if (_opening) return;
+    setState(() => _opening = true);
+    final opening = await ref
+        .read(communityChatOpenerProvider)
+        .open(widget.community.id);
+    if (!mounted) return;
+    setState(() => _opening = false);
+    switch (opening) {
+      case OpenChat(:final location):
+        context.push(location);
+      case CannotOpenChat(:final message):
+        context.toast(message);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CommunityTile(community: widget.community, onTap: _open);
   }
 }
