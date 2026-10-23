@@ -267,6 +267,58 @@ describe('mass publish to communities API', () => {
     expect(typeof link.body.expiresAt).toBe('string');
   });
 
+  // Issue 2: a voice recording published to several communities at once. This
+  // is the reported-failing case, exercised end-to-end against the real storage
+  // adapter (true signed PUT, true magic-byte check at completion — only the
+  // metadata store is in memory), so a defect in the upload→complete→fan-out
+  // path for VOICE would fail here rather than only in production.
+  it('publishes an uploaded voice recording to several communities (webm) — real upload → fan-out', async () => {
+    const bytes = sampleBytes('audio/webm', 256);
+    const declared = await call('POST', '/files/uploads', admin, {
+      kind: 'VOICE',
+      contentType: 'audio/webm',
+      byteSize: bytes.length,
+      fileName: 'رسالة صوتية.webm',
+      durationMs: 5000,
+    });
+    expect(declared.status).toBe(201);
+    const assetId = (declared.body.asset as { id: string }).id;
+    const uploadUrl = (declared.body.upload as { url: string }).url;
+    const put = await fetch(`${r.api.base}${uploadUrl}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'audio/webm' },
+      body: bytes,
+    });
+    expect(put.status).toBe(201);
+    expect((await call('POST', `/files/uploads/${assetId}/complete`, admin)).status).toBe(200);
+
+    const response = await publish(admin, {
+      clientBatchId: nextBatch(),
+      communityIds: [c1, c2],
+      kind: 'VOICE',
+      fileAssetId: assetId,
+    });
+    expect(response.status).toBe(201);
+    expect(response.body.summary).toEqual({ total: 2, posted: 2, failed: 0 });
+
+    // Delivered to a recipient's conversation as a VOICE message carrying the
+    // asset — the end-to-end "a voice note actually arrives" the UI relies on.
+    const chat = await call('GET', `/messaging/communities/${c1}/conversation`, admin);
+    const page = await call(
+      'GET',
+      `/messaging/conversations/${chat.body.id as string}/messages`,
+      admin,
+    );
+    const voice = (
+      page.body.items as {
+        type: string;
+        attachments: { fileAssetId: string; kind: string }[];
+      }[]
+    ).find((m) => m.type === 'VOICE');
+    expect(voice?.attachments[0]?.fileAssetId).toBe(assetId);
+    expect(voice?.attachments[0]?.kind).toBe('VOICE');
+  });
+
   it("refuses to publish someone else's upload — nothing is posted", async () => {
     const bytes = sampleBytes('image/png', 128);
     const declared = await call('POST', '/files/uploads', admin, {
