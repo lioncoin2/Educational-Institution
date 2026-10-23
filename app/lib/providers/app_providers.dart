@@ -32,6 +32,7 @@ import '../data/realtime/websocket_realtime_client.dart';
 import '../data/repositories/academic/academic_catalog_repository.dart';
 import '../data/repositories/academic/academic_learning_repository.dart';
 import '../data/repositories/academic/academic_profile_repositories.dart';
+import '../data/repositories/empty_repositories.dart';
 import '../data/repositories/http/http_academic_repository.dart';
 import '../data/repositories/http/http_admin_repository.dart';
 import '../data/repositories/http/http_attendance_repository.dart';
@@ -132,11 +133,26 @@ final progressRepositoryProvider = Provider<ProgressRepository>(
       ? const UnrecordedProgressRepository()
       : const MockProgressRepository(),
 );
+
+/// Certificates. HTTP against the server when one is configured — but there is
+/// no certificates service on the backend yet, so the server-mode repository
+/// returns an empty set (an honest "no records", never the demo's invented
+/// certificates). The in-memory demo keeps its placeholder set. See
+/// [EmptyCertificateRepository].
 final certificateRepositoryProvider = Provider<CertificateRepository>(
-  (ref) => const MockCertificateRepository(),
+  (ref) => ref.watch(backendModeProvider)
+      ? const EmptyCertificateRepository()
+      : const MockCertificateRepository(),
 );
+
+/// Announcements. Same policy: no feed service on the backend yet, so the
+/// server-mode repository is empty (never the demo's invented posts). The
+/// screen still shows the real institution media section (from the profile).
+/// See [EmptyFeedRepository].
 final feedRepositoryProvider = Provider<FeedRepository>(
-  (ref) => const MockFeedRepository(),
+  (ref) => ref.watch(backendModeProvider)
+      ? const EmptyFeedRepository()
+      : const MockFeedRepository(),
 );
 
 final Provider<AuthRepository> authRepositoryProvider =

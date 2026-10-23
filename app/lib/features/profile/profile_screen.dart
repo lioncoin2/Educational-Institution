@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/app_config.dart';
+import '../../app/backend_config.dart';
 import '../../app/routes.dart';
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
@@ -110,14 +111,13 @@ class ProfileScreen extends ConsumerWidget {
                 // failure: the account section below offers the sign-in.
                 errorBuilder: (context, error) =>
                     SignInPrompt.needsSignIn(error)
-                        ? const SizedBox.shrink()
-                        : null,
+                    ? const SizedBox.shrink()
+                    : null,
                 builder: (context, data) => ContourBand(
                   background: context.colors.primary,
                   lineColor: context.colors.onPrimary,
                   opacity: 0.14,
-                  borderRadius:
-                      const BorderRadius.vertical(bottom: Radii.xl),
+                  borderRadius: const BorderRadius.vertical(bottom: Radii.xl),
                   padding: const EdgeInsets.only(
                     top: Insets.sm,
                     bottom: Insets.xxl,
@@ -133,8 +133,9 @@ class ProfileScreen extends ConsumerWidget {
                         const SizedBox(height: Insets.md),
                         Text(
                           data.name,
-                          style: context.text.headlineMedium
-                              ?.copyWith(color: context.colors.onPrimary),
+                          style: context.text.headlineMedium?.copyWith(
+                            color: context.colors.onPrimary,
+                          ),
                         ),
                         // Only what the record holds: a real account has no
                         // target group on file, and may be enrolled nowhere.
@@ -144,8 +145,9 @@ class ProfileScreen extends ConsumerWidget {
                             summary,
                             textAlign: TextAlign.center,
                             style: context.text.bodySmall?.copyWith(
-                              color: context.colors.onPrimary
-                                  .withValues(alpha: 0.78),
+                              color: context.colors.onPrimary.withValues(
+                                alpha: 0.78,
+                              ),
                             ),
                           ),
                         ],
@@ -287,8 +289,10 @@ class ProfileScreen extends ConsumerWidget {
                       value: themeMode == ThemeMode.dark,
                       onChanged: (_) =>
                           ref.read(themeModeProvider.notifier).toggle(),
-                      title: Text('الوضع الليلي',
-                          style: context.text.titleSmall),
+                      title: Text(
+                        'الوضع الليلي',
+                        style: context.text.titleSmall,
+                      ),
                       subtitle: Text(
                         'مستوحى من الصفحات الداكنة في الملف التعريفي',
                         style: context.text.bodySmall,
@@ -327,43 +331,49 @@ class ProfileScreen extends ConsumerWidget {
               child: AboutInstitutionSection(),
             ),
 
-            // ── حدود النموذج الأولي ────────────────────────────────────
-            SliverGutter(
-              top: Insets.xxl,
-              bottom: Insets.giant,
-              child: AppCard(
-                color: context.colors.surfaceContainerLow,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.science_outlined,
-                            size: 18, color: context.colors.onSurfaceVariant),
-                        const SizedBox(width: Insets.sm),
-                        Expanded(
-                          child: Text(AppConfig.stageLabel,
-                              style: context.text.titleSmall),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: Insets.md),
-                    Text(
-                      'هذه النسخة واجهات فقط: لا يوجد تسجيل دخول ولا خادم '
-                      'ولا قاعدة بيانات ولا خدمات خارجية. كل بيان غير موجود '
-                      'في الملف التعريفي معلَّم بشارة «بيانات تجريبية».',
-                      style: context.text.bodySmall,
-                    ),
-                    const SizedBox(height: Insets.lg),
-                    InfoRow(
-                      icon: Icons.contact_page_outlined,
-                      label: 'بيانات التواصل',
-                      value: 'غير واردة في الملف التعريفي',
-                    ),
-                  ],
+            // ── حدود النموذج الأولي (demo only; hidden against a real backend) ──
+            if (!BackendConfig.isConfigured)
+              SliverGutter(
+                top: Insets.xxl,
+                bottom: Insets.giant,
+                child: AppCard(
+                  color: context.colors.surfaceContainerLow,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.science_outlined,
+                            size: 18,
+                            color: context.colors.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: Insets.sm),
+                          Expanded(
+                            child: Text(
+                              AppConfig.stageLabel,
+                              style: context.text.titleSmall,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: Insets.md),
+                      Text(
+                        'هذه النسخة واجهات فقط: لا يوجد تسجيل دخول ولا خادم '
+                        'ولا قاعدة بيانات ولا خدمات خارجية. كل بيان غير موجود '
+                        'في الملف التعريفي معلَّم بشارة «بيانات تجريبية».',
+                        style: context.text.bodySmall,
+                      ),
+                      const SizedBox(height: Insets.lg),
+                      InfoRow(
+                        icon: Icons.contact_page_outlined,
+                        label: 'بيانات التواصل',
+                        value: 'غير واردة في الملف التعريفي',
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -373,10 +383,7 @@ class ProfileScreen extends ConsumerWidget {
 
 /// "target group · where they study", from whichever parts are known.
 String? _summary(StudentProfile student) {
-  final parts = [
-    ?student.targetGroupName,
-    ?student.currentProgramName,
-  ];
+  final parts = [?student.targetGroupName, ?student.currentProgramName];
   return parts.isEmpty ? null : parts.join(' · ');
 }
 
@@ -397,8 +404,10 @@ class _NavRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final chevron = Icon(Icons.chevron_right_rounded,
-        color: context.colors.onSurfaceVariant);
+    final chevron = Icon(
+      Icons.chevron_right_rounded,
+      color: context.colors.onSurfaceVariant,
+    );
     return ListTile(
       onTap: onTap,
       leading: Icon(icon, color: context.colors.primary),

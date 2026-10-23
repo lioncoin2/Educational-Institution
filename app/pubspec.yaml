@@ -18,6 +18,11 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.6.0
   web_socket: ^1.0.1
+  # Browser interop for opening a signed attachment link / a message link in a
+  # new tab (web-first Trial, ADR 0037/0041). Consumed ONLY by the web variant
+  # of lib/core/platform/external_opener.dart, behind a conditional import;
+  # every other target gets the stub. Already in the graph (transitive).
+  web: ^1.1.0
   # Secure, persistent session tokens — iOS Keychain / Android Keystore-backed
   # storage so a signed-in device survives a cold restart (Sprint 19, ADR 0010).
   # A native plugin: consumed ONLY by lib/data/api/secure_token_store.dart

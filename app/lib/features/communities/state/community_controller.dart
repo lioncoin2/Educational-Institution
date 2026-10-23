@@ -189,19 +189,20 @@ class CommunityController extends AsyncNotifier<CommunityDetailState> {
     (repository) => repository.unlock(communityId),
   );
 
-  /// Associates the community with academic halaqa [halaqaId] — one request,
-  /// reconciled and shown as [lock] is. Oversight only; the link mutates no
-  /// membership. A refusal (e.g. the halaqa does not exist) reads the
-  /// community again.
+  /// Adds academic halaqa [halaqaId] to the community — one request, reconciled
+  /// and shown as [lock] is. Oversight only; the link mutates no membership. A
+  /// group or channel may be associated with many halaqat. A refusal (e.g. the
+  /// halaqa does not exist) reads the community again.
   Future<WriteOutcome<void>> linkHalaqa(String halaqaId) => _write(
     CommunityWrite.linkHalaqa,
     (repository) => repository.linkHalaqa(communityId, halaqaId),
   );
 
-  /// Clears the community's academic halaqa association, as [linkHalaqa] sets it.
-  Future<WriteOutcome<void>> unlinkHalaqa() => _write(
+  /// Removes academic halaqa [halaqaId] from the community, as [linkHalaqa]
+  /// adds it. Idempotent.
+  Future<WriteOutcome<void>> unlinkHalaqa(String halaqaId) => _write(
     CommunityWrite.unlinkHalaqa,
-    (repository) => repository.unlinkHalaqa(communityId),
+    (repository) => repository.unlinkHalaqa(communityId, halaqaId),
   );
 
   /// Replaces the community's title, description and picture — one request,

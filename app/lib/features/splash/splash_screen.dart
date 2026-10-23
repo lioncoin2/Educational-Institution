@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/app_config.dart';
+import '../../app/backend_config.dart';
 import '../../app/routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
@@ -117,8 +118,10 @@ class _SplashScreenState extends State<SplashScreen>
                               color: AppColors.primarySoft,
                             ),
                           ),
-                          const SizedBox(height: Insets.giant),
-                          const _StageChip(),
+                          if (!BackendConfig.isConfigured) ...[
+                            const SizedBox(height: Insets.giant),
+                            const _StageChip(),
+                          ],
                         ],
                       ),
                     ),
