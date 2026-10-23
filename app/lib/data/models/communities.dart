@@ -246,7 +246,7 @@ class Community implements Sourced {
     this.chatMode = CommunityChatMode.unknown,
     this.description,
     this.avatarFileAssetId,
-    this.halaqaId,
+    this.halaqaIds = const [],
     this.origin = DataOrigin.records,
   });
 
@@ -268,7 +268,7 @@ class Community implements Sourced {
     // Optional: absent on an older server, or null when unset.
     description: _optional(json['description']),
     avatarFileAssetId: _optional(json['avatarFileAssetId']),
-    halaqaId: _optional(json['halaqaId']),
+    halaqaIds: (json['halaqaIds'] as List?)?.whereType<String>().toList() ?? const [],
     origin: origin,
   );
 
@@ -295,10 +295,11 @@ class Community implements Sourced {
   /// The chat posting mode (ADR 0039): group open/restricted, or channel.
   final CommunityChatMode chatMode;
 
-  /// The academic halaqa this community is associated with, or null (Q50).
-  /// Inert metadata set by institutional oversight: it confers no membership,
+  /// The academic halaqat this community is associated with (Q50), empty when
+  /// unlinked. A group or channel may be associated with many halaqat. Inert
+  /// metadata set by institutional oversight: it confers no membership,
   /// capability or academic access — nothing in `me` is derived from it.
-  final String? halaqaId;
+  final List<String> halaqaIds;
 
   @override
   final DataOrigin origin;

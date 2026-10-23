@@ -228,6 +228,36 @@ void main() {
     });
   });
 
+  group('cover image (ADR 0038)', () {
+    test('bind — PUT /academic/programs/:id/cover with the asset id', () async {
+      final repo = over((_) => ok({...programRow(), 'coverFileAssetId': 'asset-x'}));
+      final program = await repo.setProgramCover('p:1', 'asset-x');
+      expect(req().method, 'PUT');
+      expect(reqPath(), '/academic/programs/p:1/cover');
+      expect(req().url.path, '/academic/programs/p%3A1/cover');
+      expect(sentBody(), {'coverFileAssetId': 'asset-x'});
+      expect(program.coverFileAssetId, 'asset-x');
+    });
+
+    test('clear — DELETE /academic/programs/:id/cover, no body', () async {
+      final repo = over((_) => ok(programRow()));
+      final program = await repo.clearProgramCover('p:1');
+      expect(req().method, 'DELETE');
+      expect(reqPath(), '/academic/programs/p:1/cover');
+      expect(program.coverFileAssetId, isNull);
+    });
+
+    test('link — GET /academic/programs/:id/cover, resolved absolute', () async {
+      final repo = over(
+        (_) => ok({'url': '/files/local/abc?sig=x', 'expiresAt': '2026-10-21T00:05:00.000Z'}),
+      );
+      final url = await repo.programCoverUrl('p:1');
+      expect(req().method, 'GET');
+      expect(reqPath(), '/academic/programs/p:1/cover');
+      expect(url, Uri.parse('https://api.test/files/local/abc?sig=x'));
+    });
+  });
+
   group('a refusal keeps its code and is not a success', () {
     test('a taken code on create', () async {
       final repo = over((_) => fail(409, 'academic.code_taken'));

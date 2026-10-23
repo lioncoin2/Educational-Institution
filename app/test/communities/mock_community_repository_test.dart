@@ -216,7 +216,6 @@ void main() {
     test(
       'has the chat of every community whose chat the viewer may read',
       () async {
-        final listed = (await messaging.conversations()).items;
         for (final community in (await repo.communities()).items) {
           if (!community.canOpenChat) continue;
           final chat = await messaging.conversationForCommunity(community.id);
@@ -227,7 +226,8 @@ void main() {
           expect(chat.origin, DataOrigin.mock);
           // Posting is what the community allows: its owner, while open.
           expect(chat.canPost, community.me.has(CommunityCapability.chatPost));
-          expect(listed.map((c) => c.id), contains(chat.id));
+          // The chat is reached through Communities, not the direct-only
+          // Messages list.
         }
       },
     );

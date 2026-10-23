@@ -158,6 +158,18 @@ export class InMemoryAcademicStore implements AcademicRepository, AcademicReadMo
     });
   }
 
+  async setProgramCover(
+    id: string,
+    coverFileAssetId: string | null,
+    at: Date,
+  ): Promise<Program | null> {
+    const stored = this.programs.get(id);
+    if (stored === undefined) return null;
+    const updated: Program = { ...stored, coverFileAssetId, updatedAt: at };
+    this.programs.set(id, updated);
+    return updated;
+  }
+
   async setSectionStatus(
     id: string,
     status: StructureStatus,

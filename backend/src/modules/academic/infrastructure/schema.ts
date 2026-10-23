@@ -87,6 +87,14 @@ export const academicPrograms = pgTable(
     name: text('name').notNull(),
     sortOrder: integer('sort_order').notNull(),
     description: text('description'),
+    /**
+     * A Files asset id (the program's cover image), or null. NOT a foreign key:
+     * the row it points at belongs to the files module, exactly as a community's
+     * avatar references it (ADR 0038); its existence is verified through the
+     * files contract when the cover is set, and a viewer turns it into a
+     * short-lived link through academic's own authorized cover route.
+     */
+    coverFileAssetId: text('cover_file_asset_id'),
     status: text('status').$type<StructureStatus>().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),

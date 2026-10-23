@@ -1,4 +1,4 @@
-import type { ParticipantRole } from '../contracts/vocabulary';
+import type { ConversationType, ParticipantRole } from '../contracts/vocabulary';
 import type { ApplyCounts, CommunityMemberState } from './community-chat';
 import type { Conversation, ConversationId, NewConversation } from './conversation';
 import type { Message, MessageDraft, MessageId } from './message';
@@ -275,7 +275,18 @@ export interface MessageSlice {
 export interface MessagingReadModel {
   listConversations(
     userId: string,
-    page: { readonly limit: number; readonly after?: ConversationCursor },
+    page: {
+      readonly limit: number;
+      readonly after?: ConversationCursor;
+      /**
+       * Restrict to these conversation kinds. Omitted = every kind the caller
+       * is a member of (unchanged behaviour, for callers that page the raw
+       * store). The Messages list passes `['DIRECT']` so community group and
+       * channel chats never appear there — those are reached through
+       * Communities' own chat endpoint.
+       */
+      readonly types?: readonly ConversationType[];
+    },
   ): Promise<{
     readonly items: readonly ConversationSummaryRow[];
     readonly next: ConversationCursor | null;

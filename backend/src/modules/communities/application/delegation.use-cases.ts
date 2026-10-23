@@ -525,6 +525,12 @@ export class TransferOwnershipUseCase {
   private async answer(principal: Principal, communityId: string): Promise<Result<CommunityView>> {
     const read = await this.store.authorityOf(communityId, principal.userId);
     if (read.community === null) return err(COMMUNITY_NOT_FOUND);
-    return ok(communityView(read.community, this.authorization.me(principal, communityId, read)));
+    return ok(
+      communityView(
+        read.community,
+        this.authorization.me(principal, communityId, read),
+        read.halaqaIds,
+      ),
+    );
   }
 }

@@ -27,14 +27,15 @@ import type {
   EditProfileChange,
   GrantOutcome,
   LeaveOutcome,
+  LinkHalaqaChange,
   OwnerBasis,
   RedeemOutcome,
   RemoveOutcome,
   RevokeGrantOutcome,
   RevokeInvitationOutcome,
-  SetHalaqaChange,
   StatusChange,
   TransferOutcome,
+  UnlinkHalaqaChange,
 } from '../domain/ports';
 import {
   communityRow,
@@ -49,6 +50,7 @@ import {
 import {
   communities,
   communityCapabilityGrants,
+  communityHalaqaLinks,
   communityInvitations,
   communityMembers,
 } from './schema';
@@ -145,7 +147,7 @@ export class DrizzleCommunityRepository implements CommunityStore {
 
   async authorityOf(communityId: string, userId: string): Promise<CommunityAuthorityRead> {
     const reads = await this.authorityOfEach([communityId], userId);
-    return reads.get(communityId) ?? { community: null, stint: null };
+    return reads.get(communityId) ?? { community: null, stint: null, halaqaIds: [] };
   }
 
   async authorityOfEach(
@@ -166,6 +168,10 @@ export class DrizzleCommunityRepository implements CommunityStore {
         version: communityMembers.version,
         grantId: communityCapabilityGrants.id,
         capability: communityCapabilityGrants.capability,
+        halaqaIds: sql<string[]>`coalesce((
+          select array_agg(l.halaqa_id order by l.linked_at, l.id)
+            from ${communityHalaqaLinks} l
+           where l.community_id = ${communities.id}), '{}')`,
       })
       .from(communities)
       .leftJoin(
@@ -194,6 +200,7 @@ export class DrizzleCommunityRepository implements CommunityStore {
       if (reads.has(row.community.id)) continue;
       reads.set(row.community.id, {
         community: toCommunity(row.community),
+        halaqaIds: row.halaqaIds ?? [],
         stint:
           row.stintId === null ||
           row.standing === null ||
@@ -235,6 +242,10 @@ export class DrizzleCommunityRepository implements CommunityStore {
         version: communityMembers.version,
         grantId: communityCapabilityGrants.id,
         capability: communityCapabilityGrants.capability,
+        halaqaIds: sql<string[]>`coalesce((
+          select array_agg(l.halaqa_id order by l.linked_at, l.id)
+            from ${communityHalaqaLinks} l
+           where l.community_id = ${communities.id}), '{}')`,
       })
       .from(communities)
       .leftJoin(
@@ -257,6 +268,7 @@ export class DrizzleCommunityRepository implements CommunityStore {
     // No row at all: the community is unknown, and nobody has an entry.
     if (first === undefined) return reads;
     const community = toCommunity(first.community);
+    const halaqaIds = first.halaqaIds ?? [];
     const stintOf = new Map<string, NonNullable<CommunityAuthorityRead['stint']>>();
     const grantsOf = new Map<string, HeldGrant[]>();
     for (const row of rows) {
@@ -285,7 +297,7 @@ export class DrizzleCommunityRepository implements CommunityStore {
     }
     // Everyone asked has an entry — with no stint for whoever holds no ACTIVE one here.
     for (const userId of asked) {
-      reads.set(userId, { community, stint: stintOf.get(userId) ?? null });
+      reads.set(userId, { community, halaqaIds, stint: stintOf.get(userId) ?? null });
     }
     return reads;
   }
@@ -340,35 +352,58 @@ export class DrizzleCommunityRepository implements CommunityStore {
     });
   }
 
-  async setHalaqa(input: {
+  async linkHalaqa(input: {
+    readonly linkId: string;
     readonly communityId: string;
-    readonly halaqaId: string | null;
-    readonly actorUserId: string | null;
+    readonly halaqaId: string;
+    readonly linkedBy: string | null;
     readonly at: Date;
-  }): Promise<SetHalaqaChange> {
-    // An oversight act on the community row alone — the lock keeps a concurrent
-    // link change from being lost, and the compare makes a repeat `unchanged`.
-    return this.write(input.communityId, async (tx) => {
-      const [current] = await tx
-        .select()
-        .from(communities)
-        .where(eq(communities.id, input.communityId));
-      if (current === undefined) return { kind: 'not_found' };
-      if (current.halaqaId === input.halaqaId) {
-        return { kind: 'unchanged', community: toCommunity(current) };
-      }
-      const [row] = await tx
-        .update(communities)
-        .set({
-          halaqaId: input.halaqaId,
-          updatedAt: notBefore(communities.updatedAt, input.at),
-        })
-        .where(eq(communities.id, input.communityId))
-        .returning();
-      return row === undefined
-        ? { kind: 'not_found' }
-        : { kind: 'changed', community: toCommunity(row) };
-    });
+  }): Promise<LinkHalaqaChange> {
+    // The link lives in its own table, so the community row is untouched. The
+    // unique index `(community_id, halaqa_id)` makes a repeat a no-op: nothing
+    // is inserted, so nothing comes back, and the link is `already_linked`.
+    const [community] = await this.db
+      .select({ id: communities.id })
+      .from(communities)
+      .where(eq(communities.id, input.communityId));
+    if (community === undefined) return { kind: 'not_found' };
+    const inserted = await this.db
+      .insert(communityHalaqaLinks)
+      .values({
+        id: input.linkId,
+        communityId: input.communityId,
+        halaqaId: input.halaqaId,
+        linkedBy: input.linkedBy,
+        linkedAt: input.at,
+      })
+      .onConflictDoNothing({
+        target: [communityHalaqaLinks.communityId, communityHalaqaLinks.halaqaId],
+      })
+      .returning({ id: communityHalaqaLinks.id });
+    return inserted.length > 0 ? { kind: 'linked' } : { kind: 'already_linked' };
+  }
+
+  async unlinkHalaqa(input: {
+    readonly communityId: string;
+    readonly halaqaId: string;
+  }): Promise<UnlinkHalaqaChange> {
+    // Removes only this one link row; no community, membership or other
+    // association is touched. Removing a link that is not there is `not_linked`.
+    const [community] = await this.db
+      .select({ id: communities.id })
+      .from(communities)
+      .where(eq(communities.id, input.communityId));
+    if (community === undefined) return { kind: 'not_found' };
+    const removed = await this.db
+      .delete(communityHalaqaLinks)
+      .where(
+        and(
+          eq(communityHalaqaLinks.communityId, input.communityId),
+          eq(communityHalaqaLinks.halaqaId, input.halaqaId),
+        ),
+      )
+      .returning({ id: communityHalaqaLinks.id });
+    return removed.length > 0 ? { kind: 'unlinked' } : { kind: 'not_linked' };
   }
 
   async editProfile(input: {

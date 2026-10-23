@@ -5,6 +5,7 @@ import {
   projectMember,
   type CommunityMemberState,
 } from '../domain/community-chat';
+import type { ConversationType } from '../contracts/vocabulary';
 import type { ConversationId, Conversation, NewConversation } from '../domain/conversation';
 import { sameContent, type Message, type MessageDraft, type MessageId } from '../domain/message';
 import { UNREAD_COUNT_CAP } from '../domain/messaging-policy';
@@ -356,11 +357,16 @@ export class InMemoryMessagingStore implements MessagingRepository, MessagingRea
 
   async listConversations(
     userId: string,
-    page: { readonly limit: number; readonly after?: ConversationCursor },
+    page: {
+      readonly limit: number;
+      readonly after?: ConversationCursor;
+      readonly types?: readonly ConversationType[];
+    },
   ) {
     const rows = [...this.participants.values()]
       .filter((participant) => participant.userId === userId && participant.leftAt === null)
       .map((participant) => this.summary(participant))
+      .filter((row) => page.types === undefined || page.types.includes(row.conversation.type))
       .sort(byActivityDescending)
       .filter((row) => page.after === undefined || isBefore(row, page.after));
     const items = rows.slice(0, page.limit);

@@ -7,6 +7,7 @@ import 'package:quran_institution_app/data/models/auth.dart';
 import 'package:quran_institution_app/data/models/data_origin.dart';
 import 'package:quran_institution_app/data/repositories/repositories.dart';
 import 'package:quran_institution_app/features/academic_admin/academic_admin_copy.dart';
+import 'package:quran_institution_app/features/academic_admin/state/academic_structure_controller.dart';
 import 'package:quran_institution_app/providers/app_providers.dart';
 
 import '../communities/community_test_support.dart';
@@ -17,7 +18,12 @@ import '../communities/community_test_support.dart';
 /// server (the fake here), which stays the authority; a refusal is said in
 /// words. Enrolling students is not offered anywhere here.
 class _FakeAcademic implements AcademicRepository {
-  _FakeAcademic({this.failWith});
+  _FakeAcademic({this.failWith, bool programCover = false}) {
+    if (programCover) {
+      ((_sections[0]['programs']! as List)[0]
+          as Map<String, Object?>)['coverFileAssetId'] = 'asset-cover';
+    }
+  }
 
   /// When set, every write is refused with this code.
   String? failWith;
@@ -197,6 +203,36 @@ class _FakeAcademic implements AcademicRepository {
     final program = _findProgram(id);
     program['status'] = active ? 'ACTIVE' : 'INACTIVE';
     return AcademicProgram.fromJson(program);
+  }
+
+  @override
+  Future<AcademicProgram> setProgramCover(String id, String coverFileAssetId) async {
+    writes.add('setProgramCover $id $coverFileAssetId');
+    _maybeFail();
+    final program = _findProgram(id);
+    program['coverFileAssetId'] = coverFileAssetId;
+    return AcademicProgram.fromJson(program);
+  }
+
+  @override
+  Future<AcademicProgram> clearProgramCover(String id) async {
+    writes.add('clearProgramCover $id');
+    _maybeFail();
+    final program = _findProgram(id);
+    program['coverFileAssetId'] = null;
+    return AcademicProgram.fromJson(program);
+  }
+
+  @override
+  Future<Uri> programCoverUrl(String id) async {
+    final program = _findProgram(id);
+    if (program['coverFileAssetId'] == null) {
+      throw const AcademicException(
+        'academic.program_cover_not_found',
+        'No program cover.',
+      );
+    }
+    return Uri.parse('https://files.test/${program['coverFileAssetId']}');
   }
 
   @override
@@ -488,6 +524,47 @@ void main() {
 
     expect(find.text('حلقة ألف'), findsOneWidget);
     expect(addHalaqa, findsOneWidget);
+  });
+
+  testWidgets('shows a fallback thumbnail for a program with no cover (ADR 0038)', (
+    tester,
+  ) async {
+    await openStructure(
+      tester,
+      repo: _FakeAcademic(),
+      user: _user({'academic.manage'}),
+    );
+    // No cover → the neutral book icon stands in, and no cover request is made.
+    expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
+    expect(find.text(AcademicAdminCopy.changeCover), findsNothing); // menu closed
+  });
+
+  testWidgets('removes a program cover through its menu', (tester) async {
+    final repo = _FakeAcademic(programCover: true);
+    await openApp(
+      tester,
+      Routes.academicStructure,
+      overrides: [
+        ...overrides(repo, _user({'academic.manage'})),
+        programCoverUrlProvider('p:1').overrideWith(
+          (ref) async => Uri.parse('https://files.test/asset-cover'),
+        ),
+      ],
+    );
+    await tester.pumpAndSettle();
+    // The program's cover is drawn as a network image (a ClipRRect wrapper),
+    // not the fallback icon.
+    expect(find.byType(ClipRRect), findsWidgets);
+
+    // The program's overflow menu (the section's is first) offers removing it.
+    await tester.tap(find.byIcon(Icons.more_vert).last);
+    await tester.pumpAndSettle();
+    expect(find.text(AcademicAdminCopy.changeCover), findsOneWidget);
+    await tester.tap(find.text(AcademicAdminCopy.removeCover));
+    await tester.pumpAndSettle();
+
+    expect(repo.writes, contains('clearProgramCover p:1'));
+    expect(find.text(AcademicAdminCopy.coverRemoved), findsOneWidget);
   });
 
   testWidgets('adds a halaqa to a program', (tester) async {

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { APP_CONFIG, type AppConfig } from '../../platform/config/app-config';
 import { DATABASE, type Database } from '../../platform/database';
+import { FilesModule } from '../files/files.module';
 import { IdentityModule } from '../identity/identity.module';
 import { MyAcademicController } from './api/my-academic.controller';
 import { AcademicRelationshipsController } from './api/relationships.controller';
@@ -32,6 +33,10 @@ import {
   DevelopmentStructureSeed,
   SeedInstitutionStructureUseCase,
 } from './application/seed-structure.use-case';
+import {
+  GetProgramCoverLinkUseCase,
+  SetProgramCoverUseCase,
+} from './application/program-cover.use-cases';
 import {
   ChangeHalaqaStatusUseCase,
   ChangeProgramStatusUseCase,
@@ -66,8 +71,12 @@ import { InMemoryAcademicStore } from './infrastructure/in-memory-academic-store
  * programs, halaqat, teacher assignments and enrollments.
  *
  * It depends on identity's contracts (may this principal…? who is this
- * account, and may it study or teach?) and on nothing else. It stores account
- * ids, never accounts. It publishes `academic.*` facts and exports one thing:
+ * account, and may it study or teach?) and on files' `FILE_ASSETS` contract
+ * (ADR 0038/0037): a program may carry a cover image, verified and served
+ * through files exactly as a community avatar is, so the dependency runs
+ * academic → files (files → identity, never the reverse, so no cycle). It holds
+ * no raw storage and reads none of files' tables. It stores account ids, never
+ * accounts. It publishes `academic.*` facts and exports one thing:
  * `ACADEMIC_RELATIONSHIPS` — who is in a halaqa now — for the modules that will
  * act per halaqa (attendance, assignments, a teacher's workspace).
  *
@@ -75,7 +84,7 @@ import { InMemoryAcademicStore } from './infrastructure/in-memory-academic-store
  * institution profile; with Postgres, seeding is an explicit command.
  */
 @Module({
-  imports: [IdentityModule],
+  imports: [IdentityModule, FilesModule],
   controllers: [AcademicStructureController, AcademicRelationshipsController, MyAcademicController],
   providers: [
     // Without a database, one in-memory store serves both ports, so what is
@@ -111,6 +120,8 @@ import { InMemoryAcademicStore } from './infrastructure/in-memory-academic-store
     CreateProgramUseCase,
     UpdateProgramUseCase,
     ChangeProgramStatusUseCase,
+    SetProgramCoverUseCase,
+    GetProgramCoverLinkUseCase,
     CreateHalaqaUseCase,
     UpdateHalaqaUseCase,
     ChangeHalaqaStatusUseCase,

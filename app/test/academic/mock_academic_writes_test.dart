@@ -56,6 +56,11 @@ void main() {
       throwsUnsupported(),
     );
     await expectLater(
+      repo.setProgramCover('p', 'asset-cover'),
+      throwsUnsupported(),
+    );
+    await expectLater(repo.clearProgramCover('p'), throwsUnsupported());
+    await expectLater(
       repo.createHalaqa(programId: 'p', code: 'c', name: 'n', order: 1),
       throwsUnsupported(),
     );
@@ -66,6 +71,19 @@ void main() {
     await expectLater(
       repo.setHalaqaActive('h', active: false),
       throwsUnsupported(),
+    );
+  });
+
+  test('a cover link reads as "no cover" in the demo, never a fake image', () async {
+    await expectLater(
+      repo.programCoverUrl('p'),
+      throwsA(
+        isA<AcademicException>().having(
+          (e) => e.code,
+          'code',
+          'academic.program_cover_not_found',
+        ),
+      ),
     );
   });
 

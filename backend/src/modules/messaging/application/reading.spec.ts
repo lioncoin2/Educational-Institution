@@ -16,33 +16,36 @@ describe('reading conversations', () => {
   afterEach(() => h.cleanup());
 
   describe('the conversation list', () => {
-    it('lists only the caller’s conversations, most recently active first', async () => {
-      const teacher = h.person(Roles.teacher);
+    it('lists only the caller’s DIRECT conversations, most recently active first — never a group/channel', async () => {
+      const teacherA = h.person(Roles.teacher);
+      const teacherB = h.person(Roles.teacher);
       const student = h.person(Roles.student);
-      const stranger = h.person(Roles.teacher);
-      const quiet = await h.group(teacher, [student], 'Quiet');
+      const quiet = await h.direct(student, teacherA);
       h.clock.advance(60);
-      const busy = await h.group(teacher, [student], 'Busy');
+      const busy = await h.direct(student, teacherB);
       h.clock.advance(60);
-      await h.text(teacher, quiet.id, 'wakes up');
-      await h.group(stranger, [], 'Not yours');
+      await h.text(teacherA, quiet.id, 'wakes up');
+      // The student is a member of this group, but Messages is direct-only, so
+      // it must never appear here — it is reached through Communities.
+      await h.group(teacherA, [student], 'Study group');
 
       const list = expectOk(await h.listConversations.execute({ principal: student }));
-      expect(list.items.map((c) => c.title)).toEqual(['Quiet', 'Busy']);
+      expect(list.items.map((c) => c.id)).toEqual([quiet.id, busy.id]);
+      expect(list.items.every((c) => c.type === 'DIRECT')).toBe(true);
       expect(list.items[0]).toMatchObject({
         unreadCount: 1,
-        lastMessage: { sequence: 1, senderId: teacher.userId, type: 'TEXT', text: 'wakes up' },
+        lastMessage: { sequence: 1, senderId: teacherA.userId, type: 'TEXT', text: 'wakes up' },
       });
       expect(list.items.map((c) => c.id)).not.toContain(undefined);
-      expect(list.items.map((c) => c.id)).toEqual([quiet.id, busy.id]);
     });
 
     it('pages with an opaque cursor, each conversation exactly once', async () => {
       const teacher = h.person(Roles.teacher);
-      const titles: string[] = [];
+      const ids: string[] = [];
       for (let i = 0; i < 7; i++) {
-        titles.unshift(`G${i}`);
-        await h.group(teacher, [], `G${i}`);
+        const student = h.person(Roles.student);
+        const direct = await h.direct(teacher, student);
+        ids.unshift(direct.id);
         h.clock.advance(1);
       }
       const seen: string[] = [];
@@ -51,10 +54,10 @@ describe('reading conversations', () => {
         const page = expectOk(
           await h.listConversations.execute({ principal: teacher, cursor, limit: 3 }),
         );
-        seen.push(...page.items.map((c) => c.title ?? ''));
+        seen.push(...page.items.map((c) => c.id));
         cursor = page.nextCursor ?? undefined;
       } while (cursor !== undefined);
-      expect(seen).toEqual(titles);
+      expect(seen).toEqual(ids);
     });
 
     it('refuses a cursor it did not issue', async () => {

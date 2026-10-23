@@ -1,7 +1,9 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/extensions/context_ext.dart';
+import '../../../core/platform/external_opener.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/foundations/app_avatar.dart';
 import '../../../data/models/messaging.dart';
@@ -470,10 +472,9 @@ class _MessageContent extends StatelessWidget {
         message: message,
         attachment: attachment,
       ),
-      MessageType.file when attachment != null => _FileSummary(
-        icon: Icons.description_outlined,
-        name: attachment.displayName ?? 'ملف',
-        detail: MessagingCopy.size(attachment.byteSize),
+      MessageType.file when attachment != null => FileAttachment(
+        message: message,
+        attachment: attachment,
       ),
       _ => Text(
         'نوع رسالة لا يدعمه هذا الإصدار',
@@ -486,7 +487,7 @@ class _MessageContent extends StatelessWidget {
       children: [
         ?media,
         if (media != null && caption != null) const SizedBox(height: Insets.xs),
-        if (caption != null) Text(caption),
+        if (caption != null) MessageText(caption),
       ],
     );
   }
@@ -535,12 +536,20 @@ class ImageAttachment extends ConsumerWidget {
                       ),
                       error: (_, _) =>
                           const _MediaPlaceholder(icon: Icons.image_outlined),
-                      data: (url) => Image.network(
-                        url.toString(),
-                        fit: BoxFit.cover,
-                        semanticLabel: attachment.displayName ?? 'صورة',
-                        errorBuilder: (_, _, _) => const _MediaPlaceholder(
-                          icon: Icons.broken_image_outlined,
+                      data: (url) => GestureDetector(
+                        key: const Key('image-attachment-open'),
+                        onTap: () => _openImageViewer(
+                          context,
+                          url,
+                          attachment.displayName ?? 'صورة',
+                        ),
+                        child: Image.network(
+                          url.toString(),
+                          fit: BoxFit.cover,
+                          semanticLabel: attachment.displayName ?? 'صورة',
+                          errorBuilder: (_, _, _) => const _MediaPlaceholder(
+                            icon: Icons.broken_image_outlined,
+                          ),
                         ),
                       ),
                     ),
@@ -658,3 +667,234 @@ IconData _iconFor(MessageType type) => switch (type) {
   MessageType.image => Icons.image_outlined,
   _ => Icons.description_outlined,
 };
+
+/// Opens [url] as a full-screen, zoomable image on top of everything, returning
+/// to the same conversation on close (Requirement C — a recipient opens a
+/// published/sent image to full size). The link is the same short-lived signed
+/// URL the thumbnail already resolved; no new request, no durable URL stored.
+void _openImageViewer(BuildContext context, Uri url, String label) {
+  Navigator.of(context, rootNavigator: true).push(
+    MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => _ImageViewerScreen(url: url, label: label),
+    ),
+  );
+}
+
+class _ImageViewerScreen extends StatelessWidget {
+  const _ImageViewerScreen({required this.url, required this.label});
+
+  final Uri url;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: const Key('image-viewer'),
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        leading: IconButton(
+          key: const Key('image-viewer-close'),
+          icon: const Icon(Icons.close_rounded),
+          tooltip: 'إغلاق',
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+      ),
+      body: Center(
+        child: InteractiveViewer(
+          minScale: 1,
+          maxScale: 5,
+          child: Image.network(
+            url.toString(),
+            fit: BoxFit.contain,
+            semanticLabel: label,
+            errorBuilder: (_, _, _) =>
+                const _MediaPlaceholder(icon: Icons.broken_image_outlined),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A file attachment: its name and size, tapped to open or download it through
+/// the browser (web-first Trial) using the short-lived signed link the server
+/// issues only to a member who can see this message (Requirement C). An
+/// unavailable file is shown but not tappable; a build that cannot open a URL
+/// says so rather than failing silently.
+class FileAttachment extends ConsumerWidget {
+  const FileAttachment({
+    super.key,
+    required this.message,
+    required this.attachment,
+  });
+
+  final Message message;
+  final Attachment attachment;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final name = attachment.displayName ?? 'ملف';
+    final available = attachment.available;
+    return InkWell(
+      key: const Key('file-attachment'),
+      borderRadius: Radii.brMd,
+      onTap: available ? () => _open(context, ref) : null,
+      child: Padding(
+        padding: const EdgeInsets.all(Insets.xs),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              available
+                  ? Icons.description_outlined
+                  : Icons.image_not_supported_outlined,
+              color: context.colors.primary,
+            ),
+            const SizedBox(width: Insets.sm),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(
+                    available
+                        ? MessagingCopy.size(attachment.byteSize)
+                        : 'الملف غير متاح',
+                    style: context.text.labelSmall,
+                  ),
+                ],
+              ),
+            ),
+            if (available) ...[
+              const SizedBox(width: Insets.sm),
+              Icon(
+                Icons.open_in_new_rounded,
+                size: 16,
+                color: context.colors.primary,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _open(BuildContext context, WidgetRef ref) async {
+    try {
+      final url = await ref
+          .read(messagingRepositoryProvider)
+          .attachmentUrl(
+            message.conversationId,
+            message.id,
+            attachment.fileAssetId,
+          );
+      openExternalUrl(url);
+    } on MessagingException catch (error) {
+      if (context.mounted) context.toast(MessagingCopy.error(error.code));
+    } on UnsupportedError {
+      if (context.mounted) {
+        context.toast('فتح الملفات متاح على الويب في هذا الإصدار');
+      }
+    }
+  }
+}
+
+/// Message text with its http/https links made tappable (Requirement C). A link
+/// opens in a new browser tab only after its scheme is checked as http/https,
+/// so an unsafe scheme (e.g. `javascript:`) is never matched and stays inert
+/// text. There is no link content type or preview in the product; a link rides
+/// inside an ordinary text message.
+class MessageText extends StatefulWidget {
+  const MessageText(this.text, {super.key});
+
+  final String text;
+
+  @override
+  State<MessageText> createState() => _MessageTextState();
+}
+
+class _MessageTextState extends State<MessageText> {
+  final _recognizers = <TapGestureRecognizer>[];
+
+  @override
+  void dispose() {
+    _clearRecognizers();
+    super.dispose();
+  }
+
+  void _clearRecognizers() {
+    for (final recognizer in _recognizers) {
+      recognizer.dispose();
+    }
+    _recognizers.clear();
+  }
+
+  void _open(Uri url) {
+    try {
+      openExternalUrl(url);
+    } on UnsupportedError {
+      if (mounted) context.toast('فتح الروابط متاح على الويب في هذا الإصدار');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _clearRecognizers();
+    final runs = _linkRuns(widget.text);
+    if (runs.every((run) => run.url == null)) return Text(widget.text);
+    final linkStyle = context.text.bodyMedium?.copyWith(
+      color: context.colors.primary,
+      decoration: TextDecoration.underline,
+    );
+    final spans = <InlineSpan>[];
+    for (final run in runs) {
+      final url = run.url;
+      if (url == null) {
+        spans.add(TextSpan(text: run.text));
+      } else {
+        final recognizer = TapGestureRecognizer()..onTap = () => _open(url);
+        _recognizers.add(recognizer);
+        spans.add(
+          TextSpan(text: run.text, style: linkStyle, recognizer: recognizer),
+        );
+      }
+    }
+    return Text.rich(TextSpan(children: spans));
+  }
+}
+
+class _LinkRun {
+  const _LinkRun(this.text, this.url);
+
+  final String text;
+  final Uri? url;
+}
+
+final _urlPattern = RegExp(r'https?://[^\s]+', caseSensitive: false);
+
+/// Splits [text] into plain runs and tappable-link runs. Only http/https are
+/// turned into links (the pattern, re-checked against the parsed scheme), so an
+/// unsafe scheme is never followed.
+List<_LinkRun> _linkRuns(String text) {
+  final runs = <_LinkRun>[];
+  var index = 0;
+  for (final match in _urlPattern.allMatches(text)) {
+    if (match.start > index) {
+      runs.add(_LinkRun(text.substring(index, match.start), null));
+    }
+    final raw = match.group(0)!;
+    final uri = Uri.tryParse(raw);
+    runs.add(
+      uri != null && (uri.scheme == 'http' || uri.scheme == 'https')
+          ? _LinkRun(raw, uri)
+          : _LinkRun(raw, null),
+    );
+    index = match.end;
+  }
+  if (index < text.length) runs.add(_LinkRun(text.substring(index), null));
+  if (runs.isEmpty) runs.add(_LinkRun(text, null));
+  return runs;
+}

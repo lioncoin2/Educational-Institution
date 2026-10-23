@@ -62,13 +62,21 @@ export interface CommunityView {
   readonly status: string;
   readonly lifecycleVersion: number;
   readonly memberCount: number;
-  /** The academic halaqa this community is associated with, or null (Q50). */
-  readonly halaqaId: string | null;
+  /**
+   * The academic halaqat this community is associated with (Q50) — the
+   * canonical association ids, the same in the list and the detail, empty when
+   * unlinked. A group or channel may be associated with many halaqat.
+   */
+  readonly halaqaIds: readonly string[];
   readonly createdAt: Date;
   readonly me: MeView;
 }
 
-export function communityView(community: Community, me: MeView): CommunityView {
+export function communityView(
+  community: Community,
+  me: MeView,
+  halaqaIds: readonly string[],
+): CommunityView {
   return {
     id: community.id,
     title: community.title,
@@ -78,7 +86,7 @@ export function communityView(community: Community, me: MeView): CommunityView {
     status: community.status,
     lifecycleVersion: community.lifecycleVersion,
     memberCount: community.memberCount,
-    halaqaId: community.halaqaId,
+    halaqaIds: [...halaqaIds],
     createdAt: community.createdAt,
     me,
   };

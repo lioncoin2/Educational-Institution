@@ -1,0 +1,1 @@
+ALTER TABLE "academic_programs" ADD COLUMN "cover_file_asset_id" text;

@@ -103,6 +103,18 @@ void main() {
     );
   });
 
+  test('reads the optional cover image reference, null when absent (ADR 0038)', () {
+    // Absent on an older server, or null when unset.
+    expect(AcademicProgram.fromJson(program()).coverFileAssetId, isNull);
+    expect(
+      AcademicProgram.fromJson({
+        ...program(),
+        'coverFileAssetId': 'asset-cover',
+      }).coverFileAssetId,
+      'asset-cover',
+    );
+  });
+
   group('my academic record', () {
     Map<String, Object?> placement() => {
       'section': {

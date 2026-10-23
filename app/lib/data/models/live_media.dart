@@ -240,6 +240,7 @@ class LiveRemoteParticipant {
     required this.identity,
     this.audio = LiveRemoteAudio.none,
     this.screenSharing = false,
+    this.screenShareTrack,
   });
 
   final String identity;
@@ -249,15 +250,28 @@ class LiveRemoteParticipant {
   /// never the presenter slot (authority).
   final bool screenSharing;
 
+  /// An opaque handle to the remote screen-share VIDEO track, for rendering the
+  /// shared screen in the session UI (Requirement B). It is a LiveKit
+  /// `VideoTrack` at runtime, understood only by the LiveKit adapter's render
+  /// widget; null until a track is subscribed. Kept as [Object?] so this model
+  /// stays free of the media SDK (ADR 0030 / live_boundaries_test).
+  final Object? screenShareTrack;
+
   @override
   bool operator ==(Object other) =>
       other is LiveRemoteParticipant &&
       other.identity == identity &&
       other.audio == audio &&
-      other.screenSharing == screenSharing;
+      other.screenSharing == screenSharing &&
+      identical(other.screenShareTrack, screenShareTrack);
 
   @override
-  int get hashCode => Object.hash(identity, audio, screenSharing);
+  int get hashCode => Object.hash(
+    identity,
+    audio,
+    screenSharing,
+    identityHashCode(screenShareTrack),
+  );
 
   @override
   String toString() =>

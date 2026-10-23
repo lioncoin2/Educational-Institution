@@ -185,6 +185,10 @@ LiveKitRemoteParticipants _remoteParticipantsOf(Room room) {
       (pub) => pub.source == TrackSource.microphone,
     );
     final mic = mics.isEmpty ? null : mics.first;
+    final screens = participant.videoTrackPublications.where(
+      (pub) => pub.source == TrackSource.screenShareVideo,
+    );
+    final screen = screens.isEmpty ? null : screens.first;
     byIdentity[participant.identity] = LiveRemoteParticipant(
       identity: participant.identity,
       audio: remoteAudioState(
@@ -194,6 +198,10 @@ LiveKitRemoteParticipants _remoteParticipantsOf(Room room) {
       ),
       // Published AND unmuted (the SDK's own rule) — never presenter authority.
       screenSharing: participant.isScreenShareEnabled(),
+      // The subscribed screen-share video track, for rendering the shared
+      // screen (Requirement B). An opaque handle across the seam; only the
+      // adapter's render widget reads it. Null until the track is subscribed.
+      screenShareTrack: (screen?.subscribed ?? false) ? screen?.track : null,
     );
   }
   return LiveKitRemoteParticipants(

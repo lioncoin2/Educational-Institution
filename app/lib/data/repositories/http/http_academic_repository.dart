@@ -155,6 +155,32 @@ class HttpAcademicRepository implements AcademicRepository {
   );
 
   @override
+  Future<AcademicProgram> setProgramCover(
+    String programId,
+    String coverFileAssetId,
+  ) => _call(
+    () async => AcademicProgram.fromJson(
+      await _api.put(
+        '${_program(programId)}/cover',
+        body: {'coverFileAssetId': coverFileAssetId},
+      ),
+    ),
+  );
+
+  @override
+  Future<AcademicProgram> clearProgramCover(String programId) => _call(
+    () async =>
+        AcademicProgram.fromJson(await _api.delete('${_program(programId)}/cover')),
+  );
+
+  @override
+  Future<Uri> programCoverUrl(String programId) => _call(
+    () async => _api.resolve(
+      (await _api.get('${_program(programId)}/cover'))['url']! as String,
+    ),
+  );
+
+  @override
   Future<AcademicHalaqa> createHalaqa({
     required String programId,
     required String code,

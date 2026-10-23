@@ -71,14 +71,6 @@ export const communities = pgTable(
     lifecycleVersion: integer('lifecycle_version').notNull().default(1),
     membershipVersion: bigint('membership_version', { mode: 'number' }).notNull().default(0),
     memberCount: integer('member_count').notNull().default(0),
-    /**
-     * An optional academic halaqa this community is associated with (Q50) —
-     * inert metadata. NOT a foreign key: academic owns `academic_halaqat`, and
-     * no module holds a constraint on another's tables (§17). No uniqueness: a
-     * halaqa may back any number of communities, so no cardinality rule is
-     * imposed. The link derives no membership, capability or authorization.
-     */
-    halaqaId: text('halaqa_id'),
     createdBy: text('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     statusChangedAt: timestamp('status_changed_at', { withTimezone: true }),
@@ -102,6 +94,43 @@ export const communities = pgTable(
     check('communities_membership_version_nonnegative', sql`${table.membershipVersion} >= 0`),
     check('communities_member_count_nonnegative', sql`${table.memberCount} >= 0`),
     check('communities_updated_after_created', sql`${table.updatedAt} >= ${table.createdAt}`),
+  ],
+);
+
+/**
+ * A community's academic halaqa associations (Q50, ADR 0033): a many-to-many
+ * link between a group or channel and the academic halaqat it is associated
+ * with. A group or channel may be associated with many halaqat, and a halaqa
+ * may back many groups and channels.
+ *
+ * Inert metadata, set and cleared by institutional oversight: a link creates
+ * and removes no membership, grants and revokes no capability, and derives no
+ * messaging, attendance or academic authorization. `community_id` is a real,
+ * RESTRICT foreign key (a community is never deleted, Q47). `halaqa_id` is NOT
+ * a foreign key — academic owns `academic_halaqat`, and no module holds a
+ * constraint on another's tables (§17); its existence is validated through
+ * academic's read-only relationships contract before a link is written. The
+ * unique index makes a duplicate `(community, halaqa)` impossible, so linking
+ * the same halaqa twice writes nothing and removing one link touches no other.
+ */
+export const communityHalaqaLinks = pgTable(
+  'community_halaqa_links',
+  {
+    id: text('id').primaryKey(),
+    communityId: text('community_id')
+      .notNull()
+      .references(() => communities.id, { onDelete: 'restrict' }),
+    halaqaId: text('halaqa_id').notNull(),
+    /** The overseer who created the link, or null for one backfilled from the legacy scalar. */
+    linkedBy: text('linked_by'),
+    linkedAt: timestamp('linked_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    // At most one link per (community, halaqa): a repeat link is a no-op, and
+    // this is also the forward lookup "a community's halaqat".
+    uniqueIndex('community_halaqa_links_unique').on(table.communityId, table.halaqaId),
+    // The reverse lookup "a halaqa's communities".
+    index('community_halaqa_links_by_halaqa').on(table.halaqaId),
   ],
 );
 
@@ -299,6 +328,7 @@ export const communityCapabilityGrants = pgTable(
 );
 
 export type CommunityRow = typeof communities.$inferSelect;
+export type CommunityHalaqaLinkRow = typeof communityHalaqaLinks.$inferSelect;
 export type CommunityMemberRow = typeof communityMembers.$inferSelect;
 export type CommunityInvitationRow = typeof communityInvitations.$inferSelect;
 export type CommunityGrantRow = typeof communityCapabilityGrants.$inferSelect;

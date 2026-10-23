@@ -267,8 +267,8 @@ class HttpCommunityRepository implements CommunityRepository {
   @override
   Future<Community> linkHalaqa(String communityId, String halaqaId) => _call(
     () async => Community.fromJson(
-      await _api.put(
-        '${_community(communityId)}/halaqa',
+      await _api.post(
+        '${_community(communityId)}/halaqat',
         body: {'halaqaId': halaqaId},
       ),
       origin: DataOrigin.records,
@@ -276,9 +276,9 @@ class HttpCommunityRepository implements CommunityRepository {
   );
 
   @override
-  Future<Community> unlinkHalaqa(String communityId) => _call(
+  Future<Community> unlinkHalaqa(String communityId, String halaqaId) => _call(
     () async => Community.fromJson(
-      await _api.delete('${_community(communityId)}/halaqa'),
+      await _api.delete('${_community(communityId)}/halaqat/${_segment(halaqaId)}'),
       origin: DataOrigin.records,
     ),
   );

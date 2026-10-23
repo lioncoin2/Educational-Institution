@@ -480,7 +480,11 @@ export class RedeemInvitationUseCase {
     if (read.community === null) return err(COMMUNITY_NOT_FOUND);
     return ok({
       kind,
-      community: communityView(read.community, this.authorization.me(principal, communityId, read)),
+      community: communityView(
+        read.community,
+        this.authorization.me(principal, communityId, read),
+        read.halaqaIds,
+      ),
     });
   }
 }

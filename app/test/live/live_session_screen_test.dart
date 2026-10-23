@@ -1011,4 +1011,54 @@ void main() {
       expect(find.byKey(const Key('live-audio-on-u-1')), findsNothing);
     });
   });
+
+  group('the shared screen (Requirement B)', () {
+    testWidgets('renders a remote broadcaster’s screen share, and clears it', (
+      tester,
+    ) async {
+      final media = FakeLiveMediaClient();
+      addTearDown(media.dispose);
+      await pump(tester, fake(_session()), media: media);
+      await tester.pumpAndSettle();
+      // Nothing shared yet.
+      expect(find.byKey(const Key('live-screen-share')), findsNothing);
+
+      // A remote starts sharing — the participant-facing render appears.
+      media.emitRemote(
+        LiveRemoteParticipants(
+          Map.unmodifiable({
+            'teacher-1': const LiveRemoteParticipant(
+              identity: 'teacher-1',
+              screenSharing: true,
+            ),
+          }),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('live-screen-share')), findsOneWidget);
+      expect(find.text(LiveCopy.liveScreenSharing), findsWidgets);
+
+      // It stops — the shared-screen area goes, the session stays.
+      media.emitRemote(
+        LiveRemoteParticipants(
+          Map.unmodifiable({
+            'teacher-1': const LiveRemoteParticipant(identity: 'teacher-1'),
+          }),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('live-screen-share')), findsNothing);
+      expect(find.text(LiveCopy.liveNow), findsOneWidget);
+    });
+
+    testWidgets('shows no shared screen with no media provider bound', (
+      tester,
+    ) async {
+      // The Unavailable seam reports no remote participants — nothing shown,
+      // so the shared screen is never advertised where it cannot render.
+      await pump(tester, fake(_session()));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('live-screen-share')), findsNothing);
+    });
+  });
 }

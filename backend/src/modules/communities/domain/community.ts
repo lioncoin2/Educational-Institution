@@ -10,10 +10,11 @@ import type { CommunityChatMode, CommunityStatus } from '../contracts/vocabulary
  * GROUP_OPEN / GROUP_RESTRICTED / CHANNEL): the product kind (group vs channel)
  * and, for a group, whether ordinary members may post. The mode is a label and
  * a policy input, never the authorization itself — `COMMUNITY_AUTHORIZATION`
- * decides posting from it on every send. It MAY carry an optional academic
- * halaqa association (`halaqaId`, Q50): inert metadata, set and cleared by
- * institutional oversight, deriving no membership, capability or authorization.
- * A community is never deleted (Q47).
+ * decides posting from it on every send. It MAY be associated with academic
+ * halaqat (Q50) — a many-to-many link held in `community_halaqa_links`, not on
+ * this root: inert metadata, set and cleared by institutional oversight,
+ * deriving no membership, capability or authorization. A community is never
+ * deleted (Q47).
  *
  * `status` and `chatMode` are typed as the known vocabulary, but a row written
  * by a later build may carry a value this one does not know; the consuming code
@@ -39,8 +40,6 @@ export interface Community {
   readonly membershipVersion: number;
   /** ACTIVE stints, kept in the same transaction as every stint start and end. No upper bound. */
   readonly memberCount: number;
-  /** An optional academic halaqa association (Q50): inert metadata, null when unlinked. */
-  readonly halaqaId: string | null;
   /** Always a person in v1; nullable only for symmetry with the journals. */
   readonly createdBy: string | null;
   readonly createdAt: Date;
@@ -71,7 +70,6 @@ export function newCommunity(input: {
     lifecycleVersion: 1,
     membershipVersion: 1,
     memberCount: 1,
-    halaqaId: null,
     createdBy: input.createdBy,
     createdAt: input.at,
     statusChangedAt: null,

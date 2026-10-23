@@ -115,8 +115,9 @@ void main() {
     }
     // The reads are the four structure GETs, the two roster GETs, the two
     // admin relationship-history GETs (one student's enrolments, one teacher's
-    // assignments), and the two SELF-history GETs (the signed-in person's own
-    // `me/enrollments` and `me/teaching`).
-    expect(RegExp(r'_api\.get\(').allMatches(http), hasLength(10));
+    // assignments), the two SELF-history GETs (the signed-in person's own
+    // `me/enrollments` and `me/teaching`), and the program cover link GET
+    // (ADR 0038).
+    expect(RegExp(r'_api\.get\(').allMatches(http), hasLength(11));
   });
 }

@@ -56,8 +56,8 @@ void main() {
     expect(find.text(CommunityCopy.halaqaTitle), findsOneWidget);
     expect(find.text(CommunityCopy.linkHalaqa), findsOneWidget);
     expect(find.text(CommunityCopy.halaqaNone), findsOneWidget);
-    // Nothing is linked yet, so there is nothing to unlink.
-    expect(find.text(CommunityCopy.unlinkHalaqa), findsNothing);
+    // Nothing is linked yet, so there is no remove control.
+    expect(find.byIcon(Icons.link_off_rounded), findsNothing);
   });
 
   testWidgets('is withheld from a plain member', (tester) async {
@@ -81,24 +81,39 @@ void main() {
 
     // Exactly one link request, carrying the chosen halaqa's id.
     expect(repo.writes, contains('linkHalaqa $owned hal-1'));
-    // The community now shows the association, resolved to the halaqa's name.
-    expect(find.text(CommunityCopy.changeHalaqa), findsOneWidget);
-    expect(find.text(CommunityCopy.halaqaLinked('حلقة ألف')), findsOneWidget);
+    // The community now shows the association as a row, resolved to its name,
+    // and the button to add another halaqa is still offered.
+    expect(find.text('حلقة ألف'), findsOneWidget);
+    expect(find.text(CommunityCopy.linkHalaqa), findsOneWidget);
+    expect(find.byIcon(Icons.link_off_rounded), findsOneWidget);
   });
 
-  testWidgets('unlinks after asking, and shows it unlinked', (tester) async {
+  testWidgets('shows one row per associated halaqa (many-to-many)', (tester) async {
+    await repo.linkHalaqa(owned, 'hal-1');
+    await repo.linkHalaqa(owned, 'hal-2');
+    await openAt(tester, '/communities/$owned');
+    expect(find.text('حلقة ألف'), findsOneWidget);
+    expect(find.text('حلقة باء'), findsOneWidget);
+    // Each association has its own remove control.
+    expect(find.byIcon(Icons.link_off_rounded), findsNWidgets(2));
+    expect(find.text(CommunityCopy.halaqaNone), findsNothing);
+  });
+
+  testWidgets('unlinks one halaqa after asking, and shows it removed', (tester) async {
     await repo.linkHalaqa(owned, 'hal-2'); // already linked
     await openAt(tester, '/communities/$owned');
-    expect(find.text(CommunityCopy.unlinkHalaqa), findsOneWidget);
+    final unlink = find.byTooltip(CommunityCopy.unlinkHalaqa);
+    expect(unlink, findsOneWidget);
 
-    await tester.ensureVisible(find.text(CommunityCopy.unlinkHalaqa));
-    await tester.tap(find.text(CommunityCopy.unlinkHalaqa));
+    await tester.ensureVisible(unlink);
+    await tester.tap(unlink);
     await tester.pumpAndSettle();
     await tester.tap(find.text(CommunityCopy.confirmUnlinkHalaqa));
     await tester.pumpAndSettle();
 
-    expect(repo.writes, contains('unlinkHalaqa $owned'));
-    // Back to offering a link, with nothing linked.
+    // The remove request carries the specific halaqa id.
+    expect(repo.writes, contains('unlinkHalaqa $owned hal-2'));
+    // Back to nothing linked, with the add control still offered.
     expect(find.text(CommunityCopy.linkHalaqa), findsOneWidget);
     expect(find.text(CommunityCopy.halaqaNone), findsOneWidget);
   });
@@ -108,8 +123,9 @@ void main() {
     await openAt(tester, '/communities/$owned');
     repo.failWritesWith = 'communities.halaqa_not_found';
 
-    await tester.ensureVisible(find.text(CommunityCopy.unlinkHalaqa));
-    await tester.tap(find.text(CommunityCopy.unlinkHalaqa));
+    final unlink = find.byTooltip(CommunityCopy.unlinkHalaqa);
+    await tester.ensureVisible(unlink);
+    await tester.tap(unlink);
     await tester.pumpAndSettle();
     await tester.tap(find.text(CommunityCopy.confirmUnlinkHalaqa));
     await tester.pumpAndSettle();
@@ -263,6 +279,16 @@ class _FakeAcademic implements AcademicRepository {
     String programId, {
     required bool active,
   }) => throw UnimplementedError();
+
+  @override
+  Future<AcademicProgram> setProgramCover(String programId, String coverFileAssetId) =>
+      throw UnimplementedError();
+
+  @override
+  Future<AcademicProgram> clearProgramCover(String programId) => throw UnimplementedError();
+
+  @override
+  Future<Uri> programCoverUrl(String programId) => throw UnimplementedError();
 
   @override
   Future<AcademicHalaqa> createHalaqa({

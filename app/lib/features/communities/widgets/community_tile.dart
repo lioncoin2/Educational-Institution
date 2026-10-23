@@ -1,18 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/extensions/context_ext.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../core/widgets/foundations/app_avatar.dart';
 import '../../../core/widgets/foundations/app_card.dart';
 import '../../../core/widgets/foundations/stat_badge.dart';
 import '../../../data/models/communities.dart';
 import '../community_copy.dart';
+import '../state/community_controller.dart';
 
-/// One row of «مجتمعاتي»: the community, how many are in it, whether it is
-/// locked, and where the viewer stands in it.
+/// One row of «مجتمعاتي»: the community's picture, its title, how many are in
+/// it, whether it is locked, and where the viewer stands in it.
+///
+/// The picture is the community's own avatar — the same image the detail page,
+/// the chat header, and the edit sheet show — resolved through the existing
+/// short-lived signed link ([communityAvatarUrlProvider]); a community without
+/// a picture, or one whose link fails, falls back to its initial (AppAvatar),
+/// so the card never waits on an image or shows a gap. The fetch is skipped
+/// entirely for a picture-less community (its `avatarFileAssetId` is null on
+/// every list item), so a list of them makes no avatar requests at all.
 ///
 /// The figures sit in a [Wrap], so at the largest text scale on a small
 /// phone they move to a second line instead of overflowing.
-class CommunityTile extends StatelessWidget {
+class CommunityTile extends ConsumerWidget {
   const CommunityTile({
     super.key,
     required this.community,
@@ -23,7 +34,10 @@ class CommunityTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final imageUrl = community.avatarFileAssetId == null
+        ? null
+        : ref.watch(communityAvatarUrlProvider(community.id)).value;
     return AppCard(
       onTap: onTap,
       padding: const EdgeInsets.all(Insets.md),
@@ -31,20 +45,7 @@ class CommunityTile extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            alignment: AlignmentDirectional.center,
-            decoration: BoxDecoration(
-              color: context.colors.primaryContainer,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.groups_2_outlined,
-              size: 22,
-              color: context.colors.onPrimaryContainer,
-            ),
-          ),
+          AppAvatar(name: community.title, imageUrl: imageUrl, radius: 22),
           const SizedBox(width: Insets.md),
           Expanded(
             child: Column(

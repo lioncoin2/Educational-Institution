@@ -15,6 +15,7 @@ import 'widgets/live_hand_control.dart';
 import 'widgets/live_media_panel.dart';
 import 'widgets/live_moderation_actions.dart';
 import 'widgets/live_roster.dart';
+import 'widgets/live_screen_share.dart';
 import 'widgets/live_states.dart';
 
 /// A community's live session: whether one is running now, who hosts it, and
@@ -136,6 +137,10 @@ class _SessionView extends StatelessWidget {
             ],
           ),
         ),
+        // The broadcaster's shared screen, when one is sharing — rendered for
+        // eligible participants (Requirement B). Shows nothing when no one is
+        // sharing, and nothing where no real media provider is bound.
+        const LiveScreenShare(),
         // The viewer's own hand — ask for the floor, or lower it / yield once
         // up. Shown only as the server's `me` allows (canRaiseHand, or an open
         // hand). Authority stays the server's; granting the floor permits

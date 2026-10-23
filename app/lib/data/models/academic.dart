@@ -100,6 +100,7 @@ class AcademicProgram {
     required this.status,
     required this.activeHalaqaCount,
     this.description,
+    this.coverFileAssetId,
   });
 
   /// Throws [FormatException] when it cannot be identified or named.
@@ -113,6 +114,7 @@ class AcademicProgram {
         status: StructureStatus.fromWire(json['status']),
         activeHalaqaCount: _int(json['activeHalaqaCount']),
         description: _optional(json['description']),
+        coverFileAssetId: _optional(json['coverFileAssetId']),
       );
 
   /// The server's id — what the API is asked by.
@@ -129,6 +131,10 @@ class AcademicProgram {
   /// ACTIVE halaqat only, counted by the server.
   final int activeHalaqaCount;
   final String? description;
+
+  /// The Files asset id of the program's cover image, or null (ADR 0038). A
+  /// reference — a signed link is fetched via `AcademicRepository.programCoverUrl`.
+  final String? coverFileAssetId;
 
   bool get isActive => status == StructureStatus.active;
 }

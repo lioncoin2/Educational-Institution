@@ -131,6 +131,21 @@ abstract interface class AcademicRepository {
     required bool active,
   });
 
+  /// Binds [coverFileAssetId] (an image the manager uploaded via
+  /// `FilesRepository.uploadImage`) as the program's cover (ADR 0038) —
+  /// `academic.manage` only. Replacing simply binds a new id. The answer is the
+  /// program with its `coverFileAssetId` set.
+  Future<AcademicProgram> setProgramCover(String programId, String coverFileAssetId);
+
+  /// Clears the program's cover image. Idempotent; the answer has `coverFileAssetId`
+  /// null.
+  Future<AcademicProgram> clearProgramCover(String programId);
+
+  /// A short-lived signed link to the program's cover image — readable by anyone
+  /// who may read the catalogue (`academic.read`). Throws [AcademicException]
+  /// (`academic.program_cover_not_found`) when there is no cover.
+  Future<Uri> programCoverUrl(String programId);
+
   Future<AcademicHalaqa> createHalaqa({
     required String programId,
     required String code,
@@ -699,20 +714,21 @@ abstract interface class CommunityRepository {
   /// VIEWER now stands in it, not as the new owner does.
   Future<Community> transferOwnership(String communityId, String userId);
 
-  // ── Academic halaqa link (Q50) ──
+  // ── Academic halaqa links (Q50) ──
 
-  /// Associates the community with academic halaqa [halaqaId] — institutional
-  /// oversight only (the server gates it on `communities.manage`, surfaced as
-  /// `me.canManageHalaqa`). The link is inert metadata: it adds and removes no
-  /// member and confers no capability. The server validates that the halaqa
-  /// exists; a missing one throws [CommunityException]
-  /// (`communities.halaqa_not_found`). The answer is the community as it now
-  /// stands, with its `halaqaId` set.
+  /// Adds an academic halaqa association ([halaqaId]) to the community —
+  /// institutional oversight only (the server gates it on `communities.manage`,
+  /// surfaced as `me.canManageHalaqa`). A group or channel may be associated
+  /// with many halaqat; linking the same one twice is a no-op. The link is
+  /// inert metadata: it adds and removes no member and confers no capability.
+  /// The server validates that the halaqa exists; a missing one throws
+  /// [CommunityException] (`communities.halaqa_not_found`). The answer is the
+  /// community as it now stands, with the halaqa in its `halaqaIds`.
   Future<Community> linkHalaqa(String communityId, String halaqaId);
 
-  /// Clears the community's academic halaqa association. Idempotent; the
-  /// answer is the community with `halaqaId` null.
-  Future<Community> unlinkHalaqa(String communityId);
+  /// Removes one academic halaqa association ([halaqaId]) from the community.
+  /// Idempotent; the answer is the community with that id gone from `halaqaIds`.
+  Future<Community> unlinkHalaqa(String communityId, String halaqaId);
 }
 
 /// People discovery — finding an account by name. [search] is the OWNER/ADMIN

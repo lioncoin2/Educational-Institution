@@ -12,10 +12,12 @@ export const COMMUNITY_READ_MODEL = Symbol('COMMUNITY_READ_MODEL');
 /**
  * The evaluator's read, carrying the whole community row — so a response can
  * be built from the same snapshot the decision was made on, with no second
- * read.
+ * read. `halaqaIds` are the community's academic halaqa associations (Q50),
+ * read in the same statement; empty when the community is unknown or unlinked.
  */
 export interface CommunityAuthorityRead extends AuthorityRead {
   readonly community: Community | null;
+  readonly halaqaIds: readonly string[];
 }
 
 /**
@@ -62,15 +64,27 @@ export type StatusChange =
   | Contended;
 
 /**
- * Setting or clearing a community's academic halaqa association (Q50). An
- * oversight act resting on identity's ceiling alone: no stint, no lifecycle
- * gate — so no `basis_lost`. A repeat with the same value writes nothing
- * (`unchanged`). A deadlock victim, after one retry, is `conflict` (the
- * in-memory store never answers it).
+ * Linking a community to an academic halaqa (Q50) — a row in
+ * `community_halaqa_links`. An oversight act resting on identity's ceiling
+ * alone: no stint, no lifecycle gate. Idempotent: a link that already exists
+ * writes nothing (`already_linked`). `not_found` when the community is unknown.
+ * A deadlock victim, after one retry, is `conflict` (the in-memory store never
+ * answers it).
  */
-export type SetHalaqaChange =
-  | { readonly kind: 'changed'; readonly community: Community }
-  | { readonly kind: 'unchanged'; readonly community: Community }
+export type LinkHalaqaChange =
+  | { readonly kind: 'linked' }
+  | { readonly kind: 'already_linked' }
+  | { readonly kind: 'not_found' }
+  | Contended;
+
+/**
+ * Removing one community-halaqa link (Q50). Idempotent: removing a link that is
+ * not there writes nothing (`not_linked`) and touches no other link.
+ * `not_found` when the community is unknown.
+ */
+export type UnlinkHalaqaChange =
+  | { readonly kind: 'unlinked' }
+  | { readonly kind: 'not_linked' }
   | { readonly kind: 'not_found' }
   | Contended;
 
@@ -260,17 +274,28 @@ export interface CommunityStore {
   }): Promise<StatusChange>;
 
   /**
-   * Sets (`halaqaId`) or clears (null) the community's academic halaqa
-   * association (Q50) — an oversight act, touching only the community row. A
-   * repeat with the same value writes nothing. Nothing else about the
-   * community changes: not its membership, not a grant, not its lifecycle.
+   * Links a community to an academic halaqa (Q50) — a new row in
+   * `community_halaqa_links`, keyed `(community, halaqa)` so a repeat writes
+   * nothing (`already_linked`). An oversight act; nothing about the community
+   * itself changes — not its membership, not a grant, not its lifecycle.
    */
-  setHalaqa(input: {
+  linkHalaqa(input: {
+    readonly linkId: string;
     readonly communityId: string;
-    readonly halaqaId: string | null;
-    readonly actorUserId: string | null;
+    readonly halaqaId: string;
+    readonly linkedBy: string | null;
     readonly at: Date;
-  }): Promise<SetHalaqaChange>;
+  }): Promise<LinkHalaqaChange>;
+
+  /**
+   * Removes one community-halaqa link (Q50). Idempotent (`not_linked` when it
+   * was not there); removes only that one link, no membership and no other
+   * association.
+   */
+  unlinkHalaqa(input: {
+    readonly communityId: string;
+    readonly halaqaId: string;
+  }): Promise<UnlinkHalaqaChange>;
 
   /**
    * Replaces the community's own title, description and picture together
@@ -431,6 +456,8 @@ export interface MyCommunity {
   readonly stint: Stint;
   /** The stint's ACTIVE grants — for the `me` block, from the same statement. */
   readonly grants: readonly HeldGrant[];
+  /** The community's academic halaqa associations (Q50), from the same statement. */
+  readonly halaqaIds: readonly string[];
 }
 
 /**

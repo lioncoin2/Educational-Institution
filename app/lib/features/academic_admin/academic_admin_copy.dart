@@ -22,11 +22,16 @@ abstract final class AcademicAdminCopy {
   static const deactivate = 'إيقاف';
   static const manageHalaqat = 'إدارة الحلقات';
   static const managePeople = 'الطلاب والمعلّمون';
+  static const changeCover = 'تغيير الغلاف';
+  static const removeCover = 'إزالة الغلاف';
 
   static const created = 'تم الإنشاء.';
   static const saved = 'تم حفظ التعديل.';
   static const activated = 'تم التفعيل.';
   static const deactivated = 'تم الإيقاف.';
+  static const coverUpdated = 'تم تحديث صورة الغلاف.';
+  static const coverRemoved = 'تمت إزالة صورة الغلاف.';
+  static const pickerUnavailable = 'اختيار الصور غير متاح على هذا الجهاز.';
 
   // Form
   static const createSectionTitle = 'إضافة قسم';
@@ -76,6 +81,8 @@ abstract final class AcademicAdminCopy {
       'الرمز غير صالح (أحرف لاتينية صغيرة وأرقام وشرطات، من 2 إلى 64).',
     'academic.name_invalid' => 'الاسم غير صالح.',
     'academic.description_invalid' => 'الوصف غير صالح.',
+    'academic.program_cover_invalid' ||
+    'files.asset_kind_not_accepted' => 'يجب أن يكون الغلاف صورة رفعتها.',
     'academic.order_invalid' => 'الترتيب غير صالح (رقم من 1 إلى 10000).',
     'academic.kind_invalid' => 'نوع القسم غير صالح.',
     'academic.change_empty' => 'لا يوجد تغيير لحفظه.',

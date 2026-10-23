@@ -116,6 +116,17 @@ class CountingAcademic implements AcademicRepository {
   }) => inner.setProgramActive(programId, active: active);
 
   @override
+  Future<AcademicProgram> setProgramCover(String programId, String coverFileAssetId) =>
+      inner.setProgramCover(programId, coverFileAssetId);
+
+  @override
+  Future<AcademicProgram> clearProgramCover(String programId) =>
+      inner.clearProgramCover(programId);
+
+  @override
+  Future<Uri> programCoverUrl(String programId) => inner.programCoverUrl(programId);
+
+  @override
   Future<AcademicHalaqa> createHalaqa({
     required String programId,
     required String code,

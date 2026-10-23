@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 
 import { DATABASE, type Database } from '../../../platform/database';
-import type { MessageType, ParticipantRole } from '../contracts/vocabulary';
+import type { ConversationType, MessageType, ParticipantRole } from '../contracts/vocabulary';
 import type { ConversationId } from '../domain/conversation';
 import type { MessageAttachment, MessageId } from '../domain/message';
 import { UNREAD_COUNT_CAP } from '../domain/messaging-policy';
@@ -48,14 +48,25 @@ export class DrizzleMessagingReadModel implements MessagingReadModel {
 
   async listConversations(
     userId: string,
-    page: { readonly limit: number; readonly after?: ConversationCursor },
+    page: {
+      readonly limit: number;
+      readonly after?: ConversationCursor;
+      readonly types?: readonly ConversationType[];
+    },
   ) {
     const after =
       page.after === undefined
         ? sql``
         : sql`and (coalesce(c.last_message_at, c.created_at), c.id) < (${page.after.activityAt.toISOString()}::timestamptz, ${page.after.id})`;
+    const kinds =
+      page.types === undefined || page.types.length === 0
+        ? sql``
+        : sql`and c.type in (${sql.join(
+            page.types.map((type) => sql`${type}`),
+            sql`, `,
+          )})`;
     const rows = await this.summaries(
-      sql`p.user_id = ${userId} and p.left_at is null ${after}`,
+      sql`p.user_id = ${userId} and p.left_at is null ${after} ${kinds}`,
       page.limit + 1,
     );
     const items = rows.slice(0, page.limit);

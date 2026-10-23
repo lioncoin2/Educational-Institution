@@ -166,12 +166,19 @@ describe('community chat API', () => {
     });
   });
 
-  it('lists the chat with its community among a member’s conversations — and communityId null elsewhere', async () => {
-    const group = await r.group(teacher, [student]);
+  it('never lists a community chat in Messages — direct conversations only, communityId null', async () => {
+    // Messages is direct-only: the community chat is reached through Communities,
+    // never listed here. A direct conversation IS listed, with communityId null.
+    const direct = await call('POST', '/messaging/conversations/direct', student, {
+      userId: teacher.id,
+    });
+    expect([200, 201]).toContain(direct.status);
+
     const list = await call('GET', '/messaging/conversations', student);
-    const items = list.body.items as { id: string; communityId: string | null }[];
-    expect(items.find((item) => item.id === chatId)?.communityId).toBe(communityId);
-    expect(items.find((item) => item.id === group)?.communityId).toBeNull();
+    const items = list.body.items as { id: string; communityId: string | null; type: string }[];
+    expect(items.map((item) => item.id)).not.toContain(chatId);
+    expect(items.every((item) => item.type === 'DIRECT')).toBe(true);
+    expect(items.find((item) => item.id === direct.body.id)?.communityId).toBeNull();
   });
 
   it('delivers the chat’s messages over the existing realtime endpoint — typed CHANNEL', async () => {

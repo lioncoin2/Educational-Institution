@@ -543,28 +543,36 @@ class MockCommunityRepository implements CommunityRepository {
     return c.view();
   }
 
-  // ── Academic halaqa link (Q50) ──────────────────────────────────────────
+  // ── Academic halaqa links (Q50) ─────────────────────────────────────────
 
   @override
   Future<Community> linkHalaqa(String communityId, String halaqaId) =>
-      _setHalaqa(communityId, halaqaId);
+      _changeHalaqa(communityId, (ids) {
+        if (!ids.contains(halaqaId)) ids.add(halaqaId);
+      });
 
   @override
-  Future<Community> unlinkHalaqa(String communityId) =>
-      _setHalaqa(communityId, null);
+  Future<Community> unlinkHalaqa(String communityId, String halaqaId) =>
+      _changeHalaqa(communityId, (ids) {
+        ids.remove(halaqaId);
+      });
 
-  Future<Community> _setHalaqa(String communityId, String? halaqaId) async {
+  Future<Community> _changeHalaqa(
+    String communityId,
+    void Function(List<String> ids) change,
+  ) async {
     await _wait();
     final c = _find(communityId);
     // The server decides on `communities.manage`; the demo approximates it
-    // with `me.canManageHalaqa` (the owner). The link mutates nothing else.
+    // with `me.canManageHalaqa` (the owner). A group or channel may be linked
+    // to many halaqat, idempotently. The link mutates nothing else.
     if (!c.view().me.canManageHalaqa) {
       throw const CommunityException(
         'identity.permission_denied',
         'Only institutional oversight may manage the halaqa link.',
       );
     }
-    c.halaqaId = halaqaId;
+    change(c.halaqaIds);
     return c.view();
   }
 
@@ -1247,9 +1255,10 @@ class _MockCommunity {
   int lifecycleVersion;
   _Stint stint;
 
-  /// The optional academic halaqa link (Q50) — inert metadata, set and cleared
-  /// by the demo's owner. The real server gates it on `communities.manage`.
-  String? halaqaId;
+  /// The academic halaqa links (Q50) — inert metadata, added and removed by the
+  /// demo's owner. A community may be linked to many halaqat. The real server
+  /// gates it on `communities.manage`.
+  final List<String> halaqaIds = [];
 
   /// Every row the roster ever had, by position, oldest first — computed on
   /// request, never stored: those gone are only remembered as positions.
@@ -1340,7 +1349,7 @@ class _MockCommunity {
     status: status,
     lifecycleVersion: lifecycleVersion,
     memberCount: memberCount,
-    halaqaId: halaqaId,
+    halaqaIds: List.of(halaqaIds),
     me: CommunityMe(
       standing: owned ? CommunityStanding.owner : CommunityStanding.member,
       joinedAt: joinedAt,

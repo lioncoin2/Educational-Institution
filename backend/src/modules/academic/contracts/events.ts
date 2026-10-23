@@ -33,8 +33,12 @@ export const AcademicEvents = {
   assignmentEnded: 'academic.teacher.assignment_ended',
 } as const;
 
-/** Which descriptive fields an update changed — names, never values. */
-export type StructureField = 'name' | 'order' | 'description';
+/**
+ * Which descriptive fields an update changed — names, never values. `cover` is
+ * a program's cover image (set or cleared on its own route, ADR 0038); the
+ * structured text edit only ever reports name/order/description.
+ */
+export type StructureField = 'name' | 'order' | 'description' | 'cover';
 
 export type SectionCreated = DomainEvent<
   typeof AcademicEvents.sectionCreated,

@@ -70,7 +70,13 @@ class MockMessagingRepository implements MessagingRepository {
   @override
   Future<ConversationPage> conversations({String? cursor}) async {
     await _wait();
-    final all = _conversations.values.where(_readable).toList()
+    // The Messages list is direct conversations only — the same contract the
+    // server enforces (`type = 'DIRECT'`). Community group/channel chats are
+    // reached through Communities (conversationForCommunity), never here.
+    final all = _conversations.values
+        .where((c) => c.type == ConversationType.direct)
+        .where(_readable)
+        .toList()
       ..sort((a, b) => b.activityAt.compareTo(a.activityAt));
     return ConversationPage(items: [for (final c in all) _view(c)]);
   }

@@ -318,23 +318,28 @@ void main() {
     test('marks the newest message read, and clears the list badge', () async {
       container.listen(conversationListProvider, (_, _) {});
       final list = await container.read(conversationListProvider.future);
+      // Messages is direct-only, so the list badge belongs to the direct
+      // conversation (read to four of six, two unread from the teacher).
       expect(
-        list.items.firstWhere((c) => c.id == 'mock-group').unreadCount,
+        list.items.firstWhere((c) => c.id == 'mock-direct').unreadCount,
         greaterThan(0),
       );
 
-      await load();
-      await controller().markLatestRead();
-      expect(repo.readRequests, [36]);
-      expect(current().lastReadSequence, 36);
+      container.listen(conversationProvider('mock-direct'), (_, _) {});
+      await container.read(conversationProvider('mock-direct').future);
+      final direct = container.read(
+        conversationProvider('mock-direct').notifier,
+      );
+      await direct.markLatestRead();
+      expect(repo.readRequests, [6]);
       final after = container.read(conversationListProvider).requireValue;
       expect(
-        after.items.firstWhere((c) => c.id == 'mock-group').unreadCount,
+        after.items.firstWhere((c) => c.id == 'mock-direct').unreadCount,
         0,
       );
 
-      await controller().markLatestRead(); // nothing new: no request
-      expect(repo.readRequests, [36]);
+      await direct.markLatestRead(); // nothing new: no request
+      expect(repo.readRequests, [6]);
     });
 
     test(

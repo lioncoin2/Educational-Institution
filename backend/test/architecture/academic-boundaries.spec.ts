@@ -4,8 +4,10 @@ import { cruise, edgesFrom, reachableFrom, type CruiseOutput } from '../support/
  * The shape of academic, asserted — each property the Academic Core V1 brief
  * names as its own test, so a failure says which one broke:
  *
- *   - academic knows identity only through identity's contracts, and no other
- *     module at all (messaging, files, realtime, notifications);
+ *   - academic knows identity and files only through their contracts, and no
+ *     other module at all (messaging, realtime, notifications). The files edge
+ *     (ADR 0038): a program may carry a cover image, verified and served
+ *     through files' `FILE_ASSETS` contract, exactly as a community avatar is;
  *   - no other module reaches academic's internals: its contracts are the way
  *     in (the composition root and the seeding CLI aside);
  *   - academic never reads another module's tables — identity's, messaging's,
@@ -57,21 +59,26 @@ describe('academic boundaries', () => {
     }
   });
 
-  it('knows identity only through its contracts, and no other module at all', () => {
+  it('knows identity and files only through their contracts, and no other module at all', () => {
     const intrusions = edgesFrom(output, isAcademicCode)
       .filter((edge) => edge.resolved.startsWith('src/modules/'))
       .filter((edge) => !edge.resolved.startsWith(ACADEMIC))
       .filter((edge) => !edge.resolved.startsWith('src/modules/identity/contracts/'))
+      // files' FILE_ASSETS / DownloadLink contract — the program cover (ADR 0038).
+      .filter((edge) => !edge.resolved.startsWith('src/modules/files/contracts/'))
       .map((edge) => `${edge.source} -> ${edge.resolved}`);
     expect(intrusions).toEqual([]);
-    // The module file wires identity in, and nothing else.
+    // The module file wires in identity and files — and nothing else.
     const wiring = edgesFrom(
       output,
       (source) => source === 'src/modules/academic/academic.module.ts',
     )
       .map((edge) => edge.resolved)
-      .filter((path) => path.startsWith('src/modules/') && !path.startsWith(ACADEMIC));
-    expect(wiring).toEqual(['src/modules/identity/identity.module.ts']);
+      .filter((path) => path.startsWith('src/modules/') && !path.startsWith(ACADEMIC))
+      .sort();
+    expect(wiring).toEqual(
+      ['src/modules/files/files.module.ts', 'src/modules/identity/identity.module.ts'].sort(),
+    );
   });
 
   it('is reached by other modules only through its contracts', () => {

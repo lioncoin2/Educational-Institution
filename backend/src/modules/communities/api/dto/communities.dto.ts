@@ -157,12 +157,14 @@ export class TransferOwnershipDto {
 }
 
 /**
- * `PUT /communities/:id/halaqa` — the academic halaqa this community is
- * associated with (Q50). A non-empty opaque id; existence is not asserted by
- * the client, and the link is inert metadata. Clearing the association is the
- * route's DELETE, which carries no body.
+ * `POST /communities/:id/halaqat` — add an academic halaqa association to this
+ * community (Q50). A non-empty opaque id; existence is validated server-side
+ * through academic's contract, and the link is inert metadata. A group or
+ * channel may be associated with many halaqat; linking the same one twice is a
+ * no-op. Removing an association is `DELETE /communities/:id/halaqat/:halaqaId`,
+ * which carries no body.
  */
-export class SetHalaqaDto {
+export class LinkHalaqaDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(ID_MAX)

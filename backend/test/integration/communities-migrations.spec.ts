@@ -317,3 +317,100 @@ describeWithPostgres('migration 0021 on a database already in use', () => {
     ]);
   });
 });
+
+// ADR 0033 (Q50) → many-to-many: migration 0030 moves the single nullable
+// scalar `communities.halaqa_id` into the `community_halaqa_links` join table,
+// backfilling every existing link first, then drops the scalar. A group or
+// channel may then be associated with many halaqat, and a halaqa with many
+// groups and channels.
+describeWithPostgres(
+  'migration 0030 (community ↔ halaqa many-to-many) on a database in use',
+  () => {
+    let scratch: ScratchDatabase;
+
+    beforeAll(async () => {
+      // The schema as it stood after 0029: the legacy scalar halaqa_id present.
+      scratch = await scratchDatabase({ upTo: 30 });
+      // One community already linked (to be backfilled), one left unlinked.
+      await scratch.db.execute(sql`
+      insert into communities (id, title, status, membership_version, member_count,
+                               created_by, created_at, updated_at, halaqa_id)
+      values ('c-linked', 'مرتبطة', 'OPEN', 1, 1, 'u-owner', now(), now(), 'h-legacy'),
+             ('c-bare', 'غير مرتبطة', 'OPEN', 1, 1, 'u-owner', now(), now(), null)`);
+      // Apply the rest, including 0030 (create join table, backfill, drop scalar).
+      await migrateTo(scratch.db);
+    }, 60_000);
+
+    afterAll(async () => {
+      await scratch?.drop();
+    });
+
+    const rows = async (query: ReturnType<typeof sql>) =>
+      (await scratch.db.execute(query)).rows;
+    const values = async (query: ReturnType<typeof sql>) =>
+      (await scratch.db.execute(query)).rows.map((row) => Object.values(row)[0] as string);
+
+    it('drops the legacy scalar column from communities', async () => {
+      expect(
+        await values(sql`select column_name from information_schema.columns
+                        where table_schema = 'public' and table_name = 'communities'
+                          and column_name = 'halaqa_id'`),
+      ).toEqual([]);
+    });
+
+    it('backfills every existing link into the join table, and only those', async () => {
+      expect(
+        await rows(
+          sql`select community_id, halaqa_id, linked_by
+              from community_halaqa_links order by community_id`,
+        ),
+      ).toEqual([{ community_id: 'c-linked', halaqa_id: 'h-legacy', linked_by: null }]);
+    });
+
+    it('enforces uniqueness: the same (community, halaqa) cannot be linked twice', async () => {
+      await expect(
+        scratch.db.execute(sql`
+        insert into community_halaqa_links (id, community_id, halaqa_id, linked_at)
+        values ('dup', 'c-linked', 'h-legacy', now())`),
+      ).rejects.toThrow();
+    });
+
+    it('is many-to-many: many halaqat per community, and many communities per halaqa', async () => {
+      await scratch.db.execute(sql`
+      insert into community_halaqa_links (id, community_id, halaqa_id, linked_at) values
+        ('l2', 'c-linked', 'h-second', now()),
+        ('l3', 'c-bare', 'h-legacy', now())`);
+      expect(
+        await values(sql`select halaqa_id from community_halaqa_links
+                        where community_id = 'c-linked' order by halaqa_id`),
+      ).toEqual(['h-legacy', 'h-second']);
+      expect(
+        await values(sql`select community_id from community_halaqa_links
+                        where halaqa_id = 'h-legacy' order by community_id`),
+      ).toEqual(['c-bare', 'c-linked']);
+    });
+
+    it('removes only the one link, leaving the community and other links intact', async () => {
+      await scratch.db.execute(
+        sql`delete from community_halaqa_links
+           where community_id = 'c-linked' and halaqa_id = 'h-second'`,
+      );
+      expect(
+        await values(
+          sql`select halaqa_id from community_halaqa_links where community_id = 'c-linked'`,
+        ),
+      ).toEqual(['h-legacy']);
+      expect(await values(sql`select title from communities where id = 'c-linked'`)).toEqual([
+        'مرتبطة',
+      ]);
+    });
+
+    it('keeps community_id a real foreign key: a link to an unknown community is refused', async () => {
+      await expect(
+        scratch.db.execute(sql`
+        insert into community_halaqa_links (id, community_id, halaqa_id, linked_at)
+        values ('orphan', 'c-missing', 'h-legacy', now())`),
+      ).rejects.toThrow();
+    });
+  },
+);

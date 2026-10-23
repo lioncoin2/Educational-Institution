@@ -87,6 +87,14 @@ export interface AcademicRepository {
   saveProgram(program: Program): Promise<void>;
   saveHalaqa(halaqa: Halaqa): Promise<void>;
 
+  /**
+   * Binds (`coverFileAssetId`) or clears (null) a program's cover image, and
+   * `updatedAt` — nothing else. The caller has already verified the asset is an
+   * image it may attach (ADR 0038). Returns the updated program, or null when
+   * there is no such program.
+   */
+  setProgramCover(id: string, coverFileAssetId: string | null, at: Date): Promise<Program | null>;
+
   setSectionStatus(id: string, status: StructureStatus, at: Date): Promise<StatusOutcome<Section>>;
   setProgramStatus(id: string, status: StructureStatus, at: Date): Promise<StatusOutcome<Program>>;
   activateHalaqa(id: string, at: Date): Promise<StatusOutcome<Halaqa>>;

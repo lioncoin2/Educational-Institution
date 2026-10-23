@@ -678,17 +678,18 @@ describe('communities API', () => {
     });
   });
 
-  describe('academic halaqa association (Q50)', () => {
+  describe('academic halaqa associations (Q50)', () => {
     let linkId: string;
     let halaqaId: string;
+    let halaqaTwoId: string;
 
     beforeAll(async () => {
       const created = await call('POST', '/communities', admin, { title: 'حلقة مرتبطة' });
       linkId = created.body.id as string;
       // A plain member, to prove membership grants no authority over the link.
       await call('POST', `/communities/${linkId}/members`, admin, { userIds: [student.id] });
-      // A real academic halaqa to link to: section → program → halaqa. The link
-      // is validated against academic, so the target must actually exist.
+      // Real academic halaqat to link to: section → program → halaqat. A link is
+      // validated against academic, so each target must actually exist.
       const section = await call('POST', '/academic/sections', admin, {
         code: 'q50-section',
         name: 'قسم الربط',
@@ -708,13 +709,20 @@ describe('communities API', () => {
         programId: program.body.id as string,
       });
       halaqaId = halaqa.body.id as string;
+      const halaqaTwo = await call('POST', '/academic/halaqat', admin, {
+        code: 'q50-halaqa-2',
+        name: 'حلقة الربط الثانية',
+        order: 51,
+        programId: program.body.id as string,
+      });
+      halaqaTwoId = halaqaTwo.body.id as string;
     });
 
-    it('is null on a community that has never been linked, and offers the control to oversight only', async () => {
+    it('is empty on a community that has never been linked, and offers the control to oversight only', async () => {
       const canManage = (res: ApiResponse) =>
         (res.body.me as { canManageHalaqa: boolean }).canManageHalaqa;
       const asAdmin = await call('GET', `/communities/${linkId}`, admin);
-      expect(asAdmin.body.halaqaId).toBeNull();
+      expect(asAdmin.body.halaqaIds).toEqual([]);
       expect(canManage(asAdmin)).toBe(true);
       // A plain member is told, server-side, that the control is not theirs.
       const asMember = await call('GET', `/communities/${linkId}`, student);
@@ -725,30 +733,57 @@ describe('communities API', () => {
       // A non-member holder of communities.read (teacher) and a plain member
       // (student) both lack communities.manage, so neither may link.
       for (const actor of [teacher, student]) {
-        const refused = await call('PUT', `/communities/${linkId}/halaqa`, actor, { halaqaId });
+        const refused = await call('POST', `/communities/${linkId}/halaqat`, actor, { halaqaId });
         expect(refused.status).toBe(403);
         expect(code(refused)).toBe('identity.permission_denied');
       }
       // Oversight links it; the association is then visible on the community.
-      const linked = await call('PUT', `/communities/${linkId}/halaqa`, admin, { halaqaId });
-      expect([linked.status, linked.body.halaqaId]).toEqual([200, halaqaId]);
-      expect((await call('GET', `/communities/${linkId}`, admin)).body.halaqaId).toBe(halaqaId);
-      // And clearing it is the DELETE, which carries no body.
-      const unlinked = await call('DELETE', `/communities/${linkId}/halaqa`, admin);
-      expect([unlinked.status, unlinked.body.halaqaId]).toEqual([200, null]);
+      const linked = await call('POST', `/communities/${linkId}/halaqat`, admin, { halaqaId });
+      expect([linked.status, linked.body.halaqaIds]).toEqual([200, [halaqaId]]);
+      expect((await call('GET', `/communities/${linkId}`, admin)).body.halaqaIds).toEqual([
+        halaqaId,
+      ]);
+      // And removing it is the DELETE, addressed by its halaqa id, which carries no body.
+      const unlinked = await call('DELETE', `/communities/${linkId}/halaqat/${halaqaId}`, admin);
+      expect([unlinked.status, unlinked.body.halaqaIds]).toEqual([200, []]);
+    });
+
+    it('associates a group or channel with many halaqat, removed one at a time', async () => {
+      expect(
+        (await call('POST', `/communities/${linkId}/halaqat`, admin, { halaqaId })).body.halaqaIds,
+      ).toEqual([halaqaId]);
+      const both = await call('POST', `/communities/${linkId}/halaqat`, admin, {
+        halaqaId: halaqaTwoId,
+      });
+      expect(both.status).toBe(200);
+      expect([...(both.body.halaqaIds as string[])].sort()).toEqual([halaqaId, halaqaTwoId].sort());
+      // Removing one link leaves the other intact.
+      const afterOne = await call('DELETE', `/communities/${linkId}/halaqat/${halaqaId}`, admin);
+      expect(afterOne.body.halaqaIds).toEqual([halaqaTwoId]);
+      await call('DELETE', `/communities/${linkId}/halaqat/${halaqaTwoId}`, admin);
+    });
+
+    it('is idempotent: a repeat link is a no-op, and removing an absent link is harmless', async () => {
+      await call('POST', `/communities/${linkId}/halaqat`, admin, { halaqaId });
+      const again = await call('POST', `/communities/${linkId}/halaqat`, admin, { halaqaId });
+      expect([again.status, again.body.halaqaIds]).toEqual([200, [halaqaId]]);
+      // Removing a link that is not there changes nothing and is not an error.
+      const ghost = await call('DELETE', `/communities/${linkId}/halaqat/${halaqaTwoId}`, admin);
+      expect([ghost.status, ghost.body.halaqaIds]).toEqual([200, [halaqaId]]);
+      await call('DELETE', `/communities/${linkId}/halaqat/${halaqaId}`, admin);
     });
 
     it('rejects a link to a halaqa academic does not have, leaving the community unlinked', async () => {
-      const refused = await call('PUT', `/communities/${linkId}/halaqa`, admin, {
+      const refused = await call('POST', `/communities/${linkId}/halaqat`, admin, {
         halaqaId: 'no-such-halaqa',
       });
       expect([refused.status, code(refused)]).toEqual([404, 'communities.halaqa_not_found']);
-      expect((await call('GET', `/communities/${linkId}`, admin)).body.halaqaId).toBeNull();
+      expect((await call('GET', `/communities/${linkId}`, admin)).body.halaqaIds).toEqual([]);
     });
 
     it('changes nothing but the association — not membership, a capability or the lifecycle', async () => {
       const before = await call('GET', `/communities/${linkId}`, admin);
-      const linked = await call('PUT', `/communities/${linkId}/halaqa`, admin, { halaqaId });
+      const linked = await call('POST', `/communities/${linkId}/halaqat`, admin, { halaqaId });
       expect(linked.body).toMatchObject({
         memberCount: before.body.memberCount,
         lifecycleVersion: before.body.lifecycleVersion,
@@ -759,36 +794,43 @@ describe('communities API', () => {
       expect((members.body.items as { userId: string }[]).map((m) => m.userId)).toContain(
         student.id,
       );
-      expect((await call('DELETE', `/communities/${linkId}/halaqa`, student)).status).toBe(403);
+      expect(
+        (await call('DELETE', `/communities/${linkId}/halaqat/${halaqaId}`, student)).status,
+      ).toBe(403);
+      await call('DELETE', `/communities/${linkId}/halaqat/${halaqaId}`, admin);
     });
 
     it('imposes no cardinality — one halaqa may back more than one community', async () => {
       const other = await call('POST', '/communities', admin, { title: 'حلقة أخرى' });
       const otherId = other.body.id as string;
       expect(
-        (await call('PUT', `/communities/${linkId}/halaqa`, admin, { halaqaId })).body.halaqaId,
-      ).toBe(halaqaId);
-      const second = await call('PUT', `/communities/${otherId}/halaqa`, admin, { halaqaId });
-      expect([second.status, second.body.halaqaId]).toEqual([200, halaqaId]);
+        (await call('POST', `/communities/${linkId}/halaqat`, admin, { halaqaId })).body.halaqaIds,
+      ).toEqual([halaqaId]);
+      const second = await call('POST', `/communities/${otherId}/halaqat`, admin, { halaqaId });
+      expect([second.status, second.body.halaqaIds]).toEqual([200, [halaqaId]]);
+      await call('DELETE', `/communities/${linkId}/halaqat/${halaqaId}`, admin);
+      await call('DELETE', `/communities/${otherId}/halaqat/${halaqaId}`, admin);
     });
 
     it('refuses a malformed link body, and a community that does not exist', async () => {
       expect(
-        (await call('PUT', `/communities/${linkId}/halaqa`, admin, { halaqaId: '' })).status,
+        (await call('POST', `/communities/${linkId}/halaqat`, admin, { halaqaId: '' })).status,
       ).toBe(400);
-      expect((await call('PUT', `/communities/${linkId}/halaqa`, admin, {})).status).toBe(400);
+      expect((await call('POST', `/communities/${linkId}/halaqat`, admin, {})).status).toBe(400);
       // A real halaqa, so existence passes and the community is what is missing.
-      const unknown = await call('PUT', '/communities/does-not-exist/halaqa', admin, { halaqaId });
+      const unknown = await call('POST', '/communities/does-not-exist/halaqat', admin, {
+        halaqaId,
+      });
       expect([unknown.status, code(unknown)]).toEqual([404, 'communities.community_not_found']);
     });
 
-    it('is inert: enrolling a student in the linked halaqa creates no membership (Policy A, ADR 0035)', async () => {
+    it('is inert: enrolling a student in a linked halaqa creates no membership (Policy A, ADR 0035)', async () => {
       // Link the community to the halaqa, then enroll an outsider in that halaqa
       // through academic. Enrollment-sourced membership is Q50 and NOT built
       // (ADR 0016 dec 11, ADR 0032, ADR 0034): the link derives nothing.
-      expect((await call('PUT', `/communities/${linkId}/halaqa`, admin, { halaqaId })).status).toBe(
-        200,
-      );
+      expect(
+        (await call('POST', `/communities/${linkId}/halaqat`, admin, { halaqaId })).status,
+      ).toBe(200);
       const before = await call('GET', `/communities/${linkId}`, admin);
       const enrolled = await call('POST', `/academic/halaqat/${halaqaId}/enrollments`, admin, {
         studentUserId: outsider.id,
@@ -804,6 +846,7 @@ describe('communities API', () => {
         404,
         'communities.community_not_found',
       ]);
+      await call('DELETE', `/communities/${linkId}/halaqat/${halaqaId}`, admin);
     });
 
     it('does not remove an explicit membership when the student’s enrollment ends (Policy A, ADR 0035)', async () => {
@@ -811,7 +854,7 @@ describe('communities API', () => {
       // community to the halaqa, enroll the student in it, then END the enrollment.
       // Academic lifecycle and community membership are independent: the membership
       // survives, because nothing connects enrollment ending to membership removal.
-      await call('PUT', `/communities/${linkId}/halaqa`, admin, { halaqaId });
+      await call('POST', `/communities/${linkId}/halaqat`, admin, { halaqaId });
       const enrolled = await call('POST', `/academic/halaqat/${halaqaId}/enrollments`, admin, {
         studentUserId: student.id,
       });

@@ -36,6 +36,8 @@ export interface ProgramView {
   readonly name: string;
   readonly order: number;
   readonly description: string | null;
+  /** The Files asset id of the program's cover image, or null (a reference). */
+  readonly coverFileAssetId: string | null;
   readonly status: StructureStatus;
   /** How many of its halaqat are ACTIVE. */
   readonly activeHalaqaCount: number;
@@ -199,6 +201,7 @@ export function programView(program: Program, activeHalaqaCount: number): Progra
     name: program.name,
     order: program.order,
     description: program.description,
+    coverFileAssetId: program.coverFileAssetId,
     status: program.status,
     activeHalaqaCount,
     createdAt: program.createdAt,

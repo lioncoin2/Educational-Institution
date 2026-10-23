@@ -176,13 +176,14 @@ describe('messaging API', () => {
       expect(badLimit.status).toBe(400);
     });
 
-    it('lists it for its members, and for nobody else', async () => {
+    it('excludes the group from the direct-only Messages list — for its members and for nobody else', async () => {
+      // The group above is a backend primitive; Messages is direct-only, so it
+      // is not listed at all — not even for its own members (it is reached
+      // through Communities). The group is the member's only conversation here.
       const mine = await api.call('GET', '/messaging/conversations', { token: teacher.token });
       expect(mine.status).toBe(200);
-      expect(mine.body).toMatchObject({
-        items: [{ id: conversationId, unreadCount: 1, lastMessage: { sequence: 1 } }],
-        nextCursor: null,
-      });
+      expect((mine.body.items as { id: string }[]).map((c) => c.id)).not.toContain(conversationId);
+      expect(mine.body).toEqual({ items: [], nextCursor: null });
       const theirs = await api.call('GET', '/messaging/conversations', { token: outsider.token });
       expect(theirs.body).toEqual({ items: [], nextCursor: null });
     });

@@ -15,9 +15,13 @@ import '../../core/widgets/layout/app_screen.dart';
 import '../../core/widgets/layout/bottom_action_bar.dart';
 import '../../core/widgets/patterns/info_row.dart';
 import '../../core/widgets/patterns/lesson_tile.dart';
+import '../../data/models/communities.dart';
 import '../../data/models/learning.dart';
 import '../../providers/app_providers.dart';
 import '../auth/sign_in_prompt.dart';
+import '../communities/state/community_chat_opener.dart';
+import '../communities/state/community_list_controller.dart';
+import '../communities/widgets/community_tile.dart';
 
 /// One حلقة: who teaches it, when it runs, attendance, and its lessons — as
 /// far as they are known. Against the backend only the halaqa itself, the
@@ -147,6 +151,8 @@ class _Body extends StatelessWidget {
               ),
             ),
 
+            LinkedHalaqaCommunities(halaqaId: halaqa.id),
+
             // Nothing about lessons or attendance is recorded for it: say so,
             // rather than draw empty bars.
             if (!halaqa.hasProgress && !halaqa.origin.isMock)
@@ -238,5 +244,104 @@ class _Body extends StatelessWidget {
               ),
             ),
     );
+  }
+}
+
+/// The in-app communities (groups and channels) linked to THIS halaqa (Q50).
+///
+/// Read from the viewer's own communities — each already carries its
+/// `halaqaIds`, the same association institutional oversight manages from the
+/// community side; no parallel link is introduced and no new repository is
+/// added. Tapping one opens its current destination — the community's
+/// conversation — through the shared [communityChatOpenerProvider], exactly as
+/// «مجتمعاتي» does. Supplementary and self-effacing: while the viewer's
+/// community list is still loading or unavailable, or when none are linked, the
+/// section simply does not appear, so the halaqa detail never waits on it.
+///
+/// Membership-scoped BY DESIGN (final owner decision): it shows ONLY the
+/// communities the viewer is an active member of that are linked to this
+/// halaqa. This is guaranteed by the source, not re-derived here —
+/// `communityListProvider` reads `GET /communities?scope=mine`, i.e. the
+/// authenticated viewer's ACTIVE memberships (backend
+/// `myCommunities(principal.userId)`, an inner join on `community_members`
+/// where `user_id = viewer AND status = ACTIVE`). A community the viewer is
+/// not a member of is never in that list, so it is never shown here — even
+/// when it is linked to this halaqa.
+class LinkedHalaqaCommunities extends ConsumerWidget {
+  const LinkedHalaqaCommunities({super.key, required this.halaqaId});
+
+  final String halaqaId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final communities = ref.watch(communityListProvider);
+    final linked = [
+      for (final community
+          in communities.asData?.value.items ?? const <Community>[])
+        if (community.halaqaIds.contains(halaqaId)) community,
+    ];
+    if (linked.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    return SliverGutter(
+      top: Insets.xl,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionHeader(
+            title: 'المجتمعات المرتبطة',
+            subtitle: 'الكروبات والقنوات المرتبطة بهذه الحلقة',
+          ),
+          const SizedBox(height: Insets.md),
+          for (final community in linked)
+            Padding(
+              key: ValueKey('halaqa-community-${community.id}'),
+              padding: const EdgeInsets.only(bottom: Insets.sm),
+              child: _OpenableHalaqaCommunity(community: community),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A linked-community row that opens the community's conversation on tap — the
+/// same canonical resolve «مجتمعاتي» uses (asks messaging, which asks the
+/// community whether the viewer may read it NOW; a stale membership is told the
+/// chat is not theirs). Disabled while it asks; a refusal is said in words and
+/// nothing opens.
+class _OpenableHalaqaCommunity extends ConsumerStatefulWidget {
+  const _OpenableHalaqaCommunity({required this.community});
+
+  final Community community;
+
+  @override
+  ConsumerState<_OpenableHalaqaCommunity> createState() =>
+      _OpenableHalaqaCommunityState();
+}
+
+class _OpenableHalaqaCommunityState
+    extends ConsumerState<_OpenableHalaqaCommunity> {
+  bool _opening = false;
+
+  Future<void> _open() async {
+    if (_opening) return;
+    setState(() => _opening = true);
+    final opening = await ref
+        .read(communityChatOpenerProvider)
+        .open(widget.community.id);
+    if (!mounted) return;
+    setState(() => _opening = false);
+    switch (opening) {
+      case OpenChat(:final location):
+        context.push(location);
+      case CannotOpenChat(:final message):
+        context.toast(message);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CommunityTile(community: widget.community, onTap: _open);
   }
 }

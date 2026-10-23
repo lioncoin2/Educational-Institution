@@ -218,6 +218,22 @@ class MockAcademicRepository implements AcademicRepository {
   }) async => throw _unsupported;
 
   @override
+  Future<AcademicProgram> setProgramCover(
+    String programId,
+    String coverFileAssetId,
+  ) async => throw _unsupported;
+
+  @override
+  Future<AcademicProgram> clearProgramCover(String programId) async =>
+      throw _unsupported;
+
+  @override
+  Future<Uri> programCoverUrl(String programId) async => throw const AcademicException(
+    'academic.program_cover_not_found',
+    'No program cover.',
+  );
+
+  @override
   Future<AcademicHalaqa> createHalaqa({
     required String programId,
     required String code,

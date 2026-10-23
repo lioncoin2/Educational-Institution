@@ -568,12 +568,13 @@ class _ChatModeManagement extends ConsumerWidget {
   }
 }
 
-/// The optional academic halaqa link (Q50), shown only when the server's `me`
+/// The academic halaqa associations (Q50), shown only when the server's `me`
 /// holds `canManageHalaqa` (institutional oversight, `communities.manage`).
-/// The current association is shown — resolved to the halaqa's name, never a
-/// bare id — and the manager may link, change or unlink it. The link mutates
-/// no membership; the server decides again on every request, and refuses an
-/// unauthorized caller or a halaqa it does not have.
+/// A group or channel may be associated with many halaqat: each is shown —
+/// resolved to the halaqa's name, never a bare id — with its own control to
+/// remove it, and a button adds another. The links mutate no membership; the
+/// server decides again on every request, and refuses an unauthorized caller
+/// or a halaqa it does not have.
 class _HalaqaManagement extends ConsumerWidget {
   const _HalaqaManagement({required this.community, required this.writing});
 
@@ -595,8 +596,8 @@ class _HalaqaManagement extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final linked = community.halaqaId != null;
     final idle = writing == null;
+    final halaqaIds = community.halaqaIds;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -605,27 +606,23 @@ class _HalaqaManagement extends ConsumerWidget {
           style: Theme.of(context).textTheme.labelLarge,
         ),
         const SizedBox(height: Insets.sm),
-        _HalaqaStatus(halaqaId: community.halaqaId),
+        if (halaqaIds.isEmpty)
+          const Text(CommunityCopy.halaqaNone)
+        else
+          for (final halaqaId in halaqaIds)
+            _HalaqaRow(
+              key: ValueKey(halaqaId),
+              halaqaId: halaqaId,
+              onUnlink: idle ? () => _unlink(context, ref, halaqaId) : null,
+            ),
         const SizedBox(height: Insets.md),
         OutlinedButton.icon(
           onPressed: idle ? () => _link(context, ref) : null,
           icon: writing == CommunityWrite.linkHalaqa
               ? const BusyIndicator()
               : const Icon(Icons.school_outlined),
-          label: Text(
-            linked ? CommunityCopy.changeHalaqa : CommunityCopy.linkHalaqa,
-          ),
+          label: const Text(CommunityCopy.linkHalaqa),
         ),
-        if (linked) ...[
-          const SizedBox(height: Insets.md),
-          OutlinedButton.icon(
-            onPressed: idle ? () => _unlink(context, ref) : null,
-            icon: writing == CommunityWrite.unlinkHalaqa
-                ? const BusyIndicator()
-                : const Icon(Icons.link_off_rounded),
-            label: const Text(CommunityCopy.unlinkHalaqa),
-          ),
-        ],
       ],
     );
   }
@@ -643,7 +640,11 @@ class _HalaqaManagement extends ConsumerWidget {
     );
   }
 
-  Future<void> _unlink(BuildContext context, WidgetRef ref) async {
+  Future<void> _unlink(
+    BuildContext context,
+    WidgetRef ref,
+    String halaqaId,
+  ) async {
     final yes = await confirmCommunityChange(
       context,
       question: CommunityCopy.unlinkHalaqaQuestion,
@@ -654,28 +655,29 @@ class _HalaqaManagement extends ConsumerWidget {
     final refresh = _refreshOf(context);
     sayWriteOutcome(
       messenger,
-      await _controller(ref).unlinkHalaqa(),
+      await _controller(ref).unlinkHalaqa(halaqaId),
       refresh: refresh,
       confirmed: true,
     );
   }
 }
 
-/// The current halaqa association, resolved to the halaqa's name through the
-/// academic catalogue (structure only). While it resolves, or if it cannot be
-/// read, a neutral line stands in — never a bare id; when nothing is linked,
-/// it says so.
-class _HalaqaStatus extends ConsumerStatefulWidget {
-  const _HalaqaStatus({required this.halaqaId});
+/// One academic halaqa association, resolved to the halaqa's name through the
+/// academic catalogue (structure only), with a control to remove it. While it
+/// resolves, or if it cannot be read, a neutral line stands in — never a bare
+/// id. The remove control is disabled while any link change is in flight.
+class _HalaqaRow extends ConsumerStatefulWidget {
+  const _HalaqaRow({super.key, required this.halaqaId, required this.onUnlink});
 
-  final String? halaqaId;
+  final String halaqaId;
+  final VoidCallback? onUnlink;
 
   @override
-  ConsumerState<_HalaqaStatus> createState() => _HalaqaStatusState();
+  ConsumerState<_HalaqaRow> createState() => _HalaqaRowState();
 }
 
-class _HalaqaStatusState extends ConsumerState<_HalaqaStatus> {
-  Future<AcademicHalaqaDetail?>? _detail;
+class _HalaqaRowState extends ConsumerState<_HalaqaRow> {
+  late Future<AcademicHalaqaDetail?> _detail;
 
   @override
   void initState() {
@@ -684,31 +686,37 @@ class _HalaqaStatusState extends ConsumerState<_HalaqaStatus> {
   }
 
   @override
-  void didUpdateWidget(_HalaqaStatus old) {
+  void didUpdateWidget(_HalaqaRow old) {
     super.didUpdateWidget(old);
     if (old.halaqaId != widget.halaqaId) _resolve();
   }
 
   void _resolve() {
-    final id = widget.halaqaId;
-    _detail = id == null
-        ? null
-        : ref.read(academicRepositoryProvider).halaqa(id);
+    _detail = ref.read(academicRepositoryProvider).halaqa(widget.halaqaId);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.halaqaId == null) return const Text(CommunityCopy.halaqaNone);
-    return FutureBuilder<AcademicHalaqaDetail?>(
-      future: _detail,
-      builder: (context, snapshot) {
-        final name = snapshot.data?.halaqa.name;
-        return Text(
-          name == null
-              ? CommunityCopy.halaqaLinkedUnnamed
-              : CommunityCopy.halaqaLinked(name),
-        );
-      },
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: Insets.xs),
+      child: Row(
+        children: [
+          const Icon(Icons.school_outlined, size: 20),
+          const SizedBox(width: Insets.sm),
+          Expanded(
+            child: FutureBuilder<AcademicHalaqaDetail?>(
+              future: _detail,
+              builder: (context, snapshot) =>
+                  Text(snapshot.data?.halaqa.name ?? CommunityCopy.halaqaUnnamed),
+            ),
+          ),
+          IconButton(
+            onPressed: widget.onUnlink,
+            tooltip: CommunityCopy.unlinkHalaqa,
+            icon: const Icon(Icons.link_off_rounded),
+          ),
+        ],
+      ),
     );
   }
 }

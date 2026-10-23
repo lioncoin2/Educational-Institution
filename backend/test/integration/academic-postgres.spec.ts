@@ -611,3 +611,65 @@ describeWithPostgres('migrations 0007–0008 on a database already in use', () =
     expect(sections).toEqual({ n: 0 });
   });
 });
+
+// ADR 0038: migration 0031 adds a nullable cover image reference to programs —
+// a plain cross-module Files id, so no foreign key into files' tables, no
+// default and no index — and every existing program stays valid and uncovered.
+describeWithPostgres('migration 0031 (program cover image) on a database already in use', () => {
+  let scratch: ScratchDatabase;
+
+  beforeAll(async () => {
+    // The schema as it stood after 0030: academic_programs without a cover column.
+    scratch = await scratchDatabase({ upTo: 31 });
+    await scratch.db.execute(sql`
+      insert into academic_sections (id, code, name, kind, sort_order, status, created_at, updated_at)
+      values ('s-pre', 'pre-sec', 'قسم', 'SPECIAL', 1, 'ACTIVE', now(), now())`);
+    await scratch.db.execute(sql`
+      insert into academic_programs (id, code, section_id, name, sort_order, status, created_at, updated_at)
+      values ('p-pre', 'pre-prog', 's-pre', 'برنامج', 1, 'ACTIVE', now(), now())`);
+    // Apply the rest, including 0031 (add cover_file_asset_id).
+    await migrateTo(scratch.db);
+  }, 60_000);
+
+  afterAll(async () => {
+    await scratch?.drop();
+  });
+
+  const values = async (query: ReturnType<typeof sql>) =>
+    (await scratch.db.execute(query)).rows.map((row) => Object.values(row)[0]);
+
+  it('adds a nullable, FK-free cover column, leaving existing programs valid and uncovered', async () => {
+    const column = await scratch.db.execute(sql`
+      select data_type, is_nullable, column_default from information_schema.columns
+      where table_schema = 'public' and table_name = 'academic_programs'
+        and column_name = 'cover_file_asset_id'`);
+    expect(column.rows).toEqual([{ data_type: 'text', is_nullable: 'YES', column_default: null }]);
+    // Still only the one foreign key — to its own section, never to files.
+    expect(
+      await values(sql`select conname from pg_constraint
+                        where conrelid = 'academic_programs'::regclass and contype = 'f' order by 1`),
+    ).toEqual(['academic_programs_section_id_academic_sections_id_fk']);
+    // The program that predated the column survives, with no cover.
+    expect(
+      await values(
+        sql`select coalesce(cover_file_asset_id, 'unset') from academic_programs where id = 'p-pre'`,
+      ),
+    ).toEqual(['unset']);
+  });
+
+  it('persists a cover through the repository: bind, read, replace and clear', async () => {
+    const repo = new DrizzleAcademicRepository(scratch.db);
+    const at = new Date('2026-10-21T00:00:00.000Z');
+    expect((await repo.setProgramCover('p-pre', 'asset-cover-1', at))?.coverFileAssetId).toBe(
+      'asset-cover-1',
+    );
+    expect((await repo.findProgram('p-pre'))?.coverFileAssetId).toBe('asset-cover-1');
+    expect((await repo.setProgramCover('p-pre', 'asset-cover-2', at))?.coverFileAssetId).toBe(
+      'asset-cover-2',
+    );
+    expect((await repo.setProgramCover('p-pre', null, at))?.coverFileAssetId).toBeNull();
+    expect((await repo.findProgram('p-pre'))?.coverFileAssetId).toBeNull();
+    // An unknown program is reported, never created.
+    expect(await repo.setProgramCover('p-missing', 'asset-x', at)).toBeNull();
+  });
+});

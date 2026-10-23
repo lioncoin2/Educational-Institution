@@ -46,7 +46,8 @@ describeWithPostgres('Communities in Postgres', () => {
 
   const reset = async () => {
     await db.execute(
-      sql`truncate communities_capability_grants, community_members, community_invitations, communities`,
+      sql`truncate communities_capability_grants, community_members, community_invitations,
+                   community_halaqa_links, communities`,
     );
   };
 

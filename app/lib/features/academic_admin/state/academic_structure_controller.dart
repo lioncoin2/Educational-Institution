@@ -113,6 +113,21 @@ class AcademicStructureController extends AsyncNotifier<List<AcademicSection>> {
         .setProgramActive(programId, active: active);
     ref.invalidateSelf();
   }
+
+  /// Binds [coverFileAssetId] (an uploaded image) as the program's cover, or —
+  /// when it is null — clears it (ADR 0038). `academic.manage` only; the server
+  /// re-authorises and verifies the image. A success re-reads the tree and
+  /// refreshes the program's cover link so the new image shows at once.
+  Future<void> setProgramCover(String programId, String? coverFileAssetId) async {
+    final repo = ref.read(academicRepositoryProvider);
+    if (coverFileAssetId == null) {
+      await repo.clearProgramCover(programId);
+    } else {
+      await repo.setProgramCover(programId, coverFileAssetId);
+    }
+    ref.invalidate(programCoverUrlProvider(programId));
+    ref.invalidateSelf();
+  }
 }
 
 final academicStructureProvider =
@@ -124,3 +139,19 @@ final academicStructureProvider =
       // A failure surfaces at once with a retry; no silent backoff.
       retry: (_, _) => null,
     );
+
+/// A short-lived signed link to a program's cover image (ADR 0038), resolved
+/// through the existing authorized route. A program without a cover, or one
+/// whose link fails, resolves to null — the caller shows a fallback, never a
+/// gap. Fetch it only for a program whose `coverFileAssetId` is set, so a
+/// cover-less program makes no request.
+final programCoverUrlProvider = FutureProvider.autoDispose.family<Uri?, String>((
+  ref,
+  programId,
+) async {
+  try {
+    return await ref.read(academicRepositoryProvider).programCoverUrl(programId);
+  } on AcademicException {
+    return null; // no cover → fallback
+  }
+}, retry: (_, _) => null);

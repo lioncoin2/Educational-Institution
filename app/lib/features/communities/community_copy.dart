@@ -248,18 +248,16 @@ abstract final class CommunityCopy {
   // (`me.canManageHalaqa`); the link is inert metadata and the server decides
   // again on every request.
 
-  static const halaqaTitle = 'الحلقة الأكاديمية';
+  static const halaqaTitle = 'الحلقات الأكاديمية';
   static const halaqaNone = 'هذا المجتمع غير مرتبط بأي حلقة.';
   static const linkHalaqa = 'ربط بحلقة';
-  static const changeHalaqa = 'تغيير الحلقة';
   static const unlinkHalaqa = 'إلغاء ربط الحلقة';
   static const confirmUnlinkHalaqa = 'إلغاء الربط';
-  static const unlinkHalaqaQuestion = 'إلغاء ربط هذا المجتمع بالحلقة؟';
+  static const unlinkHalaqaQuestion = 'إلغاء ربط هذا المجتمع بهذه الحلقة؟';
 
-  /// The current association when its halaqa's name is known; otherwise the
-  /// neutral line, never a bare id.
-  static String halaqaLinked(String name) => 'مرتبط بحلقة: $name';
-  static const halaqaLinkedUnnamed = 'مرتبط بحلقة.';
+  /// A linked halaqa's name while it resolves or cannot be read — never a bare
+  /// id. One row is shown per association.
+  static const halaqaUnnamed = 'حلقة غير معروفة';
 
   // The halaqa picker — reuses the academic catalogue (sections → programs →
   // halaqat); it shows structure only, never a student or a teacher.

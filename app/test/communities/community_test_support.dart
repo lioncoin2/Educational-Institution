@@ -208,9 +208,9 @@ class ScriptedCommunities extends MockCommunityRepository {
   );
 
   @override
-  Future<Community> unlinkHalaqa(String communityId) => _write(
-    'unlinkHalaqa $communityId',
-    () => super.unlinkHalaqa(communityId),
+  Future<Community> unlinkHalaqa(String communityId, String halaqaId) => _write(
+    'unlinkHalaqa $communityId $halaqaId',
+    () => super.unlinkHalaqa(communityId, halaqaId),
   );
 
   /// Ends the viewer's membership everywhere: an empty list.
@@ -528,7 +528,7 @@ Map<String, Object?> communityJson({
     'community.live.raise_hand',
   ],
   List<String> operations = const [],
-  String? halaqaId,
+  List<String> halaqaIds = const [],
   bool canManageHalaqa = false,
   String? chatMode = 'GROUP_OPEN',
   bool canPost = false,
@@ -538,7 +538,7 @@ Map<String, Object?> communityJson({
   'status': status,
   'lifecycleVersion': lifecycleVersion,
   'memberCount': memberCount,
-  'halaqaId': halaqaId,
+  'halaqaIds': halaqaIds,
   'createdAt': '2026-09-01T08:00:00.000Z',
   'chatMode': ?chatMode,
   'me': {

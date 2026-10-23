@@ -739,12 +739,20 @@ describeWithPostgres('messaging and files on Postgres', () => {
         ]);
         expect(page.items[1]?.attachments[0]?.file?.kind).toBe('IMAGE');
 
-        const list = expectOk(await h.listConversations.execute({ principal: teacher }));
-        expect(list.items[0]).toMatchObject({
+        // The group's unread + latest projection, read over Postgres. Messages
+        // is direct-only, so the group never appears in listConversations; its
+        // summary is read directly as the conversation view.
+        const summary = expectOk(
+          await h.getConversation.execute({ principal: teacher, conversationId: halaqa.id }),
+        );
+        expect(summary).toMatchObject({
           id: halaqa.id,
           unreadCount: 1,
           lastMessage: { sequence: 2, senderName: 'الطالب', text: 'واجبي' },
         });
+        const list = expectOk(await h.listConversations.execute({ principal: teacher }));
+        expect(list.items.map((item) => item.id)).not.toContain(halaqa.id);
+        expect(list.items.every((item) => item.type === 'DIRECT')).toBe(true);
         expectOk(
           await h.markRead.execute({
             principal: teacher,

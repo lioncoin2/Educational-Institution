@@ -611,61 +611,36 @@ describe('community chats', () => {
     });
   });
 
-  describe('the conversation list', () => {
-    it('shows a member their community chat with its title and their posting right', async () => {
+  describe('the conversation list (Messages) is direct-only', () => {
+    it('never lists a community chat in Messages — it is reached through Communities instead', async () => {
       const chatId = (await h.openCommunityChat(admin, communityId)).id;
-      const [item] = expectOk(await h.listConversations.execute({ principal: student })).items;
-      expect(item).toMatchObject({
+      // A real direct conversation is what DOES belong in Messages.
+      const peer = h.person(Roles.teacher);
+      const direct = await h.direct(student, peer);
+
+      for (const principal of [student, admin]) {
+        const list = expectOk(await h.listConversations.execute({ principal }));
+        expect(list.items.map((item) => item.id)).not.toContain(chatId);
+        expect(list.items.every((item) => item.type === 'DIRECT')).toBe(true);
+        expect(list.items.every((item) => item.communityId === null)).toBe(true);
+      }
+      // The student's Messages holds exactly their direct conversation.
+      const studentList = expectOk(await h.listConversations.execute({ principal: student }));
+      expect(studentList.items.map((item) => item.id)).toEqual([direct.id]);
+
+      // The community chat is still fully reachable through Communities' own
+      // path, with its title and the member's posting right projected there.
+      const opened = expectOk(await h.communityChat.execute({ principal: student, communityId }));
+      expect(opened).toMatchObject({
         id: chatId,
         communityId,
         title: 'حلقة التجويد',
         canPost: false,
       });
-      const [own] = expectOk(await h.listConversations.execute({ principal: admin })).items;
-      expect(own).toMatchObject({ id: chatId, canPost: true });
-    });
-
-    it('drops a chat Communities no longer lets them read, and syncs it', async () => {
-      const chatId = (await h.openCommunityChat(admin, communityId)).id;
-      expectOk(
-        await h.communities.remove.execute({
-          principal: admin,
-          communityId,
-          userId: student.userId,
-          meta: META,
-        }),
+      const owner = expectOk(
+        await h.getConversation.execute({ principal: admin, conversationId: chatId }),
       );
-      expect(expectOk(await h.listConversations.execute({ principal: student })).items).toEqual([]);
-      await h.sync.idle();
-      expect(await projected(chatId)).not.toContain(student.userId);
-    });
-
-    it('asks Communities three times per page, whatever the number of chats — and never for a page without one', async () => {
-      // Someone in no community: their page holds a direct conversation only.
-      const loner = h.person(Roles.student);
-      await h.direct(teacher, loner);
-      const authorizeEach = jest.spyOn(h.communities.authorization, 'authorizeEach');
-      const describe = jest.spyOn(h.communities.directory, 'describe');
-      expect(expectOk(await h.listConversations.execute({ principal: loner })).items).toHaveLength(
-        1,
-      );
-      expect(authorizeEach).not.toHaveBeenCalled();
-      expect(describe).not.toHaveBeenCalled();
-
-      for (let i = 0; i < 5; i++) {
-        await h.openCommunityChat(loner, await h.community(admin, [loner]));
-      }
-      await h.deliverCommunityEvents();
-      authorizeEach.mockClear();
-      describe.mockClear();
-      const page = expectOk(await h.listConversations.execute({ principal: loner }));
-      expect(page.items.filter((item) => item.communityId !== null)).toHaveLength(5);
-      expect(authorizeEach).toHaveBeenCalledTimes(2);
-      expect(authorizeEach.mock.calls.map((call) => call[2]).sort()).toEqual([
-        'community.chat.post',
-        'community.chat.read',
-      ]);
-      expect(describe).toHaveBeenCalledTimes(1);
+      expect(owner).toMatchObject({ id: chatId, canPost: true });
     });
   });
 
@@ -778,19 +753,19 @@ describe('community chats', () => {
       expectOk(await send(teacher, group.id));
     });
 
-    it('lists everything else, leaving the community chats out until Communities answers again', async () => {
-      const group = await h.group(teacher, [student]);
+    it('keeps Messages (direct-only) listing normally — it never asks Communities', async () => {
+      const peer = h.person(Roles.teacher);
+      const direct = await h.direct(student, peer);
       const authorizeEach = jest
         .spyOn(h.communities.authorization, 'authorizeEach')
         .mockRejectedValue(new Error('store down'));
 
-      // A community chat's row alone is never an answer (§19): left out, not shown.
+      // Messages is direct-only: it holds the direct conversation, never the
+      // community chat, and does not depend on Communities to answer at all.
       const down = expectOk(await h.listConversations.execute({ principal: student }));
-      expect(down.items.map((item) => item.id)).toEqual([group.id]);
-
-      authorizeEach.mockRestore();
-      const back = expectOk(await h.listConversations.execute({ principal: student }));
-      expect(back.items.map((item) => item.id).sort()).toEqual([group.id, chatId].sort());
+      expect(down.items.map((item) => item.id)).toEqual([direct.id]);
+      expect(down.items.map((item) => item.id)).not.toContain(chatId);
+      expect(authorizeEach).not.toHaveBeenCalled();
     });
 
     it('shows a chat it cannot describe untitled and closed to posting — a send still asks its own permit', async () => {

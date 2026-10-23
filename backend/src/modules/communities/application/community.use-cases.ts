@@ -162,6 +162,7 @@ export class CreateCommunityUseCase {
           community,
           stint: { ...owner, grants: [] },
         }),
+        [], // a brand-new community has no halaqa associations yet
       ),
     );
   }
@@ -201,6 +202,7 @@ export class GetCommunityUseCase {
       communityView(
         read.community,
         this.authorization.me(command.principal, command.communityId, read),
+        read.halaqaIds,
       ),
     );
   }
@@ -251,6 +253,7 @@ export class ListCommunitiesUseCase {
               community: row.community,
               stint: { ...row.stint, grants: row.grants },
             }),
+            row.halaqaIds,
           ),
         ),
         nextCursor: page.nextCursor,
@@ -282,6 +285,7 @@ export class ListCommunitiesUseCase {
             community,
             stint: stints.get(community.id)?.stint ?? null,
           }),
+          stints.get(community.id)?.halaqaIds ?? [],
         ),
       ),
       nextCursor: page.nextCursor,
@@ -330,6 +334,7 @@ export class ChangeCommunityStatusUseCase {
       communityView(
         community,
         this.authorization.me(principal, communityId, { community, stint: read?.stint ?? null }),
+        read?.halaqaIds ?? [],
       );
 
     switch (outcome.kind) {
@@ -446,6 +451,7 @@ export class EditCommunityProfileUseCase {
       communityView(
         community,
         this.authorization.me(principal, communityId, { community, stint: read?.stint ?? null }),
+        read?.halaqaIds ?? [],
       );
 
     switch (outcome.kind) {
@@ -530,6 +536,7 @@ export class SetChatModeUseCase {
       communityView(
         community,
         this.authorization.me(principal, communityId, { community, stint: read?.stint ?? null }),
+        read?.halaqaIds ?? [],
       );
 
     switch (outcome.kind) {
@@ -563,36 +570,57 @@ export class SetChatModeUseCase {
 const HALAQA_NOT_FOUND = failure('not_found', 'communities.halaqa_not_found', 'No such halaqa.');
 
 /**
- * Associates a community with an academic halaqa, or clears the association
- * (Q50). Institutional oversight — `communities.manage`, held by the owner and
- * admins — decides it, never membership or ownership of the community; the same
- * administrators administer the academic structure, so no new authority is
+ * The view of a community after a halaqa link changed: the community and its
+ * current halaqa associations, read back in one authority read (which also
+ * carries the `me` block), so the response reflects exactly what was written.
+ * A community that vanished under the write is `COMMUNITY_NOT_FOUND`.
+ */
+async function halaqaLinkView(
+  authorization: CommunityAuthorizationService,
+  store: CommunityStore,
+  principal: Principal,
+  communityId: string,
+): Promise<Result<CommunityView>> {
+  const read = await store.authorityOf(communityId, principal.userId);
+  if (read.community === null) return err(COMMUNITY_NOT_FOUND);
+  return ok(
+    communityView(read.community, authorization.me(principal, communityId, read), read.halaqaIds),
+  );
+}
+
+/**
+ * Associates a community with an academic halaqa (Q50). A group or channel may
+ * be associated with many halaqat, and a halaqa with many groups and channels
+ * (ADR 0033). Institutional oversight — `communities.manage`, held by the owner
+ * and admins — decides it, never membership or ownership of the community; the
+ * same administrators administer the academic structure, so no new authority is
  * invented. The association is inert metadata: it creates and removes no
  * membership, grants and revokes no capability, and derives no messaging,
- * attendance or academic authorization. A repeat with the same value changes
- * nothing.
+ * attendance or academic authorization. Linking the same halaqa again changes
+ * nothing (idempotent).
  *
  * A link's target is validated through academic's read-only
  * `ACADEMIC_RELATIONSHIPS` contract — existence only, revealing no enrollment,
  * teaching or roster — so a dangling reference is refused before it is stored
  * (ADR 0033). Communities reaches academic through that contract alone and
- * never its internals or tables; unlinking (null) needs no validation.
+ * never its internals or tables.
  */
 @Injectable()
-export class SetCommunityHalaqaUseCase {
+export class LinkCommunityHalaqaUseCase {
   constructor(
     @Inject(AUTHORIZATION_SERVICE) private readonly identity: AuthorizationService,
     @Inject(ACADEMIC_RELATIONSHIPS) private readonly academic: AcademicRelationships,
     private readonly authorization: CommunityAuthorizationService,
     @Inject(COMMUNITY_STORE) private readonly store: CommunityStore,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
     private readonly journal: CommunitiesJournal,
   ) {}
 
   async execute(command: {
     readonly principal: Principal;
     readonly communityId: string;
-    readonly halaqaId: string | null;
+    readonly halaqaId: string;
     readonly meta: CallMetadata;
   }): Promise<Result<CommunityView>> {
     const { principal, communityId } = command;
@@ -602,27 +630,25 @@ export class SetCommunityHalaqaUseCase {
     });
     if (!oversees.ok) return oversees;
 
-    // Reject a dangling reference before persisting (unlinking needs no check).
-    if (command.halaqaId !== null && !(await this.academic.halaqaExists(command.halaqaId))) {
-      return err(HALAQA_NOT_FOUND);
-    }
+    // Reject a dangling reference before persisting.
+    if (!(await this.academic.halaqaExists(command.halaqaId))) return err(HALAQA_NOT_FOUND);
 
     const at = this.clock.now();
     const actor = actorOf(principal);
-    const outcome = await this.store.setHalaqa({
+    const outcome = await this.store.linkHalaqa({
+      linkId: this.ids.next<'CommunityHalaqaLink'>(),
       communityId,
       halaqaId: command.halaqaId,
-      actorUserId: actor,
+      linkedBy: actor,
       at,
     });
     if (outcome.kind === 'not_found') return err(COMMUNITY_NOT_FOUND);
     if (outcome.kind === 'conflict') return err(COMMUNITY_CONFLICT);
-    if (outcome.kind === 'changed') {
+    if (outcome.kind === 'linked') {
       await this.journal.record(
         {
           actorUserId: actor,
-          action:
-            command.halaqaId === null ? CommunityAudit.halaqaUnlinked : CommunityAudit.halaqaLinked,
+          action: CommunityAudit.halaqaLinked,
           resourceType: COMMUNITY_AUDIT_RESOURCE,
           resourceId: communityId,
           at,
@@ -632,9 +658,59 @@ export class SetCommunityHalaqaUseCase {
         [],
       );
     }
-    const read = await this.store.authorityOf(communityId, principal.userId);
-    return ok(
-      communityView(outcome.community, this.authorization.me(principal, communityId, read)),
-    );
+    return halaqaLinkView(this.authorization, this.store, principal, communityId);
+  }
+}
+
+/**
+ * Removes one of a community's academic halaqa associations (Q50). The same
+ * oversight gate (`communities.manage`) and the same inertness as linking;
+ * removing a link that is not there changes nothing (idempotent) and touches no
+ * other link, membership or association. Unlinking needs no academic
+ * validation — a link to a halaqa that no longer exists can always be removed.
+ */
+@Injectable()
+export class UnlinkCommunityHalaqaUseCase {
+  constructor(
+    @Inject(AUTHORIZATION_SERVICE) private readonly identity: AuthorizationService,
+    private readonly authorization: CommunityAuthorizationService,
+    @Inject(COMMUNITY_STORE) private readonly store: CommunityStore,
+    @Inject(CLOCK) private readonly clock: Clock,
+    private readonly journal: CommunitiesJournal,
+  ) {}
+
+  async execute(command: {
+    readonly principal: Principal;
+    readonly communityId: string;
+    readonly halaqaId: string;
+    readonly meta: CallMetadata;
+  }): Promise<Result<CommunityView>> {
+    const { principal, communityId } = command;
+    const oversees = this.identity.authorize(principal, Permissions.communities.manage, {
+      resourceType: COMMUNITY_RESOURCE,
+      resourceId: communityId,
+    });
+    if (!oversees.ok) return oversees;
+
+    const at = this.clock.now();
+    const actor = actorOf(principal);
+    const outcome = await this.store.unlinkHalaqa({ communityId, halaqaId: command.halaqaId });
+    if (outcome.kind === 'not_found') return err(COMMUNITY_NOT_FOUND);
+    if (outcome.kind === 'conflict') return err(COMMUNITY_CONFLICT);
+    if (outcome.kind === 'unlinked') {
+      await this.journal.record(
+        {
+          actorUserId: actor,
+          action: CommunityAudit.halaqaUnlinked,
+          resourceType: COMMUNITY_AUDIT_RESOURCE,
+          resourceId: communityId,
+          at,
+          metadata: { halaqaId: command.halaqaId },
+          correlationId: command.meta.correlationId,
+        },
+        [],
+      );
+    }
+    return halaqaLinkView(this.authorization, this.store, principal, communityId);
   }
 }

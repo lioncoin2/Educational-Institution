@@ -13,6 +13,7 @@ import { toCommunity, toGrant, toInvitation, toStint } from './row-mapping';
 import {
   communities,
   communityCapabilityGrants,
+  communityHalaqaLinks,
   communityInvitations,
   communityMembers,
   type CommunityMemberRow,
@@ -47,6 +48,10 @@ export class DrizzleCommunityReadModel implements CommunityReadModel {
           select json_agg(json_build_object('id', g.id, 'capability', g.capability) order by g.id)
             from ${communityCapabilityGrants} g
            where g.membership_id = ${communityMembers.id} and g.ended_at is null), '[]'::json)`,
+        halaqaIds: sql<string[]>`coalesce((
+          select array_agg(l.halaqa_id order by l.linked_at, l.id)
+            from ${communityHalaqaLinks} l
+           where l.community_id = ${communities.id}), '{}')`,
       })
       .from(communityMembers)
       .innerJoin(communities, eq(communities.id, communityMembers.communityId))
@@ -65,6 +70,7 @@ export class DrizzleCommunityReadModel implements CommunityReadModel {
       community: toCommunity(row.community),
       stint: toStint(row.stint),
       grants: row.grants,
+      halaqaIds: row.halaqaIds ?? [],
     }));
   }
 
@@ -332,7 +338,6 @@ function fromJson(json: unknown): CommunityRow {
     lifecycleVersion: Number(row.lifecycle_version),
     membershipVersion: Number(row.membership_version),
     memberCount: Number(row.member_count),
-    halaqaId: row.halaqa_id as string | null,
     createdBy: row.created_by as string | null,
     createdAt: date(row.created_at) as Date,
     statusChangedAt: date(row.status_changed_at),

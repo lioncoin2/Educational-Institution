@@ -186,41 +186,39 @@ void main() {
   setUp(() => repo = ScriptedRepository());
 
   testWidgets(
-    'lists conversations with previews and unread badges, flagged as demo data',
+    'lists direct conversations with previews and unread badges, flagged as demo data',
     (tester) async {
       await open(tester, '/messages');
-      expect(find.text('حلقة الفجر — التلاوة'), findsOneWidget);
+      // Messages is direct-only: the direct conversation shows; community
+      // group/channel chats do not (they live in Communities).
       expect(find.text('الأستاذ عبدالله'), findsOneWidget);
-      expect(find.text('إعلانات المعهد'), findsOneWidget);
+      expect(find.text('حلقة الفجر — التلاوة'), findsNothing);
+      expect(find.text('إعلانات المعهد'), findsNothing);
       expect(find.textContaining('محادثات تجريبية'), findsOneWidget);
-      // mock-group: 36 messages, read to 31, five unread — four from others.
-      expect(find.text('4'), findsOneWidget);
+      // mock-direct: six messages, read to four, two unread from the teacher.
+      expect(find.text('2'), findsOneWidget);
     },
   );
 
   testWidgets('caps the unread badge at 99+', (tester) async {
     repo.unreadOverride = 100;
     await open(tester, '/messages');
-    // One badge per listed conversation — the demo's community chats too.
+    // One 99+ badge per listed (direct-only) conversation.
     final listed = (await repo.conversations()).items.length;
-    expect(listed, greaterThan(3));
+    expect(listed, greaterThan(0));
     expect(find.text('99+'), findsNWidgets(listed));
   });
 
-  testWidgets('opens a conversation, shows who said what, and marks it read', (
+  testWidgets('opens a conversation, shows its messages, and marks it read', (
     tester,
   ) async {
     await open(tester, '/messages');
-    await tester.tap(find.text('حلقة الفجر — التلاوة'));
+    await tester.tap(find.text('الأستاذ عبدالله'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('تنبيه الحلقة رقم 36'), findsOneWidget);
-    expect(
-      find.text('الأستاذ عبدالله'),
-      findsWidgets,
-    ); // sender names in a group
+    expect(find.textContaining('لا تنسَ تسجيل التلاوة'), findsOneWidget);
     expect(find.text('رسائل جديدة'), findsOneWidget);
-    expect((await repo.conversation('mock-group')).lastReadSequence, 36);
+    expect((await repo.conversation('mock-direct')).lastReadSequence, 6);
   });
 
   testWidgets('sends a message and shows it in the timeline', (tester) async {
@@ -313,7 +311,7 @@ void main() {
     repo.failList = false;
     await tester.tap(find.text('إعادة المحاولة'));
     await tester.pumpAndSettle();
-    expect(find.text('حلقة الفجر — التلاوة'), findsOneWidget);
+    expect(find.text('الأستاذ عبدالله'), findsOneWidget);
   });
 
   testWidgets('loads the next page of conversations on request', (
@@ -324,9 +322,10 @@ void main() {
     repo.extraPage = [
       Conversation(
         id: 'page-two',
-        type: ConversationType.group,
-        title: 'حلقة العصر',
-        memberCount: 3,
+        type: ConversationType.direct,
+        title: 'أستاذة مريم',
+        counterpartUserId: 'mock-teacher-2',
+        memberCount: 2,
         myRole: ParticipantRole.member,
         canPost: true,
         canManageMembers: false,
@@ -338,11 +337,11 @@ void main() {
       ),
     ];
     await open(tester, '/messages');
-    expect(find.text('حلقة العصر'), findsNothing);
+    expect(find.text('أستاذة مريم'), findsNothing);
     await tester.scrollUntilVisible(find.text('عرض المزيد'), 200);
     await tester.tap(find.text('عرض المزيد'));
     await tester.pumpAndSettle();
-    expect(find.text('حلقة العصر'), findsOneWidget);
+    expect(find.text('أستاذة مريم'), findsOneWidget);
   });
 
   group('live', () {
@@ -415,7 +414,7 @@ void main() {
     await tester.scrollUntilVisible(find.text('الرسائل'), 200);
     await tester.tap(find.text('الرسائل'));
     await tester.pumpAndSettle();
-    expect(find.text('حلقة الفجر — التلاوة'), findsOneWidget);
+    expect(find.text('الأستاذ عبدالله'), findsOneWidget);
   });
 
   // The viewer owns `ownedId` (its chat), so its community `me` grants

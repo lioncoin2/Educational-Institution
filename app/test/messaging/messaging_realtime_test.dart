@@ -381,11 +381,11 @@ void main() {
 
     test('clears a badge read on another device', () async {
       await load();
-      final group = item('mock-group');
-      expect(group.unreadCount, greaterThan(0));
-      realtime.emit(read('mock-group', group.lastSequence));
+      final direct = item('mock-direct');
+      expect(direct.unreadCount, greaterThan(0));
+      realtime.emit(read('mock-direct', direct.lastSequence));
       await pumpEventQueue();
-      expect(item('mock-group').unreadCount, 0);
+      expect(item('mock-direct').unreadCount, 0);
     });
 
     test('shows a deleted latest message as deleted in the preview', () async {
@@ -425,17 +425,18 @@ void main() {
 
     test('drops a conversation the viewer was removed from', () async {
       await load();
+      expect(list().items.any((c) => c.id == 'mock-direct'), isTrue);
       realtime.emit(
         ParticipantRemovedEvent(
           eventId: 'participant.removed:y',
           occurredAt: DateTime.now(),
-          conversationId: 'mock-group',
+          conversationId: 'mock-direct',
           userId: viewer,
           reason: 'removed',
         ),
       );
       await pumpEventQueue();
-      expect(list().items.any((c) => c.id == 'mock-group'), isFalse);
+      expect(list().items.any((c) => c.id == 'mock-direct'), isFalse);
     });
 
     test(

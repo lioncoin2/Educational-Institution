@@ -26,7 +26,7 @@ responsibility and what each module must not know live in
 - **Nest module:** `academic.module.ts` — exports: `ACADEMIC_RELATIONSHIPS`, `ACADEMIC_STRUCTURE_SUMMARY`
 - **Public contract (`contracts/`):** `ACADEMIC_RELATIONSHIPS`, `ACADEMIC_RELATIONSHIPS_MAX_PAGE`, `ACADEMIC_STRUCTURE_SUMMARY`, `ASSIGNMENT_STATUSES`, `AcademicEvent`, `AcademicEvents`, `AcademicRelationships`, `AcademicStructureReporting`, `AcademicStructureSummary`, `AssignmentEnded`, `AssignmentStatus`, `ENROLLMENT_OUTCOMES`, `ENROLLMENT_STATUSES`, `EnrollmentEnded`, `EnrollmentOutcome`, `EnrollmentStatus`, `HalaqaCreated`, `HalaqaStatusChanged`, `HalaqaUpdated`, `ProgramCreated`, `ProgramStatusChanged`, `ProgramUpdated`, `SECTION_KINDS`, `STRUCTURE_STATUSES`, `SectionCreated`, `SectionKind`, `SectionStatusChanged`, `SectionUpdated`, `StructureCount`, `StructureField`, `StructureStatus`, `StudentEnrolled`, `TEACHING_ROLES`, `TeacherAssigned`, `TeachingRole`, `isEnrollmentOutcome`, `isSectionKind`, `isTeachingRole`
 - **Declared domain events:** `academic.halaqa.activated`, `academic.halaqa.created`, `academic.halaqa.deactivated`, `academic.halaqa.updated`, `academic.program.activated`, `academic.program.created`, `academic.program.deactivated`, `academic.program.updated`, `academic.section.activated`, `academic.section.created`, `academic.section.deactivated`, `academic.section.updated`, `academic.student.enrolled`, `academic.student.enrollment_ended`, `academic.teacher.assigned`, `academic.teacher.assignment_ended`
-- **Static imports → modules:** `identity`
+- **Static imports → modules:** `files`, `identity`
 - **Docs:** [module-boundaries.md#academic](module-boundaries.md#academic)
 
 ### assignments

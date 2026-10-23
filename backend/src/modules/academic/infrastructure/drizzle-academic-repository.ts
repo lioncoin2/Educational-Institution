@@ -227,6 +227,19 @@ export class DrizzleAcademicRepository implements AcademicRepository {
       .where(eq(academicHalaqat.id, halaqa.id));
   }
 
+  async setProgramCover(
+    id: string,
+    coverFileAssetId: string | null,
+    at: Date,
+  ): Promise<Program | null> {
+    const [row] = await this.db
+      .update(academicPrograms)
+      .set({ coverFileAssetId, updatedAt: notBefore(academicPrograms.updatedAt, at) })
+      .where(eq(academicPrograms.id, id))
+      .returning();
+    return row === undefined ? null : toProgram(row);
+  }
+
   async setSectionStatus(
     id: string,
     status: StructureStatus,

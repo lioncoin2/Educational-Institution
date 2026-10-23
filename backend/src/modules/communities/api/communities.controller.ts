@@ -29,9 +29,10 @@ import {
   CreateCommunityUseCase,
   EditCommunityProfileUseCase,
   GetCommunityUseCase,
+  LinkCommunityHalaqaUseCase,
   ListCommunitiesUseCase,
   SetChatModeUseCase,
-  SetCommunityHalaqaUseCase,
+  UnlinkCommunityHalaqaUseCase,
 } from '../application/community.use-cases';
 import { TransferOwnershipUseCase } from '../application/delegation.use-cases';
 import { RedeemInvitationUseCase } from '../application/invitation.use-cases';
@@ -46,12 +47,12 @@ import {
   AddMembersDto,
   CreateCommunityDto,
   EditCommunityProfileDto,
+  LinkHalaqaDto,
   ListCommunitiesQuery,
   MemberCandidatesQuery,
   PageQuery,
   RedeemInvitationDto,
   SetChatModeDto,
-  SetHalaqaDto,
   TransferOwnershipDto,
 } from './dto/communities.dto';
 import {
@@ -90,7 +91,8 @@ export class CommunitiesController {
     private readonly leaveCommunity: LeaveCommunityUseCase,
     private readonly redeemInvitation: RedeemInvitationUseCase,
     private readonly transferOwnership: TransferOwnershipUseCase,
-    private readonly setHalaqa: SetCommunityHalaqaUseCase,
+    private readonly linkHalaqaUseCase: LinkCommunityHalaqaUseCase,
+    private readonly unlinkHalaqaUseCase: UnlinkCommunityHalaqaUseCase,
     private readonly editProfile: EditCommunityProfileUseCase,
     private readonly avatarLink: GetCommunityAvatarLinkUseCase,
     private readonly setChatMode: SetChatModeUseCase,
@@ -297,38 +299,46 @@ export class CommunitiesController {
   }
 
   /**
-   * Associates the community with an academic halaqa (PUT), or clears the
-   * association (DELETE) — Q50. The edge gate is `communities.read` as on every
-   * route; the use case decides on `communities.manage`, so only institutional
-   * oversight (owner and admins) may link or unlink, never a member or the
-   * community's own owner. The link is inert metadata and changes nothing else.
+   * Adds an academic halaqa association to the community (POST), or removes one
+   * (DELETE) — Q50. A group or channel may be associated with many halaqat, so
+   * each link is added and removed by its own halaqa id. The edge gate is
+   * `communities.read` as on every route; the use case decides on
+   * `communities.manage`, so only institutional oversight (owner and admins) may
+   * link or unlink, never a member or the community's own owner. The link is
+   * inert metadata and changes nothing else.
    */
-  @Put(':communityId/halaqa')
+  @Post(':communityId/halaqat')
   @RequirePermission(Permissions.communities.read)
   @HttpCode(HttpStatus.OK)
   async linkHalaqa(
     @CurrentPrincipal() principal: Principal,
     @Param('communityId') communityId: string,
-    @Body() dto: SetHalaqaDto,
+    @Body() dto: LinkHalaqaDto,
     @RequestMetadata() meta: CallMetadata,
   ) {
     return toCommunityResponse(
       unwrap(
-        await this.setHalaqa.execute({ principal, communityId, halaqaId: dto.halaqaId, meta }),
+        await this.linkHalaqaUseCase.execute({
+          principal,
+          communityId,
+          halaqaId: dto.halaqaId,
+          meta,
+        }),
       ),
     );
   }
 
-  @Delete(':communityId/halaqa')
+  @Delete(':communityId/halaqat/:halaqaId')
   @RequirePermission(Permissions.communities.read)
   @HttpCode(HttpStatus.OK)
   async unlinkHalaqa(
     @CurrentPrincipal() principal: Principal,
     @Param('communityId') communityId: string,
+    @Param('halaqaId') halaqaId: string,
     @RequestMetadata() meta: CallMetadata,
   ) {
     return toCommunityResponse(
-      unwrap(await this.setHalaqa.execute({ principal, communityId, halaqaId: null, meta })),
+      unwrap(await this.unlinkHalaqaUseCase.execute({ principal, communityId, halaqaId, meta })),
     );
   }
 

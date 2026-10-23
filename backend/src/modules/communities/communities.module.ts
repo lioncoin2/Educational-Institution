@@ -19,9 +19,10 @@ import {
   CreateCommunityUseCase,
   EditCommunityProfileUseCase,
   GetCommunityUseCase,
+  LinkCommunityHalaqaUseCase,
   ListCommunitiesUseCase,
   SetChatModeUseCase,
-  SetCommunityHalaqaUseCase,
+  UnlinkCommunityHalaqaUseCase,
 } from './application/community.use-cases';
 import { CommunitiesJournal } from './application/communities-journal';
 import {
@@ -117,7 +118,8 @@ import { InMemoryCommunityStore } from './infrastructure/in-memory-community-sto
     GetCommunityUseCase,
     ListCommunitiesUseCase,
     ChangeCommunityStatusUseCase,
-    SetCommunityHalaqaUseCase,
+    LinkCommunityHalaqaUseCase,
+    UnlinkCommunityHalaqaUseCase,
     EditCommunityProfileUseCase,
     GetCommunityAvatarLinkUseCase,
     SetChatModeUseCase,

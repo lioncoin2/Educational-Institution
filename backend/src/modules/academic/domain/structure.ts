@@ -34,6 +34,14 @@ export interface Program {
   /** Display position within its section. */
   readonly order: number;
   readonly description: string | null;
+  /**
+   * A Files asset id (the program's cover image), or null. A reference, never a
+   * URL: the row it points at belongs to the files module, and a viewer turns
+   * it into a short-lived link through academic's own authorized cover route.
+   * Bound and cleared by `academic.manage` after creation (mirrors the
+   * community avatar, ADR 0038).
+   */
+  readonly coverFileAssetId: string | null;
   readonly status: StructureStatus;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -140,6 +148,7 @@ export function createProgram(input: {
     id: input.id,
     sectionId: input.sectionId,
     ...fields.value,
+    coverFileAssetId: null,
     status: 'ACTIVE',
     createdAt: input.at,
     updatedAt: input.at,

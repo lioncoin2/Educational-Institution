@@ -1,3 +1,4 @@
+import type { DownloadLink } from '../../files/contracts/file-assets';
 import type {
   AssignmentStatus,
   EnrollmentStatus,
@@ -45,10 +46,18 @@ export interface ProgramResponse {
   readonly name: string;
   readonly order: number;
   readonly description: string | null;
+  /** The Files asset id of the program's cover image, or null (a reference). */
+  readonly coverFileAssetId: string | null;
   readonly status: StructureStatus;
   readonly activeHalaqaCount: number;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+/** A short-lived link to a program's cover image; `expiresAt` is ISO 8601. */
+export interface ProgramCoverLinkResponse {
+  readonly url: string;
+  readonly expiresAt: string;
 }
 
 export interface HalaqaResponse {
@@ -118,11 +127,16 @@ export function toProgramResponse(view: ProgramView): ProgramResponse {
     name: view.name,
     order: view.order,
     description: view.description,
+    coverFileAssetId: view.coverFileAssetId,
     status: view.status,
     activeHalaqaCount: view.activeHalaqaCount,
     createdAt: iso(view.createdAt),
     updatedAt: iso(view.updatedAt),
   };
+}
+
+export function toProgramCoverLinkResponse(link: DownloadLink): ProgramCoverLinkResponse {
+  return { url: link.url, expiresAt: iso(link.expiresAt) };
 }
 
 export function toHalaqaResponse(view: HalaqaView): HalaqaResponse {

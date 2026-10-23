@@ -11,6 +11,7 @@ import '../../core/widgets/foundations/empty_state.dart';
 import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/layout/responsive_body.dart';
 import '../../data/models/academic.dart';
+import '../../data/models/files.dart';
 import '../../providers/app_providers.dart';
 import '../auth/sign_in_prompt.dart';
 import 'academic_admin_copy.dart';
@@ -193,6 +194,7 @@ class _ProgramRow extends ConsumerWidget {
     return ListTile(
       contentPadding: const EdgeInsetsDirectional.only(start: Insets.md),
       onTap: () => context.push(Routes.academicProgram(program.id)),
+      leading: _ProgramCoverThumb(program: program),
       title: Text(
         program.name,
         style: context.text.titleSmall?.copyWith(color: color),
@@ -213,8 +215,28 @@ class _ProgramRow extends ConsumerWidget {
                   icon: Icons.groups_2_outlined,
                   label: AcademicAdminCopy.manageHalaqat,
                 ),
+                (
+                  value: 'cover',
+                  icon: Icons.image_outlined,
+                  label: AcademicAdminCopy.changeCover,
+                ),
+                if (program.coverFileAssetId != null)
+                  (
+                    value: 'cover-remove',
+                    icon: Icons.hide_image_outlined,
+                    label: AcademicAdminCopy.removeCover,
+                  ),
               ],
-              onExtra: (_) => context.push(Routes.academicProgram(program.id)),
+              onExtra: (value) {
+                switch (value) {
+                  case 'cover':
+                    _pickProgramCover(context, ref, program);
+                  case 'cover-remove':
+                    _removeProgramCover(context, ref, program);
+                  default:
+                    context.push(Routes.academicProgram(program.id));
+                }
+              },
               onEdit: () => _editProgram(context, ref, program),
               onToggle: () =>
                   _setProgramActive(context, ref, program, !program.isActive),
@@ -222,6 +244,95 @@ class _ProgramRow extends ConsumerWidget {
           : const Icon(Icons.chevron_right_rounded),
     );
   }
+}
+
+/// A program's cover image (ADR 0038) at list size: the signed-link network
+/// image when the program has one, otherwise a neutral book icon — never a
+/// gap, and no request at all for a cover-less program.
+class _ProgramCoverThumb extends ConsumerWidget {
+  const _ProgramCoverThumb({required this.program});
+
+  final AcademicProgram program;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final url = program.coverFileAssetId == null
+        ? null
+        : ref.watch(programCoverUrlProvider(program.id)).value;
+    const size = 44.0;
+    final fallback = Container(
+      width: size,
+      height: size,
+      color: context.colors.surfaceContainerHighest,
+      child: Icon(
+        Icons.menu_book_outlined,
+        color: context.colors.onSurfaceVariant,
+        size: 22,
+      ),
+    );
+    return ClipRRect(
+      borderRadius: Radii.brSm,
+      child: url == null
+          ? fallback
+          : Image.network(
+              url.toString(),
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => fallback,
+              loadingBuilder: (context, child, progress) =>
+                  progress == null ? child : fallback,
+            ),
+    );
+  }
+}
+
+/// Pick an image and bind it as the program's cover — the same upload→verify
+/// path a community avatar uses. The server re-authorises `academic.manage`
+/// and re-verifies the image; a refusal is said in words and changes nothing.
+Future<void> _pickProgramCover(
+  BuildContext context,
+  WidgetRef ref,
+  AcademicProgram program,
+) async {
+  final picker = ref.read(attachmentPickerProvider);
+  final messenger = ScaffoldMessenger.of(context);
+  if (!picker.isAvailable) {
+    messenger.toast(AcademicAdminCopy.pickerUnavailable);
+    return;
+  }
+  final image = await picker.pickImage();
+  if (image == null) return;
+  try {
+    final assetId = await ref.read(filesRepositoryProvider).uploadImage(image);
+    await ref
+        .read(academicStructureProvider.notifier)
+        .setProgramCover(program.id, assetId);
+  } on FilesException catch (error) {
+    messenger.toast(AcademicAdminCopy.changeFailed(error.code));
+    return;
+  } on AcademicException catch (error) {
+    messenger.toast(AcademicAdminCopy.changeFailed(error.code));
+    return;
+  }
+  messenger.toast(AcademicAdminCopy.coverUpdated);
+}
+
+Future<void> _removeProgramCover(
+  BuildContext context,
+  WidgetRef ref,
+  AcademicProgram program,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await ref
+        .read(academicStructureProvider.notifier)
+        .setProgramCover(program.id, null);
+  } on AcademicException catch (error) {
+    messenger.toast(AcademicAdminCopy.changeFailed(error.code));
+    return;
+  }
+  messenger.toast(AcademicAdminCopy.coverRemoved);
 }
 
 /// A section/program header: an icon, a name with its code, a one-line subtitle,

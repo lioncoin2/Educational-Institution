@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quran_institution_app/data/models/auth.dart';
+import 'package:quran_institution_app/data/models/messaging.dart';
+import 'package:quran_institution_app/data/repositories/mock/mock_messaging_repository.dart';
 import 'package:quran_institution_app/features/communities/community_copy.dart';
 import 'package:quran_institution_app/providers/app_providers.dart';
 
@@ -25,11 +28,17 @@ void main() {
   late ScriptedCommunities repo;
   setUp(() => repo = ScriptedCommunities());
 
-  Future<void> openList(WidgetTester tester, CurrentUser signedIn) => openApp(
+  Future<ProviderContainer> openList(
+    WidgetTester tester,
+    CurrentUser signedIn,
+  ) => openApp(
     tester,
     '/communities',
     overrides: [
       communityRepositoryProvider.overrideWithValue(repo),
+      // The created community's chat resolves (as the real backend materialises
+      // it on demand), so opening its primary view can be verified.
+      messagingRepositoryProvider.overrideWithValue(_OpensAnyCommunityChat()),
       sessionUserProvider.overrideWith((ref) async => signedIn),
     ],
   );
@@ -47,9 +56,9 @@ void main() {
   });
 
   testWidgets(
-    'creates a community — the server is asked, and the sheet closes',
+    'creates a community — the server is asked, and its conversation opens',
     (tester) async {
-      await openList(tester, owner);
+      final container = await openList(tester, owner);
       await tester.tap(find.byKey(const Key('create-community-fab')));
       await tester.pumpAndSettle();
 
@@ -69,16 +78,17 @@ void main() {
 
       // A group by default (ADR 0039).
       expect(repo.writes, contains('create حلقة جديدة GROUP'));
-      expect(find.text(CommunityCopy.communityCreated), findsOneWidget);
-      // The sheet closed.
+      // The sheet closed and the new community's PRIMARY view — its
+      // conversation, by the created id — opened (never its settings page).
       expect(find.byKey(const Key('create-community-title')), findsNothing);
+      expect(locationIn(container), '/messages/mock-community-new-1-chat');
     },
   );
 
   testWidgets(
-    'creates a channel when the channel kind is chosen (ADR 0039)',
+    'creates a channel when the channel kind is chosen (ADR 0039), and opens it',
     (tester) async {
-      await openList(tester, owner);
+      final container = await openList(tester, owner);
       await tester.tap(find.byKey(const Key('create-community-fab')));
       await tester.pumpAndSettle();
 
@@ -93,7 +103,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(repo.writes, contains('create إعلانات CHANNEL'));
-      expect(find.text(CommunityCopy.communityCreated), findsOneWidget);
+      expect(locationIn(container), '/messages/mock-community-new-1-chat');
     },
   );
 
@@ -120,4 +130,38 @@ void main() {
     // Still open for a correction.
     expect(find.byKey(const Key('create-community-title')), findsOneWidget);
   });
+}
+
+/// A messaging stand-in that resolves ANY community's chat (as the real backend
+/// materialises a community chat on demand), so opening a just-created
+/// community's primary view can be exercised in a widget test.
+class _OpensAnyCommunityChat extends MockMessagingRepository {
+  _OpensAnyCommunityChat() : super(latency: Duration.zero);
+
+  @override
+  Future<Conversation> conversationForCommunity(String communityId) async =>
+      _chatFor(communityId);
+
+  @override
+  Future<Conversation> conversation(String conversationId) async => _chatFor(
+    conversationId.endsWith('-chat')
+        ? conversationId.substring(0, conversationId.length - '-chat'.length)
+        : conversationId,
+  );
+
+  Conversation _chatFor(String communityId) => Conversation(
+    id: '$communityId-chat',
+    type: ConversationType.group,
+    title: 'حلقة جديدة',
+    memberCount: 1,
+    myRole: ParticipantRole.member,
+    canPost: true,
+    canManageMembers: false,
+    lastSequence: 0,
+    lastReadSequence: 0,
+    unreadCount: 0,
+    createdAt: DateTime.utc(2026, 9),
+    activityAt: DateTime.utc(2026, 9),
+    communityId: communityId,
+  );
 }

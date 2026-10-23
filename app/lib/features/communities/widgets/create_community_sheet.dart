@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/extensions/context_ext.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../data/models/communities.dart';
 import '../community_copy.dart';
+import '../state/community_chat_opener.dart';
 import '../state/community_list_controller.dart';
 import '../state/community_write.dart';
 import 'community_change.dart';
@@ -52,14 +54,28 @@ class _CreateCommunitySheetState extends ConsumerState<_CreateCommunitySheet> {
     if (!_canSubmit) return;
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
+    final router = GoRouter.of(context);
+    final opener = ref.read(communityChatOpenerProvider);
     setState(() => _submitting = true);
     final outcome = await ref
         .read(communityListProvider.notifier)
         .create(_field.text, kind: _kind);
     if (!mounted) return;
-    if (outcome is WriteDone) {
+    if (outcome is WriteDone<Community>) {
       messenger.toast(CommunityCopy.communityCreated);
+      // Open the new community's PRIMARY view — its conversation — exactly as
+      // tapping it in the list does, never its settings page. The server's
+      // canonical conversation is resolved from the created id (never a guessed
+      // id or the kind), while the sheet is still up so a refusal is said here;
+      // then the sheet closes and the chat opens.
+      final opening = await opener.open(outcome.value.id);
       if (navigator.canPop()) navigator.pop();
+      switch (opening) {
+        case OpenChat(:final location):
+          router.push(location);
+        case CannotOpenChat(:final message):
+          messenger.toast(message);
+      }
       return;
     }
     setState(() => _submitting = false);

@@ -18,15 +18,18 @@ import { MessagingViews } from './messaging-views';
 import type { ConversationView, MessagePage, ParticipantView } from './views';
 
 /**
- * The caller's own conversations, most recently active first. There is no
- * parameter that widens this to anyone else's — the query starts from the
+ * The caller's own DIRECT conversations, most recently active first. There is
+ * no parameter that widens this to anyone else's — the query starts from the
  * caller's memberships and never leaves them.
  *
- * A community chat on the page is shown only if Communities still lets the
- * caller read it — its row is a projection, never an answer on its own — so
- * a page may hold fewer items than its limit; the cursor still continues
- * after the last row examined. If Communities cannot answer, the page's
- * community chats are left out and everything else is listed.
+ * This is the Messages list, and it is direct conversations only. Community
+ * group and channel chats are NOT listed here: they belong to Communities and
+ * are opened through its own chat endpoint (`communityChat` /
+ * `conversationForCommunity`). The read model is asked for `type = 'DIRECT'`,
+ * so a non-direct conversation can never reach this page. The community-chat
+ * readability pass below is retained as a defensive projection (and still
+ * backs `GetConversationUseCase` through the shared helper); on a direct-only
+ * page it is a no-op, since direct conversations carry no `communityId`.
  */
 @Injectable()
 export class ListConversationsUseCase {
@@ -50,6 +53,9 @@ export class ListConversationsUseCase {
     const page = await this.readModel.listConversations(query.principal.userId, {
       limit: pageLimit(query.limit, PAGE_LIMITS.conversations),
       after: after.value,
+      // Direct conversations only: community group/channel chats are reached
+      // through Communities, never listed in Messages.
+      types: ['DIRECT'],
     });
     const readable = await this.communityChats.readable(query.principal, page.items);
     const details = await this.communityChats.details(query.principal, readable);

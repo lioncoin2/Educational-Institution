@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Max,
@@ -63,6 +64,19 @@ export class CreateHalaqaDto extends Described {
   @IsString()
   @MaxLength(ID_MAX)
   programId!: string;
+}
+
+/**
+ * `PUT /academic/programs/:id/cover` — bind a program's cover image (ADR 0038).
+ * A non-empty opaque Files asset id the manager uploaded; existence and that it
+ * is an image are verified server-side. Clearing the cover is the route's
+ * DELETE, which carries no body.
+ */
+export class SetProgramCoverDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(ID_MAX)
+  coverFileAssetId!: string;
 }
 
 /** Only these fields ever change after creation; code, kind and parent never do. */

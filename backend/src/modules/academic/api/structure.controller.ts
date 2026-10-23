@@ -1,4 +1,15 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Put,
+} from '@nestjs/common';
 
 import { RequestMetadata } from '../../../platform/http/call-metadata.decorator';
 import { CurrentPrincipal } from '../../../platform/http/current-principal.decorator';
@@ -12,6 +23,10 @@ import {
   GetProgramUseCase,
   GetSectionUseCase,
 } from '../application/catalogue.use-cases';
+import {
+  GetProgramCoverLinkUseCase,
+  SetProgramCoverUseCase,
+} from '../application/program-cover.use-cases';
 import {
   ChangeHalaqaStatusUseCase,
   ChangeProgramStatusUseCase,
@@ -27,6 +42,7 @@ import {
   CreateHalaqaDto,
   CreateProgramDto,
   CreateSectionDto,
+  SetProgramCoverDto,
   UpdateHalaqaDto,
   UpdateStructureDto,
 } from './dto/academic.dto';
@@ -34,6 +50,7 @@ import {
   toCatalogueSectionResponse,
   toHalaqaDetailResponse,
   toHalaqaResponse,
+  toProgramCoverLinkResponse,
   toProgramDetailResponse,
   toProgramResponse,
   toSectionResponse,
@@ -69,6 +86,8 @@ export class AcademicStructureController {
     private readonly createProgram: CreateProgramUseCase,
     private readonly updateProgram: UpdateProgramUseCase,
     private readonly programStatus: ChangeProgramStatusUseCase,
+    private readonly setProgramCover: SetProgramCoverUseCase,
+    private readonly programCoverLink: GetProgramCoverLinkUseCase,
     private readonly createHalaqa: CreateHalaqaUseCase,
     private readonly updateHalaqa: UpdateHalaqaUseCase,
     private readonly halaqaStatus: ChangeHalaqaStatusUseCase,
@@ -233,6 +252,66 @@ export class AcademicStructureController {
   ) {
     return toProgramResponse(
       unwrap(await this.programStatus.execute({ principal, programId, status: 'INACTIVE', meta })),
+    );
+  }
+
+  /**
+   * The program's cover image (ADR 0038): bind it (PUT) to an image the manager
+   * uploaded, clear it (DELETE), or fetch a short-lived link to it (GET). Binding
+   * and clearing are `academic.manage`; the link is `academic.read` — the cover
+   * is part of the institution-wide catalogue every role may see. The image
+   * itself is stored and served by files; academic holds only the reference.
+   */
+  @Put('programs/:programId/cover')
+  @RequirePermission(Permissions.academic.manage)
+  @HttpCode(HttpStatus.OK)
+  async setProgramCoverImage(
+    @CurrentPrincipal() principal: Principal,
+    @Param('programId') programId: string,
+    @Body() dto: SetProgramCoverDto,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toProgramResponse(
+      unwrap(
+        await this.setProgramCover.execute({
+          principal,
+          programId,
+          coverFileAssetId: dto.coverFileAssetId,
+          meta,
+        }),
+      ),
+    );
+  }
+
+  @Delete('programs/:programId/cover')
+  @RequirePermission(Permissions.academic.manage)
+  @HttpCode(HttpStatus.OK)
+  async clearProgramCoverImage(
+    @CurrentPrincipal() principal: Principal,
+    @Param('programId') programId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toProgramResponse(
+      unwrap(
+        await this.setProgramCover.execute({
+          principal,
+          programId,
+          coverFileAssetId: null,
+          meta,
+        }),
+      ),
+    );
+  }
+
+  @Get('programs/:programId/cover')
+  @RequirePermission(Permissions.academic.read)
+  async programCoverImage(
+    @CurrentPrincipal() principal: Principal,
+    @Param('programId') programId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toProgramCoverLinkResponse(
+      unwrap(await this.programCoverLink.execute({ principal, programId, meta })),
     );
   }
 

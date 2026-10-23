@@ -211,6 +211,20 @@
       "when": 1792477353090,
       "tag": "0029_conversation_pin_version",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792609749472,
+      "tag": "0030_community_halaqa_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792611142407,
+      "tag": "0031_program_cover_image",
+      "breakpoints": true
     }
   ]
 }

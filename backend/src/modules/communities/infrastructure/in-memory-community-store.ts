@@ -33,9 +33,10 @@ import type {
   RevokeInvitationOutcome,
   ChatModeChange,
   EditProfileChange,
-  SetHalaqaChange,
+  LinkHalaqaChange,
   StatusChange,
   TransferOutcome,
+  UnlinkHalaqaChange,
 } from '../domain/ports';
 
 const pair = (communityId: string, userId: string) => `${communityId}\u0000${userId}`;
@@ -74,6 +75,8 @@ const CAPABILITY_ORDER = new Map<string, number>(
 @Injectable()
 export class InMemoryCommunityStore implements CommunityStore, CommunityReadModel {
   private readonly communityById = new Map<string, Community>();
+  /** A community's academic halaqa links (Q50), in link order; inert metadata. */
+  private readonly halaqaIdsByCommunity = new Map<string, string[]>();
   private readonly stintById = new Map<string, Stint>();
   private readonly stintsByCommunity = new Map<string, Set<string>>();
   private readonly activeByPair = new Map<string, string>();
@@ -148,22 +151,33 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     return { kind: 'changed', community: changed };
   }
 
-  async setHalaqa(input: {
+  async linkHalaqa(input: {
+    readonly linkId: string;
     readonly communityId: string;
-    readonly halaqaId: string | null;
-    readonly actorUserId: string | null;
+    readonly halaqaId: string;
+    readonly linkedBy: string | null;
     readonly at: Date;
-  }): Promise<SetHalaqaChange> {
-    const community = this.communityById.get(input.communityId);
-    if (community === undefined) return { kind: 'not_found' };
-    if (community.halaqaId === input.halaqaId) return { kind: 'unchanged', community };
-    const changed: Community = {
-      ...community,
-      halaqaId: input.halaqaId,
-      updatedAt: later(community.updatedAt, input.at),
-    };
-    this.communityById.set(changed.id, changed);
-    return { kind: 'changed', community: changed };
+  }): Promise<LinkHalaqaChange> {
+    if (!this.communityById.has(input.communityId)) return { kind: 'not_found' };
+    const links = this.halaqaIdsByCommunity.get(input.communityId) ?? [];
+    if (links.includes(input.halaqaId)) return { kind: 'already_linked' };
+    links.push(input.halaqaId);
+    this.halaqaIdsByCommunity.set(input.communityId, links);
+    return { kind: 'linked' };
+  }
+
+  async unlinkHalaqa(input: {
+    readonly communityId: string;
+    readonly halaqaId: string;
+  }): Promise<UnlinkHalaqaChange> {
+    if (!this.communityById.has(input.communityId)) return { kind: 'not_found' };
+    const links = this.halaqaIdsByCommunity.get(input.communityId) ?? [];
+    if (!links.includes(input.halaqaId)) return { kind: 'not_linked' };
+    this.halaqaIdsByCommunity.set(
+      input.communityId,
+      links.filter((id) => id !== input.halaqaId),
+    );
+    return { kind: 'unlinked' };
   }
 
   async editProfile(input: {
@@ -514,7 +528,12 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
           id: grant.id,
           capability: grant.capability,
         }));
-        rows.push({ community, stint, grants });
+        rows.push({
+          community,
+          stint,
+          grants,
+          halaqaIds: [...(this.halaqaIdsByCommunity.get(community.id) ?? [])],
+        });
       }
     }
     const keyOf = (row: MyCommunity): Keyset => ({ at: row.stint.joinedAt, id: row.community.id });
@@ -677,6 +696,7 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     const stint = community === null ? null : this.activeStint(communityId, userId);
     return {
       community,
+      halaqaIds: community === null ? [] : [...(this.halaqaIdsByCommunity.get(communityId) ?? [])],
       stint:
         stint === null
           ? null
