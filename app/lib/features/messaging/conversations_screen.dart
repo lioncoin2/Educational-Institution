@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/backend_config.dart';
 import '../../app/routes.dart';
 import '../../core/theme/app_tokens.dart';
+import '../../core/theme/messaging_palette.dart';
 import '../../core/widgets/foundations/async_view.dart';
 import '../../core/widgets/foundations/empty_state.dart';
 import '../../core/widgets/foundations/mock_ribbon.dart';
@@ -32,7 +33,10 @@ class ConversationsScreen extends ConsumerWidget {
         (user) => user.value?.can('messaging.start_direct_teacher') ?? false,
       ),
     );
-    return Scaffold(
+    // The messaging surface presents itself in the institution's green (the
+    // shared [InstitutionGreenPalette]), cohesive with Home and مساري, scoped
+    // here below the nav shell so no other tab is touched.
+    final scaffold = Scaffold(
       appBar: AppBar(
         title: const Text('الرسائل'),
         actions: [
@@ -74,6 +78,10 @@ class ConversationsScreen extends ConsumerWidget {
               )
             : const _ConversationList(),
       ),
+    );
+    return Theme(
+      data: MessagingPalette.themeOf(context),
+      child: scaffold,
     );
   }
 }

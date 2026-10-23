@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
+import '../../core/theme/messaging_palette.dart';
 import '../../core/widgets/foundations/empty_state.dart';
 import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/layout/app_screen.dart';
@@ -59,7 +60,8 @@ class CommunityMembersScreen extends ConsumerWidget {
       }),
     );
     final viewerId = ref.watch(communityViewerIdProvider);
-    return AppScreen(
+    // Shares the messaging design system's green/cream palette.
+    final screen = AppScreen(
       title: CommunityCopy.membersTitle,
       subtitle: community.title,
       actions: [
@@ -123,6 +125,10 @@ class CommunityMembersScreen extends ConsumerWidget {
           ),
         ),
       ],
+    );
+    return Theme(
+      data: MessagingPalette.themeOf(context),
+      child: screen,
     );
   }
 

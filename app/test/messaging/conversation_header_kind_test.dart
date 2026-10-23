@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quran_institution_app/app/app.dart';
+import 'package:quran_institution_app/core/theme/app_colors.dart';
 import 'package:quran_institution_app/data/models/communities.dart';
 import 'package:quran_institution_app/data/models/data_origin.dart';
 import 'package:quran_institution_app/data/models/messaging.dart';
@@ -175,5 +176,26 @@ void main() {
 
     final direct = await repo.conversation('mock-direct');
     expect(direct.communityKind, isNull);
+  });
+
+  // Issue 3: the conversation surface presents itself in the institution's
+  // green (the shared [InstitutionGreenPalette]), cohesive with Home — never
+  // the app's global plum (#8A4269, the "excessive pink/purple" flagged).
+  testWidgets('the conversation surface is themed green, not plum', (
+    tester,
+  ) async {
+    await _openHeader(
+      tester,
+      _conv(
+        id: 'hk-green',
+        type: ConversationType.channel,
+        communityId: community,
+        communityKind: CommunityKind.group,
+        memberCount: 3,
+      ),
+    );
+    final scheme = Theme.of(tester.element(find.text('الحلقة').first)).colorScheme;
+    expect(scheme.primary, const Color(0xFF0F7A5A)); // messaging green
+    expect(scheme.primary, isNot(AppColors.primary)); // not plum #8A4269
   });
 }

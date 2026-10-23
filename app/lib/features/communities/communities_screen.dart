@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
+import '../../core/theme/messaging_palette.dart';
 import '../../core/widgets/foundations/async_view.dart';
 import '../../core/widgets/foundations/empty_state.dart';
 import '../../core/widgets/foundations/mock_ribbon.dart';
@@ -38,7 +39,10 @@ class CommunitiesScreen extends ConsumerWidget {
         (session) => session.value?.can('communities.create') ?? false,
       ),
     );
-    return Scaffold(
+    // The communities surface shares the messaging design system's green/cream
+    // palette ([MessagingPalette]), scoped here below the nav shell so the plum
+    // nav pill and other tabs are untouched.
+    final scaffold = Scaffold(
       appBar: AppBar(
         title: const Text(CommunityCopy.screenTitle),
         actions: [
@@ -77,6 +81,10 @@ class CommunitiesScreen extends ConsumerWidget {
               )
             : const _CommunityList(),
       ),
+    );
+    return Theme(
+      data: MessagingPalette.themeOf(context),
+      child: scaffold,
     );
   }
 }

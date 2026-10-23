@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
+import '../../core/theme/messaging_palette.dart';
 import '../../core/widgets/foundations/empty_state.dart';
 import '../../core/widgets/foundations/mock_ribbon.dart';
 import '../../core/widgets/layout/app_screen.dart';
@@ -45,7 +46,8 @@ class CommunityInvitationsScreen extends ConsumerWidget {
     final meRead = ref.watch(community);
     final detail = meRead.value;
     final me = detail == null || detail.removed ? null : detail.community?.me;
-    return AppScreen(
+    // Shares the messaging design system's green/cream palette.
+    final screen = AppScreen(
       title: CommunityCopy.invitationLinks,
       subtitle: detail?.community?.title,
       actions: [
@@ -100,6 +102,10 @@ class CommunityInvitationsScreen extends ConsumerWidget {
           ),
         ),
       ],
+    );
+    return Theme(
+      data: MessagingPalette.themeOf(context),
+      child: screen,
     );
   }
 

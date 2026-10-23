@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/routes.dart';
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
+import '../../core/theme/messaging_palette.dart';
 import '../../core/widgets/foundations/app_avatar.dart';
 import '../../core/widgets/foundations/async_view.dart';
 import '../../data/models/communities.dart';
@@ -115,7 +116,11 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
             ?.value
             .contains(widget.conversationId) ??
         false;
-    return Scaffold(
+    // The conversation surface presents itself in the institution's green
+    // (the shared [InstitutionGreenPalette]), cohesive with Home and مساري,
+    // rather than the app's global plum — scoped here, below the nav shell, so
+    // no other tab is touched. (Conversation-colour cohesion request.)
+    final scaffold = Scaffold(
       appBar: AppBar(
         title: _title(conversation),
         actions: [
@@ -243,6 +248,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           );
         },
       ),
+    );
+    return Theme(
+      data: MessagingPalette.themeOf(context),
+      child: scaffold,
     );
   }
 

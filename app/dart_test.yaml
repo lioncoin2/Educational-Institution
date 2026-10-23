@@ -1,0 +1,7 @@
+# Rendered-UI golden snapshots are font/platform sensitive. They carry the
+# `golden` tag and are meant to be generated and reviewed on demand, not run as
+# a default CI gate:
+#   flutter test --tags golden --update-goldens   # (re)generate the images
+#   flutter test --exclude-tags golden            # the normal suite
+tags:
+  golden:

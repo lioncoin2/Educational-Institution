@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/extensions/context_ext.dart';
 import '../../core/theme/app_tokens.dart';
+import '../../core/theme/messaging_palette.dart';
 import '../../core/widgets/foundations/app_card.dart';
 import '../../core/widgets/foundations/async_view.dart';
 import '../../core/widgets/foundations/section_header.dart';
@@ -75,7 +76,9 @@ class _PublishScreenState extends ConsumerState<PublishScreen> {
   @override
   Widget build(BuildContext context) {
     final draft = ref.watch(publishControllerProvider);
-    return AppScreen(
+    // Bulk publishing shares the messaging surface's institutional green (the
+    // shared [InstitutionGreenPalette]), scoped here below the nav shell.
+    final screen = AppScreen(
       title: PublishCopy.title,
       slivers: [
         SliverGutter(
@@ -119,6 +122,10 @@ class _PublishScreenState extends ConsumerState<PublishScreen> {
           ),
         ),
       ],
+    );
+    return Theme(
+      data: MessagingPalette.themeOf(context),
+      child: screen,
     );
   }
 }
