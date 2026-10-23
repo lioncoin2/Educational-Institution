@@ -226,7 +226,7 @@ void main() {
     expect(location(), '/notifications');
   });
 
-  testWidgets('the المجتمعات tab opens a community and its chat', (
+  testWidgets('the المجتمعات tab opens a community’s conversation, its page from the header', (
     tester,
   ) async {
     await boot(tester);
@@ -236,15 +236,18 @@ void main() {
     await tapNav(tester, 'المجتمعات');
     expect(location(), '/communities');
 
+    // Tapping a community opens its primary view — the conversation — directly.
     await tapText(tester, 'مجتمع طلاب التجويد');
-    expect(location(), '/communities/mock-community-tajweed');
-
-    await tapText(tester, 'فتح محادثة المجتمع');
     expect(location(), '/messages/mock-community-tajweed-chat');
+
+    // Its page (settings/overview) is an explicit step from the chat header.
+    await tester.tap(find.byKey(const Key('conversation-community-header')));
+    await tester.pumpAndSettle();
+    expect(location(), '/communities/mock-community-tajweed');
 
     container.read(routerProvider).pop();
     await tester.pumpAndSettle();
-    expect(location(), '/communities/mock-community-tajweed');
+    expect(location(), '/messages/mock-community-tajweed-chat');
   });
 
   testWidgets('a community’s owner reaches its invitation links, and back', (
@@ -256,6 +259,10 @@ void main() {
 
     await tapNav(tester, 'المجتمعات');
     await tapText(tester, 'مجتمع أسرة الحفظ');
+    // The row opens the conversation; its page is reached from the header.
+    expect(location(), '/messages/mock-community-family-chat');
+    await tester.tap(find.byKey(const Key('conversation-community-header')));
+    await tester.pumpAndSettle();
     expect(location(), '/communities/mock-community-family');
 
     await tapText(tester, 'روابط الدعوة');

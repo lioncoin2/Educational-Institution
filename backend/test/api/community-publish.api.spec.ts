@@ -210,6 +210,63 @@ describe('mass publish to communities API', () => {
     expect(image?.attachments[0]?.fileAssetId).toBe(assetId);
   });
 
+  it('publishes an uploaded document and a recipient opens it through a signed link', async () => {
+    const bytes = sampleBytes('application/pdf', 512);
+    const declared = await call('POST', '/files/uploads', admin, {
+      kind: 'DOCUMENT',
+      contentType: 'application/pdf',
+      byteSize: bytes.length,
+      fileName: 'الدرس.pdf',
+    });
+    expect(declared.status).toBe(201);
+    const assetId = (declared.body.asset as { id: string }).id;
+    const uploadUrl = (declared.body.upload as { url: string }).url;
+    const put = await fetch(`${r.api.base}${uploadUrl}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/pdf' },
+      body: bytes,
+    });
+    expect(put.status).toBe(201);
+    expect((await call('POST', `/files/uploads/${assetId}/complete`, admin)).status).toBe(200);
+
+    const response = await publish(admin, {
+      clientBatchId: nextBatch(),
+      communityIds: [c1, c2],
+      kind: 'FILE',
+      fileAssetId: assetId,
+      body: 'ملف الدرس',
+    });
+    expect(response.status).toBe(201);
+    expect(response.body.summary).toEqual({ total: 2, posted: 2, failed: 0 });
+
+    // A recipient MEMBER (the student) sees the published FILE message and
+    // opens it: the server mints a short-lived signed link to that exact
+    // attachment — the end-to-end "recipient can open it" the UI relies on.
+    const chat = await call('GET', `/messaging/communities/${c1}/conversation`, student);
+    expect(chat.status).toBe(200);
+    const conversationId = chat.body.id as string;
+    const page = await call('GET', `/messaging/conversations/${conversationId}/messages`, student);
+    const file = (
+      page.body.items as {
+        id: string;
+        type: string;
+        attachments: { fileAssetId: string; contentType: string | null }[];
+      }[]
+    ).find((m) => m.type === 'FILE');
+    expect(file).toBeDefined();
+    expect(file!.attachments[0]?.fileAssetId).toBe(assetId);
+    expect(file!.attachments[0]?.contentType).toBe('application/pdf');
+
+    const link = await call(
+      'GET',
+      `/messaging/conversations/${conversationId}/messages/${file!.id}/attachments/${assetId}/link`,
+      student,
+    );
+    expect(link.status).toBe(200);
+    expect(typeof link.body.url).toBe('string');
+    expect(typeof link.body.expiresAt).toBe('string');
+  });
+
   it("refuses to publish someone else's upload — nothing is posted", async () => {
     const bytes = sampleBytes('image/png', 128);
     const declared = await call('POST', '/files/uploads', admin, {
