@@ -708,7 +708,9 @@ export function communityContractSuite(
   describe('the directory', () => {
     it('names communities by id, omitting unknown ids', async () => {
       expect(await h.directory.describe([id, 'nope'])).toEqual([
-        { communityId: id, title: 'حلقة التجويد' },
+        // `kind` (ADR 0039) rides along with the title so a chat header can name
+        // a group a "group"; this community is a group.
+        { communityId: id, title: 'حلقة التجويد', kind: 'GROUP' },
       ]);
       await expect(
         h.directory.describe(Array.from({ length: 1001 }, (_, i) => `c${i}`)),

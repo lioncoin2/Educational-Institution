@@ -1,5 +1,6 @@
 import type { DownloadLink } from '../../files/contracts/file-assets';
 import type { FileKind } from '../../files/contracts/file-kind';
+import type { CommunityKind } from '../../communities/contracts/vocabulary';
 import type { ConversationType, MessageType, ParticipantRole } from '../contracts/vocabulary';
 import type {
   PublicationReport,
@@ -128,6 +129,12 @@ export interface ConversationResponse {
   readonly type: ConversationType;
   /** Set for a community's chat (additive: older apps ignore it). */
   readonly communityId: string | null;
+  /**
+   * For a community chat, the community's product kind (GROUP/CHANNEL) so the
+   * header labels a group correctly; null otherwise (and `type` stays CHANNEL
+   * for every community chat, Q51). Additive: older apps ignore it.
+   */
+  readonly communityKind: CommunityKind | null;
   readonly title: string | null;
   readonly counterpartUserId: string | null;
   readonly memberCount: number;

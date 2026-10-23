@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import type { CommunityDirectory, CommunitySummary } from '../contracts/directory';
 import { MAX_MEMBER_PAGE } from '../contracts/membership';
+import { kindOfChatMode } from '../contracts/vocabulary';
 import { COMMUNITY_READ_MODEL, type CommunityReadModel } from '../domain/ports';
 
 /**
@@ -21,6 +22,7 @@ export class CommunityDirectoryService implements CommunityDirectory {
     return communities.map((community) => ({
       communityId: community.id,
       title: community.title,
+      kind: kindOfChatMode(community.chatMode),
     }));
   }
 }

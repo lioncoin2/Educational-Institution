@@ -68,6 +68,28 @@ describe('group & channel posting API', () => {
     }
   });
 
+  it("names a group chat a group and a channel chat a channel (the header's communityKind)", async () => {
+    const group = await call('POST', '/communities', admin, { title: 'كروب', kind: 'GROUP' });
+    const groupChat = await call(
+      'GET',
+      `/messaging/communities/${group.body.id as string}/conversation`,
+      admin,
+    );
+    expect(groupChat.body.communityKind).toBe('GROUP');
+    // The transport type stays CHANNEL for every community chat (Q51); only the
+    // kind distinguishes a group from a real channel, so the header can label it.
+    expect(groupChat.body.type).toBe('CHANNEL');
+
+    const channel = await call('POST', '/communities', admin, { title: 'قناة', kind: 'CHANNEL' });
+    const channelChat = await call(
+      'GET',
+      `/messaging/communities/${channel.body.id as string}/conversation`,
+      admin,
+    );
+    expect(channelChat.body.communityKind).toBe('CHANNEL');
+    expect(channelChat.body.type).toBe('CHANNEL');
+  });
+
   it('an admin restricts member posting: every message type is then refused 403', async () => {
     const { id, chatId } = await makeCommunity('GROUP');
     expect((await text(member, chatId)).status).toBe(201); // open first

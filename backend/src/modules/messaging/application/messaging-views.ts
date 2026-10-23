@@ -53,11 +53,15 @@ export class MessagingViews {
       const community =
         conversation.communityId === null
           ? null
-          : (communityChats.get(conversation.id) ?? { title: null, canPost: false });
+          : (communityChats.get(conversation.id) ?? { title: null, canPost: false, kind: null });
       return {
         id: conversation.id,
         type: conversation.type,
         communityId: conversation.communityId,
+        // A community chat's product kind (GROUP/CHANNEL) for the header; the
+        // `type` above stays CHANNEL for every community chat (Q51). Null for a
+        // direct/standalone conversation, or when Communities could not be asked.
+        communityKind: community !== null ? community.kind : null,
         title:
           community !== null
             ? community.title

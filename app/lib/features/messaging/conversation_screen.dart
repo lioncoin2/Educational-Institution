@@ -270,7 +270,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         Text(
-          MessagingCopy.typeLabel(conversation.type, conversation.memberCount),
+          MessagingCopy.conversationSubtitle(conversation),
           style: context.text.labelSmall,
         ),
       ],

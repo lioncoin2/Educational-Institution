@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'communities.dart' show CommunityKind;
 import 'data_origin.dart';
 
 /// Messaging, as the backend describes it (backend/src/modules/messaging/api).
@@ -297,6 +298,7 @@ class Conversation implements Sourced {
     this.counterpartUserId,
     this.lastMessage,
     this.communityId,
+    this.communityKind,
     this.pinnedMessageId,
     this.pinVersion = 0,
     this.origin = DataOrigin.profile,
@@ -325,6 +327,15 @@ class Conversation implements Sourced {
     // an id means "not a community's chat".
     communityId: switch (json['communityId']) {
       final String id when id.isNotEmpty => id,
+      _ => null,
+    },
+    // Additive: a community chat's product kind (ADR 0039), so a group reads as
+    // "group" even though its conversation `type` is CHANNEL (Q51). An older
+    // server, null, or an unknown value → null, and the header falls back to
+    // the type label (which never misnames a genuine channel).
+    communityKind: switch (json['communityKind']) {
+      'GROUP' => CommunityKind.group,
+      'CHANNEL' => CommunityKind.channel,
       _ => null,
     },
     // Additive (ADR 0043): the single pinned message's id, or null.
@@ -357,6 +368,13 @@ class Conversation implements Sourced {
   /// Set when this is a community's chat: who may read it and post in it is
   /// then the community's to say, and it follows the viewer's membership.
   final String? communityId;
+
+  /// For a community chat, the community's product kind (ADR 0039) — used only
+  /// to label the header "group" vs "channel". The conversation [type] stays
+  /// [ConversationType.channel] for every community chat (Q51); null here means
+  /// not a community chat, or the server did not say, so the header falls back
+  /// to [type] and never misnames a genuine channel.
+  final CommunityKind? communityKind;
 
   /// The single pinned message's id (ADR 0043), or null. The pin banner
   /// resolves its preview from the loaded timeline, as a reply quote does.
@@ -420,6 +438,7 @@ class Conversation implements Sourced {
           ? message.createdAt
           : activityAt,
       communityId: communityId,
+      communityKind: communityKind,
       pinnedMessageId: pinnedMessageId,
       pinVersion: pinVersion,
       origin: origin,
@@ -458,6 +477,7 @@ class Conversation implements Sourced {
       createdAt: createdAt,
       activityAt: activityAt,
       communityId: communityId,
+      communityKind: communityKind,
       pinnedMessageId: pinnedMessageId,
       pinVersion: pinVersion,
       origin: origin,
@@ -480,6 +500,7 @@ class Conversation implements Sourced {
     createdAt: createdAt,
     activityAt: activityAt,
     communityId: communityId,
+    communityKind: communityKind,
     pinnedMessageId: pinnedMessageId,
     pinVersion: pinVersion,
     origin: origin,
@@ -505,6 +526,7 @@ class Conversation implements Sourced {
     createdAt: createdAt,
     activityAt: activityAt,
     communityId: communityId,
+    communityKind: communityKind,
     pinnedMessageId: messageId,
     pinVersion: version,
     origin: origin,

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:quran_institution_app/data/models/communities.dart';
 import 'package:quran_institution_app/data/models/data_origin.dart';
 import 'package:quran_institution_app/data/models/messaging.dart';
 import 'package:quran_institution_app/features/messaging/messaging_copy.dart';
@@ -278,6 +279,84 @@ void main() {
         ),
         'رسالة محذوفة',
       );
+    });
+  });
+
+  // BUG-3: a community chat carries the community's product kind so the header
+  // names a group a "group" even though its transport `type` is CHANNEL for
+  // every community chat (Q51). A genuine channel, and a chat whose kind the
+  // server did not report, are never mislabelled as a group.
+  group('community chat kind in the header (BUG-3)', () {
+    Conversation chat({
+      required String type,
+      String? communityId,
+      Object? communityKind,
+      int memberCount = 7,
+    }) => Conversation.fromJson({
+      'id': 'c-k',
+      'type': type,
+      'title': 'الحلقة',
+      'memberCount': memberCount,
+      'myRole': 'MEMBER',
+      'canPost': false,
+      'canManageMembers': false,
+      'lastSequence': 0,
+      'lastReadSequence': 0,
+      'unreadCount': 0,
+      'createdAt': '2026-01-01T00:00:00.000Z',
+      'activityAt': '2026-01-01T00:00:00.000Z',
+      'communityId': communityId,
+      'communityKind': communityKind,
+    });
+
+    test('parses communityKind from the wire (GROUP/CHANNEL/unknown/absent)', () {
+      expect(
+        chat(type: 'CHANNEL', communityId: 'g', communityKind: 'GROUP').communityKind,
+        CommunityKind.group,
+      );
+      expect(
+        chat(type: 'CHANNEL', communityId: 'c', communityKind: 'CHANNEL').communityKind,
+        CommunityKind.channel,
+      );
+      expect(
+        chat(type: 'CHANNEL', communityId: 'u', communityKind: 'SOMETHING_NEW').communityKind,
+        isNull,
+      );
+      expect(chat(type: 'CHANNEL', communityId: 'n').communityKind, isNull);
+    });
+
+    test('a community group chat is labelled a group, not a channel', () {
+      final c = chat(type: 'CHANNEL', communityId: 'g', communityKind: 'GROUP');
+      expect(MessagingCopy.conversationSubtitle(c), 'مجموعة · 7 عضوًا');
+      expect(MessagingCopy.communityTypeLabel(CommunityKind.group, 7), 'مجموعة · 7 عضوًا');
+    });
+
+    test('a community channel chat stays a channel', () {
+      final c = chat(type: 'CHANNEL', communityId: 'c', communityKind: 'CHANNEL');
+      expect(MessagingCopy.conversationSubtitle(c), 'قناة · 7 مشتركًا');
+      expect(MessagingCopy.communityTypeLabel(CommunityKind.channel, 7), 'قناة · 7 مشتركًا');
+    });
+
+    test('an unknown/missing kind on a community chat never mislabels it a group', () {
+      // Falls back to the transport type label — which is "قناة" for the CHANNEL
+      // transport, so a real channel is never shown as a group by accident.
+      expect(
+        MessagingCopy.conversationSubtitle(chat(type: 'CHANNEL', communityId: 'c')),
+        'قناة · 7 مشتركًا',
+      );
+    });
+
+    test('a non-community conversation is unchanged', () {
+      expect(MessagingCopy.conversationSubtitle(chat(type: 'DIRECT')), 'محادثة خاصة');
+      expect(
+        MessagingCopy.conversationSubtitle(chat(type: 'GROUP', memberCount: 4)),
+        'مجموعة · 4 أعضاء',
+      );
+    });
+
+    test('communityKind survives a realtime update of the conversation', () {
+      final c = chat(type: 'CHANNEL', communityId: 'g', communityKind: 'GROUP');
+      expect(c.withReadUpTo(5).communityKind, CommunityKind.group);
     });
   });
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../data/models/communities.dart' show CommunityKind;
 import '../../data/models/messaging.dart';
 
 /// What the messaging screens say, in one place: the server speaks in stable
@@ -129,6 +130,24 @@ abstract final class MessagingCopy {
         ConversationType.channel => 'قناة · $memberCount مشتركًا',
         ConversationType.unknown => 'محادثة',
       };
+
+  /// A community chat's header label from the community's product kind, not its
+  /// transport type (every community chat is carried as a CHANNEL, Q51): a
+  /// group reads as "group", a real channel as "channel".
+  static String communityTypeLabel(CommunityKind kind, int memberCount) =>
+      switch (kind) {
+        CommunityKind.group => 'مجموعة · $memberCount عضوًا',
+        CommunityKind.channel => 'قناة · $memberCount مشتركًا',
+      };
+
+  /// The conversation header's subtitle. For a community chat whose kind the
+  /// server reported, it names the product kind (group vs channel); otherwise
+  /// it falls back to the transport [typeLabel] — so a genuine channel, and a
+  /// community chat whose kind is unknown, are never mislabelled as a group.
+  static String conversationSubtitle(Conversation conversation) =>
+      conversation.isCommunityChat && conversation.communityKind != null
+      ? communityTypeLabel(conversation.communityKind!, conversation.memberCount)
+      : typeLabel(conversation.type, conversation.memberCount);
 
   /// The fallback title before a conversation has loaded.
   static const String conversationFallbackTitle = 'محادثة';

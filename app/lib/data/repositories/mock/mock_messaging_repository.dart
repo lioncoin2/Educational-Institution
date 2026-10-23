@@ -1,4 +1,5 @@
 import '../../../app/app_config.dart';
+import '../../models/communities.dart' show CommunityKind;
 import '../../models/data_origin.dart';
 import '../../models/messaging.dart';
 import '../../models/publication.dart';
@@ -730,6 +731,10 @@ class MockMessagingRepository implements MessagingRepository {
         createdAt: _start.subtract(Duration(days: 20 + index)),
         names: const {_teacher: 'الأستاذ عبدالله', viewer: 'طالب تجريبي'},
         communityId: communityId,
+        // Every demo community is a group (the mock community repository seeds
+        // them all GROUP_RESTRICTED → kind GROUP); none is a channel. So the
+        // header names these chats "group", not "channel".
+        communityKind: CommunityKind.group,
       );
       for (final (i, text) in lines.indexed) {
         chat.add(
@@ -758,6 +763,7 @@ class _MockConversation {
     required this.names,
     this.counterpartUserId,
     this.communityId,
+    this.communityKind,
     this.seededReader = true,
   });
 
@@ -778,6 +784,11 @@ class _MockConversation {
   final bool seededReader;
   final Map<String, String> names;
   final String? communityId;
+
+  /// For a community chat, the community's product kind (ADR 0039) — so the
+  /// header names a group a "group" though the chat's transport [type] is
+  /// CHANNEL (Q51). Null for the non-community demo conversations.
+  final CommunityKind? communityKind;
 
   final List<Message> messages = [];
   final Map<String, Message> byClientId = {};
@@ -862,6 +873,7 @@ class _MockConversation {
       createdAt: createdAt,
       activityAt: activityAt,
       communityId: communityId,
+      communityKind: communityKind,
       pinnedMessageId: pinnedMessageId,
       pinVersion: pinVersion,
       origin: DataOrigin.mock,

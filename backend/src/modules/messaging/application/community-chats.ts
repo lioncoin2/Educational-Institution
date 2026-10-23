@@ -10,6 +10,7 @@ import {
   COMMUNITY_DIRECTORY,
   type CommunityDirectory,
 } from '../../communities/contracts/directory';
+import type { CommunityKind } from '../../communities/contracts/vocabulary';
 import type { Conversation } from '../domain/conversation';
 import type { ConversationSummaryRow } from '../domain/ports';
 import { askCommunities } from './community-calls';
@@ -27,6 +28,12 @@ import { MESSAGE_MODERATION_FORBIDDEN } from './messaging-settings';
 export interface CommunityChatDetails {
   readonly title: string | null;
   readonly canPost: boolean;
+  /**
+   * The community's product kind (GROUP/CHANNEL) for the chat header — null
+   * when Communities could not be asked (the fail-closed default), so the
+   * header falls back to the conversation type and never misnames a channel.
+   */
+  readonly kind: CommunityKind | null;
 }
 
 /**
@@ -165,6 +172,7 @@ export class CommunityChats {
     if (!answers.ok) return new Map();
     const [posting, summaries] = answers.value;
     const titles = new Map(summaries.map((summary) => [summary.communityId, summary.title]));
+    const kinds = new Map(summaries.map((summary) => [summary.communityId, summary.kind]));
     const details = new Map<string, CommunityChatDetails>();
     for (const { conversation } of rows) {
       if (conversation.communityId === null) continue;
@@ -172,6 +180,7 @@ export class CommunityChats {
         title: titles.get(conversation.communityId) ?? null,
         canPost:
           posting.get(conversation.communityId)?.ok === true && !this.overCapacity(conversation),
+        kind: kinds.get(conversation.communityId) ?? null,
       });
     }
     return details;

@@ -1,3 +1,4 @@
+import type { CommunityKind } from '../../communities/contracts/vocabulary';
 import type { ConversationType, MessageType, ParticipantRole } from '../contracts/vocabulary';
 
 /**
@@ -29,6 +30,14 @@ export interface ConversationView {
    * members are the community's, and posting is the community's to allow.
    */
   readonly communityId: string | null;
+  /**
+   * For a community chat, the community's product kind (ADR 0039) — GROUP or
+   * CHANNEL — so the header can name a group a "group" even though `type`
+   * above is CHANNEL for every community chat (Q51, a transport classification).
+   * Null for a direct/standalone conversation, or when Communities could not
+   * be asked — the header then falls back to `type` and never misnames a channel.
+   */
+  readonly communityKind: CommunityKind | null;
   /** Group/channel: its title. Direct: the other person's name. Community chat: the community's. */
   readonly title: string | null;
   readonly counterpartUserId: string | null;
