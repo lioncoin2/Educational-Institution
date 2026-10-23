@@ -209,7 +209,7 @@ responsibility and what each module must not know live in
 - **Path:** `app/lib/features/episode/`
 - **Controllers:** —
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
-- **Static imports → features:** `auth`
+- **Static imports → features:** `auth`, `communities`
 
 ### home
 
