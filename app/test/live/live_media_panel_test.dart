@@ -121,6 +121,8 @@ void main() {
     WidgetTester tester,
     LiveSession initial, {
     LiveMediaClient? media,
+    bool screenCaptureSupported = true,
+    bool autoJoin = false,
   }) async {
     final repo = _FakeLive();
     final client = FakeLiveMediaClient();
@@ -132,13 +134,17 @@ void main() {
         overrides: [
           liveMediaClientProvider.overrideWithValue(media ?? client),
           liveRepositoryProvider.overrideWithValue(repo),
+          screenCaptureSupportedProvider.overrideWithValue(
+            screenCaptureSupported,
+          ),
         ],
         child: MaterialApp(
           home: Scaffold(
             body: SingleChildScrollView(
               child: ValueListenableBuilder<LiveSession>(
                 valueListenable: session,
-                builder: (_, s, _) => LiveMediaPanel(session: s),
+                builder: (_, s, _) =>
+                    LiveMediaPanel(session: s, autoJoin: autoJoin),
               ),
             ),
           ),
@@ -330,7 +336,7 @@ void main() {
 
       // The tap commands the client — but the UI does NOT flip until the SDK's
       // reconciled publication confirms the track is published.
-      await tester.tap(find.text(LiveCopy.micEnable));
+      await tester.tap(find.byKey(const Key('live-mic-toggle')), warnIfMissed: false);
       await tester.pump();
       expect(h.client.microphoneCommands, [true]);
       expect(find.text(LiveCopy.micOffStatus), findsOneWidget); // not yet
@@ -338,7 +344,7 @@ void main() {
       await tester.pump();
       expect(find.text(LiveCopy.micOnStatus), findsOneWidget); // SDK-confirmed
 
-      await tester.tap(find.text(LiveCopy.micDisable));
+      await tester.tap(find.byKey(const Key('live-mic-toggle')), warnIfMissed: false);
       await tester.pump();
       expect(h.client.microphoneCommands, [true, false]);
       h.client.emitPublication(const LiveMediaPublication(microphoneOn: false));
@@ -370,7 +376,7 @@ void main() {
       await connect(tester, h);
       h.client.failNext = const LiveMediaException('media_error', 'denied');
 
-      await tester.tap(find.text(LiveCopy.micEnable));
+      await tester.tap(find.byKey(const Key('live-mic-toggle')), warnIfMissed: false);
       await tester.pump();
       await tester.pump();
 
@@ -387,9 +393,9 @@ void main() {
       await connect(tester, h);
       h.client.hold = Completer<void>();
 
-      await tester.tap(find.text(LiveCopy.micEnable));
+      await tester.tap(find.byKey(const Key('live-mic-toggle')), warnIfMissed: false);
       await tester.pump(); // in flight: spinner, disabled
-      await tester.tap(find.text(LiveCopy.micEnable)); // ignored while busy
+      await tester.tap(find.byKey(const Key('live-mic-toggle')), warnIfMissed: false); // ignored while busy
       await tester.pump();
       expect(h.client.microphoneCommands, [true]);
 
@@ -410,6 +416,30 @@ void main() {
       expect(find.byKey(const Key('live-screen-toggle')), findsOneWidget);
     });
 
+    testWidgets('a browser with no screen capture (iOS) disables start with an '
+        'accurate message — not the vague error — and sends nothing', (
+      tester,
+    ) async {
+      // Even a fully-authorized presenter must not be offered a share that can
+      // only fail where getDisplayMedia does not exist.
+      final h = await pump(
+        tester,
+        _session(canJoin: true, presenting: true),
+        screenCaptureSupported: false,
+      );
+      await tester.pumpAndSettle();
+      await connect(tester, h, screenAuthorized: true);
+
+      expect(find.byKey(const Key('live-screen-toggle')), findsOneWidget);
+      expect(find.text(LiveCopy.screenShareUnsupported), findsOneWidget);
+      expect(find.text(LiveCopy.screenShareConfirming), findsNothing);
+      await tester.ensureVisible(find.byKey(const Key('live-screen-toggle')));
+      await tester.tap(find.byKey(const Key('live-screen-toggle')), warnIfMissed: false);
+      await tester.pump();
+      expect(h.client.screenShareCommands, isEmpty); // disabled → nothing sent
+      expect(find.text(LiveCopy.screenShareError), findsNothing); // not the vague one
+    });
+
     testWidgets('start stays disabled until authorization is confirmed (the race)', (
       tester,
     ) async {
@@ -422,8 +452,8 @@ void main() {
 
       expect(find.byKey(const Key('live-screen-toggle')), findsOneWidget);
       expect(find.text(LiveCopy.screenShareConfirming), findsOneWidget);
-      await tester.ensureVisible(find.text(LiveCopy.screenShareStart));
-      await tester.tap(find.text(LiveCopy.screenShareStart));
+      await tester.ensureVisible(find.byKey(const Key('live-screen-toggle')));
+      await tester.tap(find.byKey(const Key('live-screen-toggle')), warnIfMissed: false);
       await tester.pump();
       expect(h.client.screenShareCommands, isEmpty); // disabled → nothing sent
 
@@ -433,8 +463,8 @@ void main() {
       );
       await tester.pump();
       expect(find.text(LiveCopy.screenShareConfirming), findsNothing);
-      await tester.ensureVisible(find.text(LiveCopy.screenShareStart));
-      await tester.tap(find.text(LiveCopy.screenShareStart));
+      await tester.ensureVisible(find.byKey(const Key('live-screen-toggle')));
+      await tester.tap(find.byKey(const Key('live-screen-toggle')), warnIfMissed: false);
       await tester.pump();
       expect(h.client.screenShareCommands, [true]);
     });
@@ -446,8 +476,8 @@ void main() {
       await tester.pumpAndSettle();
       await connect(tester, h, screenAuthorized: true);
 
-      await tester.ensureVisible(find.text(LiveCopy.screenShareStart));
-      await tester.tap(find.text(LiveCopy.screenShareStart));
+      await tester.ensureVisible(find.byKey(const Key('live-screen-toggle')));
+      await tester.tap(find.byKey(const Key('live-screen-toggle')), warnIfMissed: false);
       await tester.pump();
       expect(h.client.screenShareCommands, [true]);
       expect(find.text(LiveCopy.screenShareOnStatus), findsNothing); // not yet
@@ -467,15 +497,15 @@ void main() {
       await connect(tester, h, screenAuthorized: true);
       h.client.failNext = const LiveMediaException('media_error', 'x');
 
-      await tester.ensureVisible(find.text(LiveCopy.screenShareStart));
-      await tester.tap(find.text(LiveCopy.screenShareStart));
+      await tester.ensureVisible(find.byKey(const Key('live-screen-toggle')));
+      await tester.tap(find.byKey(const Key('live-screen-toggle')), warnIfMissed: false);
       await tester.pump();
       await tester.pump();
 
       expect(h.client.screenShareCommands, [true]); // attempted
       expect(find.text(LiveCopy.screenShareError), findsOneWidget);
       // No publication confirmed it on → the control stays at "start".
-      expect(find.text(LiveCopy.screenShareStart), findsOneWidget);
+      expect(find.byKey(const Key('live-screen-toggle')), findsOneWidget);
     });
 
     testWidgets('losing the presenter slot stops the capture and hides the control', (
@@ -485,8 +515,8 @@ void main() {
       await tester.pumpAndSettle();
       await connect(tester, h, screenAuthorized: true);
 
-      await tester.ensureVisible(find.text(LiveCopy.screenShareStart));
-      await tester.tap(find.text(LiveCopy.screenShareStart));
+      await tester.ensureVisible(find.byKey(const Key('live-screen-toggle')));
+      await tester.tap(find.byKey(const Key('live-screen-toggle')), warnIfMissed: false);
       await tester.pump();
       h.client.emitPublication(
         const LiveMediaPublication(screenAuthorized: true, screenShareOn: true),
@@ -511,8 +541,8 @@ void main() {
       await tester.pumpAndSettle();
       await connect(tester, h, screenAuthorized: true);
 
-      await tester.ensureVisible(find.text(LiveCopy.screenShareStart));
-      await tester.tap(find.text(LiveCopy.screenShareStart));
+      await tester.ensureVisible(find.byKey(const Key('live-screen-toggle')));
+      await tester.tap(find.byKey(const Key('live-screen-toggle')), warnIfMissed: false);
       await tester.pump();
       h.client.emitPublication(
         const LiveMediaPublication(screenAuthorized: true, screenShareOn: true),
@@ -533,7 +563,7 @@ void main() {
 
       // Back, reading OFF — the reconciled state, never a stale "sharing".
       expect(find.byKey(const Key('live-screen-toggle')), findsOneWidget);
-      expect(find.text(LiveCopy.screenShareStart), findsOneWidget);
+      expect(find.byKey(const Key('live-screen-toggle')), findsOneWidget);
       expect(find.text(LiveCopy.screenShareOnStatus), findsNothing);
     });
   });
@@ -551,7 +581,7 @@ void main() {
       expect(find.text(LiveCopy.audioReconnecting), findsOneWidget);
 
       // The mic control is shown but disabled — a tap sends nothing.
-      await tester.tap(find.text(LiveCopy.micEnable));
+      await tester.tap(find.byKey(const Key('live-mic-toggle')), warnIfMissed: false);
       await tester.pump();
       expect(h.client.microphoneCommands, isEmpty);
     });
@@ -607,6 +637,42 @@ void main() {
       );
       await tester.pump();
       expect(find.text(LiveCopy.audioEvicted), findsOneWidget);
+    });
+  });
+
+  group('banner auto-join (Telegram-style direct join)', () {
+    testWidgets('autoJoin on a joinable idle session connects on arrival — once, '
+        'and with the microphone still closed', (tester) async {
+      final h = await pump(tester, _session(canJoin: true), autoJoin: true);
+      await tester.pump(); // the post-frame auto-join fires -> connect()/join
+      await tester.pump(); // /join resolves, client.connect lands
+      h.client.emit(const LiveMediaConnected());
+      h.client.emitPublication(const LiveMediaPublication());
+      await tester.pumpAndSettle();
+
+      expect(h.repo.joinedIds.length, 1); // joined exactly once, no tap
+      expect(find.text(LiveCopy.audioConnectedTitle), findsOneWidget);
+      // Listening, not speaking: the mic stayed off.
+      expect(find.text(LiveCopy.micOffStatus), findsOneWidget);
+    });
+
+    testWidgets('autoJoin does nothing when the server does not permit joining', (
+      tester,
+    ) async {
+      final h = await pump(tester, _session(canJoin: false), autoJoin: true);
+      await tester.pump();
+      await tester.pump();
+      expect(h.repo.joinedIds, isEmpty); // never reached /join
+      expect(find.text(LiveCopy.audioJoinUnavailable), findsOneWidget);
+    });
+
+    testWidgets('without autoJoin the deliberate join step remains (no connect '
+        'on build)', (tester) async {
+      final h = await pump(tester, _session(canJoin: true)); // autoJoin: false
+      await tester.pump();
+      await tester.pump();
+      expect(h.repo.joinedIds, isEmpty);
+      expect(find.byKey(const Key('live-audio-join')), findsOneWidget);
     });
   });
 }

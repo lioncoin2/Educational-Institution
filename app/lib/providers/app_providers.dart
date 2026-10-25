@@ -14,6 +14,7 @@ import '../data/media/live_media_seams.dart';
 import '../data/media/livekit/livekit_live_media_client.dart';
 import '../data/media/media_seams.dart';
 import '../data/media/pickers/file_picker_attachment_picker.dart';
+import '../data/media/screen_capture_support.dart';
 import '../data/media/voice/just_audio_voice_player.dart';
 import '../data/media/voice/record_voice_recorder.dart';
 import '../data/models/auth.dart';
@@ -443,6 +444,14 @@ final liveMediaConfigEnabledProvider = Provider<bool>(
 /// the real client never activates off the web. A provider, so a test can
 /// simulate a supported or unsupported platform without a device.
 final liveMediaPlatformSupportedProvider = Provider<bool>((ref) => kIsWeb);
+
+/// Whether this browser can actually capture the screen (`getDisplayMedia`). iOS
+/// browsers cannot, so the live screen offers a presenter there an accurate
+/// message instead of a share button that only fails. A provider, so a test can
+/// simulate a browser with or without screen capture without a device.
+final screenCaptureSupportedProvider = Provider<bool>(
+  (ref) => screenCaptureSupported(),
+);
 
 /// Live-session media (audio). The real [LiveKitLiveMediaClient] is bound ONLY
 /// when a backend is configured, the build explicitly enables live media, AND

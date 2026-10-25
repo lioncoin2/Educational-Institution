@@ -107,8 +107,11 @@ abstract final class Routes {
   static String communityInvitations(String communityId) =>
       '${community(communityId)}/invitations';
 
-  static String communityLive(String communityId) =>
-      '${community(communityId)}/live';
+  /// [autoJoin] (the live banner) connects the viewer to the session audio on
+  /// arrival, Telegram-style; the explicit entries (a teacher starting, a
+  /// moderator opening) leave it off and keep the deliberate join step.
+  static String communityLive(String communityId, {bool autoJoin = false}) =>
+      '${community(communityId)}/live${autoJoin ? '?autoJoin=1' : ''}';
 
   static String communityAttendance(String communityId) =>
       '${community(communityId)}/attendance';

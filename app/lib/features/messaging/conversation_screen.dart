@@ -504,50 +504,109 @@ class _LiveNowBanner extends ConsumerWidget {
     final session = ref.watch(liveSessionProvider(communityId)).value;
     if (session == null || !session.isLive) return const SizedBox.shrink();
 
-    final colors = context.colors;
-    return Material(
-      color: colors.errorContainer,
-      child: InkWell(
-        key: const Key('community-live-indicator'),
-        onTap: () => context.push(Routes.communityLive(communityId)),
-        child: Semantics(
-          button: true,
-          label: MessagingCopy.liveNowSemantics,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: Insets.md,
-              vertical: Insets.sm,
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.sensors_rounded,
-                  size: 18,
-                  color: colors.onErrorContainer,
-                ),
-                const SizedBox(width: Insets.sm),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        MessagingCopy.liveNow,
-                        style: context.text.labelLarge?.copyWith(
-                          color: colors.onErrorContainer,
-                          fontWeight: FontWeight.w700,
-                        ),
+    // A prominent gradient "live now" banner (reference panel 1). Static: it
+    // sits in a chat timeline, and a pulsing animation would be noise and never
+    // let a `pumpAndSettle` test settle. The real speaker count only — no
+    // fabricated audience number or avatar stack.
+    final count = session.speakerCount;
+    const gradient = LinearGradient(
+      begin: AlignmentDirectional.centerStart,
+      end: AlignmentDirectional.centerEnd,
+      colors: [Color(0xFFD1356F), Color(0xFF8A3FC0)],
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Insets.md, Insets.sm, Insets.md, Insets.sm),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: Radii.brLg,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          key: const Key('community-live-indicator'),
+          // Opens the live session AND joins its audio directly (Telegram-style).
+          onTap: () =>
+              context.push(Routes.communityLive(communityId, autoJoin: true)),
+          child: Semantics(
+            button: true,
+            label: MessagingCopy.liveNowSemantics,
+            child: Ink(
+              decoration: const BoxDecoration(gradient: gradient),
+              child: Padding(
+                padding: const EdgeInsets.all(Insets.md),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.22),
+                        shape: BoxShape.circle,
                       ),
-                      Text(
-                        MessagingCopy.liveNowHint,
-                        style: context.text.labelSmall?.copyWith(
-                          color: colors.onErrorContainer,
-                        ),
+                      child: const Icon(
+                        Icons.sensors_rounded,
+                        size: 20,
+                        color: Colors.white,
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: Insets.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            MessagingCopy.liveNow,
+                            style: context.text.labelLarge?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            MessagingCopy.liveNowHint,
+                            style: context.text.labelSmall?.copyWith(
+                              color: Colors.white.withValues(alpha: 0.92),
+                            ),
+                          ),
+                          if (count > 0) ...[
+                            const SizedBox(height: Insets.xs),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.graphic_eq_rounded,
+                                  size: 13,
+                                  color: Colors.white70,
+                                ),
+                                const SizedBox(width: Insets.xs),
+                                Text(
+                                  '$count',
+                                  style: context.text.labelSmall?.copyWith(
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: Insets.sm),
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.25),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.chevron_left,
+                        size: 18,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),

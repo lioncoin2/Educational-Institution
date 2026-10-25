@@ -3,21 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/extensions/context_ext.dart';
 import '../../../core/theme/app_tokens.dart';
-import '../../../core/widgets/foundations/app_card.dart';
+import '../../../core/widgets/foundations/app_avatar.dart';
 import '../../../core/widgets/foundations/async_view.dart';
-import '../../../core/widgets/foundations/empty_state.dart';
-import '../../../core/widgets/foundations/section_header.dart';
 import '../../../data/models/live.dart';
 import '../../../data/models/live_media.dart';
 import '../live_copy.dart';
 import '../state/live_hands_controller.dart';
 import '../state/live_media_controller.dart';
 import '../state/live_moderation_controller.dart';
+import '../state/live_session_controller.dart';
 import 'live_moderation_actions.dart';
 
-/// The filter the moderator can pick for the roster. A non-null value for each,
-/// because a `PopupMenuButton` reads a `null` selection as a cancel; `all` maps
-/// to the repository's `null` state (every hand).
 enum _HandsFilter { all, pending, granted }
 
 LiveHandsFilter? _stateOf(_HandsFilter filter) => switch (filter) {
@@ -26,16 +22,12 @@ LiveHandsFilter? _stateOf(_HandsFilter filter) => switch (filter) {
   _HandsFilter.granted => LiveHandsFilter.granted,
 };
 
-/// The moderator's roster for a running session (Q56/Q64): who has a raised
-/// hand or holds the floor, and the per-person authority commands — remove from
-/// the session, and delegate or revoke a screen-share (presenter) slot. It is
-/// shown only when the session's own `me.canModerate` allows it (the screen
-/// gates it); every command still goes to the server, which decides afresh.
-///
-/// It reads [liveHandsProvider] a page at a time and, after a command, re-reads
-/// that list (the queue has no realtime feed in this build) — never applying a
-/// command's own result. Media (the screen capture, audio) is a separate seam,
-/// unavailable in this build and never implied by these authority controls.
+/// The participants list (reference: المشاركون) — shown only when the server's
+/// own `me.canModerate` allows it (reading the hands queue needs moderator
+/// standing). It renders real speakers/hands as avatar rows with a role chip,
+/// a live mic indicator, and the per-person moderator commands; a search and a
+/// «المستمعون» section are LOCKED placeholders, because listeners carry no names
+/// in this build — never fabricated rows.
 class LiveRoster extends ConsumerStatefulWidget {
   const LiveRoster({super.key, required this.session});
 
@@ -53,37 +45,41 @@ class _LiveRosterState extends ConsumerState<LiveRoster> {
 
   @override
   Widget build(BuildContext context) {
+    // The hands queue has no realtime feed of its own, but the session's
+    // `stateVersion` already advances on every hand/floor/screen change — the
+    // backend relays it as `live.session.changed` to the moderators (coalesced).
+    // Re-read the queue when that version advances (and after a realtime
+    // reconnect, which re-discovers the session), so a newly-raised hand appears
+    // without a manual refresh. No new event or API: this consumes the existing
+    // contract. Guarded to a STRICT increase so an equal/older version never
+    // re-reads; backend coalescing (≤1 frame per window) plus the provider's own
+    // single-flight rebuild keep this from issuing duplicate/concurrent reads.
+    ref.listen<int?>(
+      liveSessionProvider(
+        widget.session.communityId,
+      ).select((session) => session.asData?.value?.stateVersion),
+      (previous, next) {
+        if (next != null && (previous == null || next > previous)) {
+          ref.invalidate(liveHandsProvider(_query));
+        }
+      },
+    );
     final hands = ref.watch(liveHandsProvider(_query));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: Insets.xxl),
-        SectionHeader(
-          title: LiveCopy.rosterSection,
-          trailing: PopupMenuButton<_HandsFilter>(
-            tooltip: LiveCopy.rosterFilterTooltip,
-            icon: const Icon(Icons.filter_list_rounded),
-            initialValue: _filter,
-            onSelected: (value) => setState(() => _filter = value),
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: _HandsFilter.all,
-                child: Text(LiveCopy.rosterFilterAll),
-              ),
-              PopupMenuItem(
-                value: _HandsFilter.pending,
-                child: Text(LiveCopy.rosterFilterPending),
-              ),
-              PopupMenuItem(
-                value: _HandsFilter.granted,
-                child: Text(LiveCopy.rosterFilterGranted),
-              ),
-            ],
-          ),
+        _Header(
+          speakerCount: widget.session.speakerCount,
+          filter: _filter,
+          onFilter: (value) => setState(() => _filter = value),
         ),
         const SizedBox(height: Insets.md),
+        const _LockedSearch(),
+        const SizedBox(height: Insets.lg),
+        Text(LiveCopy.rosterSection, style: context.text.labelLarge),
+        const SizedBox(height: Insets.sm),
         ...hands.when(
-          loading: () => const [SkeletonBox(height: 72)],
+          loading: () => const [SkeletonBox(height: 64)],
           error: (error, _) => [
             _RosterError(
               onRetry: () => ref.invalidate(liveHandsProvider(_query)),
@@ -91,19 +87,27 @@ class _LiveRosterState extends ConsumerState<LiveRoster> {
           ],
           data: (state) => _rows(state),
         ),
+        const SizedBox(height: Insets.lg),
+        const _LockedListeners(),
       ],
     );
   }
 
   List<Widget> _rows(LiveHandsState state) {
     if (state.items.isEmpty) {
-      return const [
-        EmptyState(icon: Icons.pan_tool_outlined, title: LiveCopy.rosterEmpty),
+      return [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: Insets.lg),
+          child: Text(
+            LiveCopy.rosterEmpty,
+            style: context.text.bodySmall,
+          ),
+        ),
       ];
     }
     return [
       for (final hand in state.items) ...[
-        _HandCard(
+        _ParticipantRow(
           key: ValueKey(hand.id),
           session: widget.session,
           hand: hand,
@@ -122,12 +126,139 @@ class _LiveRosterState extends ConsumerState<LiveRoster> {
   }
 }
 
-/// One person on the roster — their resolved name (or a neutral fallback), what
-/// they are (a raised hand or the floor) and, for the floor, their last-observed
-/// connection — with the commands a moderator may run on them. The host is never
-/// a target, so their row carries no commands.
-class _HandCard extends ConsumerWidget {
-  const _HandCard({
+class _Header extends StatelessWidget {
+  const _Header({
+    required this.speakerCount,
+    required this.filter,
+    required this.onFilter,
+  });
+
+  final int speakerCount;
+  final _HandsFilter filter;
+  final ValueChanged<_HandsFilter> onFilter;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(Icons.groups_rounded, size: 20, color: context.colors.primary),
+        const SizedBox(width: Insets.sm),
+        Expanded(
+          child: Text(
+            LiveCopy.participantsTitle,
+            style: context.text.titleMedium,
+          ),
+        ),
+        Text(
+          '${LiveCopy.sectionSpeakers}: $speakerCount',
+          style: context.text.labelSmall?.copyWith(
+            color: context.colors.onSurfaceVariant,
+          ),
+        ),
+        PopupMenuButton<_HandsFilter>(
+          tooltip: LiveCopy.rosterFilterTooltip,
+          icon: const Icon(Icons.filter_list_rounded),
+          initialValue: filter,
+          onSelected: onFilter,
+          itemBuilder: (context) => const [
+            PopupMenuItem(
+              value: _HandsFilter.all,
+              child: Text(LiveCopy.rosterFilterAll),
+            ),
+            PopupMenuItem(
+              value: _HandsFilter.pending,
+              child: Text(LiveCopy.rosterFilterPending),
+            ),
+            PopupMenuItem(
+              value: _HandsFilter.granted,
+              child: Text(LiveCopy.rosterFilterGranted),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// The reference's "ابحث عن مشارك" search — not backed (there is no full
+/// participant list to search), so it is an inert, locked field.
+class _LockedSearch extends StatelessWidget {
+  const _LockedSearch();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      enabled: false,
+      label: '${LiveCopy.participantsSearch} — ${LiveCopy.soonBadge}',
+      child: Opacity(
+        opacity: 0.6,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: Insets.md,
+            vertical: Insets.md,
+          ),
+          decoration: BoxDecoration(
+            color: colors.surfaceContainer,
+            borderRadius: Radii.brMd,
+            border: Border.all(color: colors.outlineVariant),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.search_rounded, size: 18, color: colors.onSurfaceVariant),
+              const SizedBox(width: Insets.sm),
+              Expanded(
+                child: Text(
+                  LiveCopy.participantsSearch,
+                  style: context.text.bodyMedium,
+                ),
+              ),
+              Icon(Icons.lock_outline, size: 14, color: colors.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The reference's «المستمعون» section — listeners have no names in this build,
+/// so the section header stays in place over an inert placeholder rather than a
+/// fabricated list of people.
+class _LockedListeners extends StatelessWidget {
+  const _LockedListeners();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(LiveCopy.sectionListeners, style: context.text.labelLarge),
+            const SizedBox(width: Insets.sm),
+            Icon(Icons.lock_outline, size: 14, color: colors.onSurfaceVariant),
+          ],
+        ),
+        const SizedBox(height: Insets.xs),
+        Opacity(
+          opacity: 0.7,
+          child: Text(
+            LiveCopy.listenersUnavailable,
+            style: context.text.bodySmall,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One participant: an avatar, their resolved name (or a neutral fallback), a
+/// role chip, the live mic/screen indicators the local SDK observes, and the
+/// moderator commands. The host is never a command target.
+class _ParticipantRow extends ConsumerWidget {
+  const _ParticipantRow({
     super.key,
     required this.session,
     required this.hand,
@@ -140,56 +271,50 @@ class _HandCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
     final isHost = hand.userId == session.hostUserId;
     final isPresenter = session.presenterUserIds.contains(hand.userId);
     final name = (hand.displayName != null && hand.displayName!.isNotEmpty)
         ? hand.displayName!
         : LiveCopy.participantFallback;
-    final media = _mediaLabel(hand.media);
-    final subtitle = media == null
-        ? _stateLabel(hand.state)
-        : '${_stateLabel(hand.state)} · $media';
-    // The LIVE remote media the moderator's own client sees for this member,
-    // matched by user id (= the LiveKit identity). Null when not media-connected
-    // or the member is not in the room — an additive, live indicator only; it
-    // overrides no server authority, moderation or attendance.
-    final remote = ref
-        .watch(liveRemoteParticipantsProvider)
-        .value?[hand.userId];
-    return AppCard(
+    final remote = ref.watch(liveRemoteParticipantsProvider).value?[hand.userId];
+
+    return Container(
+      padding: const EdgeInsets.all(Insets.md),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainer,
+        borderRadius: Radii.brMd,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Expanded(child: Text(name, style: context.text.titleSmall)),
-              if (isPresenter) ...[
-                const SizedBox(width: Insets.sm),
-                const _PresenterBadge(),
-              ],
+              AppAvatar(name: name, radius: 18),
+              const SizedBox(width: Insets.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name, style: context.text.titleSmall),
+                    const SizedBox(height: 2),
+                    _RoleChip(
+                      isHost: isHost,
+                      isPresenter: isPresenter,
+                      state: hand.state,
+                    ),
+                  ],
+                ),
+              ),
+              if (remote != null) _MicIndicator(remote: remote),
             ],
           ),
-          const SizedBox(height: Insets.xs),
-          Text(
-            subtitle,
-            style: context.text.bodySmall?.copyWith(
-              color: context.colors.onSurfaceVariant,
-            ),
-          ),
-          if (remote != null) ...[
-            const SizedBox(height: Insets.sm),
-            _LiveMediaChips(remote: remote),
-          ],
           if (!isHost) ...[
             const SizedBox(height: Insets.md),
             Wrap(
               spacing: Insets.sm,
               runSpacing: Insets.sm,
               children: [
-                // The floor (Q56): a waiting hand may be given the floor or
-                // passed over; a speaker holding it may have it taken back.
-                // The command carries the hand's own id (the request), not the
-                // user id; onActed re-reads the queue, never fabricating it.
                 if (hand.state == SpeakerRequestState.pending) ...[
                   _RosterCommand(
                     key: Key('live-grant-floor-${hand.id}'),
@@ -255,111 +380,82 @@ class _HandCard extends ConsumerWidget {
   }
 }
 
-String _stateLabel(SpeakerRequestState state) => switch (state) {
-  SpeakerRequestState.pending => LiveCopy.handPending,
-  SpeakerRequestState.granted => LiveCopy.handGranted,
-  _ => LiveCopy.handOther,
-};
+/// A small chip naming what this person is: host, presenter, or the state of
+/// their hand.
+class _RoleChip extends StatelessWidget {
+  const _RoleChip({
+    required this.isHost,
+    required this.isPresenter,
+    required this.state,
+  });
 
-String? _mediaLabel(LiveObservedMedia? media) => switch (media) {
-  LiveObservedMedia.connected => LiveCopy.mediaConnected,
-  LiveObservedMedia.notConnected => LiveCopy.mediaNotConnected,
-  _ => null,
-};
-
-/// A small chip that says this person holds a presenter slot now.
-class _PresenterBadge extends StatelessWidget {
-  const _PresenterBadge();
+  final bool isHost;
+  final bool isPresenter;
+  final SpeakerRequestState state;
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
+    final (label, bg, fg) = isHost
+        ? (LiveCopy.roleHost, colors.secondaryContainer, colors.onSecondaryContainer)
+        : isPresenter
+            ? (LiveCopy.presenterBadge, colors.secondaryContainer, colors.onSecondaryContainer)
+            : state == SpeakerRequestState.granted
+                ? (LiveCopy.handGranted, colors.primaryContainer, colors.onPrimaryContainer)
+                : (LiveCopy.handPending, colors.surfaceContainerHigh, colors.onSurfaceVariant);
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: Insets.sm,
         vertical: Insets.xs,
       ),
-      decoration: BoxDecoration(
-        color: context.colors.secondaryContainer,
-        borderRadius: Radii.pill,
-      ),
+      decoration: BoxDecoration(color: bg, borderRadius: Radii.pill),
       child: Text(
-        LiveCopy.presenterBadge,
-        style: context.text.labelSmall?.copyWith(
-          color: context.colors.onSecondaryContainer,
-        ),
+        label,
+        style: context.text.labelSmall?.copyWith(color: fg),
       ),
     );
   }
 }
 
-/// The live media the moderator's own client observes for this member: whether
-/// their microphone is open or muted, and whether they are actually sharing a
-/// screen. Additive and purely informational — a publication fact, never a
-/// speaking indicator and never the presenter slot. Shows nothing when there is
-/// nothing live to say (no audio we can hear, no screen).
-class _LiveMediaChips extends StatelessWidget {
-  const _LiveMediaChips({required this.remote});
+/// The live mic/screen state the local SDK observes for this member — a
+/// publication fact, never a speaking indicator. Keeps the stable keys the
+/// chip tests assert.
+class _MicIndicator extends StatelessWidget {
+  const _MicIndicator({required this.remote});
 
   final LiveRemoteParticipant remote;
 
   @override
   Widget build(BuildContext context) {
-    final chips = <Widget>[
-      if (remote.audio == LiveRemoteAudio.live)
-        _LiveChip(
-          key: Key('live-audio-on-${remote.identity}'),
-          icon: Icons.mic_rounded,
-          label: LiveCopy.liveAudioOn,
-        ),
-      if (remote.audio == LiveRemoteAudio.muted)
-        _LiveChip(
-          key: Key('live-audio-muted-${remote.identity}'),
-          icon: Icons.mic_off_rounded,
-          label: LiveCopy.liveAudioMuted,
-        ),
+    final colors = context.colors;
+    final children = <Widget>[
       if (remote.screenSharing)
-        _LiveChip(
+        Padding(
           key: Key('live-screen-sharing-${remote.identity}'),
-          icon: Icons.screen_share_rounded,
-          label: LiveCopy.liveScreenSharing,
+          padding: const EdgeInsets.only(right: Insets.xs),
+          child: Icon(Icons.screen_share_rounded, size: 16, color: colors.primary),
+        ),
+      if (remote.audio == LiveRemoteAudio.live)
+        Semantics(
+          key: Key('live-audio-on-${remote.identity}'),
+          label: LiveCopy.liveAudioOn,
+          child: Icon(Icons.mic_rounded, size: 18, color: colors.primary),
+        )
+      else if (remote.audio == LiveRemoteAudio.muted)
+        Semantics(
+          key: Key('live-audio-muted-${remote.identity}'),
+          label: LiveCopy.liveAudioMuted,
+          child: Icon(Icons.mic_off_rounded, size: 18, color: colors.error),
         ),
     ];
-    if (chips.isEmpty) return const SizedBox.shrink();
-    return Wrap(spacing: Insets.md, runSpacing: Insets.xs, children: chips);
+    if (children.isEmpty) return const SizedBox.shrink();
+    return Row(mainAxisSize: MainAxisSize.min, children: children);
   }
 }
 
-/// A compact icon + label for one live-media fact.
-class _LiveChip extends StatelessWidget {
-  const _LiveChip({super.key, required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: context.colors.onSurfaceVariant),
-        const SizedBox(width: Insets.xs),
-        Text(
-          label,
-          style: context.text.labelSmall?.copyWith(
-            color: context.colors.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// One per-person moderator command as a compact button that owns its in-flight
-/// state (disabled with a spinner while on its way, so a second tap sends
-/// nothing). A destructive command is asked first. On success it re-reads the
-/// roster through [onDone] — never applying the command's own result — and says
-/// so; a refusal is said through the server's code. The command-button pattern
-/// of [LiveModerationActions], kept local to the roster rather than shared.
+/// One per-person moderator command — a compact button that owns its in-flight
+/// state, asks before a destructive command, re-reads the roster on success,
+/// and says a refusal through the server's code.
 class _RosterCommand extends ConsumerStatefulWidget {
   const _RosterCommand({
     super.key,
@@ -377,11 +473,7 @@ class _RosterCommand extends ConsumerStatefulWidget {
   final IconData icon;
   final String successMessage;
   final Future<void> Function(LiveModerationController controller) action;
-
-  /// Runs after a successful command, to re-read the affected list. Awaited so
-  /// a refusal from the re-read cannot be mistaken for the command failing.
   final Future<void> Function()? onDone;
-
   final String? confirmQuestion;
   final String? confirmLabel;
   final bool destructive;
@@ -405,14 +497,11 @@ class _RosterCommandState extends ConsumerState<_RosterCommand> {
       );
       if (!yes || !mounted) return;
     }
-    // Held before the await: the row may be gone when the answer comes.
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       await widget.action(ref.read(liveModerationProvider));
       if (mounted) messenger.toast(widget.successMessage);
-      // The server has acted; re-read the authoritative list. The command's
-      // own result is never applied here.
       await widget.onDone?.call();
     } on LiveException catch (error) {
       if (mounted) messenger.toast(LiveCopy.commandError(error.code));
@@ -445,8 +534,6 @@ class _RosterCommandState extends ConsumerState<_RosterCommand> {
   }
 }
 
-/// A failed read of the roster, said in a word with a retry — kept small, since
-/// the session card above it already carries the live state.
 class _RosterError extends StatelessWidget {
   const _RosterError({required this.onRetry});
 
@@ -454,32 +541,29 @@ class _RosterError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      child: Row(
-        children: [
-          Icon(
-            Icons.cloud_off_rounded,
-            size: 18,
-            color: context.colors.onSurfaceVariant,
+    return Row(
+      children: [
+        Icon(
+          Icons.cloud_off_rounded,
+          size: 18,
+          color: context.colors.onSurfaceVariant,
+        ),
+        const SizedBox(width: Insets.sm),
+        Flexible(
+          child: Text(
+            LiveCopy.rosterError,
+            style: context.text.bodyMedium,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(width: Insets.sm),
-          Expanded(
-            child: Text(LiveCopy.rosterError, style: context.text.bodyMedium),
-          ),
-          const SizedBox(width: Insets.sm),
-          OutlinedButton(
-            onPressed: onRetry,
-            child: const Text(LiveCopy.retry),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: Insets.sm),
+        TextButton(onPressed: onRetry, child: const Text(LiveCopy.retry)),
+      ],
     );
   }
 }
 
-/// The roster's own load-more footer (the attendance footer's shape, kept local
-/// to Live): nothing while there is no more, a spinner while a page loads, a
-/// button otherwise — its label a retry after a failure.
 class _RosterLoadMore extends StatelessWidget {
   const _RosterLoadMore({
     required this.hasMore,

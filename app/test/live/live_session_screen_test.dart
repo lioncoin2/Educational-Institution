@@ -2,13 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:quran_institution_app/core/widgets/foundations/mock_ribbon.dart';
 import 'package:quran_institution_app/data/media/live_media_seams.dart';
 import 'package:quran_institution_app/data/models/data_origin.dart';
 import 'package:quran_institution_app/data/models/live.dart';
 import 'package:quran_institution_app/data/models/live_media.dart';
 import 'package:quran_institution_app/data/repositories/repositories.dart';
+import 'package:quran_institution_app/features/communities/state/community_chat_opener.dart';
 import 'package:quran_institution_app/features/live/live_copy.dart';
 import 'package:quran_institution_app/features/live/live_session_screen.dart';
 import 'package:quran_institution_app/features/live/widgets/live_states.dart';
@@ -205,12 +208,29 @@ LiveSession _session({
   origin: origin,
 );
 
+/// A chat opener the test drives: it records the community it was asked to open
+/// and answers a fixed [ChatOpening] — so the chat button's wiring (it goes
+/// through the access-checked opener) can be asserted without a messaging stack.
+class _StubOpener implements CommunityChatOpener {
+  _StubOpener(this._result);
+
+  final ChatOpening _result;
+  final List<String> opened = [];
+
+  @override
+  Future<ChatOpening> open(String communityId) async {
+    opened.add(communityId);
+    return _result;
+  }
+}
+
 void main() {
   Future<_FakeLive> pump(
     WidgetTester tester,
     _FakeLive repo, {
     LiveMediaClient media = const UnavailableLiveMediaClient(),
     TextDirection direction = TextDirection.rtl,
+    List<Override> extraOverrides = const [],
   }) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -218,6 +238,7 @@ void main() {
           liveRepositoryProvider.overrideWithValue(repo),
           liveMediaClientProvider.overrideWithValue(media),
           sessionUserProvider.overrideWith((ref) async => null),
+          ...extraOverrides,
         ],
         child: MaterialApp(
           home: const LiveSessionScreen(communityId: 'c-1'),
@@ -387,6 +408,8 @@ void main() {
 
     testWidgets('reset: confirms then invokes resetRoom', (tester) async {
       final repo = await pump(tester, fake(_session(canModerate: true)));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('live-reset-room')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('live-reset-room')));
       await tester.pumpAndSettle();
@@ -890,6 +913,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(repo.handsCalls, ['hands:s-1:null:null']); // default: all
 
+      await tester.ensureVisible(find.byTooltip(LiveCopy.rosterFilterTooltip));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip(LiveCopy.rosterFilterTooltip));
       await tester.pumpAndSettle();
       await tester.tap(find.text(LiveCopy.rosterFilterGranted));
@@ -963,7 +988,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('live-audio-on-u-1')), findsOneWidget);
       expect(find.byKey(const Key('live-screen-sharing-u-1')), findsOneWidget);
-      expect(find.text(LiveCopy.liveAudioOn), findsOneWidget);
+      expect(find.bySemanticsLabel(LiveCopy.liveAudioOn), findsOneWidget);
     });
 
     testWidgets('a muted member shows the muted indicator, not mic-on', (
@@ -1059,6 +1084,104 @@ void main() {
       await pump(tester, fake(_session()));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('live-screen-share')), findsNothing);
+    });
+  });
+
+  group('chat & settings (Phase 4)', () {
+    // The bottom tab bar only shows on a phone-width layout (side panes replace
+    // it from tablet up), so these size the view down to a phone first.
+    void mobile(WidgetTester tester) {
+      tester.view.physicalSize = const Size(390, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+    }
+
+    testWidgets('the settings tab stays locked — tapping it says «غير متاح '
+        'الآن» and fabricates no settings', (tester) async {
+      mobile(tester);
+      await pump(tester, fake(_session()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(LiveCopy.tabSettings));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(LiveCopy.lockedTapped(LiveCopy.tabSettings)),
+        findsOneWidget,
+      );
+      // No session-settings surface is invented; we are still on the session.
+      expect(find.text(LiveCopy.liveNow), findsOneWidget);
+    });
+
+    testWidgets('the chat tab goes through the access-checked opener; a refusal '
+        'is said in words, not a dead button', (tester) async {
+      mobile(tester);
+      final opener = _StubOpener(const CannotOpenChat('ليست لك هذه المحادثة'));
+      await pump(
+        tester,
+        fake(_session()),
+        extraOverrides: [communityChatOpenerProvider.overrideWithValue(opener)],
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('live-tab-chat')));
+      await tester.pumpAndSettle();
+
+      // It asked the opener for THIS community's chat (re-checked server-side)…
+      expect(opener.opened, ['c-1']);
+      // …and the refusal surfaced as a message, not a silent no-op.
+      expect(find.text('ليست لك هذه المحادثة'), findsOneWidget);
+    });
+
+    testWidgets('the chat tab opens the community group conversation when '
+        'allowed', (tester) async {
+      tester.view.physicalSize = const Size(390, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final opener = _StubOpener(const OpenChat('/messages/chat-1'));
+      final router = GoRouter(
+        initialLocation: '/live',
+        routes: [
+          GoRoute(
+            path: '/live',
+            builder: (_, _) => const LiveSessionScreen(communityId: 'c-1'),
+          ),
+          GoRoute(
+            path: '/messages/:id',
+            builder: (_, state) =>
+                Scaffold(body: Text('CONV ${state.pathParameters['id']}')),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            liveRepositoryProvider.overrideWithValue(fake(_session())),
+            liveMediaClientProvider.overrideWithValue(
+              const UnavailableLiveMediaClient(),
+            ),
+            sessionUserProvider.overrideWith((ref) async => null),
+            communityChatOpenerProvider.overrideWithValue(opener),
+          ],
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (context, child) => Directionality(
+              textDirection: TextDirection.rtl,
+              child: child!,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('live-tab-chat')));
+      await tester.pumpAndSettle();
+
+      // The access-checked opener was consulted, and its route was pushed —
+      // the community's EXISTING group conversation, by its own id.
+      expect(opener.opened, ['c-1']);
+      expect(find.text('CONV chat-1'), findsOneWidget);
     });
   });
 }

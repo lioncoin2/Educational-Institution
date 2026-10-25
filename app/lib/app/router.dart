@@ -361,6 +361,8 @@ GoRouter buildRouter() {
                         parentNavigatorKey: _rootNavigatorKey,
                         builder: (context, state) => LiveSessionScreen(
                           communityId: state.pathParameters['communityId']!,
+                          autoJoin:
+                              state.uri.queryParameters['autoJoin'] == '1',
                         ),
                       ),
                       GoRoute(

@@ -225,7 +225,111 @@ abstract final class LiveCopy {
   static const screenShareError =
       'تعذّرت مشاركة الشاشة. قد لا يدعمها المتصفّح أو أنها غير متاحة الآن.';
 
+  /// Shown when the browser exposes no screen-capture API at all (every iOS
+  /// browser). Accurate and actionable — not the vaguer [screenShareError] used
+  /// for a cancelled picker or a denied permission on a browser that supports it.
+  static const screenShareUnsupported =
+      'مشاركة الشاشة غير مدعومة على هذا المتصفّح/الجهاز. استخدم متصفّح حاسوب مكتبي (مثل Chrome أو Edge).';
+
   static const demoBanner = 'جلسة مباشرة تجريبية للعرض فقط.';
+
+  // ── The immersive stage ────────────────────────────────────────────────
+  /// The "on-air" pill on the broadcast stage.
+  static const live = 'مباشر';
+
+  /// How long an ended session ran, from its start and end instants.
+  static String sessionDuration(Duration d) {
+    final hours = d.inHours;
+    final minutes = d.inMinutes.remainder(60);
+    final parts = <String>[
+      if (hours > 0) '$hours ساعة',
+      '$minutes دقيقة',
+    ];
+    return 'مدة الجلسة: ${parts.join(' و')}';
+  }
+
+  // ── Honest "coming later" hints ─────────────────────────────────────────
+  // The reference design shows features the platform does not yet back; these
+  // label them as inert, clearly-unavailable affordances — never as working
+  // controls. ([soonBadge] is the tag every one of them carries.)
+  static const soonSection = 'ميزات قادمة';
+  static const soonBadge = 'غير متاح الآن';
+  static const soonCaption = 'ميزات من التصميم تُضاف لاحقًا.';
+  static const soonReactions = 'التفاعلات';
+  static const soonPolls = 'الاستطلاعات';
+  static const soonRecording = 'تسجيل الجلسة';
+  static const soonRecordingWatch = 'مشاهدة التسجيل';
+  static const soonScheduled = 'الجلسات المجدولة';
+
+  // ── Immersive room chrome (reference composition) ───────────────────────
+  // Bottom control dock, bottom tab bar, participants sheet, mini-player and
+  // state cards. Real controls keep their own labels/keys above; these are the
+  // dock/tab labels and the locked-placeholder wording for unbacked features.
+  static const dockCamera = 'الكاميرا';
+  static const dockMic = 'الميكروفون';
+  static const dockScreen = 'مشاركة الشاشة';
+  static const dockLeave = 'مغادرة';
+  static const dockJoin = 'انضمام';
+  static const dockReact = 'تفاعل';
+  static const dockMore = 'المزيد';
+
+  static const tabParticipants = 'المشاركون';
+  static const tabChat = 'محادثة الكروب';
+  static const tabPolls = 'الاستطلاعات';
+  static const tabSettings = 'الإعدادات';
+
+  /// The chat button opens the community's EXISTING group conversation (not a
+  /// separate in-broadcast chat, which is not backed), via the access-checked
+  /// `CommunityChatOpener`. The wording makes that explicit to the viewer.
+  static const chatGroupTitle = 'محادثة الكروب';
+  static const chatGroupOpen = 'فتح محادثة الكروب';
+  static const chatGroupHint =
+      'الدردشة هنا هي محادثة الكروب نفسها، وليست دردشة مستقلة أثناء البث.';
+
+  /// Shown when a locked («غير متاح الآن») control is tapped — visible,
+  /// actionable text confirming it is intentionally unavailable, not broken.
+  static String lockedTapped(String label) => '$label: $soonBadge';
+
+  /// The participants sheet (reference: المشاركون), its search, and the roster
+  /// sections. Listeners have no names in this build, so that section is a
+  /// locked placeholder — never fabricated rows.
+  static const participantsTitle = 'المشاركون';
+  static const participantsSearch = 'ابحث عن مشارك';
+  static const sectionSpeakers = 'المتحدثون';
+  static const sectionListeners = 'المستمعون';
+  static const listenersUnavailable = 'قائمة المستمعين غير متاحة بعد.';
+  static const roleHost = 'المضيف';
+  static const chatUnavailable = 'الدردشة أثناء البث غير متاحة بعد.';
+
+  // ── Live presence (who is actually connected, from LiveKit) ─────────────
+  // The connected roster comes from LiveKit (every token carries a display
+  // name; no one is hidden). A COUNT is shown to everyone; NAMES are shown to
+  // moderators only — the app-level policy on exposing a named presence roster
+  // to listeners is deferred (Q68, backend `contracts/presence.ts`), so this
+  // stays conservative until the owner decides. Never a fabricated number.
+  static const presenceTitle = 'المشاركون المتصلون';
+  static String presenceCount(int n) => 'المتصلون الآن: $n';
+  static const presenceEmpty = 'لا يوجد مشاركون متصلون الآن.';
+  static const presenceJoinToSee =
+      'انضم إلى صوت الجلسة لعرض المشاركين المتصلين.';
+  static const presenceNamesModerators = 'أسماء المشاركين متاحة للمشرفين.';
+  static const youLabel = 'أنت';
+  static const roleListener = 'مستمع';
+  static const roleSpeaker = 'متحدّث';
+  static const roleModerator = 'مشرف';
+
+  /// The chat composer shown in the reference listener view — not backed.
+  static const composerHint = 'اكتب رسالة…';
+
+  /// A scheduled broadcast (reference state card) — no scheduling model exists,
+  /// so it is a locked placeholder.
+  static const scheduledTitle = 'بث مجدول';
+  static const scheduledRemind = 'تذكيري';
+
+  /// The mini-player (reference) — continuing audio while browsing is not
+  /// supported (the session is screen-scoped), so it is a locked placeholder.
+  static const miniPlayerTitle = 'مشغّل مصغّر';
+  static const miniPlayerBody = 'متابعة البث أثناء التصفّح غير متاحة بعد.';
 
   static String error(String? code) => switch (code) {
     'network.unreachable' => 'تعذّر الاتصال بالخادم. تحقّق من الاتصال.',

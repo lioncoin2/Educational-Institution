@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/extensions/context_ext.dart';
 import '../../../core/theme/app_tokens.dart';
-import '../../../core/widgets/foundations/section_header.dart';
 import '../../../data/models/live.dart';
 import '../live_copy.dart';
 import '../state/live_moderation_controller.dart';
@@ -58,30 +57,79 @@ class LiveModerationActions extends StatelessWidget {
           successMessage: LiveCopy.resetRoomDone,
           action: (c) => c.resetRoom(id),
         ),
-      if (me.canEnd)
-        LiveCommandButton(
-          key: const Key('live-end-session'),
-          label: LiveCopy.endSession,
-          icon: Icons.stop_circle_outlined,
-          destructive: true,
-          confirmQuestion: LiveCopy.endSessionQuestion,
-          confirmLabel: LiveCopy.endSessionConfirm,
-          successMessage: LiveCopy.endSessionDone,
-          action: (c) => c.endSession(id),
-        ),
+      // Ending the broadcast lives in the control dock (`live-end-session`),
+      // matching the reference; the room's moderator-tools strip carries only
+      // the presenter-slot and room controls.
     ];
     if (controls.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SizedBox(height: Insets.xxl),
-        const SectionHeader(title: LiveCopy.controlsSection),
-        const SizedBox(height: Insets.md),
-        for (final (i, control) in controls.indexed) ...[
-          if (i > 0) const SizedBox(height: Insets.sm),
-          control,
+    final moderation = session.moderation;
+    // A compact moderator-tools strip under the stage (the reference keeps the
+    // room/presenter controls out of the main dock): the section label, the
+    // live pending-hands count, and the presenter-slot / reset controls in a
+    // horizontally-scrollable row so they never overflow a narrow phone.
+    return Container(
+      padding: const EdgeInsets.fromLTRB(
+        Insets.lg,
+        Insets.md,
+        Insets.lg,
+        Insets.md,
+      ),
+      decoration: BoxDecoration(
+        color: context.colors.surfaceContainerLow,
+        border: Border(
+          bottom: BorderSide(color: context.colors.outlineVariant),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.shield_moon_outlined,
+                size: 16,
+                color: context.colors.onSurfaceVariant,
+              ),
+              const SizedBox(width: Insets.xs),
+              Expanded(
+                child: Text(
+                  LiveCopy.controlsSection,
+                  style: context.text.labelLarge,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (moderation != null) ...[
+                const SizedBox(width: Insets.sm),
+                Flexible(
+                  child: Text(
+                    LiveCopy.pendingHands(moderation.pendingHands),
+                    style: context.text.labelSmall?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: Insets.sm),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final (i, control) in controls.indexed) ...[
+                  if (i > 0) const SizedBox(width: Insets.sm),
+                  control,
+                ],
+              ],
+            ),
+          ),
         ],
-      ],
+      ),
     );
   }
 }
