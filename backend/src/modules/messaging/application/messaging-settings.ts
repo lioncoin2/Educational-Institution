@@ -42,6 +42,9 @@ export const MessagingAudit = {
   moderationParticipantRemoved: 'messaging.moderation.participant_removed',
   moderationMessageDeleted: 'messaging.moderation.message_deleted',
   moderationMessageReviewed: 'messaging.moderation.message_reviewed',
+  /** ADR 0045: an author's own edit and delete — never moderation. */
+  messageEdited: 'messaging.message.edited',
+  messageDeletedByAuthor: 'messaging.message.deleted_by_author',
   messagePinned: 'messaging.pin.pinned',
   messageUnpinned: 'messaging.pin.unpinned',
 } as const;

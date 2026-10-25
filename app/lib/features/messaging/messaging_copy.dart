@@ -35,6 +35,8 @@ abstract final class MessagingCopy {
     'messaging.deleted_message_not_found' => 'لم يُعثر على هذه الرسالة.',
     'messaging.deleted_message_review_expired' =>
       'انتهت مهلة مراجعة الرسالة المحذوفة.',
+    'messaging.message_deleted' => 'حُذفت هذه الرسالة فلم يعد تعديلها ممكنًا.',
+    'messaging.body_required' => 'اكتب نصًّا للرسالة.',
     _ => 'تعذّر إتمام العملية. حاول مرة أخرى.',
   };
 
@@ -177,6 +179,21 @@ abstract final class MessagingCopy {
   static const String replyingTitle = 'الرد على رسالة';
   static String replyingTo(String name) => 'الرد على $name';
   static const String cancelReply = 'إلغاء الرد';
+
+  // ── The author's own message (ADR 0045) ────────────────────────────────
+  static const String edit = 'تعديل الرسالة';
+  static const String editCaption = 'تعديل التعليق';
+  static const String editTitle = 'تعديل الرسالة';
+  static const String editSave = 'حفظ';
+  static const String editCancel = 'إلغاء';
+  static const String editDone = 'عُدّلت الرسالة';
+  static const String edited = 'معدّلة';
+  static const String deleteOwn = 'حذف الرسالة';
+  static const String deleteOwnTitle = 'حذف هذه الرسالة؟';
+  static const String deleteOwnBody =
+      'ستظهر للجميع بأنها «محذوفة»، ولا يمكن التراجع عن ذلك.';
+  static const String deleteOwnConfirm = 'حذف';
+  static const String deleteOwnDone = 'حُذفت الرسالة';
 
   // ── Pinned messages (ADR 0043) ─────────────────────────────────────────
   static const String pin = 'تثبيت الرسالة';

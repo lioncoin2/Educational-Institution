@@ -20,6 +20,7 @@ export const MessagingEvents = {
   messageSent: 'messaging.message.sent',
   messageRead: 'messaging.message.read',
   messageDeleted: 'messaging.message.deleted',
+  messageEdited: 'messaging.message.edited',
   messagePinned: 'messaging.message.pinned',
 } as const;
 
@@ -113,6 +114,22 @@ export type MessagePinned = DomainEvent<
   }
 >;
 
+/**
+ * An author edited their own message's text (ADR 0045). Ids and a sequence
+ * only — never the old or new text: a subscriber that shows the message (the
+ * realtime relay, notifications at read time) renders it through messaging's
+ * contracts, under messaging's visibility rules. `occurredAt` is the edit's
+ * `editedAt`.
+ */
+export type MessageEdited = DomainEvent<
+  typeof MessagingEvents.messageEdited,
+  {
+    readonly conversationId: string;
+    readonly messageId: string;
+    readonly sequence: number;
+  }
+>;
+
 export type MessagingEvent =
   | ConversationCreated
   | ParticipantAdded
@@ -120,4 +137,5 @@ export type MessagingEvent =
   | MessageSent
   | MessageRead
   | MessageDeleted
+  | MessageEdited
   | MessagePinned;

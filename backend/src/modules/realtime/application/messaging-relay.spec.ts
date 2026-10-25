@@ -212,6 +212,101 @@ describe('messaging events, delivered in real time', () => {
     });
   });
 
+  describe('message.edited (ADR 0045)', () => {
+    const editedTo = (client: Client) => client.link.ofType('message.edited');
+    const edit = (from: Person, messageId: string, body: string) =>
+      h.messaging.editMessage.execute({
+        principal: from.principal,
+        conversationId: groupId,
+        messageId,
+        body,
+        meta: META,
+      });
+
+    it('reaches the members who saw the send, with the message as it now reads — nobody else', async () => {
+      const outsider = await h.person(Roles.student);
+      const b = await h.connect(studentB.accessToken);
+      const stranger = await h.connect(outsider.accessToken);
+      const message = await send(teacher, 'الدرس الساعة الثامنة', 'edit-key-000001');
+      h.messaging.clock.advance(60);
+      expectOk(await edit(teacher, message.id, 'الدرس الساعة التاسعة'));
+      await h.settle();
+
+      const [frame] = editedTo(b);
+      const editedAt = h.messaging.clock.now().toISOString();
+      expect(frame).toMatchObject({
+        type: 'message.edited',
+        version: 1,
+        eventId: `message.edited:${message.id}:${editedAt}`,
+        occurredAt: editedAt,
+        conversationId: groupId,
+        messageId: message.id,
+        sequence: message.sequence,
+      });
+      expect(frame?.message).toMatchObject({
+        id: message.id,
+        body: 'الدرس الساعة التاسعة',
+        editedAt,
+        deletedAt: null,
+        clientMessageId: null,
+      });
+      // Never the old text, and nothing to anyone outside the conversation.
+      expect(JSON.stringify(editedTo(b))).not.toContain('الثامنة');
+      expect(editedTo(stranger)).toEqual([]);
+    });
+
+    it('gives the author’s own devices their clientMessageId, and no one else', async () => {
+      const teacherPhone = await h.connect(teacher.accessToken);
+      const b = await h.connect(studentB.accessToken);
+      const message = await send(teacher, 'v1', 'edit-key-000002');
+      expectOk(await edit(teacher, message.id, 'v2'));
+      await h.settle();
+
+      expect((editedTo(teacherPhone)[0]?.message as Frame).clientMessageId).toBe('edit-key-000002');
+      expect((editedTo(b)[0]?.message as Frame).clientMessageId).toBeNull();
+    });
+
+    it('stays silent once the message has been deleted — no edited text outlives its tombstone', async () => {
+      const b = await h.connect(studentB.accessToken);
+      const message = await send(teacher, 'soon edited, then gone');
+      expectOk(await edit(teacher, message.id, 'edited words'));
+      const event = h.messaging.events.published.find(
+        (e) => e.name === MessagingEvents.messageEdited,
+      )!;
+      expectOk(
+        await h.messaging.deleteMessage.execute({
+          principal: teacher.principal,
+          conversationId: groupId,
+          messageId: message.id,
+          meta: META,
+        }),
+      );
+      await h.settle();
+      const before = editedTo(b).length;
+      // A late (re)delivery of the edit renders nothing for a tombstone.
+      await h.relay.relay(event);
+      expect(editedTo(b)).toHaveLength(before);
+      expect(b.link.ofType('message.deleted')).toHaveLength(1);
+    });
+
+    it('does not reach a member removed before the edit', async () => {
+      const b = await h.connect(studentB.accessToken);
+      const message = await send(teacher, 'before removal');
+      expectOk(
+        await h.messaging.removeParticipant.execute({
+          principal: teacher.principal,
+          conversationId: groupId,
+          userId: studentB.userId,
+          meta: META,
+        }),
+      );
+      expectOk(await edit(teacher, message.id, 'after removal'));
+      await h.settle();
+      expect(editedTo(b)).toEqual([]);
+      expect(JSON.stringify(b.link.frames)).not.toContain('after removal');
+    });
+  });
+
   describe('message.read', () => {
     it("tells the reader's own devices how far they have read — and nobody else", async () => {
       const bPhone = await h.connect(studentB.accessToken);

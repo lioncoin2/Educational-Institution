@@ -12,10 +12,12 @@ import { startRealtimeApi, type Account, type RealtimeApi } from '../support/rea
  * DELETE hint is the one message event the Flutter client consumes
  * (`MessageDeletedEvent`) that nothing exercised end to end. Message moderation
  * is a community-chat operation only (ADR 0029): `DELETE
- * /messaging/conversations/:id/messages/:messageId` reaches a DM/group with the
- * same 404 a non-member hears, requires `community.messages.moderate` (the owner
- * implicitly, or a delegated moderator — never a plain member), and raises a
- * frame carrying IDS ONLY (no body, no actor).
+ * /messaging/conversations/:id/messages/:messageId` on SOMEONE ELSE's message
+ * reaches a DM/group with the same 404 a non-member hears, requires
+ * `community.messages.moderate` (the owner implicitly, or a delegated moderator
+ * — never a plain member), and raises a frame carrying IDS ONLY (no body, no
+ * actor). An author deleting their OWN message is ADR 0045 (author-delete, in
+ * any conversation) and is proven by `messaging-edit-delete-postgres.spec`.
  *
  * This asserts the exact frame the client parses — `{ version:1, type:
  * 'message.deleted', eventId, occurredAt, conversationId, messageId, sequence }`,

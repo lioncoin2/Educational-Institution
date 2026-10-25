@@ -203,7 +203,9 @@ void main() {
       '[1, 2]',
       '"message.sent"',
       jsonEncode({...messageSentJson(), 'version': 2}),
-      jsonEncode({...messageSentJson(), 'type': 'message.edited'}),
+      // A type this version does not know (reactions are not built). Since
+      // ADR 0045 `message.edited` is known: see its own test.
+      jsonEncode({...messageSentJson(), 'type': 'message.reacted'}),
       jsonEncode(messageSentJson()..remove('eventId')),
       jsonEncode(messageSentJson()..['sequence'] = 'seven'),
     ]) {

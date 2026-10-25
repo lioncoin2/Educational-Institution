@@ -194,6 +194,30 @@ export function messageDeletedFrame(input: {
 }
 
 /**
+ * An author edited their message (ADR 0045): the message as the reader now
+ * sees it, rendered by messaging's views exactly as `message.sent` carries one
+ * — its new text and `editedAt`, its attachments unchanged — to the same
+ * audience the send reached. An edit happens more than once, so its id names
+ * this edit (the message and its edit time); a redelivery is a duplicate a
+ * client drops, a later edit replaces an earlier one by `editedAt`.
+ */
+export function messageEditedFrame(input: {
+  readonly occurredAt: Date;
+  readonly message: MessageView;
+}): string {
+  const message = input.message;
+  return frame({
+    type: 'message.edited',
+    eventId: `message.edited:${message.id}:${iso(message.editedAt) ?? ''}`,
+    occurredAt: input.occurredAt.toISOString(),
+    conversationId: message.conversationId,
+    messageId: message.id,
+    sequence: message.sequence,
+    message: wireMessage(message),
+  });
+}
+
+/**
  * A community chat's pin changed (ADR 0043): the new pinned id, or null when
  * unpinned. An id only — never content. The `eventId` is unique per change
  * (conversation + the new pin + the change time) so a client dedupes replays,

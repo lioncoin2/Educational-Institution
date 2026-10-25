@@ -217,6 +217,25 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
   /// marker; an older message's deletion is not visible in the list. A
   /// conversation this list has not loaded, or whose preview is a different
   /// message, is left unchanged (a re-read reconciles).
+  /// A message was edited by its author (ADR 0045): if it is the one the
+  /// preview shows, the preview reads its new text. Nothing else moves.
+  void messageEdited(Message message) {
+    final current = _shown;
+    if (current == null) return;
+    final index = current.items.indexWhere(
+      (c) => c.id == message.conversationId,
+    );
+    if (index < 0) return;
+    final before = current.items[index];
+    final after = before.withEditedPreview(message);
+    if (identical(before, after)) return;
+    state = AsyncData(
+      current.copyWith(
+        items: [for (final c in current.items) c.id == after.id ? after : c],
+      ),
+    );
+  }
+
   void messageDeleted(String conversationId, int sequence) {
     final current = _shown;
     if (current == null) return;
@@ -242,6 +261,8 @@ class ConversationListController extends AsyncNotifier<ConversationListState> {
         if (!known) unawaited(_resync());
       case MessageSentEvent():
         messageStored(event.message, senderName: event.senderName);
+      case MessageEditedEvent():
+        messageEdited(event.message);
       case MessageDeletedEvent():
         messageDeleted(event.conversationId, event.sequence);
       case MessageReadEvent() when event.userId == _viewerId:

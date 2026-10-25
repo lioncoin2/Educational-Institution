@@ -531,6 +531,17 @@ abstract interface class MessagingRepository {
   /// has no picture (the UI then shows initials).
   Future<Uri> senderAvatarUrl(String conversationId, String messageId);
 
+  /// Edits the viewer's OWN message (ADR 0045): a text message's [body], or a
+  /// media message's caption ('' clears it) — never its attachments. Only the
+  /// author edits; anyone else's message is `messaging.message_not_found`, a
+  /// deleted one `messaging.message_deleted`. Returns the message as it now
+  /// reads, `editedAt` set (unset when the text did not change).
+  Future<Message> editMessage(
+    String conversationId,
+    String messageId, {
+    required String body,
+  });
+
   // ── Moderation (community chat only, ADR 0029) ──────────────────────────
   // The server is the sole authority: it asks Communities for
   // `community.messages.moderate` per call. The app shows these only when the
@@ -540,10 +551,11 @@ abstract interface class MessagingRepository {
   // non-community chat / an absent message, 503 when Communities is
   // unreachable).
 
-  /// Deletes a message in a community's chat as a moderator — a tombstone, not
-  /// a hard delete. Idempotent: deleting an already-deleted message succeeds
-  /// too. Returns nothing; the message then reads as deleted (its body and
-  /// attachments blanked), and the original is reviewable for 7 days.
+  /// Deletes a message — the viewer's OWN, in any conversation (ADR 0045), or,
+  /// as a community chat's moderator, anyone's there (ADR 0029). A tombstone,
+  /// not a hard delete. Idempotent: deleting an already-deleted message
+  /// succeeds too. Returns nothing; the message then reads as deleted (its
+  /// body and attachments blanked), and the original is reviewable for 7 days.
   Future<void> deleteMessage(String conversationId, String messageId);
 
   /// Reveals a deleted message's original for the review window (7 days) — the

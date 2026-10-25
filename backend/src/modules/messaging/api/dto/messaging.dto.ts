@@ -84,6 +84,13 @@ export class SendTextDto extends SendBaseDto {
   body!: string;
 }
 
+/** ADR 0045: an author's new text — a TEXT body, or a media caption ('' clears it). */
+export class EditMessageDto {
+  @IsString()
+  @MaxLength(TEXT_MAX)
+  body!: string;
+}
+
 export class SendMediaDto extends SendBaseDto {
   /** A completed upload of the sender's own (POST /files/uploads, then …/complete). */
   @IsString()

@@ -36,6 +36,7 @@ import {
 } from './application/membership.use-cases';
 import { MessageRecipientsService } from './application/message-recipients.service';
 import { MessageRetentionSweeper } from './application/message-retention.sweeper';
+import { DeleteMessageUseCase, EditMessageUseCase } from './application/edit-message.use-cases';
 import {
   ModerateMessageUseCase,
   ReviewDeletedMessageUseCase,
@@ -149,6 +150,8 @@ import { InMemoryMessagingStore } from './infrastructure/in-memory-messaging-sto
     PublishToCommunitiesUseCase,
     ModerateMessageUseCase,
     ReviewDeletedMessageUseCase,
+    EditMessageUseCase,
+    DeleteMessageUseCase,
     PinMessageUseCase,
     UnpinMessageUseCase,
     { provide: MESSAGE_RECIPIENTS, useClass: MessageRecipientsService },

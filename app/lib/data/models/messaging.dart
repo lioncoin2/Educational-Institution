@@ -165,6 +165,10 @@ class Message {
 
   bool get isDeleted => deletedAt != null;
 
+  /// Its author edited its text since it was sent (ADR 0045) — shown as
+  /// «معدّلة». A deleted message never reads as edited.
+  bool get isEdited => editedAt != null && !isDeleted;
+
   /// This message as a tombstone — the server having confirmed a moderator's
   /// delete (ADR 0029): the body and attachment rows are blanked in every
   /// normal read path, only that it is gone remains. The exact instant re-reads
@@ -437,6 +441,47 @@ class Conversation implements Sourced {
       activityAt: message.createdAt.isAfter(activityAt)
           ? message.createdAt
           : activityAt,
+      communityId: communityId,
+      communityKind: communityKind,
+      pinnedMessageId: pinnedMessageId,
+      pinVersion: pinVersion,
+      origin: origin,
+    );
+  }
+
+  /// This conversation with its latest-message preview re-read from [message]
+  /// when its author edited the very message the preview shows (ADR 0045).
+  /// Order, activity and unread count are unchanged. Any other message, or a
+  /// deleted preview, returns this unchanged.
+  Conversation withEditedPreview(Message message) {
+    final last = lastMessage;
+    if (last == null || last.deleted || last.sequence != message.sequence) {
+      return this;
+    }
+    final body = message.body;
+    return Conversation(
+      id: id,
+      type: type,
+      title: title,
+      counterpartUserId: counterpartUserId,
+      memberCount: memberCount,
+      myRole: myRole,
+      canPost: canPost,
+      canManageMembers: canManageMembers,
+      lastSequence: lastSequence,
+      lastReadSequence: lastReadSequence,
+      unreadCount: unreadCount,
+      lastMessage: MessagePreview(
+        sequence: last.sequence,
+        senderId: last.senderId,
+        senderName: last.senderName,
+        type: last.type,
+        text: body == null ? null : String.fromCharCodes(body.runes.take(140)),
+        deleted: false,
+        createdAt: last.createdAt,
+      ),
+      createdAt: createdAt,
+      activityAt: activityAt,
       communityId: communityId,
       communityKind: communityKind,
       pinnedMessageId: pinnedMessageId,

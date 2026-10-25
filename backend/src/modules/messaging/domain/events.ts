@@ -3,6 +3,7 @@ import {
   MessagingEvents,
   type ConversationCreated,
   type MessageDeleted,
+  type MessageEdited,
   type MessagePinned,
   type MessageRead,
   type MessageSent,
@@ -115,6 +116,21 @@ export function messageDeleted(
     conversation.id,
     { conversationId: conversation.id, messageId: message.id, sequence: message.sequence },
     message.deletedAt ?? message.createdAt,
+    correlationId,
+  );
+}
+
+/** An author edited their message's text (ADR 0045): ids and a sequence only. */
+export function messageEdited(
+  conversation: Pick<Conversation, 'id'>,
+  message: Message,
+  correlationId?: string,
+): MessageEdited {
+  return domainEvent(
+    MessagingEvents.messageEdited,
+    conversation.id,
+    { conversationId: conversation.id, messageId: message.id, sequence: message.sequence },
+    message.editedAt ?? message.createdAt,
     correlationId,
   );
 }

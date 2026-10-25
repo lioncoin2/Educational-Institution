@@ -202,6 +202,20 @@ class HttpMessagingRepository implements MessagingRepository {
       });
 
   @override
+  Future<Message> editMessage(
+    String conversationId,
+    String messageId, {
+    required String body,
+  }) => _call(
+    () async => Message.fromJson(
+      await _api.patch(
+        '${_conversation(conversationId)}/messages/${Uri.encodeComponent(messageId)}',
+        body: {'body': body},
+      ),
+    ),
+  );
+
+  @override
   Future<void> deleteMessage(String conversationId, String messageId) => _call(
     () async => _api.delete(
       '${_conversation(conversationId)}/messages/${Uri.encodeComponent(messageId)}',

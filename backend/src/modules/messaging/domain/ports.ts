@@ -28,6 +28,16 @@ export type SoftDeleteOutcome =
   /** No message with that id in that conversation. */
   | { readonly kind: 'not_found' };
 
+export type EditOutcome =
+  /** The text is now `message.body`, stamped `editedAt`. */
+  | { readonly kind: 'edited'; readonly message: Message }
+  /** The same text as already stored: nothing written, no stamp, no event. */
+  | { readonly kind: 'unchanged'; readonly message: Message }
+  /** Deleted — by its author or a moderator — before or during this edit. */
+  | { readonly kind: 'deleted' }
+  /** Not in this conversation, or not this author's. */
+  | { readonly kind: 'not_found' };
+
 export type PinOutcome =
   /** The conversation's pin now points at `message`; `alreadyPinned` when it already did. */
   | {
@@ -163,6 +173,24 @@ export interface MessagingRepository {
     readonly deletedBy: string;
     readonly at: Date;
   }): Promise<SoftDeleteOutcome>;
+
+  /**
+   * An author's edit of their own message's text (ADR 0045). ONE atomic,
+   * conditional statement: it applies only while the message is in this
+   * conversation, is `authorId`'s, and is not deleted — so an edit can never
+   * revive a tombstone, and an edit racing a delete either lands first (the
+   * delete then tombstones the edited text) or finds it `deleted`. Concurrent
+   * edits by the author: the last committed text wins. The same text is
+   * `unchanged` (nothing written). Sequence, type, reply and attachments never
+   * change.
+   */
+  editMessage(input: {
+    readonly conversationId: ConversationId;
+    readonly messageId: MessageId;
+    readonly authorId: string;
+    readonly body: string | null;
+    readonly at: Date;
+  }): Promise<EditOutcome>;
 
   /**
    * Pin ONE message of a conversation (ADR 0043), replacing any current pin

@@ -393,6 +393,52 @@ class ConversationController extends AsyncNotifier<ConversationState> {
     _markDeleted(messageId, DateTime.now().toUtc());
   }
 
+  // ── The author's own message (ADR 0045) ─────────────────────────────────
+  // Only the author edits, in any conversation they may post in; the author
+  // deletes their own in any conversation they are in. The server decides
+  // both on every call; a refusal propagates as a [MessagingException].
+
+  /// Edits the viewer's own [messageId] to [body] (a text, or a caption). On
+  /// success the held copy is replaced by the server's answer at once.
+  Future<void> editMessage(String messageId, String body) async {
+    final edited = await _repository.editMessage(
+      conversationId,
+      messageId,
+      body: body,
+    );
+    if (!ref.mounted) return;
+    _replaceMessage(edited);
+    ref.read(conversationListProvider.notifier).messageEdited(edited);
+  }
+
+  /// Deletes the viewer's own [messageId] — the same tombstone a moderator's
+  /// delete leaves, the server having confirmed it.
+  Future<void> deleteOwnMessage(String messageId) async {
+    await _repository.deleteMessage(conversationId, messageId);
+    if (!ref.mounted) return;
+    _markDeleted(messageId, DateTime.now().toUtc());
+  }
+
+  /// Replaces the held copy of [message] with it — an edit, from this device or
+  /// relayed — unless it is not held, the held one is a tombstone (a delete
+  /// always wins), or the held one is already as new or newer.
+  void _replaceMessage(Message message) {
+    final current = state.value;
+    if (current == null) return;
+    final held = current.messages.where((m) => m.id == message.id).firstOrNull;
+    if (held == null || held.isDeleted || message.isDeleted) return;
+    final heldAt = held.editedAt;
+    final newAt = message.editedAt;
+    if (heldAt != null && (newAt == null || !newAt.isAfter(heldAt))) return;
+    state = AsyncData(
+      current.copyWith(
+        messages: [
+          for (final m in current.messages) m.id == message.id ? message : m,
+        ],
+      ),
+    );
+  }
+
   /// Pins [messageId] (ADR 0043). The server authorizes and validates; on
   /// success the conversation is re-read so the banner reflects the server's
   /// pin. A refusal throws [MessagingException] for the caller to report.
@@ -472,6 +518,10 @@ class ConversationController extends AsyncNotifier<ConversationState> {
             current.copyWith(lastReadSequence: event.lastReadSequence),
           );
         }
+      case MessageEditedEvent():
+        // Its author edited it — on another device, or another member (ADR
+        // 0045). The frame carries the message as it now reads.
+        _replaceMessage(event.message);
       case MessageDeletedEvent():
         // A moderator deleted a message — this viewer on another device, or
         // another moderator (ADR 0029 §6). The hint has no body and no deleter;

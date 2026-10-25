@@ -27,6 +27,7 @@ import type {
   ProjectionRow,
   PinOutcome,
   SoftDeleteOutcome,
+  EditOutcome,
   UnpinOutcome,
 } from '../domain/ports';
 
@@ -213,6 +214,25 @@ export class InMemoryMessagingStore implements MessagingRepository, MessagingRea
     timeline[index] = deleted;
     this.timelines.set(input.conversationId, timeline);
     return { kind: 'deleted', message: deleted, alreadyDeleted: false };
+  }
+
+  async editMessage(input: {
+    readonly conversationId: ConversationId;
+    readonly messageId: MessageId;
+    readonly authorId: string;
+    readonly body: string | null;
+    readonly at: Date;
+  }): Promise<EditOutcome> {
+    const timeline = this.timeline(input.conversationId);
+    const index = timeline.findIndex((message) => message.id === input.messageId);
+    const found = index === -1 ? undefined : timeline[index];
+    if (found === undefined || found.senderId !== input.authorId) return { kind: 'not_found' };
+    if (found.deletedAt !== null) return { kind: 'deleted' };
+    if (found.body === input.body) return { kind: 'unchanged', message: found };
+    const edited: Message = { ...found, body: input.body, editedAt: input.at };
+    timeline[index] = edited;
+    this.timelines.set(input.conversationId, timeline);
+    return { kind: 'edited', message: edited };
   }
 
   async pinMessage(input: {

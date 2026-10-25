@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   Res,
@@ -19,6 +20,7 @@ import type { CallMetadata, Principal, Result } from '../../../shared';
 import { Permissions } from '../../identity/contracts/permissions';
 import { Authenticated, RequirePermission } from '../../identity/contracts/route-access';
 import { GetAttachmentLinkUseCase } from '../application/attachment-link.use-case';
+import { DeleteMessageUseCase, EditMessageUseCase } from '../application/edit-message.use-cases';
 import { GetSenderAvatarLinkUseCase } from '../application/sender-avatar-link.use-case';
 import {
   CreateChannelUseCase,
@@ -31,10 +33,7 @@ import {
   LeaveConversationUseCase,
   RemoveParticipantUseCase,
 } from '../application/membership.use-cases';
-import {
-  ModerateMessageUseCase,
-  ReviewDeletedMessageUseCase,
-} from '../application/moderate-message.use-cases';
+import { ReviewDeletedMessageUseCase } from '../application/moderate-message.use-cases';
 import { PinMessageUseCase, UnpinMessageUseCase } from '../application/pin-message.use-cases';
 import {
   GetConversationUseCase,
@@ -53,6 +52,7 @@ import {
   AddParticipantsDto,
   CreateChannelDto,
   CreateGroupDto,
+  EditMessageDto,
   ListConversationsQuery,
   ListMessagesQuery,
   ListParticipantsQuery,
@@ -106,7 +106,8 @@ export class ConversationsController {
     private readonly leaveConversation: LeaveConversationUseCase,
     private readonly attachmentLink: GetAttachmentLinkUseCase,
     private readonly senderAvatarLink: GetSenderAvatarLinkUseCase,
-    private readonly moderateMessage: ModerateMessageUseCase,
+    private readonly deleteMessageUseCase: DeleteMessageUseCase,
+    private readonly editMessageUseCase: EditMessageUseCase,
     private readonly reviewDeletedMessage: ReviewDeletedMessageUseCase,
     private readonly pinMessageUseCase: PinMessageUseCase,
     private readonly unpinMessageUseCase: UnpinMessageUseCase,
@@ -315,13 +316,14 @@ export class ConversationsController {
   }
 
   /**
-   * Delete a message in a community's chat, as a moderator (Q51/Q23, ADR 0029).
-   * Authenticated at the edge; the use case asks Communities for
-   * `community.messages.moderate` — never a projected row, never chat read, and
-   * the decision is never here. 204 whether the delete applied now or had
-   * already applied (idempotent). A message, or a conversation that is not a
-   * community chat, the caller may not moderate is 404; a member without the
-   * capability is 403; Communities unreachable is 503.
+   * Delete a message (ADR 0045, extending ADR 0029). Its AUTHOR deletes their
+   * own, in any conversation they are still a member of; anyone else is a
+   * community chat's moderator (`community.messages.moderate`) or hears 404.
+   * Authenticated at the edge; the use case decides, asking Communities for a
+   * community chat — never a projected row. 204 whether the delete applied now
+   * or had already applied (idempotent). A message, or a conversation, the
+   * caller may not delete in is 404; a member without the capability is 403;
+   * Communities unreachable is 503.
    */
   @Delete(':conversationId/messages/:messageId')
   @Authenticated()
@@ -332,7 +334,36 @@ export class ConversationsController {
     @Param('messageId') messageId: string,
     @RequestMetadata() meta: CallMetadata,
   ): Promise<void> {
-    unwrap(await this.moderateMessage.execute({ principal, conversationId, messageId, meta }));
+    unwrap(await this.deleteMessageUseCase.execute({ principal, conversationId, messageId, meta }));
+  }
+
+  /**
+   * Edit one's own message (ADR 0045): its text only — a TEXT message's body,
+   * a media message's caption — never its attachments, type or order. Only the
+   * author edits; moderators delete, they never edit. The same gates as a send
+   * (membership, then the posting rule asked now); a message that is not the
+   * caller's own is 404, a deleted one 409. 200 with the message as the author
+   * now sees it, `editedAt` stamped (unstamped when the text is unchanged).
+   */
+  @Patch(':conversationId/messages/:messageId')
+  @RequirePermission(Permissions.messaging.send)
+  async editMessage(
+    @CurrentPrincipal() principal: Principal,
+    @Param('conversationId') conversationId: string,
+    @Param('messageId') messageId: string,
+    @Body() dto: EditMessageDto,
+    @RequestMetadata() meta: CallMetadata,
+  ): Promise<MessageResponse> {
+    const message = unwrap(
+      await this.editMessageUseCase.execute({
+        principal,
+        conversationId,
+        messageId,
+        body: dto.body,
+        meta,
+      }),
+    );
+    return toMessageResponse(message);
   }
 
   /**

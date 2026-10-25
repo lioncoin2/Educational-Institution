@@ -325,13 +325,65 @@ class MockMessagingRepository implements MessagingRepository {
   }
 
   @override
+  Future<Message> editMessage(
+    String conversationId,
+    String messageId, {
+    required String body,
+  }) async {
+    await _wait();
+    final c = _find(conversationId);
+    final index = c.messages.indexWhere(
+      (m) => m.id == messageId && m.senderId == viewer,
+    );
+    // Only the author edits (ADR 0045): anyone else's is not found.
+    if (index < 0) {
+      throw const MessagingException(
+        'messaging.message_not_found',
+        'No such message.',
+      );
+    }
+    final current = c.messages[index];
+    if (current.isDeleted) {
+      throw const MessagingException(
+        'messaging.message_deleted',
+        'This message was deleted.',
+      );
+    }
+    final text = body.trim();
+    if (current.type == MessageType.text && text.isEmpty) {
+      throw const MessagingException(
+        'messaging.body_required',
+        'A text message needs text.',
+      );
+    }
+    if (text == (current.body ?? '')) return current;
+    final edited = Message(
+      id: current.id,
+      conversationId: current.conversationId,
+      sequence: current.sequence,
+      senderId: current.senderId,
+      type: current.type,
+      createdAt: current.createdAt,
+      body: text.isEmpty ? null : text,
+      replyToMessageId: current.replyToMessageId,
+      clientMessageId: current.clientMessageId,
+      editedAt: DateTime.now().toUtc(),
+      attachments: current.attachments,
+    );
+    c.messages[index] = edited;
+    return edited;
+  }
+
+  @override
   Future<void> deleteMessage(String conversationId, String messageId) async {
     await _wait();
     final c = _find(conversationId);
-    // Moderation is a community-chat operation only; a direct or group message
-    // is the 404 a non-member hears, as on the server (ADR 0029).
-    if (c.communityId == null) throw _notFound;
     final index = c.messages.indexWhere((m) => m.id == messageId);
+    final own = index >= 0 && c.messages[index].senderId == viewer;
+    // An author deletes their own anywhere (ADR 0045); anyone else's is
+    // moderation — a community-chat operation only, so a direct or group
+    // message is the 404 a non-member hears, as on the server (ADR 0029).
+    if (!own && c.communityId == null) throw _notFound;
     if (index < 0) {
       throw const MessagingException(
         'messaging.message_not_found',

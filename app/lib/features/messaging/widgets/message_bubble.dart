@@ -46,6 +46,8 @@ class MessageBubble extends StatelessWidget {
     this.onUnpin,
     this.onModerateDelete,
     this.onReview,
+    this.onEdit,
+    this.onDeleteOwn,
   });
 
   final Message message;
@@ -93,6 +95,12 @@ class MessageBubble extends StatelessWidget {
   final VoidCallback? onModerateDelete;
   final VoidCallback? onReview;
 
+  /// The author's own actions (ADR 0045): edit the text or caption, and delete.
+  /// Null when the message is not the viewer's, is deleted, or (edit) the
+  /// viewer may not post here now. The server decides both on every call.
+  final VoidCallback? onEdit;
+  final VoidCallback? onDeleteOwn;
+
   @override
   Widget build(BuildContext context) {
     final canReply = onReply != null && !message.isDeleted;
@@ -101,7 +109,9 @@ class MessageBubble extends StatelessWidget {
         onPin != null ||
         onUnpin != null ||
         onModerateDelete != null ||
-        onReview != null;
+        onReview != null ||
+        onEdit != null ||
+        onDeleteOwn != null;
     return _BubbleFrame(
       mine: mine,
       header: _header(context),
@@ -111,7 +121,10 @@ class MessageBubble extends StatelessWidget {
           : _ReplyPreview(replied: repliedTo!, mine: mine),
       onLongPress: hasActions ? () => _showActionSheet(context) : null,
       footer: Text(
-        MessagingCopy.clock(context, message.createdAt),
+        message.isEdited
+            ? '${MessagingCopy.edited} · ${MessagingCopy.clock(context, message.createdAt)}'
+            : MessagingCopy.clock(context, message.createdAt),
+        key: message.isEdited ? Key('message-edited-${message.id}') : null,
         style: context.text.labelSmall,
       ),
       child: message.isDeleted
@@ -208,6 +221,36 @@ class MessageBubble extends StatelessWidget {
                 onTap: () {
                   Navigator.pop(sheetContext);
                   onUnpin!();
+                },
+              ),
+            if (onEdit != null)
+              ListTile(
+                key: const Key('message-edit-action'),
+                leading: const Icon(Icons.edit_outlined),
+                title: Text(
+                  message.type == MessageType.text
+                      ? MessagingCopy.edit
+                      : MessagingCopy.editCaption,
+                ),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  onEdit!();
+                },
+              ),
+            if (onDeleteOwn != null)
+              ListTile(
+                key: const Key('message-delete-own-action'),
+                leading: Icon(
+                  Icons.delete_outline_rounded,
+                  color: context.colors.error,
+                ),
+                title: Text(
+                  MessagingCopy.deleteOwn,
+                  style: TextStyle(color: context.colors.error),
+                ),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  onDeleteOwn!();
                 },
               ),
             if (onReview != null)

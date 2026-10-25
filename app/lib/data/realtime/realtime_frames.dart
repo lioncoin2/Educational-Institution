@@ -64,6 +64,7 @@ sealed class ServerFrame {
         'message.sent' => MessageSentEvent._fromJson(json),
         'message.read' => MessageReadEvent._fromJson(json),
         'message.deleted' => MessageDeletedEvent._fromJson(json),
+        'message.edited' => MessageEditedEvent._fromJson(json),
         'message.pinned' => MessagePinnedEvent._fromJson(json),
         'participant.added' => ParticipantAddedEvent._fromJson(json),
         'participant.removed' => ParticipantRemovedEvent._fromJson(json),
@@ -315,6 +316,41 @@ final class MessageDeletedEvent extends ConversationEvent {
 
   final String messageId;
   final int sequence;
+}
+
+/// Its author edited a message (ADR 0045): the message as it now reads —
+/// exactly as the HTTP timeline renders it, `editedAt` set. The timeline
+/// replaces the held copy; a later edit carries a later `editedAt`.
+final class MessageEditedEvent extends ConversationEvent {
+  const MessageEditedEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.conversationId,
+    required this.message,
+  });
+
+  /// Null when the envelope and the message it carries disagree.
+  static MessageEditedEvent? _fromJson(Map<String, Object?> json) {
+    final conversationId = json['conversationId'];
+    final raw = json['message'];
+    if (conversationId is! String || raw is! Map) return null;
+    final message = Message.fromJson(raw.cast<String, Object?>());
+    if (message.conversationId != conversationId ||
+        message.id != json['messageId'] ||
+        message.sequence != json['sequence']) {
+      return null;
+    }
+    return MessageEditedEvent(
+      eventId: json['eventId']! as String,
+      occurredAt: DateTime.parse(json['occurredAt']! as String),
+      conversationId: conversationId,
+      message: message,
+    );
+  }
+
+  final Message message;
+
+  int get sequence => message.sequence;
 }
 
 /// A community chat's single pin changed (ADR 0043): [pinnedMessageId] is the

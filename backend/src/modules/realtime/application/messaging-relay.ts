@@ -19,6 +19,7 @@ import {
   type ConversationCreated,
   type MessageDelivery,
   type MessageDeleted,
+  type MessageEdited,
   type MessagePinned,
   type MessageRead,
   type MessageRecipients,
@@ -30,6 +31,7 @@ import { ConnectionManager } from './connection-manager';
 import {
   conversationCreatedFrame,
   messageDeletedFrame,
+  messageEditedFrame,
   messagePinnedFrame,
   messageReadFrame,
   messageSentFrame,
@@ -52,6 +54,9 @@ import { onlineAudience } from './online-audience';
  *   message.deleted      the same audience as the send it tombstones (Q51/Q23):
  *                        ids and the sequence only — no body, and never who
  *                        deleted it; the client re-reads and sees a tombstone
+ *   message.edited       the same audience again (ADR 0045): the message as
+ *                        it now reads, rendered by messaging — never the old
+ *                        text; nothing at all once it has been deleted
  *   message.read         the reader's own devices: their read mark moved.
  *                        Nobody else — whether others may see how far someone
  *                        has read is an open question (Q25)
@@ -89,6 +94,7 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
       MessagingEvents.conversationCreated,
       MessagingEvents.messageSent,
       MessagingEvents.messageDeleted,
+      MessagingEvents.messageEdited,
       MessagingEvents.messagePinned,
       MessagingEvents.messageRead,
       MessagingEvents.participantAdded,
@@ -144,6 +150,8 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
         return this.messageSent(event);
       case MessagingEvents.messageDeleted:
         return this.messageDeleted(event);
+      case MessagingEvents.messageEdited:
+        return this.messageEdited(event);
       case MessagingEvents.messagePinned:
         return this.messagePinned(event);
       case MessagingEvents.messageRead: {
@@ -229,6 +237,31 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
         sequence: payload.sequence,
       }),
     );
+  }
+
+  private async messageEdited(event: DomainEvent): Promise<void> {
+    const payload = messageEditedPayload(event);
+    if (payload === null) return this.malformed(event);
+
+    // The audience of the send it edits: current members who can see that
+    // sequence and are connected here. Rendered now — so a delete that has
+    // committed since wins, and no edited text outlives its tombstone.
+    const online = await this.onlineMembers(payload.conversationId, payload.sequence);
+    if (online.length === 0) return;
+    const rendered = await this.delivery.message(payload.conversationId, payload.messageId);
+    if (rendered === null || rendered.forMembers.deletedAt !== null) return;
+    const toMembers = messageEditedFrame({
+      occurredAt: event.occurredAt,
+      message: rendered.forMembers,
+    });
+    const toSender = messageEditedFrame({
+      occurredAt: event.occurredAt,
+      message: rendered.forSender,
+    });
+    const senderId = rendered.forSender.senderId;
+    for (const userId of online) {
+      this.connections.sendToUser(userId, userId === senderId ? toSender : toMembers);
+    }
   }
 
   private async messagePinned(event: DomainEvent): Promise<void> {
@@ -327,6 +360,19 @@ function messageDeletedPayload(event: DomainEvent): MessageDeleted['payload'] | 
     return null;
   }
   return p as MessageDeleted['payload'];
+}
+
+function messageEditedPayload(event: DomainEvent): MessageEdited['payload'] | null {
+  const p = fieldsOf<MessageEdited['payload']>(event, MessagingEvents.messageEdited);
+  if (
+    p === null ||
+    typeof p.conversationId !== 'string' ||
+    typeof p.messageId !== 'string' ||
+    !isCount(p.sequence)
+  ) {
+    return null;
+  }
+  return p as MessageEdited['payload'];
 }
 
 function messagePinnedPayload(event: DomainEvent): MessagePinned['payload'] | null {

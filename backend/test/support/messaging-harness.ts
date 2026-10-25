@@ -42,6 +42,10 @@ import {
   ReviewDeletedMessageUseCase,
 } from '../../src/modules/messaging/application/moderate-message.use-cases';
 import {
+  DeleteMessageUseCase,
+  EditMessageUseCase,
+} from '../../src/modules/messaging/application/edit-message.use-cases';
+import {
   PinMessageUseCase,
   UnpinMessageUseCase,
 } from '../../src/modules/messaging/application/pin-message.use-cases';
@@ -300,7 +304,25 @@ export async function messagingHarness(
       ids,
     ),
     moderateMessage: new ModerateMessageUseCase(repository, communityChats, audit, events, clock),
+    editMessage: new EditMessageUseCase(
+      access,
+      repository,
+      communityChats,
+      views,
+      limiter,
+      audit,
+      events,
+      clock,
+    ),
     reviewMessage: new ReviewDeletedMessageUseCase(repository, communityChats, views, audit, clock),
+    deleteMessage: new DeleteMessageUseCase(
+      access,
+      repository,
+      new ModerateMessageUseCase(repository, communityChats, audit, events, clock),
+      audit,
+      events,
+      clock,
+    ),
     pinMessage: new PinMessageUseCase(repository, communityChats, audit, events, clock),
     unpinMessage: new UnpinMessageUseCase(repository, communityChats, audit, events, clock),
     retentionSweeper: new MessageRetentionSweeper(repository, clock),

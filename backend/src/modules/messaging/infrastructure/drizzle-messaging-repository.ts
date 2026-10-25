@@ -21,6 +21,7 @@ import type {
   MessagingRepository,
   PinOutcome,
   SoftDeleteOutcome,
+  EditOutcome,
   UnpinOutcome,
 } from '../domain/ports';
 import {
@@ -372,6 +373,36 @@ export class DrizzleMessagingRepository implements MessagingRepository {
     return existing === null
       ? { kind: 'not_found' }
       : { kind: 'deleted', message: existing, alreadyDeleted: true };
+  }
+
+  async editMessage(input: {
+    readonly conversationId: ConversationId;
+    readonly messageId: MessageId;
+    readonly authorId: string;
+    readonly body: string | null;
+    readonly at: Date;
+  }): Promise<EditOutcome> {
+    const existing = await this.findMessage(input.conversationId, input.messageId);
+    if (existing === null || existing.senderId !== input.authorId) return { kind: 'not_found' };
+    if (existing.deletedAt !== null) return { kind: 'deleted' };
+    if (existing.body === input.body) return { kind: 'unchanged', message: existing };
+    // One conditional UPDATE: only this author's, only while not deleted — an
+    // edit never revives a tombstone, whatever raced it.
+    const updated = await this.db
+      .update(messages)
+      .set({ body: input.body, editedAt: input.at })
+      .where(
+        and(
+          eq(messages.conversationId, input.conversationId),
+          eq(messages.id, input.messageId),
+          eq(messages.senderId, input.authorId),
+          isNull(messages.deletedAt),
+        ),
+      )
+      .returning();
+    const row = updated[0];
+    if (row === undefined) return { kind: 'deleted' };
+    return { kind: 'edited', message: toMessage(row, await this.attachmentsOf(this.db, row.id)) };
   }
 
   async pinMessage(input: {

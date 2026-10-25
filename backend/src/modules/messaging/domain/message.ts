@@ -115,6 +115,21 @@ interface DraftBase {
   readonly at: Date;
 }
 
+/**
+ * The new text of an author's edit (ADR 0045): only the text changes — a TEXT
+ * message keeps needing some, a media message's caption may be set or cleared
+ * — and its attachments, type, sequence and reply never do. Normalized and
+ * bounded exactly as a new message's text is.
+ */
+export function editedBody(type: MessageType, raw: string): Result<string | null> {
+  const body = boundedBody(raw);
+  if (!body.ok) return body;
+  if (type === 'TEXT' && body.value === null) {
+    return invalid('body_required', 'A text message needs text.');
+  }
+  return body;
+}
+
 export function textDraft(input: DraftBase & { readonly body: string }): Result<MessageDraft> {
   const key = validateClientMessageId(input.clientMessageId);
   if (!key.ok) return key;

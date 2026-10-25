@@ -769,9 +769,24 @@ class _Timeline extends ConsumerWidget {
                   state.senderNames[message.senderId]!,
                 )
               : null,
-          // A moderator may delete a live message, or review a tombstoned one
-          // (ADR 0029). The server re-authorizes every call regardless.
-          onModerateDelete: canModerate && !message.isDeleted
+          // The author edits their own text or caption while they may post
+          // here, and deletes their own anywhere (ADR 0045). A voice note has
+          // no caption to edit. The server decides both on every call.
+          onEdit:
+              state.isMine(message) &&
+                  !message.isDeleted &&
+                  canReply &&
+                  message.type != MessageType.voice &&
+                  message.type != MessageType.unknown
+              ? () => _editOwn(context, ref, state.conversation.id, message)
+              : null,
+          onDeleteOwn: state.isMine(message) && !message.isDeleted
+              ? () => _deleteOwn(context, ref, state.conversation.id, message.id)
+              : null,
+          // A moderator may delete someone else's live message, or review a
+          // tombstoned one (ADR 0029). The server re-authorizes every call.
+          onModerateDelete:
+              canModerate && !message.isDeleted && !state.isMine(message)
               ? () =>
                     _moderateDelete(context, ref, state.conversation.id, message.id)
               : null,
@@ -942,6 +957,93 @@ class _Notice extends StatelessWidget {
 /// Deletes a message as a moderator (ADR 0029): confirm first, then the
 /// controller tombstones it on success. The server re-authorizes; a refusal is
 /// said through its code, nothing local changes then.
+/// The author's edit (ADR 0045): the current text or caption in a field; the
+/// server's answer replaces the bubble. A refusal is said through its code.
+Future<void> _editOwn(
+  BuildContext context,
+  WidgetRef ref,
+  String conversationId,
+  Message message,
+) async {
+  final controller = TextEditingController(text: message.body ?? '');
+  final body = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      scrollable: true,
+      title: const Text(MessagingCopy.editTitle),
+      content: TextField(
+        key: const Key('message-edit-field'),
+        controller: controller,
+        autofocus: true,
+        minLines: 1,
+        maxLines: 6,
+        maxLength: 4000,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text(MessagingCopy.editCancel),
+        ),
+        TextButton(
+          key: const Key('message-edit-save'),
+          onPressed: () => Navigator.pop(context, controller.text),
+          child: const Text(MessagingCopy.editSave),
+        ),
+      ],
+    ),
+  );
+  controller.dispose();
+  if (body == null || !context.mounted) return;
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await ref
+        .read(conversationProvider(conversationId).notifier)
+        .editMessage(message.id, body);
+    messenger.toast(MessagingCopy.editDone);
+  } on MessagingException catch (error) {
+    messenger.toast(MessagingCopy.error(error.code));
+  }
+}
+
+/// The author deletes their own message (ADR 0045), after a confirmation.
+Future<void> _deleteOwn(
+  BuildContext context,
+  WidgetRef ref,
+  String conversationId,
+  String messageId,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      scrollable: true,
+      title: const Text(MessagingCopy.deleteOwnTitle),
+      content: const Text(MessagingCopy.deleteOwnBody),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text(MessagingCopy.editCancel),
+        ),
+        TextButton(
+          key: const Key('message-delete-own-confirm'),
+          style: TextButton.styleFrom(foregroundColor: context.colors.error),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text(MessagingCopy.deleteOwnConfirm),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await ref
+        .read(conversationProvider(conversationId).notifier)
+        .deleteOwnMessage(messageId);
+    messenger.toast(MessagingCopy.deleteOwnDone);
+  } on MessagingException catch (error) {
+    messenger.toast(MessagingCopy.error(error.code));
+  }
+}
+
 Future<void> _moderateDelete(
   BuildContext context,
   WidgetRef ref,

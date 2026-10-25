@@ -85,6 +85,8 @@ describe('messaging API', () => {
         ['POST', '/messaging/conversations/groups'],
         ['GET', '/messaging/conversations/x/messages'],
         ['POST', '/messaging/conversations/x/messages/text'],
+        ['PATCH', '/messaging/conversations/x/messages/y'],
+        ['DELETE', '/messaging/conversations/x/messages/y'],
         ['DELETE', '/messaging/conversations/x/participants/y'],
         ['POST', '/files/uploads'],
       ] as const) {
@@ -235,6 +237,94 @@ describe('messaging API', () => {
       });
       expect(read.status).toBe(200);
       expect(read.body).toEqual({ lastReadSequence: 6 });
+    });
+  });
+
+  describe('editing and deleting one’s own message (ADR 0045)', () => {
+    let dmId: string;
+    let messageId: string;
+    const path = () => `/messaging/conversations/${dmId}/messages/${messageId}`;
+
+    let author: Account;
+
+    beforeAll(async () => {
+      // A fresh pair, so the direct-conversation tests below still start theirs.
+      author = await provision('author', 'STUDENT');
+      const dm = await api.call('POST', '/messaging/conversations/direct', {
+        token: author.token,
+        body: { userId: teacher.id },
+      });
+      expect(dm.status).toBe(201);
+      dmId = dm.body.id as string;
+      const sent = await api.call('POST', `/messaging/conversations/${dmId}/messages/text`, {
+        token: author.token,
+        body: { clientMessageId: 'api-edit-0000001', body: 'كلمات أولى' },
+      });
+      messageId = sent.body.id as string;
+    });
+
+    it('lets the author edit: 200 with the new text and editedAt; the counterpart reads it', async () => {
+      const edited = await api.call('PATCH', path(), {
+        token: author.token,
+        body: { body: 'كلمات أفضل' },
+      });
+      expect(edited.status).toBe(200);
+      expect(edited.body).toMatchObject({ id: messageId, body: 'كلمات أفضل', deletedAt: null });
+      expect(edited.body.editedAt).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
+
+      const timeline = await api.call('GET', `/messaging/conversations/${dmId}/messages`, {
+        token: teacher.token,
+      });
+      expect((timeline.body.items as Record<string, unknown>[])[0]).toMatchObject({
+        id: messageId,
+        body: 'كلمات أفضل',
+      });
+    });
+
+    it('validates the edit at the edge (400) and in the domain (422)', async () => {
+      const extra = await api.call('PATCH', path(), {
+        token: author.token,
+        body: { body: 'x', type: 'IMAGE' },
+      });
+      expect(extra.status).toBe(400);
+      const blank = await api.call('PATCH', path(), { token: author.token, body: { body: ' ' } });
+      expect(blank.status).toBe(422);
+      expect(errorOf(blank.body).code).toBe('messaging.body_required');
+    });
+
+    it('refuses anyone else: the counterpart 404, an outsider 404 — nothing changes', async () => {
+      const counterpart = await api.call('PATCH', path(), {
+        token: teacher.token,
+        body: { body: 'rewritten by the other side' },
+      });
+      expect(counterpart.status).toBe(404);
+      expect(errorOf(counterpart.body).code).toBe('messaging.message_not_found');
+      const stranger = await api.call('PATCH', path(), {
+        token: outsider.token,
+        body: { body: 'rewritten by a stranger' },
+      });
+      expect(stranger.status).toBe(404);
+      expect(errorOf(stranger.body).code).toBe('messaging.conversation_not_found');
+      // Nor may the counterpart delete it: a direct conversation has no moderator.
+      const deleteByOther = await api.call('DELETE', path(), { token: teacher.token });
+      expect(deleteByOther.status).toBe(404);
+    });
+
+    it('lets the author delete (204, idempotent); a deleted message is not editable (409)', async () => {
+      expect((await api.call('DELETE', path(), { token: author.token })).status).toBe(204);
+      expect((await api.call('DELETE', path(), { token: author.token })).status).toBe(204);
+      const revive = await api.call('PATCH', path(), {
+        token: author.token,
+        body: { body: 'revived?' },
+      });
+      expect(revive.status).toBe(409);
+      expect(errorOf(revive.body).code).toBe('messaging.message_deleted');
+      const timeline = await api.call('GET', `/messaging/conversations/${dmId}/messages`, {
+        token: teacher.token,
+      });
+      const tombstone = (timeline.body.items as Record<string, unknown>[])[0];
+      expect(tombstone).toMatchObject({ id: messageId, body: null, attachments: [] });
+      expect(tombstone?.deletedAt).not.toBeNull();
     });
   });
 
