@@ -2,15 +2,22 @@
 library;
 
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quran_institution_app/app/app.dart';
+import 'package:quran_institution_app/data/repositories/mock/mock_community_repository.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_messaging_repository.dart';
 import 'package:quran_institution_app/providers/app_providers.dart';
+
+/// The demo's invitation links are dated from "now" (an expiry a few days
+/// ahead, another a few days past), and the invitations screen prints those
+/// dates. Fix the community demo's clock so the images do not drift day by day;
+/// noon UTC keeps the calendar date the same in every nearby time zone. This
+/// is the day the committed images were generated.
+final _goldenNow = DateTime.utc(2026, 10, 23, 12);
 
 /// Renders the REAL messaging screens (full app, demo data) to golden PNGs, with
 /// the app's Arabic fonts loaded so the shaping is genuine. This is visual
@@ -65,6 +72,9 @@ Future<void> _bootAt(WidgetTester tester, String route) async {
       // Zero-latency mock so loading settles without a lingering spinner.
       messagingRepositoryProvider
           .overrideWithValue(MockMessagingRepository(latency: Duration.zero)),
+      communityRepositoryProvider.overrideWithValue(
+        MockCommunityRepository(clock: () => _goldenNow),
+      ),
     ],
   );
   addTearDown(container.dispose);
