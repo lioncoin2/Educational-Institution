@@ -261,6 +261,14 @@ export interface CommunityStore {
 
   findCommunity(communityId: string): Promise<Community | null>;
 
+  /**
+   * Who owns each of these communities now — the user on its ACTIVE `OWNER`
+   * stint — keyed by community; a community with none (unknown, or a legacy
+   * row with no owner) has no entry. A plain read: the transfer itself
+   * re-locks the owner (ADR 0044 C).
+   */
+  ownersOf(communityIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
+
   /** The community and its owner's stint, together. */
   create(community: Community, owner: Stint): Promise<void>;
 

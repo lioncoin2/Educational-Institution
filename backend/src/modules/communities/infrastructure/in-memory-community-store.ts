@@ -120,6 +120,15 @@ export class InMemoryCommunityStore implements CommunityStore, CommunityReadMode
     return this.communityById.get(communityId) ?? null;
   }
 
+  async ownersOf(communityIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
+    const owners = new Map<string, string>();
+    for (const communityId of communityIds) {
+      const owner = this.activeStintsOf(communityId).find((stint) => stint.standing === 'OWNER');
+      if (owner !== undefined) owners.set(communityId, owner.userId);
+    }
+    return owners;
+  }
+
   async create(community: Community, owner: Stint): Promise<void> {
     if (this.communityById.has(community.id)) throw new Error('duplicate community id');
     this.communityById.set(community.id, community);

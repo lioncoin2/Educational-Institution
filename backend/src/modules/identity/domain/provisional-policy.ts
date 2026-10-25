@@ -45,13 +45,22 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
     ),
 
     /**
-     * Provisional: oversight — read access, no management. Q1: may they amend
-     * attendance? No `people.read`: the institution-wide people directory
-     * (`GET /people`) is an owner/admin membership-management surface (Sprint 24,
-     * approved Design X); a supervisor cannot own or be delegated a community
-     * (no `communities.moderate`), so never adds members and needs no directory.
-     * Community member discovery is the community-scoped, `community.members.
-     * invite`-gated candidate search instead.
+     * Read access across the institution, no institution-wide management. Q1:
+     * may they amend attendance? No `people.read`: the institution-wide people
+     * directory (`GET /people`) is an owner/admin membership-management surface
+     * (Sprint 24, approved Design X).
+     *
+     * Owner decisions A and B (2026-10-25, ADR 0044): a supervisor may start
+     * broadcasts and add members in the communities they are permitted to act
+     * in. `live.moderate`, `live.speak` and `communities.moderate` are the
+     * CEILINGS for that, exactly as for a teacher: eligible to own a community
+     * or hold a delegated capability there (community.live.start,
+     * community.members.invite, …), and to speak as the host of a session they
+     * start. They grant nothing in any community by themselves — every act
+     * still needs the owner's standing or an ACTIVE grant in that community,
+     * and the role is not oversight (no `communities.manage`). Member discovery
+     * stays the community-scoped, `community.members.invite`-gated candidate
+     * search.
      */
     [Roles.supervisor]: [
       Permissions.users.read,
@@ -64,8 +73,11 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
       Permissions.messaging.startDirect,
       Permissions.messaging.createGroup,
       Permissions.live.join,
+      Permissions.live.speak,
+      Permissions.live.moderate,
       Permissions.files.read,
       Permissions.communities.read,
+      Permissions.communities.moderate,
     ],
 
     /**

@@ -1353,5 +1353,35 @@ describeWithPostgres('Communities in Postgres', () => {
         'communities.ownership.transferred',
       ]);
     });
+
+    it('lets oversight recover ownership only from an owner who cannot act (ADR 0044 C)', async () => {
+      await reset();
+      const h = postgresHarness();
+      const owner = h.person('owner-admin', ['ADMIN']);
+      const overseer = h.person('overseer-admin', ['ADMIN']);
+      h.person('heir', ['TEACHER']);
+      const id = await h.community(owner);
+      await h.addPeople(owner, id, 'heir');
+      const transfer = () =>
+        h.transfer.execute({ principal: overseer, communityId: id, userId: 'heir', meta: META });
+
+      // The owner can still act: oversight does not replace them.
+      expect(await transfer()).toMatchObject({
+        ok: false,
+        error: { code: 'communities.owner_can_still_act' },
+      });
+      const before = await h.get.execute({ principal: overseer, communityId: id, meta: META });
+      expect(before.ok && before.value.me.operations).not.toContain('community.ownership.transfer');
+
+      // The owner's account is suspended: the community is recoverable, and recovered.
+      h.accounts.suspend('owner-admin');
+      const recoverable = await h.get.execute({ principal: overseer, communityId: id, meta: META });
+      expect(recoverable.ok && recoverable.value.me.operations).toContain(
+        'community.ownership.transfer',
+      );
+      expect(await transfer()).toMatchObject({ ok: true });
+      expect(await h.store.ownersOf([id])).toEqual(new Map([[id, 'heir']]));
+      expect(h.journal.actions()).toContain('communities.ownership.transferred');
+    });
   });
 });

@@ -225,6 +225,13 @@
       "when": 1792611142407,
       "tag": "0031_program_cover_image",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792611143407,
+      "tag": "0032_supervisor_live_and_community_ceilings",
+      "breakpoints": true
     }
   ]
 }

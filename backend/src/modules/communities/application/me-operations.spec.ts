@@ -176,15 +176,17 @@ const CASES: readonly {
     },
     operations: ['community.invitations.manage', 'community.leave'],
   },
+  // ADR 0044 C: oversight no longer hands over a community whose owner can
+  // still act — the transfer is the owner's; oversight keeps RECOVERY only.
   {
     who: 'an overseer who is not a member',
     shape: async ({ h }) => h.person('owner-role', ['OWNER']),
-    operations: ['community.invitations.manage', 'community.ownership.transfer'],
+    operations: ['community.invitations.manage'],
   },
   {
     who: 'an overseer who is an ordinary member',
     shape: async ({ h }) => h.person('admin-2', ['ADMIN']),
-    operations: ['community.invitations.manage', 'community.ownership.transfer', 'community.leave'],
+    operations: ['community.invitations.manage', 'community.leave'],
   },
   {
     who: 'the former owner, after handing ownership over',
@@ -192,7 +194,24 @@ const CASES: readonly {
       await handOver(w, 'teacher-1');
       return w.admin;
     },
+    operations: ['community.invitations.manage', 'community.leave'],
+  },
+  {
+    who: 'an overseer, when the owner’s account is suspended (recovery)',
+    shape: async ({ h }) => {
+      h.accounts.suspend('admin-1');
+      return h.person('admin-2', ['ADMIN']);
+    },
     operations: ['community.invitations.manage', 'community.ownership.transfer', 'community.leave'],
+  },
+  {
+    who: 'an overseer, when the owner’s role no longer holds communities.moderate (recovery)',
+    shape: async (w) => {
+      await handOver(w, 'teacher-1');
+      w.h.person('teacher-1', ['STUDENT']);
+      return w.h.person('owner-role', ['OWNER']);
+    },
+    operations: ['community.invitations.manage', 'community.ownership.transfer'],
   },
 ];
 
@@ -263,11 +282,8 @@ describe('me.operations', () => {
       'community.ownership.transfer',
     ]);
     expect(locked.value.me.operations).toEqual(listed.value.items[0]?.me.operations);
-    // The transfer answers as the caller now stands: a member, still an overseer.
-    expect(moved.value.me.operations).toEqual([
-      'community.invitations.manage',
-      'community.ownership.transfer',
-      'community.leave',
-    ]);
+    // The transfer answers as the caller now stands: a member, still an
+    // overseer — but the new owner can act, so no hand-over (ADR 0044 C).
+    expect(moved.value.me.operations).toEqual(['community.invitations.manage', 'community.leave']);
   });
 });

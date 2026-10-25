@@ -594,6 +594,31 @@ export function communityContractSuite(
       ).toEqual({ kind: 'not_found' });
     });
 
+    it('answers each community’s ACTIVE owner — after a transfer, the new one; unknown ids omitted', async () => {
+      const second = await h.community(admin);
+      expect(await h.store.ownersOf([id, second, 'no-such-community'])).toEqual(
+        new Map([
+          [id, 'admin-1'],
+          [second, 'admin-1'],
+        ]),
+      );
+      const moved = await h.store.transfer({
+        communityId: id,
+        toUserId: 'teacher-1',
+        actor: { kind: 'owner', ...owner() },
+        transferredBy: 'admin-1',
+        at: h.clock.now(),
+      });
+      if (moved.kind !== 'transferred') throw new Error(moved.kind);
+      expect(await h.store.ownersOf([id, second])).toEqual(
+        new Map([
+          [id, 'teacher-1'],
+          [second, 'admin-1'],
+        ]),
+      );
+      expect(await h.store.ownersOf([])).toEqual(new Map());
+    });
+
     it('admits through a delegate’s link only while the delegate’s grant stands', async () => {
       const [inviteGrant] = await h.delegate(admin, id, 'teacher-1', 'community.members.invite');
       const { invitationId } = await h.link(teacher, id);

@@ -201,7 +201,7 @@ export class GetCommunityUseCase {
     return ok(
       communityView(
         read.community,
-        this.authorization.me(command.principal, command.communityId, read),
+        await this.authorization.meOf(command.principal, command.communityId, read),
         read.halaqaIds,
       ),
     );
@@ -245,14 +245,22 @@ export class ListCommunitiesUseCase {
         limit: limit + 1,
       });
       const page = paged(rows, limit, (row) => ({ at: row.stint.joinedAt, id: row.community.id }));
+      const pageReads = page.items.map((row) => ({
+        communityId: row.community.id,
+        read: { community: row.community, stint: { ...row.stint, grants: row.grants } },
+      }));
+      // ADR 0044 C: one recovery question for the whole page, as `me` needs it.
+      const recoverable = await this.authorization.recoverableOwnership(principal, pageReads);
       return ok({
-        items: page.items.map((row) =>
+        items: page.items.map((row, index) =>
           communityView(
             row.community,
-            this.authorization.me(principal, row.community.id, {
-              community: row.community,
-              stint: { ...row.stint, grants: row.grants },
-            }),
+            this.authorization.me(
+              principal,
+              row.community.id,
+              pageReads[index].read,
+              recoverable.has(row.community.id),
+            ),
             row.halaqaIds,
           ),
         ),
@@ -277,14 +285,22 @@ export class ListCommunitiesUseCase {
       correlationId: command.meta.correlationId,
       detail: { listing: 'all', count: page.items.length },
     });
+    const pageReads = page.items.map((community) => ({
+      communityId: community.id,
+      read: { community, stint: stints.get(community.id)?.stint ?? null },
+    }));
+    // ADR 0044 C: one recovery question for the whole page, as `me` needs it.
+    const recoverable = await this.authorization.recoverableOwnership(principal, pageReads);
     return ok({
-      items: page.items.map((community) =>
+      items: page.items.map((community, index) =>
         communityView(
           community,
-          this.authorization.me(principal, community.id, {
-            community,
-            stint: stints.get(community.id)?.stint ?? null,
-          }),
+          this.authorization.me(
+            principal,
+            community.id,
+            pageReads[index].read,
+            recoverable.has(community.id),
+          ),
           stints.get(community.id)?.halaqaIds ?? [],
         ),
       ),
@@ -330,10 +346,13 @@ export class ChangeCommunityStatusUseCase {
       actorUserId: actor,
       at,
     });
-    const view = (community: Parameters<typeof communityView>[0]) =>
+    const view = async (community: Parameters<typeof communityView>[0]) =>
       communityView(
         community,
-        this.authorization.me(principal, communityId, { community, stint: read?.stint ?? null }),
+        await this.authorization.meOf(principal, communityId, {
+          community,
+          stint: read?.stint ?? null,
+        }),
         read?.halaqaIds ?? [],
       );
 
@@ -359,10 +378,10 @@ export class ChangeCommunityStatusUseCase {
               : communityUnlocked(outcome.community, actor, at, command.meta.correlationId),
           ],
         );
-        return ok(view(outcome.community));
+        return ok(await view(outcome.community));
       }
       case 'unchanged':
-        return ok(view(outcome.community));
+        return ok(await view(outcome.community));
       case 'not_found':
         return err(COMMUNITY_NOT_FOUND);
       case 'basis_lost':
@@ -447,10 +466,13 @@ export class EditCommunityProfileUseCase {
       actorUserId: actor,
       at,
     });
-    const view = (community: Parameters<typeof communityView>[0]) =>
+    const view = async (community: Parameters<typeof communityView>[0]) =>
       communityView(
         community,
-        this.authorization.me(principal, communityId, { community, stint: read?.stint ?? null }),
+        await this.authorization.meOf(principal, communityId, {
+          community,
+          stint: read?.stint ?? null,
+        }),
         read?.halaqaIds ?? [],
       );
 
@@ -472,9 +494,9 @@ export class EditCommunityProfileUseCase {
           },
           [],
         );
-        return ok(view(outcome.community));
+        return ok(await view(outcome.community));
       case 'unchanged':
-        return ok(view(outcome.community));
+        return ok(await view(outcome.community));
       case 'not_found':
         return err(COMMUNITY_NOT_FOUND);
       case 'basis_lost':
@@ -532,10 +554,13 @@ export class SetChatModeUseCase {
       actorUserId: actor,
       at,
     });
-    const view = (community: Parameters<typeof communityView>[0]) =>
+    const view = async (community: Parameters<typeof communityView>[0]) =>
       communityView(
         community,
-        this.authorization.me(principal, communityId, { community, stint: read?.stint ?? null }),
+        await this.authorization.meOf(principal, communityId, {
+          community,
+          stint: read?.stint ?? null,
+        }),
         read?.halaqaIds ?? [],
       );
 
@@ -553,9 +578,9 @@ export class SetChatModeUseCase {
           },
           [communityChatModeChanged(outcome.community, actor, at, command.meta.correlationId)],
         );
-        return ok(view(outcome.community));
+        return ok(await view(outcome.community));
       case 'unchanged':
-        return ok(view(outcome.community));
+        return ok(await view(outcome.community));
       case 'not_found':
         return err(COMMUNITY_NOT_FOUND);
       case 'basis_lost':

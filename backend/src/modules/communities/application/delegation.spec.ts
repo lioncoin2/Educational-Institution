@@ -548,12 +548,27 @@ describe('delegation', () => {
       expect(codeOf(await transfer(overseer, 'owner-role'))).toBe(
         'communities.owner_self_assignment',
       );
+      // ADR 0044 C: while the owner can act, ownership is theirs to hand over —
+      // a general institutional role does not replace them. Nothing changes.
+      expect(codeOf(await transfer(overseer, 'teacher-2'))).toBe('communities.owner_can_still_act');
+      expect(h.journal.events).toEqual([]);
+      // Recovery: the owner's account is suspended — oversight may hand over.
+      h.accounts.suspend('admin-1');
       const view = unwrap(await transfer(overseer, 'teacher-2'));
       expect(view.me.standing).toBeNull();
       expect(h.journal.events.at(-1)?.payload).toMatchObject({
         basis: 'oversight',
         transferredBy: 'owner-role',
       });
+    });
+
+    it('recovers a community whose owner no longer holds the ownership ceiling', async () => {
+      const overseer = h.person('owner-role', ['OWNER']);
+      unwrap(await transfer(admin, 'teacher-1')); // a TEACHER now owns it
+      h.accounts.setRoles('teacher-1', ['STUDENT']); // …and can no longer own one
+      const view = unwrap(await transfer(overseer, 'teacher-2'));
+      expect(view.me.standing).toBeNull();
+      expect(h.journal.events.at(-1)?.payload).toMatchObject({ basis: 'oversight' });
     });
 
     it('refuses an ineligible target, and anyone who is neither owner nor overseer', async () => {

@@ -482,7 +482,7 @@ export class RedeemInvitationUseCase {
       kind,
       community: communityView(
         read.community,
-        this.authorization.me(principal, communityId, read),
+        await this.authorization.meOf(principal, communityId, read),
         read.halaqaIds,
       ),
     });

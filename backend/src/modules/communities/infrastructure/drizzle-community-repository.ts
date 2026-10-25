@@ -307,6 +307,23 @@ export class DrizzleCommunityRepository implements CommunityStore {
     return row === undefined ? null : toCommunity(row);
   }
 
+  async ownersOf(communityIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
+    const owners = new Map<string, string>();
+    if (communityIds.length === 0) return owners;
+    const rows = await this.db
+      .select({ communityId: communityMembers.communityId, userId: communityMembers.userId })
+      .from(communityMembers)
+      .where(
+        and(
+          inArray(communityMembers.communityId, [...new Set(communityIds)]),
+          eq(communityMembers.standing, 'OWNER'),
+          eq(communityMembers.status, 'ACTIVE'),
+        ),
+      );
+    for (const row of rows) owners.set(row.communityId, row.userId);
+    return owners;
+  }
+
   // ── Writes ─────────────────────────────────────────────────────────────
 
   async create(community: Community, owner: Stint): Promise<void> {

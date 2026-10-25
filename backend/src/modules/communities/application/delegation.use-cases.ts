@@ -83,6 +83,17 @@ const OWNER_SELF_ASSIGNMENT = failure(
   'Oversight cannot make its own holder the owner of a community.',
 );
 
+/**
+ * ADR 0044 C: ownership moves only by its owner's explicit transfer. Oversight
+ * keeps one explicit, audited path — recovery — for a community whose owner can
+ * no longer act (their account is not ACTIVE, or no longer eligible to own).
+ */
+const OWNER_CAN_STILL_ACT = failure(
+  'forbidden',
+  'communities.owner_can_still_act',
+  'Only the owner hands this community over while they can act. Oversight may only recover a community whose owner cannot.',
+);
+
 const OWNER_CONFLICT = failure(
   'conflict',
   'communities.owner_conflict',
@@ -440,6 +451,23 @@ export class TransferOwnershipUseCase {
       const eligible = await this.people.eligible([target], permission);
       if (!eligible.has(target)) return err(OWNER_INELIGIBLE);
     }
+    // ADR 0044 C: a general institutional role never replaces an owner who can
+    // still act. On the oversight basis a transfer is RECOVERY only — allowed
+    // when the current owner's account is no longer ACTIVE or no longer holds
+    // the ownership ceiling. (A community with no owner at all is answered by
+    // the store as not found: none exists on the Trial, and no app path makes
+    // one — the owner can neither leave nor be removed.)
+    // Naming the current owner moves nothing: the store answers it unchanged.
+    if (
+      permit.basis === 'oversight' &&
+      read !== null &&
+      (await this.store.ownersOf([communityId])).get(communityId) !== target
+    ) {
+      const recoverable = await this.authorization.recoverableOwnership(principal, [
+        { communityId, read },
+      ]);
+      if (!recoverable.has(communityId)) return err(OWNER_CAN_STILL_ACT);
+    }
 
     const at = this.clock.now();
     const actor = actorOf(principal);
@@ -528,7 +556,7 @@ export class TransferOwnershipUseCase {
     return ok(
       communityView(
         read.community,
-        this.authorization.me(principal, communityId, read),
+        await this.authorization.meOf(principal, communityId, read),
         read.halaqaIds,
       ),
     );

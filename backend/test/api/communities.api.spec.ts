@@ -475,19 +475,53 @@ describe('communities API', () => {
     expect(repeat.status).toBe(200);
     expect(repeat.body).toMatchObject({ me: { standing: 'OWNER' } });
 
-    // Oversight hands it back — the recovery path.
+    // ADR 0044 C: oversight does not replace an owner who can still act —
+    // and its `me` does not offer the hand-over either.
+    const notWhileTheyAct = await call('PUT', owner, r.owner, { userId: admin.id });
+    expect({ status: notWhileTheyAct.status, code: code(notWhileTheyAct) }).toEqual({
+      status: 403,
+      code: 'communities.owner_can_still_act',
+    });
+    expect((await call('GET', `/communities/${communityId}`, r.owner)).body).toMatchObject({
+      me: { standing: null, operations: ['community.invitations.manage'] },
+    });
+
+    // Recovery: the owner's account is suspended — now oversight may hand it over.
+    const suspended = await r.api.call('POST', `/admin/users/${heir.id}/status`, {
+      token: r.owner.token,
+      body: { status: 'SUSPENDED' },
+    });
+    expect(suspended.status).toBe(200);
+    expect((await call('GET', `/communities/${communityId}`, r.owner)).body).toMatchObject({
+      me: { operations: ['community.invitations.manage', 'community.ownership.transfer'] },
+    });
     const back = await call('PUT', owner, r.owner, { userId: admin.id });
     expect(back.status).toBe(200);
-    // An overseer without a stint: link management and transfer, nothing to leave.
+    // An overseer without a stint, now facing an owner who can act: link
+    // management only — nothing to leave, nothing to recover.
     expect(back.body).toMatchObject({
-      me: {
-        standing: null,
-        operations: ['community.invitations.manage', 'community.ownership.transfer'],
-      },
+      me: { standing: null, operations: ['community.invitations.manage'] },
     });
     expect((await call('GET', `/communities/${communityId}`, admin)).body).toMatchObject({
       me: { standing: 'OWNER' },
     });
+    // The former owner is a plain member now (and stays one when reactivated).
+    const reactivated = await r.api.call('POST', `/admin/users/${heir.id}/status`, {
+      token: r.owner.token,
+      body: { status: 'ACTIVE' },
+    });
+    expect(reactivated.status).toBe(200);
+    const signedIn = await r.api.call('POST', '/auth/login', {
+      body: { identifier: heir.email, password: heir.password },
+    });
+    expect(signedIn.status).toBe(200);
+    expect(
+      (
+        await r.api.call('GET', `/communities/${communityId}`, {
+          token: signedIn.body.accessToken as string,
+        })
+      ).body,
+    ).toMatchObject({ me: { standing: 'MEMBER' } });
   });
 
   it('removes and leaves: 204, and never the owner', async () => {

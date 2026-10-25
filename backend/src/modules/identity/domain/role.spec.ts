@@ -134,7 +134,29 @@ describe('provisional role matrix', () => {
     expect(holders(Permissions.communities.read)).toEqual([...ACTIVE_ROLES].sort());
     expect(holders(Permissions.communities.create)).toEqual(['ADMIN', 'OWNER']);
     expect(holders(Permissions.communities.manage)).toEqual(['ADMIN', 'OWNER']);
-    expect(holders(Permissions.communities.moderate)).toEqual(['ADMIN', 'OWNER', 'TEACHER']);
+    // ADR 0044 (A, B): supervisors join teachers as eligible to own or be
+    // delegated community capabilities — a ceiling only, never oversight
+    // (`communities.manage` above stays OWNER/ADMIN) and never creating.
+    expect(holders(Permissions.communities.moderate)).toEqual([
+      'ADMIN',
+      'OWNER',
+      'SUPERVISOR',
+      'TEACHER',
+    ]);
+  });
+
+  it('makes teachers and supervisors eligible to start and host a broadcast — the community decides (ADR 0044 A)', () => {
+    const holders = (permission: string) =>
+      Object.entries(PROVISIONAL_ROLE_PERMISSIONS)
+        .filter(([, granted]) => (granted as readonly string[]).includes(permission))
+        .map(([role]) => role)
+        .sort();
+    // The start route's identity ceiling, and the host's publish ceiling.
+    expect(holders(Permissions.live.moderate)).toEqual(['ADMIN', 'OWNER', 'SUPERVISOR', 'TEACHER']);
+    expect(holders(Permissions.live.speak)).toEqual(['ADMIN', 'OWNER', 'SUPERVISOR', 'TEACHER']);
+    // Assistants and students still cannot start one at all.
+    expect(holders(Permissions.live.moderate)).not.toContain('ASSISTANT_TEACHER');
+    expect(holders(Permissions.live.moderate)).not.toContain('STUDENT');
   });
 
   // Who moderates a live session is Communities' answer (Live's LiveAccess),

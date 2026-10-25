@@ -469,6 +469,8 @@ describe('Communities events, delivered in real time', () => {
       // After an oversight transfer the former owner is a MEMBER who can
       // neither list the roster nor read who owns the community now: the
       // frame telling them their access changed must not tell them that.
+      // Oversight only recovers a community whose owner cannot act (ADR 0044):
+      // here the owner no longer holds the ownership ceiling.
       const formerOwnerIds = async (newOwner: string): Promise<string[]> => {
         const run = communitiesRealtimeHarness();
         try {
@@ -489,6 +491,7 @@ describe('Communities events, delivered in real time', () => {
             }),
           );
           const link = run.connect(former.userId);
+          rc.accounts.setRoles(former.userId, ['STUDENT']);
           expectOk(
             await rc.transfer.execute({
               principal: boss,

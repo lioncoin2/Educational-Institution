@@ -384,27 +384,81 @@ export class CommunityAuthorizationService implements CommunityAuthorization {
   }
 
   /**
+   * ADR 0044 C — which of these communities the principal could hand over on
+   * the OVERSIGHT basis right now: recovery only, for a community whose
+   * current owner can no longer act (their account is not ACTIVE, or no longer
+   * holds every ownership ceiling). Asked only where it can matter — the
+   * principal holds the transfer's oversight ceiling and is not the owner —
+   * with one owner read and one directory read per ceiling for the whole set.
+   * The transfer route asks the same question, so `me` and the route agree.
+   */
+  async recoverableOwnership(
+    principal: Principal,
+    entries: ReadonlyArray<{ readonly communityId: string; readonly read: AuthorityRead }>,
+  ): Promise<ReadonlySet<string>> {
+    const candidates = entries
+      .filter(
+        ({ communityId, read }) =>
+          read.community !== null &&
+          read.stint?.standing !== 'OWNER' &&
+          this.ownerCeilings(principal, communityId, TRANSFER_OWNERSHIP).oversight,
+      )
+      .map(({ communityId }) => communityId);
+    if (candidates.length === 0) return new Set();
+    const owners = await this.store.ownersOf(candidates);
+    const ownerIds = [...new Set(owners.values())];
+    let canAct = new Set(ownerIds);
+    for (const permission of TRANSFER_OWNERSHIP.ownerCeiling) {
+      const eligible = await this.people.eligible([...canAct], permission);
+      canAct = new Set([...canAct].filter((userId) => eligible.has(userId)));
+    }
+    return new Set(
+      candidates.filter((communityId) => {
+        const owner = owners.get(communityId);
+        // No owner at all: the store answers a transfer as not found, so
+        // nothing is offered; recovery from that needs a reviewed data fix.
+        return owner !== undefined && !canAct.has(owner);
+      }),
+    );
+  }
+
+  /** `me` with the recovery question answered for this one community. */
+  async meOf(principal: Principal, communityId: string, read: AuthorityRead): Promise<MeView> {
+    const recoverable = await this.recoverableOwnership(principal, [{ communityId, read }]);
+    return this.me(principal, communityId, read, recoverable.has(communityId));
+  }
+
+  /**
    * What the principal may do in the community, from a read already made:
    * every capability and participation act the same evaluator would permit
    * right now, and every operation its route would permit — by the same
    * rules and decisions the routes use, so neither can drift. No further
-   * read.
+   * read: whether an overseer may recover ownership (ADR 0044 C) comes in as
+   * [ownershipRecoverable], from [recoverableOwnership] — absent, it is not.
    */
-  me(principal: Principal, communityId: string, read: AuthorityRead): MeView {
+  me(
+    principal: Principal,
+    communityId: string,
+    read: AuthorityRead,
+    ownershipRecoverable = false,
+  ): MeView {
     const decide = (rule: ActRule) =>
       decideCommunityAct(rule, this.ceilings(principal, communityId, rule), read);
     const permits = (act: CommunityAct) => decide(ruleFor(act)).kind === 'permit';
-    const ownerPermits = (operation: OwnerOperation) =>
-      decideOwnerOperation(operation, this.ownerCeilings(principal, communityId, operation), read)
-        .kind === 'permit';
+    const ownerDecision = (operation: OwnerOperation) =>
+      decideOwnerOperation(operation, this.ownerCeilings(principal, communityId, operation), read);
+    const ownerPermits = (operation: OwnerOperation) => ownerDecision(operation).kind === 'permit';
     const allows = (operation: CommunityOperation): boolean => {
       switch (operation) {
         case 'community.invitations.manage':
           return decide(LINK_MANAGEMENT_RULE).kind === 'permit';
         case 'community.grants.manage':
           return ownerPermits(MANAGE_GRANTS);
-        case 'community.ownership.transfer':
-          return ownerPermits(TRANSFER_OWNERSHIP);
+        case 'community.ownership.transfer': {
+          // The owner hands over; oversight only recovers (ADR 0044 C).
+          const decision = ownerDecision(TRANSFER_OWNERSHIP);
+          return decision.kind === 'permit' && (decision.basis === 'owner' || ownershipRecoverable);
+        }
         case 'community.leave': {
           // As `LeaveCommunityUseCase` asks it: view on the membership basis,
           // then the stint the store will decide under lock.
