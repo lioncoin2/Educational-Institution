@@ -21,7 +21,9 @@ import {
   GetInstitutionNotificationSettingsUseCase,
   UpdateInstitutionNotificationSettingsUseCase,
 } from '../../src/modules/notifications/application/institution-settings.use-cases';
+import { MessageNotificationContextService } from '../../src/modules/messaging/application/message-notification-context.service';
 import { MessagingNotificationTranslator } from '../../src/modules/notifications/application/messaging-notification.translator';
+import { NotificationContextResolver } from '../../src/modules/notifications/application/notification-context';
 import { NotificationDispatcher } from '../../src/modules/notifications/application/notification-dispatcher';
 import { NotificationReaderService } from '../../src/modules/notifications/application/notification-reader.service';
 import {
@@ -190,6 +192,14 @@ export async function notificationsHarness(
   translator.onModuleInit();
   const pushDelivery = new PushDelivery(bus, notifications, devices, push, audit, clock, FAST_PUSH);
   pushDelivery.onModuleInit();
+  // Read-time context (ADR 0046): messaging's own answer, over the same stores.
+  const context = new NotificationContextResolver(
+    new MessageNotificationContextService(
+      messaging.repository,
+      messaging.recipients,
+      messaging.communities.directory,
+    ),
+  );
 
   const h = {
     messaging,
@@ -210,10 +220,11 @@ export async function notificationsHarness(
     pushSuppression,
     translator,
     pushDelivery,
-    reader: new NotificationReaderService(notifications),
-    list: new ListNotificationsUseCase(notifications),
+    context,
+    reader: new NotificationReaderService(notifications, context),
+    list: new ListNotificationsUseCase(notifications, context),
     countUnread: new CountUnreadNotificationsUseCase(notifications),
-    markRead: new MarkNotificationReadUseCase(notifications, events, clock),
+    markRead: new MarkNotificationReadUseCase(notifications, events, clock, context),
     markAllRead: new MarkAllNotificationsReadUseCase(notifications, events, clock),
     getPreferences: new GetNotificationPreferencesUseCase(preferences),
     updatePreferences: new UpdateNotificationPreferencesUseCase(preferences, clock),

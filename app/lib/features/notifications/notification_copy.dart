@@ -59,13 +59,37 @@ abstract final class NotificationCopy {
   static String body(AppNotification n) {
     switch (n.bodyKey) {
       case 'notification.message_received.body':
+        // Who, where and what (ADR 0046): the server adds the conversation's
+        // title and the message's opening words only for a recipient who may
+        // read them now — absent, the sentence says less, never something else.
         final sender = n.text('senderDisplayName');
-        return sender == null
-            ? 'لديك رسالة جديدة.'
-            : 'لديك رسالة جديدة من $sender.';
+        final where = n.text('conversationTitle');
+        final preview = n.text('messagePreview');
+        if (preview != null) {
+          final who = sender ?? 'رسالة جديدة';
+          return where == null
+              ? '$who: $preview'
+              : '$who في «$where»: $preview';
+        }
+        if (sender == null) {
+          return where == null
+              ? 'لديك رسالة جديدة.'
+              : 'لديك رسالة جديدة في «$where».';
+        }
+        return where == null
+            ? 'لديك رسالة جديدة من $sender.'
+            : 'لديك رسالة جديدة من $sender في «$where».';
       case 'notification.conversation_created.body':
         final actor = n.text('actorDisplayName');
-        if (actor == null) return 'أُضفت إلى محادثة جديدة.';
+        final where = n.text('conversationTitle');
+        if (actor == null) {
+          return where == null
+              ? 'أُضفت إلى محادثة جديدة.'
+              : 'أُضفت إلى «$where».';
+        }
+        if (where != null && n.text('conversationType') != 'DIRECT') {
+          return 'أضافك $actor إلى «$where».';
+        }
         return switch (n.text('conversationType')) {
           'DIRECT' => 'بدأ $actor محادثة معك.',
           'GROUP' => 'أضافك $actor إلى مجموعة جديدة.',
@@ -74,6 +98,12 @@ abstract final class NotificationCopy {
         };
       case 'notification.added_to_conversation.body':
         final actor = n.text('actorDisplayName');
+        final where = n.text('conversationTitle');
+        if (where != null) {
+          return actor == null
+              ? 'أُضفت إلى «$where».'
+              : 'أضافك $actor إلى «$where».';
+        }
         return actor == null ? 'أُضفت إلى محادثة.' : 'أضافك $actor إلى محادثة.';
       case 'notification.assignment_created.body':
         return 'لديك واجب جديد.';
@@ -140,9 +170,13 @@ abstract final class NotificationCopy {
   static const realtime = 'فورًا أثناء استخدام التطبيق';
   static const realtimeHint = 'تصل لحظة حدوثها ما دام التطبيق مفتوحًا.';
   static const push = 'على الجهاز';
+
+  /// The lock screen stays private (ADR 0046): the sender, the conversation
+  /// and the text show inside the app, behind sign-in — never on the device's
+  /// lock screen.
   static const pushHint =
       'تنبيه على شاشة الجهاز يقول «رسالة جديدة» فقط، دون اسم المرسل أو نص '
-      'الرسالة.';
+      'الرسالة. التفاصيل تظهر داخل التطبيق.';
   static const pushUnavailable =
       'الإشعارات على الجهاز غير مفعّلة في هذه النسخة من التطبيق بعد؛ '
       'يُحفظ اختيارك ويُطبَّق حين تُفعَّل.';

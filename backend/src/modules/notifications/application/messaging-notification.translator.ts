@@ -49,9 +49,11 @@ import { NotificationDispatcher } from './notification-dispatcher';
  * message, whose accounts may read messages — never a copy of membership
  * kept here. A 10,000-member channel is walked a page of 1,000 at a time.
  *
- * What a notification says: who did it and what kind of thing happened —
- * never the message's text. The sender's name is identity's, fetched once
- * per fact.
+ * What a notification STORES: who did it, what kind of thing happened, and
+ * which message — never the message's text, never the conversation's title.
+ * The sender's name is identity's, fetched once per fact. What it SAYS beyond
+ * that (a title, a preview) is asked of messaging when it is shown, for its
+ * recipient, as of then (NotificationContextResolver, ADR 0046).
  *
  * The in-process bus awaits its subscribers, so translation is detached from
  * the publisher (a send returns when the message is stored) and chained per
@@ -117,6 +119,8 @@ export class MessagingNotificationTranslator implements OnModuleInit, OnModuleDe
         const params = await this.withActor('senderDisplayName', payload.senderId, {
           messageType: payload.messageType,
           conversationType: payload.conversationType,
+          // An id, not content: the read-time preview's key (ADR 0046).
+          messageId: payload.messageId,
         });
         return this.toReaders(
           payload.conversationId,

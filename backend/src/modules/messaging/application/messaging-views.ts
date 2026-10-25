@@ -20,7 +20,8 @@ import type {
   ReviewedMessageView,
 } from './views';
 
-const PREVIEW_LENGTH = 140;
+/** How much of a message a preview shows — the conversation list's, and a notification's (ADR 0046). */
+export const PREVIEW_LENGTH = 140;
 
 /**
  * Turns stored rows into what a viewer sees. Every cross-module lookup is

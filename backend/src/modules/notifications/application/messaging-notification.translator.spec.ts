@@ -1,6 +1,7 @@
 import { expectOk } from '../../../../test/support/identity-harness';
 import { META } from '../../../../test/support/messaging-harness';
 import {
+  fcmToken,
   notificationsHarness,
   type NotificationsHarness,
 } from '../../../../test/support/notifications-harness';
@@ -56,13 +57,150 @@ describe('messaging notifications', () => {
       expect(sent.message.id).toBeDefined();
     });
 
-    it('never carries what the message said', async () => {
-      const direct = await h.messaging.direct(teacher, ali);
-      await h.messaging.text(teacher, direct.id, 'رقم الغرفة السرّي 4417');
-      await h.settle();
-      const everything = JSON.stringify(await h.inbox(ali));
-      expect(everything).not.toContain('4417');
-      expect(JSON.stringify(h.published.published)).not.toContain('4417');
+    // Owner decision E (ADR 0046): an authorized recipient's inbox says who,
+    // where and what — resolved as it is shown, never stored, never pushed.
+    describe('what it says (ADR 0046)', () => {
+      const received = async (who: Principal) =>
+        (await h.inbox(who)).filter((n) => n.type === 'MESSAGE_RECEIVED');
+
+      it('shows an authorized recipient the sender and the message, in a direct conversation', async () => {
+        const direct = await h.messaging.direct(teacher, ali);
+        const sent = await h.messaging.text(teacher, direct.id, 'رقم الغرفة 4417');
+        await h.settle();
+        const [notification] = await received(ali);
+        expect(notification?.params).toEqual({
+          senderDisplayName: 'الأستاذ أحمد',
+          messageType: 'TEXT',
+          conversationType: 'DIRECT',
+          messageId: sent.message.id,
+          messagePreview: 'رقم الغرفة 4417',
+        });
+      });
+
+      it('names the group it was said in', async () => {
+        const group = await h.messaging.group(teacher, [ali], 'حلقة الفجر');
+        await h.messaging.text(teacher, group.id, 'الدرس غدًا');
+        await h.settle();
+        expect((await received(ali))[0]?.params).toMatchObject({
+          conversationTitle: 'حلقة الفجر',
+          messagePreview: 'الدرس غدًا',
+        });
+      });
+
+      it('stores no content: the row, the events and the push stay content-free', async () => {
+        const direct = await h.messaging.direct(teacher, ali);
+        await h.device(ali, fcmToken(1));
+        await h.messaging.text(teacher, direct.id, 'رقم الغرفة السرّي 4417');
+        await h.settle();
+        const ids = (await received(ali)).map((n) => n.id);
+        const stored = await h.notifications.findByIds(ids);
+        expect(stored).toHaveLength(1);
+        expect(JSON.stringify(stored)).not.toContain('4417');
+        expect(JSON.stringify(h.published.published)).not.toContain('4417');
+        expect(JSON.stringify(h.messaging.events.published)).not.toContain('4417');
+        // The lock screen: what kind of thing happened, nothing more.
+        const pushed = h.push.sent.filter((push) => push.message.type === 'MESSAGE_RECEIVED');
+        expect(pushed).toHaveLength(1);
+        expect(pushed[0]?.message).toMatchObject({
+          bodyKey: 'notification.message_received.body_private',
+          bodyArgs: [],
+        });
+        expect(JSON.stringify(h.push.sent)).not.toContain('4417');
+        expect(JSON.stringify(h.push.sent)).not.toContain('الأستاذ أحمد');
+      });
+
+      it('shows a member removed since then no content and no title', async () => {
+        const group = await h.messaging.group(teacher, [ali, sara], 'حلقة الفجر');
+        await h.messaging.text(teacher, group.id, 'قبل الإزالة');
+        await h.settle();
+        expectOk(
+          await h.messaging.removeParticipant.execute({
+            principal: teacher,
+            conversationId: group.id,
+            userId: sara.userId,
+            meta: META,
+          }),
+        );
+        const [notification] = await received(sara);
+        expect(notification).toBeDefined();
+        expect(notification?.params).not.toHaveProperty('messagePreview');
+        expect(notification?.params).not.toHaveProperty('conversationTitle');
+        expect(JSON.stringify(notification)).not.toContain('قبل الإزالة');
+        // Ali, still a member, still sees it.
+        expect((await received(ali))[0]?.params.messagePreview).toBe('قبل الإزالة');
+      });
+
+      it('shows a recipient whose account was deactivated, or lost messaging.read, nothing more', async () => {
+        const group = await h.messaging.group(teacher, [ali, sara]);
+        await h.messaging.text(teacher, group.id, 'محتوى خاص');
+        await h.settle();
+        h.messaging.directory.deactivate(sara.userId);
+        h.messaging.directory.add(ali.userId, [], { displayName: 'علي' });
+        for (const who of [ali, sara]) {
+          expect(JSON.stringify(await received(who))).not.toContain('محتوى خاص');
+        }
+      });
+
+      it('shows a deleted message’s notification no preview — and an edited one its new text', async () => {
+        const direct = await h.messaging.direct(teacher, ali);
+        const first = await h.messaging.text(teacher, direct.id, 'نص سيُحذف');
+        const second = await h.messaging.text(teacher, direct.id, 'نص قبل التعديل');
+        await h.settle();
+        expectOk(
+          await h.messaging.deleteMessage.execute({
+            principal: teacher,
+            conversationId: direct.id,
+            messageId: first.message.id,
+            meta: META,
+          }),
+        );
+        expectOk(
+          await h.messaging.editMessage.execute({
+            principal: teacher,
+            conversationId: direct.id,
+            messageId: second.message.id,
+            body: 'نص بعد التعديل',
+            meta: META,
+          }),
+        );
+        const byMessage = new Map(
+          (await received(ali)).map((n) => [n.params.messageId, n.params.messagePreview]),
+        );
+        expect(byMessage.get(first.message.id)).toBeUndefined();
+        expect(byMessage.get(second.message.id)).toBe('نص بعد التعديل');
+        expect(JSON.stringify(await h.inbox(ali))).not.toMatch(/سيُحذف|قبل التعديل/);
+      });
+
+      it('renders the realtime copy for its own recipient, exactly as the inbox does', async () => {
+        const group = await h.messaging.group(teacher, [ali, sara], 'حلقة الفجر');
+        await h.messaging.text(teacher, group.id, 'تذكير بالواجب');
+        await h.settle();
+        const [forAli] = await received(ali);
+        const [forSara] = await received(sara);
+        expectOk(
+          await h.messaging.removeParticipant.execute({
+            principal: teacher,
+            conversationId: group.id,
+            userId: sara.userId,
+            meta: META,
+          }),
+        );
+        const delivered = await h.reader.forDelivery([forAli?.id ?? '', forSara?.id ?? '']);
+        const ofAli = delivered.find((view) => view.recipientUserId === ali.userId);
+        const ofSara = delivered.find((view) => view.recipientUserId === sara.userId);
+        expect(ofAli?.params).toMatchObject({
+          conversationTitle: 'حلقة الفجر',
+          messagePreview: 'تذكير بالواجب',
+        });
+        expect(ofSara?.params).not.toHaveProperty('messagePreview');
+      });
+
+      it('shows plain text only — no line breaks or direction overrides', async () => {
+        const direct = await h.messaging.direct(teacher, ali);
+        await h.messaging.text(teacher, direct.id, 'سطر أول\nسطر \u202eثانٍ');
+        await h.settle();
+        expect((await received(ali))[0]?.params.messagePreview).toBe('سطر أول سطر ثانٍ');
+      });
     });
 
     it('is created once however often the fact is delivered', async () => {
@@ -203,7 +341,8 @@ describe('messaging notifications', () => {
       expect(await h.inbox(sara)).toEqual([
         expect.objectContaining({
           type: 'ADDED_TO_CONVERSATION',
-          params: { actorDisplayName: 'الأستاذ أحمد' },
+          // The group's title is read-time context for a current member (ADR 0046).
+          params: { actorDisplayName: 'الأستاذ أحمد', conversationTitle: 'حلقة الفجر' },
           target: { kind: 'conversation', conversationId: group.id },
         }),
       ]);

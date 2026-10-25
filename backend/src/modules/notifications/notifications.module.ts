@@ -28,6 +28,7 @@ import {
 } from './application/inbox.use-cases';
 import { LiveNotificationTranslator } from './application/live-notification.translator';
 import { MessagingNotificationTranslator } from './application/messaging-notification.translator';
+import { NotificationContextResolver } from './application/notification-context';
 import { NotificationDispatcher } from './application/notification-dispatcher';
 import { NotificationReaderService } from './application/notification-reader.service';
 import {
@@ -141,6 +142,7 @@ import { LoggingPushProvider } from './infrastructure/logging-push-provider';
 
     PushSuppressionGate,
     NotificationDispatcher,
+    NotificationContextResolver,
     MessagingNotificationTranslator,
     CommunityNotificationTranslator,
     LiveNotificationTranslator,

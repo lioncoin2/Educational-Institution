@@ -99,7 +99,7 @@ describe('notifications API', () => {
 
     it('in the inbox of each member but the sender, with keys, params and a target', async () => {
       const before = (await inbox(bilal)).length;
-      await r.send(teacher, group, 'واجب اليوم: سورة الملك');
+      const sent = await r.send(teacher, group, 'واجب اليوم: سورة الملك');
       await settle();
       const [newest, ...rest] = await inbox(bilal);
       expect(rest).toHaveLength(before);
@@ -109,17 +109,48 @@ describe('notifications API', () => {
         category: 'MESSAGES',
         titleKey: 'notification.message_received.title',
         bodyKey: 'notification.message_received.body',
+        // Who, where and what (ADR 0046): the title and preview are resolved
+        // for this member as the inbox is read, never stored with the row.
         params: {
           senderDisplayName: 'الأستاذ عبدالله',
           messageType: 'TEXT',
           conversationType: 'GROUP',
+          messageId: sent.id,
+          conversationTitle: 'حلقة الفجر',
+          messagePreview: 'واجب اليوم: سورة الملك',
         },
         target: { kind: 'conversation', conversationId: group },
         createdAt: expect.any(String),
         readAt: null,
       });
-      expect(JSON.stringify(newest)).not.toContain('سورة الملك');
       expect((await inbox(teacher)).some((n) => n.type === 'MESSAGE_RECEIVED')).toBe(false);
+    });
+
+    it('never shows the content to someone outside the conversation — nor after removal', async () => {
+      const secret = 'رقم الغرفة 9031';
+      await r.send(teacher, group, secret);
+      await settle();
+      // An outsider's inbox has nothing about it at all.
+      expect(JSON.stringify(await inbox(outsider))).not.toContain(secret);
+      const [forKhalid] = await inbox(khalid);
+      expect(forKhalid?.params.messagePreview).toBe(secret);
+
+      const removed = await r.api.call(
+        'DELETE',
+        `/messaging/conversations/${group}/participants/${khalid.id}`,
+        { token: teacher.token },
+      );
+      expect(removed.status).toBe(204);
+      const after = await inbox(khalid);
+      expect(JSON.stringify(after)).not.toContain(secret);
+      expect(JSON.stringify(after)).not.toContain('حلقة الفجر');
+      // Re-added, so later tests keep their audience.
+      const readded = await r.api.call('POST', `/messaging/conversations/${group}/participants`, {
+        token: teacher.token,
+        body: { userIds: [khalid.id] },
+      });
+      expect(readded.status).toBe(200);
+      await settle();
     });
 
     it('counts unread, marks one read idempotently, and marks the rest read', async () => {

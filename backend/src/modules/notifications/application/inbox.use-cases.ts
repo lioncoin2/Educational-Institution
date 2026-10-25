@@ -20,6 +20,7 @@ import {
 import { NotificationLimits } from '../domain/notification-policy';
 import { NOTIFICATION_REPOSITORY, type NotificationRepository } from '../domain/ports';
 import { decodeNotificationCursor, encodeNotificationCursor } from './cursors';
+import { NotificationContextResolver } from './notification-context';
 import { toNotificationView, type NotificationView, type UnreadCountView } from './views';
 
 /**
@@ -30,7 +31,9 @@ import { toNotificationView, type NotificationView, type UnreadCountView } from 
  *
  * Opening what a notification points at is NOT done here. The client takes
  * the target to the owning module's API, which authorizes it as it would any
- * request: a notification is never a way into anything.
+ * request: a notification is never a way into anything. What a notification
+ * about a conversation SAYS — its title, a message preview — is asked of
+ * messaging as it is shown, for this recipient (ADR 0046).
  */
 const NOT_FOUND = failure(
   'not_found',
@@ -42,6 +45,7 @@ const NOT_FOUND = failure(
 export class ListNotificationsUseCase {
   constructor(
     @Inject(NOTIFICATION_REPOSITORY) private readonly notifications: NotificationRepository,
+    private readonly context: NotificationContextResolver,
   ) {}
 
   async execute(input: {
@@ -60,7 +64,7 @@ export class ListNotificationsUseCase {
       after: after.value,
     });
     return ok({
-      items: page.items.map(toNotificationView),
+      items: await this.context.withContext(page.items.map(toNotificationView)),
       nextCursor: page.next === null ? null : encodeNotificationCursor(page.next),
     });
   }
@@ -86,6 +90,7 @@ export class MarkNotificationReadUseCase {
     @Inject(NOTIFICATION_REPOSITORY) private readonly notifications: NotificationRepository,
     @Inject(EVENT_PUBLISHER) private readonly events: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
+    private readonly context: NotificationContextResolver,
   ) {}
 
   /** Idempotent: marking a read notification again changes nothing and says so by its `readAt`. */
@@ -114,7 +119,8 @@ export class MarkNotificationReadUseCase {
       );
       await this.events.publish([event]);
     }
-    return ok(toNotificationView(notification));
+    const [view] = await this.context.withContext([toNotificationView(notification)]);
+    return ok(view ?? toNotificationView(notification));
   }
 }
 

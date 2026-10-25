@@ -29,6 +29,7 @@ import {
 } from './application/create-conversation.use-cases';
 import { MarkReadUseCase } from './application/mark-read.use-case';
 import { MessageDeliveryService } from './application/message-delivery.service';
+import { MessageNotificationContextService } from './application/message-notification-context.service';
 import {
   AddParticipantsUseCase,
   LeaveConversationUseCase,
@@ -57,6 +58,7 @@ import {
   SendVoiceMessageUseCase,
 } from './application/send-message.use-cases';
 import { MESSAGE_DELIVERY } from './contracts/message-delivery';
+import { MESSAGE_NOTIFICATION_CONTEXT } from './contracts/message-notification-context';
 import { MESSAGE_RECIPIENTS } from './contracts/message-recipients';
 import {
   MESSAGING_READ_MODEL,
@@ -82,10 +84,12 @@ import { InMemoryMessagingStore } from './infrastructure/in-memory-messaging-sto
  * (community-chat.md).
  *
  * It never imports a push provider or a realtime transport: it publishes
- * `messaging.*` events, and delivery modules subscribe. It exports two
- * things for those delivery modules — `MESSAGE_RECIPIENTS` (who, as of now)
- * and `MESSAGE_DELIVERY` (what they see, and whether someone may follow a
- * conversation) — and no way at all to write a conversation's membership.
+ * `messaging.*` events, and delivery modules subscribe. It exports three
+ * things for those delivery modules — `MESSAGE_RECIPIENTS` (who, as of now),
+ * `MESSAGE_DELIVERY` (what they see, and whether someone may follow a
+ * conversation) and `MESSAGE_NOTIFICATION_CONTEXT` (what a notification may
+ * say to one recipient, ADR 0046) — and no way at all to write a
+ * conversation's membership.
  */
 @Module({
   imports: [IdentityModule, FilesModule, CommunitiesModule],
@@ -156,7 +160,8 @@ import { InMemoryMessagingStore } from './infrastructure/in-memory-messaging-sto
     UnpinMessageUseCase,
     { provide: MESSAGE_RECIPIENTS, useClass: MessageRecipientsService },
     { provide: MESSAGE_DELIVERY, useClass: MessageDeliveryService },
+    { provide: MESSAGE_NOTIFICATION_CONTEXT, useClass: MessageNotificationContextService },
   ],
-  exports: [MESSAGE_RECIPIENTS, MESSAGE_DELIVERY],
+  exports: [MESSAGE_RECIPIENTS, MESSAGE_DELIVERY, MESSAGE_NOTIFICATION_CONTEXT],
 })
 export class MessagingModule {}

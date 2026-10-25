@@ -2,6 +2,7 @@ import { MODULE_METADATA } from '@nestjs/common/constants';
 
 import { CommunitiesModule } from '../../src/modules/communities/communities.module';
 import { MESSAGE_DELIVERY } from '../../src/modules/messaging/contracts/message-delivery';
+import { MESSAGE_NOTIFICATION_CONTEXT } from '../../src/modules/messaging/contracts/message-notification-context';
 import { MESSAGE_RECIPIENTS } from '../../src/modules/messaging/contracts/message-recipients';
 import { MessagingModule } from '../../src/modules/messaging/messaging.module';
 import { cruise, edgesFrom, reachableFrom, type CruiseOutput } from '../support/dependency-graph';
@@ -155,9 +156,12 @@ describe('messaging boundaries', () => {
       'AcademicModule',
       'FilesModule',
     ]);
+    // Read-only answers for delivery modules — who, what they see, and what a
+    // notification may say to one recipient (ADR 0046) — never a writer.
     expect(Reflect.getMetadata(MODULE_METADATA.EXPORTS, MessagingModule)).toEqual([
       MESSAGE_RECIPIENTS,
       MESSAGE_DELIVERY,
+      MESSAGE_NOTIFICATION_CONTEXT,
     ]);
   });
 
