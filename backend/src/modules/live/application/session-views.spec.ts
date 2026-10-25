@@ -114,6 +114,37 @@ describe('live session views', () => {
       });
     });
 
+    it('offers no raise to someone who already speaks by right, and keeps it for everyone who does not (C15)', async () => {
+      // An ADMIN holds `live.raise_hand` with everything else, so the raise
+      // permit alone would offer the hand to a moderator who already publishes
+      // their microphone by right.
+      const admin = await h.member(communityId, owner, 'admin-7', ['ADMIN']);
+      await h.communities.delegate(owner, communityId, 'admin-7', 'community.live.moderate');
+      const theirs = await get(admin);
+      expect(theirs.ok && theirs.value.me).toMatchObject({
+        role: 'moderator',
+        canModerate: true,
+        canRaiseHand: false,
+      });
+
+      // A listener still asks for the floor, and so does a student whose only
+      // standing is a delegated screen-share slot: presenting is not speaking.
+      const listening = await get(student);
+      expect(listening.ok && listening.value.me).toMatchObject({ canRaiseHand: true });
+      const granted = await h.presenter.grant({
+        principal: owner,
+        sessionId: session.id,
+        targetUserId: student.userId,
+        meta: META,
+      });
+      expect(granted.ok).toBe(true);
+      const presenting = await get(student);
+      expect(presenting.ok && presenting.value.me).toMatchObject({
+        presenting: true,
+        canRaiseHand: true,
+      });
+    });
+
     it('refuses a non-member exactly as an unknown session', async () => {
       const outsider = h.person('teacher-9', ['TEACHER']);
       expect(await get(outsider)).toEqual(

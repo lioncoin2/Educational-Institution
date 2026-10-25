@@ -53,8 +53,14 @@ export class LiveSessionViews {
       session,
       moderator,
     );
+    // The offer is for someone who cannot speak yet (C15): a moderator who
+    // publishes by right already holds the microphone a hand asks for, so the
+    // view never offers it. The raise itself stays as it is — permitted and
+    // harmless, so a host's own hand keeps its Q54 protections — the offer is
+    // a hint, never the gate. A presenter's screen slot is not speaking, so it
+    // leaves the offer alone.
     let canRaiseHand = false;
-    if (live) {
+    if (live && !standing.publishesByRight) {
       const raise = await this.access.ask(
         principal,
         session.communityId,
