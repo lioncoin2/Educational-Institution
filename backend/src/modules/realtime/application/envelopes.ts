@@ -660,3 +660,27 @@ export function liveChatChangedFrame(input: {
     lockVersion: input.lockVersion,
   });
 }
+
+/**
+ * "Someone in the session reacted" (C15, ADR 0049) — one of the room's four
+ * reactions, as it happens. The kind alone: no sender, no name, no count, so a
+ * reaction says nothing about who is in the room. Each reaction is its own
+ * fact, so its id is in the frame's id and a redelivery is a duplicate a
+ * client drops.
+ */
+export function liveReactionFrame(input: {
+  readonly occurredAt: Date;
+  readonly communityId: string;
+  readonly sessionId: string;
+  readonly reactionId: string;
+  readonly kind: string;
+}): string {
+  return frame({
+    type: 'live.reaction',
+    eventId: `live.reaction:${input.sessionId}:${input.reactionId}`,
+    occurredAt: input.occurredAt.toISOString(),
+    communityId: input.communityId,
+    sessionId: input.sessionId,
+    kind: input.kind,
+  });
+}

@@ -26,8 +26,9 @@ import { cruise, edgesFrom, reachableFrom, type CruiseOutput } from '../support/
  *     it through its module file — never its domain, store or use cases;
  *   - live reaches no module it must not know (messaging, realtime,
  *     notifications, academic, operations, attendance — those that exist),
- *     not even through their module files; its module file wires identity
- *     and Communities and nothing else;
+ *     not even through their module files; its module file wires identity,
+ *     Communities and Files (a participant's picture link, ADR 0048 — Files'
+ *     FILE_ASSETS contract only) and nothing else;
  *   - live exports exactly its contract tokens — LIVE_AUDIENCE, LIVE_SESSIONS
  *     and LIVE_PRESENCE (live.md §13);
  *   - live/contracts/presence.ts, the principal-less presence contract, is
@@ -234,14 +235,17 @@ describe('live boundaries', () => {
     expect(reaching(fromLive, target)).toEqual([]);
   });
 
-  it('wires identity and Communities in its module file, and no other module', () => {
+  it('wires identity, Communities and Files in its module file, and no other module', () => {
     const wiring = edgesFrom(output, (source) => source === MODULE_FILE)
       .map((edge) => edge.resolved)
       .filter((path) => /^src\/modules\/[^/]+\/[^/]+\.module\.ts$/.test(path))
       .filter((path) => !path.startsWith(LIVE))
       .sort();
+    // Files (C15, ADR 0048): only its FILE_ASSETS contract, for a participant's
+    // picture link — as messaging, Communities and people already do.
     expect(wiring).toEqual([
       'src/modules/communities/communities.module.ts',
+      'src/modules/files/files.module.ts',
       'src/modules/identity/identity.module.ts',
     ]);
   });

@@ -4,6 +4,7 @@ import { APP_CONFIG, type AppConfig } from '../../platform/config/app-config';
 import { DATABASE, type Database } from '../../platform/database';
 import { CLOCK, type Clock } from '../../shared';
 import { CommunitiesModule } from '../communities/communities.module';
+import { FilesModule } from '../files/files.module';
 import { IdentityModule } from '../identity/identity.module';
 import { LiveController } from './api/live.controller';
 import { LiveAudienceService } from './application/live-audience.service';
@@ -13,6 +14,8 @@ import { GetLiveSessionUseCase } from './application/get-live-session.use-case';
 import { JoinLiveSessionUseCase } from './application/join-live-session.use-case';
 import { KickParticipantUseCase } from './application/kick-participant.use-case';
 import { ListHandsUseCase } from './application/list-hands.use-case';
+import { GetLiveParticipantAvatarUseCase } from './application/participant-avatar.use-case';
+import { SendLiveReactionUseCase } from './application/live-reaction.use-case';
 import {
   ListLiveChatUseCase,
   LiveChatReader,
@@ -209,7 +212,9 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
  *                   (ADR 0047); realtime gates the audience
  */
 @Module({
-  imports: [IdentityModule, CommunitiesModule],
+  // Files: a participant's picture link (C15, ADR 0048) — Files' FILE_ASSETS
+  // contract verifies and mints it, as for every other avatar.
+  imports: [IdentityModule, CommunitiesModule, FilesModule],
   controllers: [LiveController],
   providers: [
     {
@@ -281,6 +286,10 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
     ListLiveChatUseCase,
     PostLiveChatUseCase,
     SetLiveChatLockUseCase,
+    // A participant's picture (C15, ADR 0048): identity's reference, Files' link.
+    GetLiveParticipantAvatarUseCase,
+    // The room's four reactions (ADR 0049): ephemeral, delivered by the realtime relay.
+    SendLiveReactionUseCase,
     // Brings the media provider in line with the record (live.md §11): a boot
     // pass, then three unref'd timers on the periods of live-limits.ts.
     LiveReconciler,

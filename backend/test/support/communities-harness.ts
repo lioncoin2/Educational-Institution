@@ -124,6 +124,8 @@ export class StubAccounts implements AccountDirectory {
       active: boolean;
       /** Replaces what the roles grant — for combinations no provisional role has. */
       permissions?: readonly string[];
+      /** The account's picture reference, as identity's directory holds it (ADR 0038). */
+      avatarFileAssetId?: string | null;
     }
   >();
   describeCalls = 0;
@@ -143,6 +145,12 @@ export class StubAccounts implements AccountDirectory {
     if (account !== undefined) account.roles = [...roles];
   }
 
+  /** Records (or clears, with null) the account's picture reference. */
+  setAvatar(userId: string, fileAssetId: string | null): void {
+    const account = this.accounts.get(userId);
+    if (account !== undefined) account.avatarFileAssetId = fileAssetId;
+  }
+
   /** Exactly these permissions, whatever the account's roles say. */
   setPermissions(userId: string, permissions: readonly Permission[]): void {
     const account = this.accounts.get(userId);
@@ -159,7 +167,7 @@ export class StubAccounts implements AccountDirectory {
             {
               userId,
               displayName: account.displayName,
-              avatarFileAssetId: null,
+              avatarFileAssetId: account.avatarFileAssetId ?? null,
               active: account.active,
             },
           ];

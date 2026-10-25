@@ -1,3 +1,5 @@
+import '../../data/models/live_room.dart';
+
 /// What the live-session screen says, in one place (the community_copy.dart
 /// convention): the server speaks in stable codes and states, the person reads
 /// Arabic sentences. Nothing here states a rule the server did not send, and no
@@ -158,6 +160,7 @@ abstract final class LiveCopy {
     'live.target_is_host' => 'هذا الإجراء غير متاح لك.',
     'live.presenter_slots_full' => 'اكتمل عدد مُقدّمي العرض.',
     'live.session_not_live' => 'لم تعد الجلسة مباشرة.',
+    'live.too_many_reactions' => 'تمهّل قليلًا قبل التفاعل مجددًا.',
     'unavailable' ||
     'live.media_unavailable' ||
     'live.media_misconfigured' => 'الخدمة غير متاحة الآن. حاول بعد قليل.',
@@ -269,7 +272,6 @@ abstract final class LiveCopy {
   static const soonSection = 'ميزات قادمة';
   static const soonBadge = 'غير متاح الآن';
   static const soonCaption = 'ميزات من التصميم تُضاف لاحقًا.';
-  static const soonReactions = 'التفاعلات';
   static const soonPolls = 'الاستطلاعات';
   static const soonRecording = 'تسجيل الجلسة';
   static const soonRecordingWatch = 'مشاهدة التسجيل';
@@ -285,6 +287,18 @@ abstract final class LiveCopy {
   static const dockLeave = 'مغادرة';
   static const dockJoin = 'انضمام';
   static const dockReact = 'تفاعل';
+
+  // ── The room's four reactions (ADR 0049) ───────────────────────────────
+  // Ephemeral gestures for the session's participants: drawn over the stage
+  // as they happen, naming nobody, kept nowhere.
+  static const reactionsLabel = 'تفاعلات البث';
+  static const reactionsForParticipants = 'التفاعل متاح للمشاركين في البث.';
+  static String reactionLabel(LiveReactionKind kind) => switch (kind) {
+    LiveReactionKind.heart => 'قلب',
+    LiveReactionKind.thumbsUp => 'أعجبني',
+    LiveReactionKind.clap => 'تصفيق',
+    LiveReactionKind.smile => 'ابتسامة',
+  };
   static const dockMore = 'المزيد';
 
   static const tabParticipants = 'المشاركون';

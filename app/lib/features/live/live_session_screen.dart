@@ -17,14 +17,15 @@ import 'widgets/live_controls.dart';
 import 'widgets/live_media_panel.dart';
 import 'widgets/live_moderation_actions.dart';
 import 'widgets/live_participants.dart';
+import 'widgets/live_reactions.dart';
 import 'widgets/live_roster.dart';
 import 'widgets/live_soon.dart';
 import 'widgets/live_stage.dart';
 import 'widgets/live_states.dart';
 
 /// A community's live session, as an immersive broadcast surface ([LivePalette],
-/// always dark): a [LiveStage] that fills the room, a bottom control dock, a
-/// reactions strip and a bottom tab bar, with the moderator roster as a sheet on
+/// always dark): a [LiveStage] that fills the room, a bottom control dock, the
+/// room's reactions strip (ADR 0049) and a bottom tab bar, with the moderator roster as a sheet on
 /// phones and a side pane from tablet width up. Loading, error, no-session and
 /// ended states are calm centred cards. Every value is the server's; nothing
 /// here reaches a transport or an account's roles/permissions, and unbacked
@@ -216,7 +217,7 @@ class _LiveRoom extends ConsumerWidget {
             horizontal: context.gutter,
             vertical: Insets.sm,
           ),
-          child: const LiveReactionBar(),
+          child: LiveReactionBar(session: session),
         ),
         LiveMediaPanel(session: session, autoJoin: autoJoin),
         if (!multiPane)

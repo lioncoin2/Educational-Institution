@@ -33,6 +33,7 @@ export const LiveEvents = {
   mediaReset: 'live.session.media_reset',
   chatPosted: 'live.chat.posted',
   chatLockChanged: 'live.chat.lock_changed',
+  reactionSent: 'live.reaction.sent',
 } as const;
 
 /** A start created the community's live session — never a repeat, never a lost race. */
@@ -217,4 +218,22 @@ export type LiveEvent =
   | LiveParticipantRemoved
   | LiveMediaReset
   | LiveChatPosted
-  | LiveChatLockChanged;
+  | LiveChatLockChanged
+  | LiveReactionSent;
+
+/**
+ * A participant reacted in a running session (C15, ADR 0049): one of the four
+ * kinds, for the session's participants to see as it happens. Ephemeral — kept
+ * nowhere, never audited, never counted — and `sentBy` stays on the server: the
+ * realtime frame carries the kind alone, so a reaction names nobody.
+ */
+export type LiveReactionSent = DomainEvent<
+  typeof LiveEvents.reactionSent,
+  {
+    readonly sessionId: string;
+    readonly communityId: string;
+    readonly reactionId: string;
+    readonly kind: 'heart' | 'thumbs_up' | 'clap' | 'smile';
+    readonly sentBy: string;
+  }
+>;

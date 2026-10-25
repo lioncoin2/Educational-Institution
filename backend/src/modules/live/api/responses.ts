@@ -208,6 +208,22 @@ export function toRoomResetResponse(result: ResetRoomResult): { readonly reset: 
   return { reset: result.reset };
 }
 
+/** A reaction accepted for delivery (ADR 0049): its id and kind — nothing was stored. */
+export function toLiveReactionResponse(result: {
+  readonly reactionId: string;
+  readonly kind: string;
+}): { readonly reactionId: string; readonly kind: string } {
+  return { reactionId: result.reactionId, kind: result.kind };
+}
+
+/** A participant's picture (C15, ADR 0048): Files' short-lived link, as every avatar route answers it. */
+export function toParticipantAvatarResponse(link: {
+  readonly url: string;
+  readonly expiresAt: Date;
+}): { readonly url: string; readonly expiresAt: string } {
+  return { url: link.url, expiresAt: link.expiresAt.toISOString() };
+}
+
 /** One message of a session's own chat (ADR 0047). */
 export interface LiveChatMessageResponse {
   readonly id: string;

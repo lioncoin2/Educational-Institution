@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../models/live.dart';
 import '../models/live_chat.dart';
+import '../models/live_room.dart';
 import '../models/messaging.dart';
 import '../models/notifications.dart';
 
@@ -92,6 +93,7 @@ sealed class ServerFrame {
         ),
         'live.chat.message' => LiveChatMessageEvent._fromJson(json),
         'live.chat.changed' => LiveChatChangedEvent._fromJson(json),
+        'live.reaction' => LiveReactionEvent._fromJson(json),
         _ => null,
       };
     } on FormatException {
@@ -849,4 +851,32 @@ final class LiveChatChangedEvent extends LiveEvent {
 
   final bool locked;
   final int lockVersion;
+}
+
+/// Someone in the session reacted (ADR 0049) — one of the room's four
+/// reactions, as it happens. The kind alone: the frame names nobody, and the
+/// sender's own devices never receive it (they showed it as it was tapped). A
+/// kind this version does not know drops the frame.
+final class LiveReactionEvent extends LiveEvent {
+  const LiveReactionEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.communityId,
+    required super.sessionId,
+    required this.kind,
+  });
+
+  factory LiveReactionEvent._fromJson(Map<String, Object?> json) {
+    final kind = LiveReactionKind.fromWire(json['kind']);
+    if (kind == null) throw const FormatException('unknown reaction kind');
+    return LiveReactionEvent(
+      eventId: json['eventId']! as String,
+      occurredAt: DateTime.parse(json['occurredAt']! as String),
+      communityId: json['communityId']! as String,
+      sessionId: json['sessionId']! as String,
+      kind: kind,
+    );
+  }
+
+  final LiveReactionKind kind;
 }

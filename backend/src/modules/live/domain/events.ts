@@ -3,6 +3,7 @@ import {
   LiveEvents,
   type LiveChatLockChanged,
   type LiveChatPosted,
+  type LiveReactionSent,
   type LiveMediaReset,
   type LiveParticipantRemoved,
   type LiveSessionEnded,
@@ -18,6 +19,7 @@ import {
   type SpeakerRequested,
 } from '../contracts/events';
 import type { LiveChatMessage, LiveChatState } from './live-chat';
+import type { LiveReactionKind } from './live-reaction';
 import { durationSeconds, type LiveSession } from './live-session';
 import type { PresenterGrant } from './presenter-grant';
 import { lastOpenState, type SpeakerRequest } from './speaker-request';
@@ -334,6 +336,32 @@ export function liveChatLockChanged(
       changedBy,
     },
     at,
+    correlationId,
+  );
+}
+
+/** A participant's reaction (C15, ADR 0049): the kind and an id — the sender stays on the server. */
+export function liveReactionSent(
+  session: SessionRef,
+  reaction: {
+    readonly id: string;
+    readonly kind: LiveReactionKind;
+    readonly sentBy: string;
+    readonly at: Date;
+  },
+  correlationId?: string,
+): LiveReactionSent {
+  return domainEvent(
+    LiveEvents.reactionSent,
+    session.id,
+    {
+      sessionId: session.id,
+      communityId: session.communityId,
+      reactionId: reaction.id,
+      kind: reaction.kind,
+      sentBy: reaction.sentBy,
+    },
+    reaction.at,
     correlationId,
   );
 }

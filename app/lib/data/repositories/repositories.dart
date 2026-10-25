@@ -12,6 +12,7 @@ import '../models/learning.dart';
 import '../models/live.dart';
 import '../models/live_chat.dart';
 import '../models/live_media.dart';
+import '../models/live_room.dart';
 import '../models/messaging.dart';
 import '../models/notifications.dart';
 import '../models/people.dart';
@@ -795,6 +796,21 @@ abstract interface class LiveChatRepository {
 
   /// A moderator closes ([locked] true) or re-opens the chat. Idempotent.
   Future<LiveChatLockState> setLocked(String sessionId, {required bool locked});
+}
+
+/// The live room's presentation reads and ephemeral acts (C15) — kept beside,
+/// not inside, [LiveRepository], whose many test doubles stay as they are.
+/// A refusal throws [LiveException] with the server's code.
+abstract interface class LiveRoomRepository {
+  /// A short-lived link to [userId]'s profile picture in this session (ADR
+  /// 0048), or null when they have none or are not the viewer's to see — the
+  /// room then shows initials. Only people the room already names to the viewer
+  /// resolve: themself, the host and presenters; anyone, for a moderator.
+  Future<Uri?> participantAvatarUrl(String sessionId, String userId);
+
+  /// Sends one of the room's four reactions (ADR 0049). Nothing is stored;
+  /// the session's other participants see it as it happens.
+  Future<void> react(String sessionId, LiveReactionKind kind);
 }
 
 /// Live sessions — a community's live audio room, read-only

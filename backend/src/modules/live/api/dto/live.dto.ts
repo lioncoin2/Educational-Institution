@@ -63,3 +63,10 @@ export class PostLiveChatDto {
   @MaxLength(4000)
   body!: string;
 }
+
+/** A reaction in a running session (ADR 0049): the kind alone; the domain names the four. */
+export class SendLiveReactionDto {
+  @IsString()
+  @MaxLength(32)
+  kind!: string;
+}

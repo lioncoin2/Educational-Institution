@@ -33,11 +33,13 @@ import {
 } from '../application/live-chat.use-cases';
 import { LowerHandUseCase } from '../application/lower-hand.use-case';
 import { ModerateSpeakerUseCase } from '../application/moderate-speaker.use-case';
+import { GetLiveParticipantAvatarUseCase } from '../application/participant-avatar.use-case';
 import { PresenterUseCase } from '../application/presenter.use-case';
 import { RaiseHandUseCase } from '../application/raise-hand.use-case';
 import { ResetRoomUseCase } from '../application/reset-room.use-case';
 import { StartLiveSessionUseCase } from '../application/start-live-session.use-case';
-import { HandsQuery, LiveChatQuery, PostLiveChatDto } from './dto/live.dto';
+import { SendLiveReactionUseCase } from '../application/live-reaction.use-case';
+import { HandsQuery, LiveChatQuery, PostLiveChatDto, SendLiveReactionDto } from './dto/live.dto';
 import {
   toCurrentSessionResponse,
   toHandsPageResponse,
@@ -49,6 +51,8 @@ import {
   toModerationResponse,
   toParticipantRemovedResponse,
   toRequestResponse,
+  toLiveReactionResponse,
+  toParticipantAvatarResponse,
   toRoomResetResponse,
 } from './responses';
 
@@ -94,6 +98,8 @@ export class LiveController {
     private readonly listChat: ListLiveChatUseCase,
     private readonly postChat: PostLiveChatUseCase,
     private readonly chatLock: SetLiveChatLockUseCase,
+    private readonly participantAvatar: GetLiveParticipantAvatarUseCase,
+    private readonly sendReaction: SendLiveReactionUseCase,
   ) {}
 
   /**
@@ -326,6 +332,24 @@ export class LiveController {
   }
 
   /**
+   * A short-lived link to a participant's profile picture (C15, ADR 0048), for
+   * someone who may see the session — only for people the room already names to
+   * them (themself, the host, a presenter; anyone eligible, for a moderator).
+   * 404 when there is no picture, or the person is not theirs to see.
+   */
+  @Get('sessions/:sessionId/participants/:userId/avatar')
+  @RequirePermission(Permissions.live.join)
+  async avatar(
+    @CurrentPrincipal() principal: Principal,
+    @Param('sessionId') sessionId: string,
+    @Param('userId') userId: string,
+  ) {
+    return toParticipantAvatarResponse(
+      unwrap(await this.participantAvatar.execute({ principal, sessionId, userId })),
+    );
+  }
+
+  /**
    * A moderator removes a participant from the session's media room (Q64): an
    * administrative disconnect, never a ban — `{ removed: false }` when they
    * were not connected. `reason` is an optional code; the removed person is
@@ -370,6 +394,25 @@ export class LiveController {
   ) {
     return toRoomResetResponse(
       unwrap(await this.resetRoom.execute({ principal, sessionId, meta })),
+    );
+  }
+
+  /**
+   * A participant reacts (ADR 0049): one of the room's four reactions, shown
+   * to the session's other participants as it happens and kept nowhere. 202 —
+   * accepted and delivered; nothing is stored to return.
+   */
+  @Post('sessions/:sessionId/reactions')
+  @RequirePermission(Permissions.live.join)
+  @HttpCode(HttpStatus.ACCEPTED)
+  async react(
+    @CurrentPrincipal() principal: Principal,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: SendLiveReactionDto,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toLiveReactionResponse(
+      unwrap(await this.sendReaction.execute({ principal, sessionId, kind: dto.kind, meta })),
     );
   }
 

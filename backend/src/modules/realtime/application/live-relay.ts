@@ -28,6 +28,7 @@ import {
   type LiveChatPosted,
   type LiveMediaReset,
   type LiveParticipantRemoved,
+  type LiveReactionSent,
   type LiveSessionEnded,
   type LiveSessionStarted,
 } from '../../live/contracts';
@@ -37,6 +38,7 @@ import {
   liveChatMessageFrame,
   liveMediaResetFrame,
   liveParticipantRemovedFrame,
+  liveReactionFrame,
   liveSessionChangedFrame,
   liveSessionEndedFrame,
   liveSessionStartedFrame,
@@ -252,6 +254,24 @@ export class LiveRealtimeRelay implements OnModuleInit, OnModuleDestroy {
         }),
       );
     }
+    if (event.name === LiveEvents.reactionSent) {
+      const payload = reactionPayload(event);
+      if (payload === null) return this.malformed(event);
+      // The sender's own devices show their reaction as they tap it; everyone
+      // else in the session hears of it here, the sender never named.
+      return this.toParticipants(
+        payload.communityId,
+        payload.sessionId,
+        liveReactionFrame({
+          occurredAt: event.occurredAt,
+          communityId: payload.communityId,
+          sessionId: payload.sessionId,
+          reactionId: payload.reactionId,
+          kind: payload.kind,
+        }),
+        payload.sentBy,
+      );
+    }
     if (event.name === LiveEvents.participantRemoved) {
       const payload = removedPayload(event);
       if (payload === null) return this.malformed(event);
@@ -269,12 +289,14 @@ export class LiveRealtimeRelay implements OnModuleInit, OnModuleDestroy {
 
   /**
    * A start or an end, to the community's ACTIVE members connected here
-   * whom Live accepts as participants of the session — one frame each.
+   * whom Live accepts as participants of the session — one frame each;
+   * `exceptUserId` (a reaction's sender) is left out.
    */
   private async toParticipants(
     communityId: string,
     sessionId: string,
     frame: string,
+    exceptUserId?: string,
   ): Promise<void> {
     const members = await onlineAudience(this.connections, (page) =>
       this.membership.members(communityId, {
@@ -288,8 +310,10 @@ export class LiveRealtimeRelay implements OnModuleInit, OnModuleDestroy {
       const chunk = members.slice(from, from + MAX_AUDIENCE_PROBE);
       recipients.push(...(await this.audience.participantsAmong(sessionId, chunk)));
     }
-    if (recipients.length === 0) return;
-    this.connections.sendToUsers(recipients, frame);
+    const to =
+      exceptUserId === undefined ? recipients : recipients.filter((id) => id !== exceptUserId);
+    if (to.length === 0) return;
+    this.connections.sendToUsers(to, frame);
   }
 
   /** The change, at once, to its person, while connected here and still a participant. */
@@ -490,6 +514,16 @@ function chatPostedPayload(event: DomainEvent): LiveChatPosted['payload'] | null
   const p = fieldsOf(event);
   if (p === null || !isId(p.messageId) || !isId(p.senderId) || !isVersion(p.position)) return null;
   return p as unknown as LiveChatPosted['payload'];
+}
+
+const REACTION_KINDS: readonly string[] = ['heart', 'thumbs_up', 'clap', 'smile'];
+
+/** A reaction names its kind (one of the four), its id and, for the server only, its sender. */
+function reactionPayload(event: DomainEvent): LiveReactionSent['payload'] | null {
+  const p = fieldsOf(event);
+  if (p === null || !isId(p.reactionId) || !isId(p.sentBy)) return null;
+  if (typeof p.kind !== 'string' || !REACTION_KINDS.includes(p.kind)) return null;
+  return p as unknown as LiveReactionSent['payload'];
 }
 
 /** A lock change names the state and the version it moved to. */

@@ -7,8 +7,11 @@ import '../../../core/theme/live_palette.dart';
 import '../../../data/media/livekit/livekit_screen_share_view.dart';
 import '../../../data/models/live.dart';
 import '../../../data/models/live_media.dart';
+import '../../../providers/app_providers.dart';
 import '../live_copy.dart';
 import '../state/live_media_controller.dart';
+import 'live_participant_avatar.dart';
+import 'live_reactions.dart';
 import 'live_screen_share_viewer.dart';
 
 /// The immersive broadcast STAGE (reference: the large presenter/media surface
@@ -73,7 +76,13 @@ class LiveStage extends ConsumerWidget {
                 ),
               )
             else
-              Center(child: _OnAirEmblem(hostId: session.hostUserId)),
+              Center(
+                child: _OnAirEmblem(
+                  sessionId: session.id,
+                  hostId: session.hostUserId,
+                  hostName: remotes?[session.hostUserId]?.name,
+                ),
+              ),
 
             // A soft scrim so the overlaid controls/labels stay legible. Over a
             // shared screen only a thin band under the top bar: the content
@@ -107,6 +116,14 @@ class LiveStage extends ConsumerWidget {
               start: Insets.sm,
               end: Insets.sm,
               child: _TopBar(session: session, onParticipants: onParticipants),
+            ),
+
+            // The room's reactions as they happen (ADR 0049), up the end edge —
+            // over a shared screen too, never taking a tap from it.
+            PositionedDirectional(
+              bottom: 64,
+              end: 0,
+              child: LiveReactionOverlay(sessionId: session.id),
             ),
 
             // "Sharing now" chip while a screen is live.
@@ -340,11 +357,22 @@ class _GlassIconButton extends StatelessWidget {
 /// `hostUserId`): louder → larger/brighter glow, silence → rest. Driven only by
 /// the SDK's active-speaker updates — there is NO timer moving it without sound.
 /// Honours reduced motion (`MediaQuery.disableAnimations`): it then stays at the
-/// resting size with no animation. The inner broadcast glyph is constant.
+/// resting size with no animation. At its centre is the host — the teacher —
+/// by their real profile picture (ADR 0048) when they have one, and the
+/// constant broadcast glyph when they do not; a shared screen replaces the
+/// whole emblem, so a live picture never covers a live feed.
 class _OnAirEmblem extends ConsumerWidget {
-  const _OnAirEmblem({required this.hostId});
+  const _OnAirEmblem({
+    required this.sessionId,
+    required this.hostId,
+    required this.hostName,
+  });
 
+  final String sessionId;
   final String hostId;
+
+  /// The host's name as the media room carries it, for the picture's initial.
+  final String? hostName;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -354,6 +382,17 @@ class _OnAirEmblem extends ConsumerWidget {
         ?.levelFor(hostId) ??
         0.0;
     final level = raw.clamp(0.0, 1.0).toDouble();
+    final selfId = ref.watch(sessionUserProvider.select((s) => s.value?.id));
+    final hostPicture = hostId == selfId
+        ? ref.watch(ownAvatarUrlProvider).value
+        : ref
+              .watch(
+                liveParticipantAvatarProvider((
+                  sessionId: sessionId,
+                  userId: hostId,
+                )),
+              )
+              .value;
     final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     final accent = context.colors.primary;
 
@@ -405,7 +444,15 @@ class _OnAirEmblem extends ConsumerWidget {
                     border: Border.all(color: accent, width: 2),
                   ),
                   alignment: Alignment.center,
-                  child: Icon(Icons.graphic_eq_rounded, color: accent, size: 32),
+                  child: hostPicture == null
+                      ? Icon(Icons.graphic_eq_rounded, color: accent, size: 32)
+                      : LiveParticipantAvatar(
+                          key: const Key('live-stage-host-avatar'),
+                          sessionId: sessionId,
+                          userId: hostId,
+                          name: hostName,
+                          radius: 32,
+                        ),
                 ),
               ),
             ),

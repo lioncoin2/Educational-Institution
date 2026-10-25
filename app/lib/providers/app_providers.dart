@@ -43,6 +43,7 @@ import '../data/repositories/http/http_auth_repository.dart';
 import '../data/repositories/http/http_community_repository.dart';
 import '../data/repositories/http/http_files_repository.dart';
 import '../data/repositories/http/http_live_chat_repository.dart';
+import '../data/repositories/http/http_live_room_repository.dart';
 import '../data/repositories/http/http_live_repository.dart';
 import '../data/repositories/http/http_messaging_repository.dart';
 import '../data/repositories/http/http_notifications_repository.dart';
@@ -56,6 +57,7 @@ import '../data/repositories/mock/mock_auth_repository.dart';
 import '../data/repositories/mock/mock_community_repository.dart';
 import '../data/repositories/mock/mock_files_repository.dart';
 import '../data/repositories/mock/mock_live_chat_repository.dart';
+import '../data/repositories/mock/mock_live_room_repository.dart';
 import '../data/repositories/mock/mock_live_repository.dart';
 import '../data/repositories/mock/mock_messaging_repository.dart';
 import '../data/repositories/mock/mock_notifications_repository.dart';
@@ -316,6 +318,13 @@ final liveChatRepositoryProvider = Provider<LiveChatRepository>(
   (ref) => ref.watch(backendModeProvider)
       ? HttpLiveChatRepository(ref.watch(apiClientProvider))
       : MockLiveChatRepository(),
+);
+
+/// The live room's pictures and reactions (C15, ADR 0048/0049).
+final liveRoomRepositoryProvider = Provider<LiveRoomRepository>(
+  (ref) => ref.watch(backendModeProvider)
+      ? HttpLiveRoomRepository(ref.watch(apiClientProvider))
+      : MockLiveRoomRepository(),
 );
 
 // ── Attendance ───────────────────────────────────────────────────────────────

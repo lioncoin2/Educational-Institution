@@ -5,8 +5,8 @@ import '../../../core/theme/app_tokens.dart';
 import '../live_copy.dart';
 
 /// Shared chrome for the immersive live room, matching the reference design:
-/// a bottom control dock of circular icon buttons, a reactions strip, and a
-/// bottom tab bar. Unimplemented capabilities are rendered in their reference
+/// a bottom control dock of circular icon buttons and a bottom tab bar (the
+/// reactions strip is real since ADR 0049 — `live_reactions.dart`). Unimplemented capabilities are rendered in their reference
 /// positions as LOCKED placeholders — a lock glyph, disabled interaction, the
 /// «غير متاح الآن» label, and no callback — so the layout is faithful without
 /// ever looking functional or fabricating data.
@@ -170,51 +170,6 @@ class LiveDockBar extends StatelessWidget {
           vertical: Insets.sm,
         ),
         child: child,
-      ),
-    );
-  }
-}
-
-/// The reactions strip (reference: ❤️ 👍 👏 😊). Reactions are NOT backed, so
-/// every pill is a locked placeholder — no count is shown (none exists), the
-/// row carries a «غير متاح الآن» caption for a screen reader, and nothing is
-/// tappable.
-class LiveReactionBar extends StatelessWidget {
-  const LiveReactionBar({super.key});
-
-  static const _reactions = <IconData>[
-    Icons.favorite_rounded,
-    Icons.thumb_up_rounded,
-    Icons.sign_language_rounded,
-    Icons.emoji_emotions_rounded,
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Semantics(
-      enabled: false,
-      label: '${LiveCopy.soonReactions} — ${LiveCopy.soonBadge}',
-      child: Opacity(
-        opacity: 0.7,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            for (final icon in _reactions) ...[
-              Container(
-                padding: const EdgeInsets.all(Insets.sm),
-                decoration: BoxDecoration(
-                  color: colors.surfaceContainerHigh,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: colors.outlineVariant),
-                ),
-                child: Icon(icon, size: 18, color: colors.onSurfaceVariant),
-              ),
-              const SizedBox(width: Insets.sm),
-            ],
-            Icon(Icons.lock_outline, size: 14, color: colors.onSurfaceVariant),
-          ],
-        ),
       ),
     );
   }

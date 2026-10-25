@@ -19,6 +19,7 @@ import { PINNED_LIVEKIT_SERVER_VERSION } from '../../platform/config/livekit-con
 import { DATABASE, type Database } from '../../platform/database';
 import { asId, CLOCK, FixedClock, type Clock } from '../../shared';
 import { CommunitiesModule } from '../communities/communities.module';
+import { FilesModule } from '../files/files.module';
 import { IdentityModule } from '../identity/identity.module';
 import { LiveAudienceService } from './application/live-audience.service';
 import { LiveMediaReadiness } from './application/live-media-readiness';
@@ -112,10 +113,12 @@ const REAL_MEDIA = {
 };
 
 describe('the Live module', () => {
-  it('imports identity and Communities, and exports its contracts — nothing else', () => {
+  it('imports identity, Communities and Files, and exports its contracts — nothing else', () => {
+    // Files (C15, ADR 0048): FILE_ASSETS verifies and links a participant's picture.
     expect(Reflect.getMetadata(MODULE_METADATA.IMPORTS, LiveModule)).toEqual([
       IdentityModule,
       CommunitiesModule,
+      FilesModule,
     ]);
     expect(Reflect.getMetadata(MODULE_METADATA.EXPORTS, LiveModule)).toEqual([
       LIVE_AUDIENCE,

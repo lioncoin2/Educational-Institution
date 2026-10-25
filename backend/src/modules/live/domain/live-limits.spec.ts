@@ -88,13 +88,15 @@ describe('live limits (PROVISIONAL, live.md §3.8)', () => {
     expect(HANDS_PAGE_DEFAULT).toBeLessThanOrEqual(HANDS_PAGE_MAX);
   });
 
-  it('limits starts per user and joins, hands and chat posts per (session, user), each under its own name', () => {
+  it('limits starts per user and joins, hands, chat posts and reactions per (session, user), each under its own name', () => {
     expect(LiveRateLimits).toEqual({
       startsPerUser: { name: 'live.start.user', limit: 10, windowSeconds: 60 },
       joinsPerSessionUser: { name: 'live.join.session_user', limit: 10, windowSeconds: 60 },
       handsPerSessionUser: { name: 'live.hand.session_user', limit: 6, windowSeconds: 60 },
       // ADR 0047: a session's own chat.
       chatPostsPerSessionUser: { name: 'live.chat.session_user', limit: 20, windowSeconds: 60 },
+      // ADR 0049: the room's reactions.
+      reactionsPerSessionUser: { name: 'live.reaction.session_user', limit: 30, windowSeconds: 60 },
     });
     const names = Object.values(LiveRateLimits).map((policy) => policy.name);
     expect(new Set(names).size).toBe(names.length);

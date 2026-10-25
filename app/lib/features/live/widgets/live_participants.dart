@@ -3,12 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/extensions/context_ext.dart';
 import '../../../core/theme/app_tokens.dart';
-import '../../../core/widgets/foundations/app_avatar.dart';
 import '../../../data/models/live.dart';
 import '../../../data/models/live_media.dart';
 import '../../../providers/app_providers.dart';
 import '../live_copy.dart';
 import '../state/live_media_controller.dart';
+import 'live_participant_avatar.dart';
 
 /// The LIVE presence roster — who is actually connected to the session's media
 /// room now, from LiveKit (the only source that knows): every participant is
@@ -134,7 +134,12 @@ class _SelfRow extends ConsumerWidget {
         : me.role == LiveParticipantRole.speaker
         ? LiveCopy.roleSpeaker
         : LiveCopy.roleListener;
+    final self = ref.watch(sessionUserProvider).value;
     return _Row(
+      sessionId: session.id,
+      // The viewer's own picture and initial — labelled «أنت».
+      userId: self?.id ?? '',
+      avatarName: self?.displayName,
       name: LiveCopy.youLabel,
       role: role,
       roleTone: _RoleTone.self,
@@ -167,6 +172,9 @@ class _ParticipantPresenceRow extends StatelessWidget {
         ? LiveCopy.presenterBadge
         : null;
     return _Row(
+      sessionId: session.id,
+      userId: participant.identity,
+      avatarName: name,
       name: name,
       role: role,
       roleTone: _RoleTone.other,
@@ -183,6 +191,9 @@ enum _RoleTone { self, other }
 /// audible/known mic track).
 class _Row extends StatelessWidget {
   const _Row({
+    required this.sessionId,
+    required this.userId,
+    required this.avatarName,
     required this.name,
     required this.role,
     required this.roleTone,
@@ -190,6 +201,11 @@ class _Row extends StatelessWidget {
     required this.micMuted,
   });
 
+  final String sessionId;
+  final String userId;
+
+  /// The name the avatar's initial comes from (the row's label may differ: «أنت»).
+  final String? avatarName;
   final String name;
   final String? role;
   final _RoleTone roleTone;
@@ -203,7 +219,12 @@ class _Row extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: Insets.xs),
       child: Row(
         children: [
-          AppAvatar(name: name, radius: 16),
+          LiveParticipantAvatar(
+            sessionId: sessionId,
+            userId: userId,
+            name: avatarName,
+            radius: 16,
+          ),
           const SizedBox(width: Insets.md),
           Expanded(child: Text(name, style: context.text.titleSmall)),
           if (role != null) ...[

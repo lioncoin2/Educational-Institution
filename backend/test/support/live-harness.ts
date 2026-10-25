@@ -28,6 +28,8 @@ import type { LiveSettings } from '../../src/modules/live/application/live-setti
 import { LiveStanding } from '../../src/modules/live/application/live-standing';
 import { LowerHandUseCase } from '../../src/modules/live/application/lower-hand.use-case';
 import { ModerateSpeakerUseCase } from '../../src/modules/live/application/moderate-speaker.use-case';
+import { SendLiveReactionUseCase } from '../../src/modules/live/application/live-reaction.use-case';
+import { GetLiveParticipantAvatarUseCase } from '../../src/modules/live/application/participant-avatar.use-case';
 import { PresenterUseCase } from '../../src/modules/live/application/presenter.use-case';
 import { RaiseHandUseCase } from '../../src/modules/live/application/raise-hand.use-case';
 import { ResetRoomUseCase } from '../../src/modules/live/application/reset-room.use-case';
@@ -43,6 +45,66 @@ import type { LiveStore } from '../../src/modules/live/live.module';
 import { DEFAULT_LIVE_JOIN_TOKEN_TTL_SECONDS } from '../../src/platform/config/app-config';
 import { Journal, META, communitiesHarness, type CommunitiesHarness } from './communities-harness';
 import { principalWith } from './principals';
+import { err, failure, ok, type Clock, type Result } from '../../src/shared';
+import type {
+  DownloadLink,
+  FileAssetSummary,
+  FileAssets,
+} from '../../src/modules/files/contracts/file-assets';
+import type { FileKind } from '../../src/modules/files/contracts/file-kind';
+
+/**
+ * Files' asset contract as a participant's picture needs it (C15): which asset
+ * an account owns and of what kind, and a 5-minute link per asset. Counts the
+ * links it mints, so a test can tell a refused read minted none.
+ */
+export class StubFileAssets implements FileAssets {
+  private readonly assets = new Map<string, { ownerId: string; kind: FileKind }>();
+  linksMinted = 0;
+
+  constructor(private readonly clock: Clock) {}
+
+  own(assetId: string, ownerId: string, kind: FileKind = 'IMAGE'): void {
+    this.assets.set(assetId, { ownerId, kind });
+  }
+
+  forget(assetId: string): void {
+    this.assets.delete(assetId);
+  }
+
+  async describe(): Promise<readonly FileAssetSummary[]> {
+    return [];
+  }
+
+  async verifyAttachable(
+    assetId: string,
+    ownerId: string,
+    acceptedKinds: readonly FileKind[],
+  ): Promise<Result<FileAssetSummary>> {
+    const asset = this.assets.get(assetId);
+    if (asset === undefined || asset.ownerId !== ownerId || !acceptedKinds.includes(asset.kind)) {
+      return err(failure('validation', 'files.asset_not_attachable', 'Not attachable.'));
+    }
+    return ok({
+      id: assetId,
+      kind: asset.kind,
+      contentType: 'image/png',
+      byteSize: 1,
+      displayName: `${assetId}.png`,
+      durationMs: null,
+      width: null,
+      height: null,
+    });
+  }
+
+  async createDownloadLink(assetId: string): Promise<Result<DownloadLink>> {
+    this.linksMinted += 1;
+    return ok({
+      url: `https://files.test/${assetId}?sig=${this.linksMinted}`,
+      expiresAt: new Date(this.clock.now().getTime() + 5 * 60 * 1000),
+    });
+  }
+}
 
 export { META, codeOf } from './communities-harness';
 
@@ -113,6 +175,7 @@ function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
 
   const liveJournal = new LiveJournal(journal, journal);
   const access = new LiveAccess(authorization);
+  const fileAssets = new StubFileAssets(clock);
   const standing = new LiveStanding(
     identity,
     accounts,
@@ -297,6 +360,27 @@ function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
       liveJournal,
     ),
     chatReader: new LiveChatReader(accounts, store.chat),
+    // The room's four reactions (ADR 0049): ephemeral, nothing stored.
+    sendReaction: new SendLiveReactionUseCase(
+      identity,
+      access,
+      store.sessions,
+      limiter,
+      clock,
+      ids,
+      liveJournal,
+    ),
+    // A participant's picture (C15, ADR 0048).
+    fileAssets,
+    participantAvatar: new GetLiveParticipantAvatarUseCase(
+      identity,
+      accounts,
+      fileAssets,
+      access,
+      standing,
+      store.sessions,
+      store.presenters,
+    ),
 
     /** A signed-in person with these roles, known to the directory by `name`. */
     person(userId: string, roles: readonly KnownRoleCode[], name = userId): Principal {

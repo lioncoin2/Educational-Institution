@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/extensions/context_ext.dart';
 import '../../../core/theme/app_tokens.dart';
-import '../../../core/widgets/foundations/app_avatar.dart';
 import '../../../core/widgets/foundations/async_view.dart';
 import '../../../data/models/live.dart';
 import '../../../data/models/live_media.dart';
@@ -13,6 +12,7 @@ import '../state/live_media_controller.dart';
 import '../state/live_moderation_controller.dart';
 import '../state/live_session_controller.dart';
 import 'live_moderation_actions.dart';
+import 'live_participant_avatar.dart';
 
 enum _HandsFilter { all, pending, granted }
 
@@ -207,7 +207,11 @@ class _PresenterRow extends ConsumerWidget {
         children: [
           Row(
             children: [
-              AppAvatar(name: name, radius: 18),
+              LiveParticipantAvatar(
+                sessionId: session.id,
+                userId: userId,
+                name: name,
+              ),
               const SizedBox(width: Insets.md),
               Expanded(
                 child: Column(
@@ -405,7 +409,11 @@ class _ParticipantRow extends ConsumerWidget {
         children: [
           Row(
             children: [
-              AppAvatar(name: name, radius: 18),
+              LiveParticipantAvatar(
+                sessionId: session.id,
+                userId: hand.userId,
+                name: name,
+              ),
               const SizedBox(width: Insets.md),
               Expanded(
                 child: Column(

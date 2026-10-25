@@ -126,8 +126,9 @@ class LiveSessionController extends AsyncNotifier<LiveSession?> {
         }
       case LiveChatMessageEvent():
       case LiveChatChangedEvent():
-        // The session's own chat (ADR 0047): its controller's business, never
-        // the session's state.
+      case LiveReactionEvent():
+        // The session's own chat (ADR 0047) and its reactions (ADR 0049): their
+        // controllers' business, never the session's state.
         break;
       case LiveParticipantRemovedEvent():
       case LiveSessionMediaResetEvent():

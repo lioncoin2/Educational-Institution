@@ -5,7 +5,8 @@ import '../../../core/theme/app_tokens.dart';
 import '../live_copy.dart';
 
 /// Honest "coming later" hints for live features the reference design shows but
-/// the platform does NOT yet back (reactions, polls, in-session recording).
+/// the platform does NOT yet back (polls, in-session recording — reactions are
+/// real since ADR 0049).
 ///
 /// These are deliberately INERT: muted, carrying a «غير متاح الآن» tag, marked
 /// `Semantics(enabled: false)`, and wired to no callback — so they signal the
@@ -43,10 +44,6 @@ class LiveComingSoon extends StatelessWidget {
           spacing: Insets.sm,
           runSpacing: Insets.sm,
           children: [
-            LiveSoonChip(
-              icon: Icons.favorite_outline_rounded,
-              label: LiveCopy.soonReactions,
-            ),
             LiveSoonChip(
               icon: Icons.bar_chart_rounded,
               label: LiveCopy.soonPolls,

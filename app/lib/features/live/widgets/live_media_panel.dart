@@ -7,18 +7,20 @@ import '../../../core/extensions/context_ext.dart';
 import '../../../core/theme/app_tokens.dart';
 import '../../../data/models/live.dart';
 import '../../../data/models/live_media.dart';
+import '../../../data/models/live_room.dart';
 import '../../../providers/app_providers.dart';
 import '../live_copy.dart';
 import '../state/live_media_controller.dart';
 import '../state/live_moderation_controller.dart';
 import 'live_controls.dart';
 import 'live_moderation_actions.dart';
+import 'live_reactions.dart';
 
 /// The live room's bottom CONTROL DOCK (reference: a row of circular control
 /// buttons under the stage): the viewer's own participation — joining the audio,
 /// the microphone, a presenter's screen-share capture, raising/lowering the
-/// hand, and (for a moderator) ending the broadcast — plus the reference's
-/// camera and reactions as LOCKED placeholders.
+/// hand, a quick reaction (ADR 0049), and (for a moderator) ending the
+/// broadcast — plus the reference's camera as a LOCKED placeholder.
 ///
 /// Media is TRANSPORT only, behind the seam (keyed per session through
 /// [liveMediaProvider]); authority — who may join, present, raise a hand or end
@@ -296,12 +298,21 @@ class _LiveMediaPanelState extends ConsumerState<LiveMediaPanel> {
       ));
     }
 
-    // Reactions — not backed (locked).
-    buttons.add(const LiveDockButton(
-      icon: Icons.favorite_rounded,
-      label: LiveCopy.dockReact,
-      locked: true,
-    ));
+    // Reactions (ADR 0049): the dock's quick reaction is a heart; the strip
+    // above the dock carries all four.
+    if (liveCanReact(widget.session)) {
+      buttons.add(LiveDockButton(
+        key: const Key('live-dock-react'),
+        icon: Icons.favorite_rounded,
+        label: LiveCopy.dockReact,
+        onTap: () => sendLiveReaction(
+          context,
+          ref,
+          _sessionId,
+          LiveReactionKind.heart,
+        ),
+      ));
+    }
 
     // The viewer's own hand (independent of the audio connection).
     if (activeHand) {

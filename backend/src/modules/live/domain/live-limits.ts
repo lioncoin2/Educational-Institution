@@ -131,6 +131,8 @@ export const LiveRateLimits = {
   handsPerSessionUser: { name: 'live.hand.session_user', limit: 6, windowSeconds: 60 },
   /** Posting to a session's chat, per (session, user) — ADR 0047. */
   chatPostsPerSessionUser: { name: 'live.chat.session_user', limit: 20, windowSeconds: 60 },
+  /** Reacting in a running session, per (session, user) — ADR 0049: a burst of taps, not a flood. */
+  reactionsPerSessionUser: { name: 'live.reaction.session_user', limit: 30, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 /**

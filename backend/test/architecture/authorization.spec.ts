@@ -382,6 +382,9 @@ describe('route authorization', () => {
       'POST /live/sessions/:sessionId/participants/:userId/remove (LiveController.removeParticipant)':
         moderate,
       'POST /live/sessions/:sessionId/reset (LiveController.reset)': moderate,
+      // C15: a participant's picture (ADR 0048) and the room's reactions (ADR 0049).
+      'GET /live/sessions/:sessionId/participants/:userId/avatar (LiveController.avatar)': join,
+      'POST /live/sessions/:sessionId/reactions (LiveController.react)': join,
       // The session's own chat (ADR 0047): participants read and post; moderators lock.
       'GET /live/sessions/:sessionId/chat (LiveController.chat)': join,
       'POST /live/sessions/:sessionId/chat (LiveController.post)': join,

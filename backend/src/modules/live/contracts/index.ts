@@ -21,6 +21,7 @@ export {
   type LiveEvent,
   type LiveMediaReset,
   type LiveParticipantRemoved,
+  type LiveReactionSent,
   type LiveSessionEnded,
   type LiveSessionStarted,
   type LiveSpeakerFact,
