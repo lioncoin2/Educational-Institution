@@ -331,6 +331,41 @@ void main() {
     });
   });
 
+  group('micPublishAllowed (the "may speak" capability rule)', () {
+    // Proto TrackSource wire values: microphone = 2, screen_share = 3. The same
+    // shape as screenPublishAllowed, read for the microphone source.
+    test('can-publish AND (no explicit sources ⇒ all, or microphone is listed)', () {
+      expect(
+        micPublishAllowed(canPublish: false, sourceValues: const []),
+        isFalse,
+        reason: 'cannot publish anything',
+      );
+      expect(
+        micPublishAllowed(canPublish: false, sourceValues: const [2]),
+        isFalse,
+        reason: 'canPublish=false overrides a listed microphone source',
+      );
+      expect(
+        micPublishAllowed(canPublish: true, sourceValues: const []),
+        isTrue,
+        reason: 'empty explicit sources means every source is allowed',
+      );
+      expect(
+        micPublishAllowed(canPublish: true, sourceValues: const [3]),
+        isFalse,
+        reason: 'a screen-only grant does not allow the microphone',
+      );
+      expect(
+        micPublishAllowed(canPublish: true, sourceValues: const [2]),
+        isTrue,
+      );
+      expect(
+        micPublishAllowed(canPublish: true, sourceValues: const [2, 3]),
+        isTrue,
+      );
+    });
+  });
+
   group('SdkLiveKitRoomPort capability signal', () {
     test('a capability signal from the room surfaces on the port stream', () async {
       late void Function(LiveKitRoomSignal) emit;
@@ -403,6 +438,28 @@ void main() {
       expect(events.single, isA<LiveKitRemoteParticipants>());
       final sig = events.single as LiveKitRemoteParticipants;
       expect(sig.participants['u-1']?.audio, LiveRemoteAudio.live);
+      await port.dispose();
+    });
+
+    test('an active-speaker audio-levels signal surfaces on the port stream', () async {
+      late void Function(LiveKitRoomSignal) emit;
+      final port = SdkLiveKitRoomPort(
+        openRoom: (url, token, e) async {
+          emit = e;
+          return _FakeLiveRoom();
+        },
+      );
+      final events = <LiveKitRoomSignal>[];
+      port.signals.listen(events.add);
+
+      await port.connect('wss://x', 'tok');
+      emit(const LiveKitAudioLevels(LiveAudioLevels({'u-host': 0.42})));
+      await pumpEventQueue();
+
+      expect(events.single, isA<LiveKitAudioLevels>());
+      final sig = events.single as LiveKitAudioLevels;
+      expect(sig.levels.levelFor('u-host'), 0.42);
+      expect(sig.levels.levelFor('someone-else'), 0, reason: 'absent ⇒ 0');
       await port.dispose();
     });
   });

@@ -40,6 +40,11 @@ class FakeLiveMediaClient implements LiveMediaClient {
   final _remoteChanges =
       StreamController<LiveRemoteParticipants>.broadcast(sync: true);
 
+  /// The active-speaker audio levels the test drives.
+  LiveAudioLevels _audioLevels = LiveAudioLevels.empty;
+  final _audioLevelChanges =
+      StreamController<LiveAudioLevels>.broadcast(sync: true);
+
   /// Drives the state and notifies [states].
   void emit(LiveMediaState state) {
     _state = state;
@@ -56,6 +61,12 @@ class FakeLiveMediaClient implements LiveMediaClient {
   void emitRemote(LiveRemoteParticipants participants) {
     _remote = participants;
     _remoteChanges.add(participants);
+  }
+
+  /// Drives the audio levels and notifies [audioLevelChanges].
+  void emitAudioLevels(LiveAudioLevels levels) {
+    _audioLevels = levels;
+    _audioLevelChanges.add(levels);
   }
 
   @override
@@ -79,6 +90,12 @@ class FakeLiveMediaClient implements LiveMediaClient {
   @override
   Stream<LiveRemoteParticipants> get remoteParticipantChanges =>
       _remoteChanges.stream;
+
+  @override
+  LiveAudioLevels get audioLevels => _audioLevels;
+
+  @override
+  Stream<LiveAudioLevels> get audioLevelChanges => _audioLevelChanges.stream;
 
   @override
   Future<void> connect(LiveMediaGrant grant) async {
@@ -118,5 +135,6 @@ class FakeLiveMediaClient implements LiveMediaClient {
     await _states.close();
     await _publications.close();
     await _remoteChanges.close();
+    await _audioLevelChanges.close();
   }
 }

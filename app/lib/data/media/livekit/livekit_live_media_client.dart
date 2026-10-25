@@ -46,6 +46,11 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
   final StreamController<LiveRemoteParticipants> _remoteChanges =
       StreamController<LiveRemoteParticipants>.broadcast();
 
+  /// The live active-speaker audio levels (amplitude), reconciled from the room.
+  LiveAudioLevels _audioLevels = LiveAudioLevels.empty;
+  final StreamController<LiveAudioLevels> _audioLevelsController =
+      StreamController<LiveAudioLevels>.broadcast();
+
   @override
   bool get isAvailable => true;
 
@@ -67,6 +72,12 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
   @override
   Stream<LiveRemoteParticipants> get remoteParticipantChanges =>
       _remoteChanges.stream;
+
+  @override
+  LiveAudioLevels get audioLevels => _audioLevels;
+
+  @override
+  Stream<LiveAudioLevels> get audioLevelChanges => _audioLevelsController.stream;
 
   /// The latest server-authorized screen-share capability — the SDK's live
   /// participant permission, updated as the backend grants or revokes a
@@ -91,6 +102,7 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
     // and local-track events) update it from here.
     _setPublication(LiveMediaPublication(screenAuthorized: grant.screen));
     _setRemote(LiveRemoteParticipants.empty);
+    _setAudioLevels(LiveAudioLevels.empty);
     _set(const LiveMediaConnecting());
     try {
       await _port.connect(grant.url, grant.token);
@@ -146,6 +158,7 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
       _screenAllowed = false;
       _setPublication(const LiveMediaPublication());
       _setRemote(LiveRemoteParticipants.empty);
+      _setAudioLevels(LiveAudioLevels.empty);
       _set(const LiveMediaIdle());
     }
   }
@@ -159,6 +172,7 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
     if (!_states.isClosed) await _states.close();
     if (!_publications.isClosed) await _publications.close();
     if (!_remoteChanges.isClosed) await _remoteChanges.close();
+    if (!_audioLevelsController.isClosed) await _audioLevelsController.close();
   }
 
   void _onSignal(LiveKitRoomSignal signal) {
@@ -180,6 +194,7 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
         _screenAllowed = false;
         _setPublication(const LiveMediaPublication());
         _setRemote(LiveRemoteParticipants.empty);
+        _setAudioLevels(LiveAudioLevels.empty);
         _set(LiveMediaDisconnected(reason));
       case LiveKitCapabilities(:final canPublishScreen):
         // RECONCILE signals (capability / local tracks / remote participants)
@@ -221,6 +236,11 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
         // identity — scoped to THIS room; cleared on connect/disconnect, so a
         // previous room's participants never linger.
         _setRemote(participants);
+      case LiveKitAudioLevels(:final levels):
+        if (!_hasLiveConnection) return; // see the capability case above
+        // Active-speaker amplitude for THIS room; cleared on connect/disconnect,
+        // so a previous room's levels never linger.
+        _setAudioLevels(levels);
     }
   }
 
@@ -264,6 +284,14 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
     if (next == _remote) return;
     _remote = next;
     if (!_remoteChanges.isClosed) _remoteChanges.add(next);
+  }
+
+  /// Publishes an audio-levels change only when it actually changed, so a
+  /// repeated/no-change speaker update does not churn the stream.
+  void _setAudioLevels(LiveAudioLevels next) {
+    if (next == _audioLevels) return;
+    _audioLevels = next;
+    if (!_audioLevelsController.isClosed) _audioLevelsController.add(next);
   }
 
   void _requireConnected() {

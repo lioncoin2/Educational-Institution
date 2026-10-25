@@ -970,6 +970,69 @@ void main() {
       );
     });
   });
+
+  group('audio levels (active speakers)', () {
+    test('a level signal while connected is reflected and streamed', () async {
+      await connected();
+      final seen = <LiveAudioLevels>[];
+      final sub = client.audioLevelChanges.listen(seen.add);
+
+      port.emit(const LiveKitAudioLevels(LiveAudioLevels({'u-host': 0.6})));
+      await pumpEventQueue();
+
+      expect(client.audioLevels.levelFor('u-host'), 0.6);
+      expect(seen.single.levelFor('u-host'), 0.6);
+      await sub.cancel();
+    });
+
+    test('levels are ignored until a live connection exists', () async {
+      // Idle (never connected): a stray active-speaker signal must not seed
+      // levels — the on-air emblem must never react with no live audio.
+      port.emit(const LiveKitAudioLevels(LiveAudioLevels({'u-host': 0.9})));
+      await pumpEventQueue();
+      expect(client.audioLevels, LiveAudioLevels.empty);
+    });
+
+    test('a newer level set replaces the previous one', () async {
+      await connected();
+      port.emit(const LiveKitAudioLevels(LiveAudioLevels({'u-host': 0.3})));
+      await pumpEventQueue();
+      port.emit(
+        const LiveKitAudioLevels(LiveAudioLevels({'u-host': 0.0, 'u-2': 0.7})),
+      );
+      await pumpEventQueue();
+      expect(client.audioLevels.levelFor('u-host'), 0.0);
+      expect(client.audioLevels.levelFor('u-2'), 0.7);
+    });
+
+    test('an explicit disconnect clears the levels', () async {
+      await connected();
+      port.emit(const LiveKitAudioLevels(LiveAudioLevels({'u-host': 0.5})));
+      await pumpEventQueue();
+      await client.disconnect();
+      expect(client.audioLevels, LiveAudioLevels.empty);
+    });
+
+    test('a terminal drop clears the levels', () async {
+      await connected();
+      port.emit(const LiveKitAudioLevels(LiveAudioLevels({'u-host': 0.5})));
+      await pumpEventQueue();
+      port.emit(
+        const LiveKitDisconnected(LiveMediaDisconnectReason.roomDeleted),
+      );
+      await pumpEventQueue();
+      expect(client.audioLevels, LiveAudioLevels.empty);
+    });
+
+    test('dispose closes the audio-levels stream (no leaked subscription)', () async {
+      final livekit = LiveKitLiveMediaClient(port: _FakePort());
+      var closed = false;
+      livekit.audioLevelChanges.listen((_) {}, onDone: () => closed = true);
+      await livekit.dispose();
+      await pumpEventQueue();
+      expect(closed, isTrue);
+    });
+  });
 }
 
 /// A repository that only answers `/join` (the one call the media path makes);

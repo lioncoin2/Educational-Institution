@@ -95,6 +95,15 @@ final class LiveKitRemoteParticipants extends LiveKitRoomSignal {
   final LiveRemoteParticipants participants;
 }
 
+/// The room's active-speaker audio LEVELS changed — the SDK's
+/// `ActiveSpeakersChangedEvent`, reduced to an identity→level map (0..1).
+/// Amplitude only (never "speaking" authority); read from the event each time.
+final class LiveKitAudioLevels extends LiveKitRoomSignal {
+  const LiveKitAudioLevels(this.levels);
+
+  final LiveAudioLevels levels;
+}
+
 /// Translates a LiveKit `DisconnectReason` into the app's own reason. Only the
 /// three meaningful cases map across; everything else — `unknown`,
 /// `serverShutdown`, `stateMismatch`, `joinFailure`, `disconnected`,
@@ -135,6 +144,21 @@ bool screenPublishAllowed({
 /// LiveKit proto `TrackSource.SCREEN_SHARE` wire value (livekit_models.proto).
 /// The backend emits this exact source when a participant may share a screen.
 const int _protoTrackSourceScreenShare = 3;
+
+/// LiveKit proto `TrackSource.MICROPHONE` wire value (livekit_models.proto).
+const int _protoTrackSourceMicrophone = 2;
+
+/// Whether a participant's server-authorized permissions allow publishing a
+/// microphone — the same shape as [screenPublishAllowed]. A provable "may
+/// speak" capability (the server's own grant, delivered by the SDK), never
+/// proof that they are speaking. Pure and SDK-free, so it is unit-testable.
+bool micPublishAllowed({
+  required bool canPublish,
+  required List<int> sourceValues,
+}) =>
+    canPublish &&
+    (sourceValues.isEmpty ||
+        sourceValues.contains(_protoTrackSourceMicrophone));
 
 /// Reduces the SDK's [ParticipantPermissions] to the one capability the app
 /// acts on, via the shared [screenPublishAllowed] rule.
@@ -191,6 +215,18 @@ LiveKitRemoteParticipants _remoteParticipantsOf(Room room) {
     final screen = screens.isEmpty ? null : screens.first;
     byIdentity[participant.identity] = LiveRemoteParticipant(
       identity: participant.identity,
+      // The display name the SERVER baked into the join token (never
+      // client-supplied); empty becomes null.
+      name: participant.name.isEmpty ? null : participant.name,
+      // The server's own "may publish a microphone" grant — a provable
+      // speak-capability, not proof of speaking.
+      canSpeak: micPublishAllowed(
+        canPublish: participant.permissions.canPublish,
+        sourceValues: [
+          for (final source in participant.permissions.canPublishSources)
+            source.value,
+        ],
+      ),
       audio: remoteAudioState(
         hasMic: mic != null,
         subscribed: mic?.subscribed ?? false,
@@ -208,6 +244,16 @@ LiveKitRemoteParticipants _remoteParticipantsOf(Room room) {
     LiveRemoteParticipants(Map.unmodifiable(byIdentity)),
   );
 }
+
+/// Reduces an active-speakers list (ordered loudest-first, incl. the local
+/// participant) to the app's identity→level map. Keyed by identity (= backend
+/// user id), so the UI can read a known participant's current level.
+LiveKitAudioLevels _audioLevelsOf(List<Participant> speakers) =>
+    LiveKitAudioLevels(
+      LiveAudioLevels({
+        for (final speaker in speakers) speaker.identity: speaker.audioLevel,
+      }),
+    );
 
 /// One connected LiveKit room reduced to the operations the port performs on
 /// it: the publish commands and the three teardown steps it owns (dispose the
@@ -417,7 +463,14 @@ Future<LiveKitLiveRoom> _openSdkRoom(
     ..on<TrackPublishedEvent>((_) => emit(_remoteParticipantsOf(room)))
     ..on<TrackUnpublishedEvent>((_) => emit(_remoteParticipantsOf(room)))
     ..on<TrackSubscribedEvent>((_) => emit(_remoteParticipantsOf(room)))
-    ..on<TrackUnsubscribedEvent>((_) => emit(_remoteParticipantsOf(room)));
+    ..on<TrackUnsubscribedEvent>((_) => emit(_remoteParticipantsOf(room)))
+    // Active-speaker audio LEVELS (amplitude) — the only source for the stage's
+    // live audio indicator. Reads the SDK's reconciled speaker list each time;
+    // no polling timer. When no one speaks the event carries an empty list, so
+    // the indicator falls back to rest.
+    ..on<ActiveSpeakersChangedEvent>(
+      (event) => emit(_audioLevelsOf(event.speakers)),
+    );
   try {
     await room.connect(url, token);
   } catch (_) {

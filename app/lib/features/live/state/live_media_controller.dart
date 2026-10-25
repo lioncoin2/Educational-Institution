@@ -236,3 +236,16 @@ final liveRemoteParticipantsProvider =
       yield client.remoteParticipants;
       yield* client.remoteParticipantChanges;
     });
+
+/// The live active-speaker audio LEVELS the media client sees (0..1 per
+/// identity). The stage's on-air indicator watches this to react to the host's
+/// voice. Amplitude only — never "speaking" authority or a source of identity.
+/// Seeded with the current snapshot; autoDispose, so the subscription lives only
+/// while a live screen watches it.
+final liveAudioLevelsProvider = StreamProvider.autoDispose<LiveAudioLevels>((
+  ref,
+) async* {
+  final client = ref.watch(liveMediaClientProvider);
+  yield client.audioLevels;
+  yield* client.audioLevelChanges;
+});

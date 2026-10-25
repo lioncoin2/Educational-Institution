@@ -238,12 +238,26 @@ enum LiveRemoteAudio {
 class LiveRemoteParticipant {
   const LiveRemoteParticipant({
     required this.identity,
+    this.name,
+    this.canSpeak = false,
     this.audio = LiveRemoteAudio.none,
     this.screenSharing = false,
     this.screenShareTrack,
   });
 
   final String identity;
+
+  /// The participant's display name as the SERVER put it in the LiveKit join
+  /// token (`name` = account display name; never client-supplied). Null when the
+  /// token carried none. A display value only — identity stays [identity].
+  final String? name;
+
+  /// Whether the SERVER authorized this participant to publish a microphone —
+  /// read from the SDK's `ParticipantPermissions.canPublishSources`, the same
+  /// authority the backend grants. A provable "may speak" capability, NOT proof
+  /// they are speaking (that is [audio]) and NOT the app's role enum.
+  final bool canSpeak;
+
   final LiveRemoteAudio audio;
 
   /// A screen-share video track is published and unmuted — a publication fact,
@@ -261,6 +275,8 @@ class LiveRemoteParticipant {
   bool operator ==(Object other) =>
       other is LiveRemoteParticipant &&
       other.identity == identity &&
+      other.name == name &&
+      other.canSpeak == canSpeak &&
       other.audio == audio &&
       other.screenSharing == screenSharing &&
       identical(other.screenShareTrack, screenShareTrack);
@@ -268,6 +284,8 @@ class LiveRemoteParticipant {
   @override
   int get hashCode => Object.hash(
     identity,
+    name,
+    canSpeak,
     audio,
     screenSharing,
     identityHashCode(screenShareTrack),
@@ -275,8 +293,8 @@ class LiveRemoteParticipant {
 
   @override
   String toString() =>
-      'LiveRemoteParticipant($identity, audio: ${audio.name}, '
-      'screenSharing: $screenSharing)';
+      'LiveRemoteParticipant($identity, name: $name, canSpeak: $canSpeak, '
+      'audio: ${audio.name}, screenSharing: $screenSharing)';
 }
 
 /// The remote participants the SDK currently sees in the ACTIVE room, keyed by
@@ -309,6 +327,36 @@ class LiveRemoteParticipants {
 
   @override
   int get hashCode => Object.hashAllUnordered(byIdentity.values);
+}
+
+/// The live audio LEVELS the local SDK observes, keyed by identity (= backend
+/// user id): 0..1, from the room's active-speaker updates; absent (⇒ 0) for
+/// anyone not currently an active speaker. Transport state only — a level is
+/// amplitude, NOT "speaking" authority and never a second source of identity.
+class LiveAudioLevels {
+  const LiveAudioLevels(this.byIdentity);
+
+  final Map<String, double> byIdentity;
+
+  static const empty = LiveAudioLevels(<String, double>{});
+
+  /// This identity's current level, or 0 when it is not an active speaker.
+  double levelFor(String identity) => byIdentity[identity] ?? 0;
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! LiveAudioLevels) return false;
+    if (other.byIdentity.length != byIdentity.length) return false;
+    for (final entry in byIdentity.entries) {
+      if (other.byIdentity[entry.key] != entry.value) return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hashAllUnordered(
+    byIdentity.entries.map((e) => Object.hash(e.key, e.value)),
+  );
 }
 
 /// A refusal from the media seam — kept apart from [LiveException], which is

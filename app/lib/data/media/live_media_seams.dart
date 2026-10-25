@@ -54,6 +54,14 @@ abstract interface class LiveMediaClient {
   /// Every change of [remoteParticipants].
   Stream<LiveRemoteParticipants> get remoteParticipantChanges;
 
+  /// The live audio LEVELS the SDK observes, keyed by identity (0..1; 0 when not
+  /// an active speaker). Amplitude only — never "speaking" authority. Always safe
+  /// to read.
+  LiveAudioLevels get audioLevels;
+
+  /// Every change of [audioLevels].
+  Stream<LiveAudioLevels> get audioLevelChanges;
+
   /// Joins the session's media room with the server's credential. The grant is
   /// consumed here and not kept; nothing above this seam holds the token.
   Future<void> connect(LiveMediaGrant grant);
@@ -103,6 +111,13 @@ class UnavailableLiveMediaClient implements LiveMediaClient {
   @override
   Stream<LiveRemoteParticipants> get remoteParticipantChanges =>
       Stream<LiveRemoteParticipants>.value(LiveRemoteParticipants.empty);
+
+  @override
+  LiveAudioLevels get audioLevels => LiveAudioLevels.empty;
+
+  @override
+  Stream<LiveAudioLevels> get audioLevelChanges =>
+      Stream<LiveAudioLevels>.value(LiveAudioLevels.empty);
 
   @override
   Future<void> connect(LiveMediaGrant grant) async => throw _unavailable;
