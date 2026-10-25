@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:quran_institution_app/data/api/api_client.dart';
 import 'package:quran_institution_app/data/api/client_ids.dart';
+import 'package:quran_institution_app/data/api/refresh_lock.dart';
 import 'package:quran_institution_app/data/api/token_store.dart';
 
 http.Response json(int status, Object body) => http.Response(
@@ -430,4 +431,164 @@ void main() {
       },
     );
   });
+
+  // A refresh answer that is not about the session — an outage, a gateway error
+  // or the rate limit — must not sign the user out.
+  group('a refresh the server could not serve', () {
+    for (final status in [429, 500, 502, 503, 504]) {
+      test('$status keeps the session and reports the server unreachable', () async {
+        var signedOut = false;
+        final client = MockClient(
+          (request) async => request.url.path == '/auth/refresh'
+              ? http.Response('<html>upstream unavailable</html>', status)
+              : error(401, 'identity.authentication_required'),
+        );
+        final store = await signedIn();
+        final api = ApiClient(
+          baseUri: base,
+          httpClient: client,
+          tokenStore: store,
+          onSignedOut: () => signedOut = true,
+        );
+        await expectLater(
+          api.get('/auth/me'),
+          throwsA(
+            isA<ApiException>().having((e) => e.isUnreachable, 'unreachable', true),
+          ),
+        );
+        expect(signedOut, isFalse);
+        expect((await store.read())?.refreshToken, 'refresh-1');
+      });
+    }
+
+    test('403 (an inactive account) still ends the session', () async {
+      var signedOut = false;
+      final client = MockClient(
+        (request) async => request.url.path == '/auth/refresh'
+            ? error(403, 'identity.account_suspended')
+            : error(401, 'identity.authentication_required'),
+      );
+      final store = await signedIn();
+      final api = ApiClient(
+        baseUri: base,
+        httpClient: client,
+        tokenStore: store,
+        onSignedOut: () => signedOut = true,
+      );
+      await expectLater(api.get('/auth/me'), throwsA(isA<ApiException>()));
+      expect(signedOut, isTrue);
+      expect(await store.read(), isNull);
+    });
+  });
+
+  // Two browser tabs share one token store (the origin's storage) but run two
+  // clients. Their realtime sockets renew at the same instant, 60 s before the
+  // same expiry. The server rotates refresh tokens and ends the session when a
+  // spent one comes back — the `refresh_reuse_detected / concurrent` sign-outs
+  // seen on the Trial.
+  group('two tabs renewing together', () {
+    Future<
+      ({
+        _RotatingServer server,
+        InMemoryTokenStore store,
+        List<String?> results,
+        List<bool> signedOut,
+      })
+    >
+    renewBoth(RefreshLock Function() lockFor) async {
+      final server = _RotatingServer();
+      final store = await signedIn();
+      final signedOut = [false, false];
+      final tabs = [
+        for (var i = 0; i < 2; i++)
+          ApiClient(
+            baseUri: base,
+            httpClient: MockClient(server.handle),
+            tokenStore: store,
+            onSignedOut: () => signedOut[i] = true,
+            refreshLock: lockFor(),
+          ),
+      ];
+      final renewals = [for (final tab in tabs) tab.accessToken(renew: true)];
+      await Future<void>.delayed(Duration.zero);
+      server.release();
+      final results = await Future.wait(renewals);
+      return (
+        server: server,
+        store: store,
+        results: results,
+        signedOut: signedOut,
+      );
+    }
+
+    test('without a shared lock the server ends the session (the reported '
+        'sign-out)', () async {
+      final r = await renewBoth(() => const InProcessRefreshLock());
+      expect(r.server.reuseDetected, isTrue);
+      expect(r.signedOut, contains(true));
+    });
+
+    test('with the shared lock one refresh is sent and both tabs stay signed '
+        'in', () async {
+      final shared = _SharedLock();
+      final r = await renewBoth(() => shared);
+      expect(r.server.refreshes, 1);
+      expect(r.server.reuseDetected, isFalse);
+      expect(r.signedOut, [false, false]);
+      expect(r.results, everyElement('access-2'));
+      expect((await r.store.read())?.refreshToken, 'refresh-2');
+    });
+  });
+}
+
+/// The server's refresh rule: the current token rotates; the previous one,
+/// presented again, ends the session (reuse detection); responses are held
+/// until [release] so two requests can be in flight together.
+class _RotatingServer {
+  var _current = 'refresh-1';
+  String? _previous;
+  var _generation = 1;
+  var ended = false;
+  var reuseDetected = false;
+  var refreshes = 0;
+  final _gate = Completer<void>();
+
+  void release() => _gate.complete();
+
+  Future<http.Response> handle(http.Request request) async {
+    if (request.url.path != '/auth/refresh') {
+      return error(401, 'identity.authentication_required');
+    }
+    final presented =
+        (jsonDecode(request.body) as Map)['refreshToken'] as String;
+    await _gate.future;
+    if (!ended && presented == _current) {
+      refreshes++;
+      _generation++;
+      _previous = _current;
+      _current = 'refresh-$_generation';
+      return json(200, {
+        'accessToken': 'access-$_generation',
+        'refreshToken': _current,
+      });
+    }
+    if (presented == _previous) {
+      ended = true;
+      reuseDetected = true;
+    }
+    return error(401, 'identity.refresh_token_invalid');
+  }
+}
+
+/// One lock shared by both "tabs", like the browser's Web Locks API.
+class _SharedLock implements RefreshLock {
+  Future<void> _tail = Future<void>.value();
+
+  @override
+  Future<T> run<T>(Future<T> Function() body) {
+    final previous = _tail;
+    final done = Completer<void>();
+    _tail = done.future;
+    return previous.then((_) => body()).whenComplete(done.complete);
+  }
 }

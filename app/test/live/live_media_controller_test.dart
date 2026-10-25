@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quran_institution_app/data/media/live_media_seams.dart';
+import 'package:quran_institution_app/data/models/auth.dart';
 import 'package:quran_institution_app/data/models/data_origin.dart';
 import 'package:quran_institution_app/data/models/live.dart';
 import 'package:quran_institution_app/data/models/live_media.dart';
@@ -450,52 +451,156 @@ void main() {
     });
   });
 
-  group('disposal', () {
-    test(
-      'cancels the subscription — no reconnect, no callback after dispose',
-      () async {
-        final c = boot();
-        final keepAlive = c.listen(liveMediaProvider('s-1'), (_, _) {});
-        final controller = c.read(liveMediaProvider('s-1').notifier);
-        await controller.connect();
-        client.emit(const LiveMediaConnected());
+  // Navigating away is not leaving: a LIVE connection keeps its controller
+  // alive with no screen watching, and the app-wide live bar is told which room
+  // this device is in. Only a non-live state (an explicit leave, a terminal
+  // drop, a failure) releases it, and only then does disposal leave the room.
+  group('lifetime (navigating away vs leaving)', () {
+    Future<(ProviderContainer, ProviderSubscription<LiveMediaState>)>
+    connectedAndWatched() async {
+      final c = boot();
+      final screen = c.listen(liveMediaProvider('s-1'), (_, _) {});
+      await c
+          .read(liveMediaProvider('s-1').notifier)
+          .connect(communityId: 'c-1');
+      client.emit(const LiveMediaConnected());
+      return (c, screen);
+    }
 
-        keepAlive.close(); // the autoDispose controller disposes now
-        await settle();
+    test('navigating away keeps a live connection — no leave', () async {
+      final (c, screen) = await connectedAndWatched();
+      screen.close(); // the live screen is gone
+      await settle();
 
-        // A room-reset arriving after disposal must reach no handler: no
-        // liveness read, no reconnect, and no thrown error.
-        repo.sessionAnswer = (id) => _session(id, live: true);
-        client.emit(
-          const LiveMediaDisconnected(LiveMediaDisconnectReason.roomDeleted),
-        );
-        await settle();
-        expect(repo.getSessionCalls, 0);
-        expect(
-          repo.joinCalls,
-          1,
-        ); // the one connect before disposal, nothing more
-      },
-    );
+      expect(client.disconnects, 0);
+      expect(c.exists(liveMediaProvider('s-1')), isTrue);
+      expect(stateOf(c), const LiveMediaConnected());
+      expect(
+        c.read(liveActiveSessionProvider),
+        const LiveActiveSession(communityId: 'c-1', sessionId: 's-1'),
+      );
+    });
 
-    test(
-      'disposal disconnects the client — the implicit leave releases media',
-      () async {
-        final c = boot();
-        final keepAlive = c.listen(liveMediaProvider('s-1'), (_, _) {});
-        final controller = c.read(liveMediaProvider('s-1').notifier);
-        await controller.connect();
-        client.emit(const LiveMediaConnected());
-        expect(client.disconnects, 0);
+    test('coming back re-uses the live room — no duplicate /join', () async {
+      final (c, screen) = await connectedAndWatched();
+      screen.close();
+      await settle();
 
-        // Navigating away / changing session disposes the autoDispose controller.
-        keepAlive.close();
-        await settle();
+      // The screen opens again (the banner's auto-join connects once more).
+      c.listen(liveMediaProvider('s-1'), (_, _) {});
+      await c
+          .read(liveMediaProvider('s-1').notifier)
+          .connect(communityId: 'c-1');
+      expect(repo.joinCalls, 1);
+      expect(stateOf(c), const LiveMediaConnected());
+    });
 
-        // Disposal LEFT the room — no stranded live microphone or connection,
-        // and no divergence for a later controller that would read the client.
-        expect(client.disconnects, 1);
-      },
-    );
+    test('a temporary reconnect keeps it alive and in the room', () async {
+      final (c, screen) = await connectedAndWatched();
+      screen.close();
+      client.emit(const LiveMediaReconnecting());
+      await settle();
+      expect(c.exists(liveMediaProvider('s-1')), isTrue);
+      expect(c.read(liveActiveSessionProvider), isNotNull);
+
+      client.emit(const LiveMediaConnected());
+      await settle();
+      expect(stateOf(c), const LiveMediaConnected());
+      expect(client.disconnects, 0);
+    });
+
+    test('an explicit leave disconnects, clears the room and releases the '
+        'controller', () async {
+      final (c, screen) = await connectedAndWatched();
+      screen.close();
+      await settle();
+
+      await c.read(liveMediaProvider('s-1').notifier).disconnect();
+      await settle();
+
+      expect(client.disconnects, greaterThanOrEqualTo(1));
+      expect(c.read(liveActiveSessionProvider), isNull);
+      expect(c.exists(liveMediaProvider('s-1')), isFalse);
+    });
+
+    test('a terminal drop is reported honestly and releases the controller', () async {
+      final (c, screen) = await connectedAndWatched();
+      screen.close();
+      client.emit(
+        const LiveMediaDisconnected(LiveMediaDisconnectReason.duplicateIdentity),
+      );
+      await settle();
+
+      expect(c.read(liveActiveSessionProvider), isNull);
+      expect(c.exists(liveMediaProvider('s-1')), isFalse);
+      expect(repo.joinCalls, 1); // no auto-rejoin for an eviction
+    });
+
+    test('a room reset while away still re-joins a session that is live', () async {
+      final (c, screen) = await connectedAndWatched();
+      screen.close();
+      await settle();
+
+      repo.sessionAnswer = (id) => _session(id, live: true);
+      client.emit(
+        const LiveMediaDisconnected(LiveMediaDisconnectReason.roomDeleted),
+      );
+      await settle();
+      expect(repo.getSessionCalls, 1);
+      expect(repo.joinCalls, 2); // the fresh join to the new room
+    });
+
+    test('after disposal no late event reaches a handler', () async {
+      final (c, screen) = await connectedAndWatched();
+      await c.read(liveMediaProvider('s-1').notifier).disconnect();
+      screen.close();
+      await settle();
+      expect(c.exists(liveMediaProvider('s-1')), isFalse);
+
+      // A room-reset arriving after disposal: no liveness read, no reconnect,
+      // and no thrown error.
+      repo.sessionAnswer = (id) => _session(id, live: true);
+      client.emit(
+        const LiveMediaDisconnected(LiveMediaDisconnectReason.roomDeleted),
+      );
+      await settle();
+      expect(repo.getSessionCalls, 0);
+      expect(repo.joinCalls, 1);
+    });
+
+    test('signing out leaves the room — a connection never outlives the '
+        'account', () async {
+      CurrentUser? user = const CurrentUser(
+        id: 'u-1',
+        displayName: 'مستخدم',
+        status: AccountStatus.active,
+        roles: [],
+        permissions: {},
+      );
+      final c = ProviderContainer(
+        overrides: [
+          liveRepositoryProvider.overrideWithValue(repo),
+          liveMediaClientProvider.overrideWithValue(client),
+          sessionUserProvider.overrideWith((ref) async => user),
+        ],
+      );
+      addTearDown(client.dispose);
+      addTearDown(c.dispose);
+      await c.read(sessionUserProvider.future); // signed in, as in the app
+      c.listen(liveMediaProvider('s-1'), (_, _) {});
+      await c
+          .read(liveMediaProvider('s-1').notifier)
+          .connect(communityId: 'c-1');
+      client.emit(const LiveMediaConnected());
+
+      user = null; // the session ends (a refused refresh / sign-out)
+      c.invalidate(sessionUserProvider);
+      await c.read(sessionUserProvider.future);
+      await settle();
+
+      expect(client.disconnects, greaterThanOrEqualTo(1));
+      expect(stateOf(c), const LiveMediaIdle());
+      expect(c.read(liveActiveSessionProvider), isNull);
+    });
   });
 }

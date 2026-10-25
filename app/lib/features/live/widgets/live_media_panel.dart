@@ -73,7 +73,11 @@ class _LiveMediaPanelState extends ConsumerState<LiveMediaPanel> {
     final state = ref.read(liveMediaProvider(_sessionId));
     if (state is LiveMediaIdle && widget.session.me.canJoin) {
       _autoJoinTried = true;
-      unawaited(_media.connect().catchError((_) {}));
+      unawaited(
+        _media
+            .connect(communityId: widget.session.communityId)
+            .catchError((_) {}),
+      );
     }
   }
 
@@ -92,7 +96,7 @@ class _LiveMediaPanelState extends ConsumerState<LiveMediaPanel> {
   Future<void> _connect() async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await _media.connect();
+      await _media.connect(communityId: widget.session.communityId);
     } on LiveException catch (error) {
       if (mounted) messenger.toast(LiveCopy.commandError(error.code));
     } catch (_) {

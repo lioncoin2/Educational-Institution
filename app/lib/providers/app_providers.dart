@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import '../app/backend_config.dart';
 import '../app/invite_link.dart';
 import '../data/api/api_client.dart';
+import '../data/api/refresh_lock.dart';
 import '../data/api/secure_token_store.dart';
 import '../data/api/token_store.dart';
 import '../data/media/live_media_platform.dart';
@@ -199,6 +200,8 @@ final Provider<ApiClient> apiClientProvider = Provider<ApiClient>(
     // and a debug build refuses a provider invalidating one that depends on
     // it (a CircularDependencyError in place of the sign-out).
     onSignedOut: () => ref.container.invalidate(sessionUserProvider),
+    // Browser tabs share the stored tokens: one refresh at a time across them.
+    refreshLock: platformRefreshLock(),
   ),
 );
 

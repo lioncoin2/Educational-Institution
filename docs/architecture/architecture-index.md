@@ -236,7 +236,7 @@ responsibility and what each module must not know live in
 
 - **Path:** `app/lib/features/live/`
 - **Controllers:** `live_hands_controller.dart`, `live_media_controller.dart`, `live_moderation_controller.dart`, `live_session_controller.dart`
-- **Static imports → areas:** `core`, `data`, `providers`
+- **Static imports → areas:** `app`, `core`, `data`, `providers`
 - **Static imports → features:** `communities`
 
 ### messaging

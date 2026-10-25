@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/theme/app_theme.dart';
+import '../features/live/widgets/live_active_bar.dart';
 import '../providers/app_providers.dart';
 import 'router.dart';
 
@@ -48,7 +49,12 @@ class QuranInstitutionApp extends ConsumerWidget {
               (media.textScaler.scale(1) * textScale).clamp(0.85, 1.35),
             ),
           ),
-          child: child ?? const SizedBox.shrink(),
+          // A live room the viewer navigated away from stays visible and
+          // leavable on every other screen.
+          child: LiveActiveBarHost(
+            router: router,
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
     );

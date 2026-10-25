@@ -9,6 +9,7 @@ import '../../../data/models/live.dart';
 import '../../../data/models/live_media.dart';
 import '../live_copy.dart';
 import '../state/live_media_controller.dart';
+import 'live_screen_share_viewer.dart';
 
 /// The immersive broadcast STAGE (reference: the large presenter/media surface
 /// that fills the room). It renders the real media the platform supports — a
@@ -56,28 +57,45 @@ class LiveStage extends ConsumerWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Media layer: the real shared screen, else the audio on-air hero.
+            // Media layer: the real shared screen (double tap → full screen),
+            // else the audio on-air hero.
             if (sharing != null)
-              Container(
-                key: const Key('live-screen-share'),
-                color: Colors.black,
-                child: LiveKitScreenShareView(
-                  key: ValueKey('screen-${sharing.identity}'),
-                  track: sharing.screenShareTrack,
+              GestureDetector(
+                onDoubleTap: () =>
+                    openLiveScreenShareViewer(context, sharing!.identity),
+                child: Container(
+                  key: const Key('live-screen-share'),
+                  color: Colors.black,
+                  child: LiveKitScreenShareView(
+                    key: ValueKey('screen-${sharing.identity}'),
+                    track: sharing.screenShareTrack,
+                  ),
                 ),
               )
             else
               Center(child: _OnAirEmblem(hostId: session.hostUserId)),
 
-            // A soft scrim so the overlaid controls/labels stay legible.
-            const Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [LivePalette.scrim, Colors.transparent, LivePalette.scrim],
-                    stops: [0, 0.4, 1],
+            // A soft scrim so the overlaid controls/labels stay legible. Over a
+            // shared screen only a thin band under the top bar: the content
+            // itself is never darkened.
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: sharing != null
+                          ? const [LivePalette.scrim, Colors.transparent]
+                          : const [
+                              LivePalette.scrim,
+                              Colors.transparent,
+                              LivePalette.scrim,
+                            ],
+                      stops: sharing != null
+                          ? const [0, 0.16]
+                          : const [0, 0.4, 1],
+                    ),
                   ),
                 ),
               ),
@@ -103,13 +121,27 @@ class LiveStage extends ConsumerWidget {
               ),
 
             // Bottom "now" label — the session, the live speaker count, and the
-            // viewer's own standing. Real values only.
-            PositionedDirectional(
-              bottom: Insets.md,
-              start: Insets.md,
-              end: Insets.md,
-              child: _StageInfo(session: session),
-            ),
+            // viewer's own standing. Real values only. While a screen is shared
+            // the content keeps that space, and a button opens it full screen.
+            if (sharing == null)
+              PositionedDirectional(
+                bottom: Insets.md,
+                start: Insets.md,
+                end: Insets.md,
+                child: _StageInfo(session: session),
+              )
+            else
+              PositionedDirectional(
+                bottom: Insets.sm,
+                end: Insets.sm,
+                child: _GlassIconButton(
+                  key: const Key('live-screen-expand'),
+                  icon: Icons.fullscreen_rounded,
+                  tooltip: LiveCopy.liveScreenExpand,
+                  onTap: () =>
+                      openLiveScreenShareViewer(context, sharing!.identity),
+                ),
+              ),
           ],
         ),
       ),

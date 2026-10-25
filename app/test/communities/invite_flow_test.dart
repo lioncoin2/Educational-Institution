@@ -301,6 +301,10 @@ void main() {
         'GET /auth/me': (_) => jsonResponse(200, signedInUser),
         'POST /communities/join': (_) =>
             refusal(401, 'identity.authentication_required'),
+        // The renewal is refused too, as the backend answers a spent session
+        // (a 404 or a 5xx would be the server unavailable, not a sign-out).
+        'POST /auth/refresh': (_) =>
+            refusal(401, 'identity.refresh_token_invalid'),
       });
       container = await openApp(
         tester,

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'refresh_lock.dart';
 import 'token_store.dart';
 
 /// A refusal from the API, carrying its stable error code
@@ -43,13 +44,19 @@ class ApiClient {
     required http.Client httpClient,
     required TokenStore tokenStore,
     this.onSignedOut,
+    RefreshLock refreshLock = const InProcessRefreshLock(),
   }) : _base = baseUri,
        _http = httpClient,
-       _tokens = tokenStore;
+       _tokens = tokenStore,
+       _sharedRefresh = refreshLock;
 
   final Uri _base;
   final http.Client _http;
   final TokenStore _tokens;
+
+  /// Holds the refresh to one app instance at a time when several share the
+  /// stored tokens (browser tabs) — see [RefreshLock].
+  final RefreshLock _sharedRefresh;
 
   /// Called when the session is gone for good (refresh refused).
   final void Function()? onSignedOut;
@@ -193,7 +200,9 @@ class ApiClient {
         .whenComplete(() => _refreshing = null);
   }
 
-  Future<_Refresh> _doRefresh(Tokens used) async {
+  Future<_Refresh> _doRefresh(Tokens used) => _sharedRefresh.run(() async {
+    // Read under the lock: another instance sharing these tokens (another
+    // tab) may have renewed them while this one waited.
     final current = await _tokens.read();
     if (current == null) return _Refresh.refused;
     // Someone else already renewed while this request was in flight.
@@ -207,7 +216,12 @@ class ApiClient {
       return _Refresh.unreachable;
     }
     if (response.statusCode != 200) {
-      // Expired, revoked, or presented twice: the session is over.
+      // An outage, a gateway error or the rate limit says nothing about the
+      // session: keep the tokens and report the server as unreachable, as a
+      // network blip is.
+      if (!_isRefusal(response.statusCode)) return _Refresh.unreachable;
+      // Expired, revoked, presented twice, or the account is no longer
+      // active: the session is over.
       await _tokens.clear();
       return _Refresh.refused;
     }
@@ -219,7 +233,14 @@ class ApiClient {
       ),
     );
     return _Refresh.renewed;
-  }
+  });
+
+  /// The refresh answers that mean the session itself cannot go on: an
+  /// invalid/expired/reused token (401), an inactive account (403), or a
+  /// request the server could not accept at all (400/422). Anything else — 408,
+  /// 429, a 5xx or a proxy's error page — is the server being unavailable.
+  static bool _isRefusal(int status) =>
+      status == 400 || status == 401 || status == 403 || status == 422;
 
   static ApiException _failure(http.Response response) {
     try {

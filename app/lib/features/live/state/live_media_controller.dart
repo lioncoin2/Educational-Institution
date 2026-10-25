@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show KeepAliveLink;
 
 import '../../../data/media/live_media_seams.dart';
+import '../../../data/models/auth.dart';
 import '../../../data/models/live.dart';
 import '../../../data/models/live_media.dart';
 import '../../../data/repositories/repositories.dart';
@@ -43,9 +45,20 @@ class LiveMediaController extends Notifier<LiveMediaState> {
   /// Single-flight for the room-reset re-join liveness check.
   Future<void>? _rejoining;
 
+  /// Holds this controller (and so the connection) alive while the media is
+  /// live, even when no live screen is watching — see [_syncLiveness].
+  KeepAliveLink? _keepAlive;
+
+  /// The session's community, given by [connect] — what the app-wide live bar
+  /// needs to route the viewer back to the room.
+  String? _communityId;
+
   @override
   LiveMediaState build() {
     final client = ref.watch(liveMediaClientProvider);
+    final registry = ref.read(liveActiveSessionProvider.notifier);
+    // A rebuild drops the previous build's keep-alive links.
+    _keepAlive = null;
     // Listen before anything else, so no state the client emits is missed; the
     // subscription is the only writer besides this controller's own commands.
     final events = client.states.listen(_onMediaState);
@@ -54,17 +67,36 @@ class LiveMediaController extends Notifier<LiveMediaState> {
       _generation++;
       _connecting = false;
       unawaited(events.cancel());
-      // Disposal also LEAVES the room. Navigating away or changing session must
-      // not strand a live microphone, or a connection the UI can no longer show
-      // or control — and on return a fresh controller would read the client's
-      // lingering `connected` while the panel shows the mic off, a dangerous
-      // divergence. This resolves ADR 0030's open "should dispose disconnect?"
-      // toward release (there is no background-audio surface to keep it for) and
-      // makes "leave/disposal stops publication and releases resources" hold for
-      // the implicit leave too. Best-effort: the client swallows a teardown
-      // error, lands idle, and the port's teardown is already null-safe.
+      // (The live-room registry needs no clearing here: disposal only follows a
+      // non-live state, which [_syncLiveness] has already cleared, and a
+      // provider may not modify another while disposing.)
+      // Disposal LEAVES the room. It happens once nothing keeps the controller:
+      // the connection is no longer live (an explicit leave, a terminal drop,
+      // the session ending) and no screen watches it — or the media client
+      // itself is replaced. Best-effort: the client swallows a teardown error,
+      // lands idle, and the port's teardown is already null-safe.
       unawaited(client.disconnect());
     });
+    // Navigating away is NOT leaving: while the connection is live this
+    // controller keeps itself alive, so the viewer can move around the app and
+    // come back to the same room, still connected; the app-wide live bar shows
+    // the connection everywhere meanwhile, so it is never hidden. Leaving stays
+    // explicit ([disconnect]).
+    listenSelf((_, next) => _syncLiveness(next, registry));
+    // A connection that outlives its screen must not outlive the account:
+    // signing out (or another account signing in) leaves the room.
+    if (ref.exists(sessionUserProvider)) {
+      ref.listen<AsyncValue<CurrentUser?>>(sessionUserProvider, (
+        previous,
+        next,
+      ) {
+        final signedInAs = previous?.value?.id;
+        if (signedInAs == null || next.isLoading) return;
+        if (next.value?.id != signedInAs && _isLive(state)) {
+          unawaited(disconnect());
+        }
+      });
+    }
     // Native only: leaving the foreground turns a live mic off (see
     // liveMediaMuteInBackgroundProvider). Released with the controller.
     if (ref.watch(liveMediaMuteInBackgroundProvider)) {
@@ -84,8 +116,10 @@ class LiveMediaController extends Notifier<LiveMediaState> {
   /// begin from idle, disconnected or failed. A join refusal surfaces as the
   /// repository's [LiveException] (state kept idle); a media-connect failure
   /// shows as [LiveMediaFailed]. Never fabricates `connected` — the client's
-  /// own stream reports that.
-  Future<void> connect() async {
+  /// own stream reports that. [communityId] names the room for the app-wide
+  /// live bar; a re-join keeps the one already given.
+  Future<void> connect({String? communityId}) async {
+    if (communityId != null) _communityId = communityId;
     final client = _client;
     if (!client.isAvailable) {
       state = const LiveMediaUnavailable();
@@ -154,6 +188,35 @@ class LiveMediaController extends Notifier<LiveMediaState> {
     await _client.setScreenShareEnabled(enabled);
   }
 
+  /// Live (connecting, connected, or reconnecting across a blip): keep the
+  /// controller alive and tell the app which room this device is in. Anything
+  /// else (idle, a terminal drop, a failure): release both, so an ended
+  /// connection never lingers — the controller then disposes once no screen
+  /// watches it.
+  void _syncLiveness(
+    LiveMediaState next,
+    LiveActiveSessionNotifier registry,
+  ) {
+    if (_isLive(next)) {
+      _keepAlive ??= ref.keepAlive();
+      final communityId = _communityId;
+      if (communityId != null) {
+        registry.enter(
+          LiveActiveSession(communityId: communityId, sessionId: sessionId),
+        );
+      }
+    } else {
+      _keepAlive?.close();
+      _keepAlive = null;
+      registry.leave(sessionId);
+    }
+  }
+
+  static bool _isLive(LiveMediaState state) =>
+      state is LiveMediaConnecting ||
+      state is LiveMediaConnected ||
+      state is LiveMediaReconnecting;
+
   /// The app left the foreground on a native platform: turn a live microphone
   /// off rather than leave it "on" while the OS stops capturing it. The viewer
   /// turns it back on explicitly. Best-effort: a failure changes nothing the
@@ -193,9 +256,13 @@ class LiveMediaController extends Notifier<LiveMediaState> {
   Future<void> _rejoinIfLive() {
     final running = _rejoining;
     if (running != null) return running;
-    return _rejoining = _runRejoinIfLive().whenComplete(
-      () => _rejoining = null,
-    );
+    // The drop released the live keep-alive; hold the controller for the
+    // liveness check, so a viewer elsewhere in the app is still re-joined.
+    final hold = ref.keepAlive();
+    return _rejoining = _runRejoinIfLive().whenComplete(() {
+      _rejoining = null;
+      hold.close();
+    });
   }
 
   Future<void> _runRejoinIfLive() async {
@@ -227,6 +294,44 @@ class LiveMediaController extends Notifier<LiveMediaState> {
 
   bool _isCurrent(int gen) => ref.mounted && gen == _generation;
 }
+
+/// The live room THIS device is carrying audio for, if any — set while a media
+/// connection is live, cleared when it ends. The app-wide [LiveActiveBar]
+/// shows it on every other screen.
+class LiveActiveSession {
+  const LiveActiveSession({required this.communityId, required this.sessionId});
+
+  final String communityId;
+  final String sessionId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LiveActiveSession &&
+      other.communityId == communityId &&
+      other.sessionId == sessionId;
+
+  @override
+  int get hashCode => Object.hash(communityId, sessionId);
+}
+
+class LiveActiveSessionNotifier extends Notifier<LiveActiveSession?> {
+  @override
+  LiveActiveSession? build() => null;
+
+  void enter(LiveActiveSession session) {
+    if (state != session) state = session;
+  }
+
+  /// Clears [sessionId] only — never another session that has since started.
+  void leave(String sessionId) {
+    if (state?.sessionId == sessionId) state = null;
+  }
+}
+
+final liveActiveSessionProvider =
+    NotifierProvider<LiveActiveSessionNotifier, LiveActiveSession?>(
+      LiveActiveSessionNotifier.new,
+    );
 
 final liveMediaProvider = NotifierProvider.autoDispose
     .family<LiveMediaController, LiveMediaState, String>(

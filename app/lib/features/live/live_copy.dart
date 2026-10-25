@@ -91,6 +91,10 @@ abstract final class LiveCopy {
   static const liveAudioMuted = 'الصوت مكتوم';
   static const liveScreenSharing = 'يشارك الشاشة الآن';
 
+  /// The shared screen's full-screen viewer (opened from the stage).
+  static const liveScreenExpand = 'عرض الشاشة المشتركة بملء الشاشة';
+  static const liveScreenClose = 'إغلاق ملء الشاشة';
+
   /// That this person holds a screen-share (presenter) slot now (Q56). The
   /// capture itself is media, unavailable in this build.
   static const presenterBadge = 'مُقدّم عرض';
@@ -191,6 +195,14 @@ abstract final class LiveCopy {
   static const audioReconnecting = 'انقطع الاتصال مؤقتًا، وتجري إعادته…';
   static const audioLeave = 'مغادرة الصوت';
   static const audioRejoin = 'إعادة الانضمام';
+
+  /// The app-wide bar over every other screen while this device is still in a
+  /// live room (navigating away does not leave it).
+  static const activeBarTitle = 'أنت في بث مباشر';
+  static const activeBarReconnecting = 'يُعاد الاتصال بالبث…';
+  static const activeBarMicOn = 'الميكروفون مفتوح';
+  static const activeBarReturn = 'العودة';
+  static const activeBarLeave = 'مغادرة';
 
   /// Terminal media states — the connection is no longer carrying audio.
   static const audioFailed = 'تعذّر الاتصال بصوت الجلسة.';
