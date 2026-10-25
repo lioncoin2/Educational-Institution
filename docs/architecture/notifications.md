@@ -185,9 +185,19 @@ A 10,000-member channel is walked a page of 1,000 at a time: each page is one
 recipients query, one directory check, one account lookup, one preference
 lookup and one multi-row insert.
 
-**What it says.** `MESSAGE_RECEIVED` carries `senderDisplayName`,
-`messageType` and `conversationType` — **never the message's text** (tested:
-nothing of the body appears in the notification, its events or its push).
+**What it stores.** `MESSAGE_RECEIVED` stores `senderDisplayName`,
+`messageType`, `conversationType` and `messageId` — **never the message's
+text** (tested: nothing of the body appears in the stored row, its events or
+its push).
+
+**What it says (2026-10-25, [ADR 0046](decisions/0046-notification-content-for-authorized-recipients.md)).**
+When the inbox is read, or the realtime frame is rendered, messaging's
+`MESSAGE_NOTIFICATION_CONTEXT` is asked what *this recipient* may be shown
+now, and the view gains `conversationTitle` and `messagePreview` (the first
+140 characters) — only for a current reader within their history window; a
+member removed since, a revoked account or a deleted message adds nothing, an
+edited message previews its new text. Nothing of it is stored. The push stays
+content-free (§12). The app renders «أحمد في «حلقة الفجر»: النص» when given.
 The app renders "رسالة جديدة" / "لديك رسالة جديدة من أحمد." (or "رسالة صوتية
 جديدة", "صورة جديدة", "ملف جديد"). `CONVERSATION_CREATED` goes to everyone the
 conversation was created with except its creator ("بدأ أحمد محادثة معك." for a

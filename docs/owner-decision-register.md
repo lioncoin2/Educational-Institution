@@ -1183,6 +1183,27 @@ migrating the Trial DB, and deploying are state-changing steps **pending separat
 
 ---
 
+## 30. Approved policy revision A–G and Trial backend delivery (2026-10-25)
+
+**Owner decision (2026-10-25, explicit).** Implementation, testing, backup, migration, backend rebuild and
+trial-api restart are authorized **for the Trial only**.
+
+| | Decision | Record |
+| --- | --- | --- |
+| A | Owner, teachers, administration and supervisors start broadcasts through the community's own permission; no general role bypasses a missing community permission | [ADR 0044](architecture/decisions/0044-community-role-policy-revision.md) |
+| B | Authorized teachers, admins and supervisors add members only where they are permitted to manage | ADR 0044 |
+| C | The creator is the initial owner; change only by explicit transfer; oversight recovers only when the owner cannot act | ADR 0044 |
+| D | Authors edit and delete their own messages everywhere; moderators delete within scope, never edit | [ADR 0045](architecture/decisions/0045-author-message-edit-and-delete.md) |
+| E | Notifications show sender, conversation and content to authorized recipients (in-app; the lock screen stays private) | [ADR 0046](architecture/decisions/0046-notification-content-for-authorized-recipients.md) |
+| F | A separate live-session chat with a server-enforced moderator lock | [ADR 0047](architecture/decisions/0047-live-session-chat.md) |
+| G | New backend image, migrations 0032/0033, trial-api restart — after the gates pass | this entry; deployment record in the final report |
+
+**Not decided here (left open, reported):** a lock-screen preview setting; an edit time window or revision
+history; deleting a single live-chat message; recovering ownership from an owner who is merely absent; the
+rest of the Q1 role matrix. Staging and production are untouched.
+
+---
+
 > This register is advisory and reversible. Closing a question means: record an ADR in `decisions/`,
 > make the (usually small) change, and delete the entry from `open-questions.md` with the ADR number —
 > per that file's "How to close one."

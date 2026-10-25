@@ -86,18 +86,18 @@ responsibility and what each module must not know live in
 ### live
 
 - **Path:** `backend/src/modules/live/`
-- **Nest module:** `live.module.ts` — exports: `LIVE_AUDIENCE`, `LIVE_PRESENCE`, `LIVE_SESSIONS`
-- **Public contract (`contracts/`):** `LIVE_AUDIENCE`, `LIVE_SESSIONS`, `LiveAudience`, `LiveEvent`, `LiveEvents`, `LiveMediaReset`, `LiveParticipantRemoved`, `LiveParticipantRole`, `LiveSessionEnded`, `LiveSessionScope`, `LiveSessionStarted`, `LiveSessions`, `LiveSpeakerFact`, `MAX_AUDIENCE_PROBE`, `MODERATOR_FRAME_COALESCE_MS`, `ScreenShareStarted`, `ScreenShareStopped`, `SpeakerPermissionGranted`, `SpeakerPermissionRevoked`, `SpeakerRequestDeclined`, `SpeakerRequestExpired`, `SpeakerRequestWithdrawn`, `SpeakerRequested`
-- **Declared domain events:** `live.participant.removed`, `live.screen_share.started`, `live.screen_share.stopped`, `live.session.ended`, `live.session.media_reset`, `live.session.started`, `live.speaker.declined`, `live.speaker.expired`, `live.speaker.granted`, `live.speaker.requested`, `live.speaker.revoked`, `live.speaker.withdrawn`
+- **Nest module:** `live.module.ts` — exports: `LIVE_AUDIENCE`, `LIVE_CHAT`, `LIVE_PRESENCE`, `LIVE_SESSIONS`
+- **Public contract (`contracts/`):** `LIVE_AUDIENCE`, `LIVE_CHAT`, `LIVE_SESSIONS`, `LiveAudience`, `LiveChat`, `LiveChatLockChanged`, `LiveChatMessageView`, `LiveChatPosted`, `LiveEvent`, `LiveEvents`, `LiveMediaReset`, `LiveParticipantRemoved`, `LiveParticipantRole`, `LiveSessionEnded`, `LiveSessionScope`, `LiveSessionStarted`, `LiveSessions`, `LiveSpeakerFact`, `MAX_AUDIENCE_PROBE`, `MODERATOR_FRAME_COALESCE_MS`, `ScreenShareStarted`, `ScreenShareStopped`, `SpeakerPermissionGranted`, `SpeakerPermissionRevoked`, `SpeakerRequestDeclined`, `SpeakerRequestExpired`, `SpeakerRequestWithdrawn`, `SpeakerRequested`
+- **Declared domain events:** `live.chat.lock_changed`, `live.chat.posted`, `live.participant.removed`, `live.screen_share.started`, `live.screen_share.stopped`, `live.session.ended`, `live.session.media_reset`, `live.session.started`, `live.speaker.declined`, `live.speaker.expired`, `live.speaker.granted`, `live.speaker.requested`, `live.speaker.revoked`, `live.speaker.withdrawn`
 - **Static imports → modules:** `communities`, `identity`
 - **Docs:** [module-boundaries.md#live](module-boundaries.md#live)
 
 ### messaging
 
 - **Path:** `backend/src/modules/messaging/`
-- **Nest module:** `messaging.module.ts` — exports: `MESSAGE_DELIVERY`, `MESSAGE_RECIPIENTS`
-- **Public contract (`contracts/`):** `AttachmentView`, `CONVERSATION_TYPES`, `ConversationCreated`, `ConversationPosition`, `ConversationType`, `MAX_RECIPIENT_PAGE`, `MESSAGE_DELIVERY`, `MESSAGE_RECIPIENTS`, `MESSAGE_TYPES`, `MessageDeleted`, `MessageDelivery`, `MessageForDelivery`, `MessagePinned`, `MessageRead`, `MessageRecipients`, `MessageSearch`, `MessageSearchHit`, `MessageSearchQuery`, `MessageSent`, `MessageType`, `MessageView`, `MessagingEvent`, `MessagingEvents`, `PARTICIPANT_ROLES`, `ParticipantAdded`, `ParticipantRemoved`, `ParticipantRole`, `PersonView`, `RecipientPage`
-- **Declared domain events:** `messaging.conversation.created`, `messaging.message.deleted`, `messaging.message.pinned`, `messaging.message.read`, `messaging.message.sent`, `messaging.participant.added`, `messaging.participant.removed`
+- **Nest module:** `messaging.module.ts` — exports: `MESSAGE_DELIVERY`, `MESSAGE_NOTIFICATION_CONTEXT`, `MESSAGE_RECIPIENTS`
+- **Public contract (`contracts/`):** `AttachmentView`, `CONVERSATION_TYPES`, `ConversationCreated`, `ConversationPosition`, `ConversationType`, `MAX_NOTIFICATION_CONTEXT_REFS`, `MAX_RECIPIENT_PAGE`, `MESSAGE_DELIVERY`, `MESSAGE_NOTIFICATION_CONTEXT`, `MESSAGE_RECIPIENTS`, `MESSAGE_TYPES`, `MessageDeleted`, `MessageDelivery`, `MessageEdited`, `MessageForDelivery`, `MessageNotificationContext`, `MessagePinned`, `MessageRead`, `MessageRecipients`, `MessageSearch`, `MessageSearchHit`, `MessageSearchQuery`, `MessageSent`, `MessageType`, `MessageView`, `MessagingEvent`, `MessagingEvents`, `NotificationContext`, `NotificationContextRef`, `PARTICIPANT_ROLES`, `ParticipantAdded`, `ParticipantRemoved`, `ParticipantRole`, `PersonView`, `RecipientPage`
+- **Declared domain events:** `messaging.conversation.created`, `messaging.message.deleted`, `messaging.message.edited`, `messaging.message.pinned`, `messaging.message.read`, `messaging.message.sent`, `messaging.participant.added`, `messaging.participant.removed`
 - **Static imports → modules:** `communities`, `files`, `identity`
 - **Docs:** [module-boundaries.md#messaging](module-boundaries.md#messaging)
 
@@ -235,7 +235,7 @@ responsibility and what each module must not know live in
 ### live
 
 - **Path:** `app/lib/features/live/`
-- **Controllers:** `live_hands_controller.dart`, `live_media_controller.dart`, `live_moderation_controller.dart`, `live_session_controller.dart`
+- **Controllers:** `live_chat_controller.dart`, `live_hands_controller.dart`, `live_media_controller.dart`, `live_moderation_controller.dart`, `live_session_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
 - **Static imports → features:** `communities`
 
@@ -311,7 +311,7 @@ responsibility and what each module must not know live in
 
 ## Flutter data seam (`app/lib/data/`, `app/lib/app/`)
 
-- **Repository contracts (`data/repositories/repositories.dart`):** `AcademicRepository`, `AdminRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `FilesRepository`, `InstitutionRepository`, `LearningRepository`, `LiveRepository`, `MessagingRepository`, `NotificationsRepository`, `PeopleRepository`, `ProgressRepository`, `ReportingRepository`, `SchedulingRepository`
+- **Repository contracts (`data/repositories/repositories.dart`):** `AcademicRepository`, `AdminRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `FilesRepository`, `InstitutionRepository`, `LearningRepository`, `LiveChatRepository`, `LiveRepository`, `MessagingRepository`, `NotificationsRepository`, `PeopleRepository`, `ProgressRepository`, `ReportingRepository`, `SchedulingRepository`
 - **Routes (`app/routes.dart`):** `academicStructure` → `/admin/academic`, `adminAccounts` → `/admin/accounts`, `announcements` → `/announcements`, `avatar` → `/profile/avatar`, `certificates` → `/certificates`, `changePassword` → `/profile/password`, `commandCenter` → `/command-center`, `communities` → `/communities`, `home` → `/home`, `invite` → `/invite`, `messages` → `/messages`, `notificationSettings` → `/notifications/settings`, `notifications` → `/notifications`, `path` → `/path`, `profile` → `/profile`, `programs` → `/programs`, `progress` → `/progress`, `publish` → `/publish`, `schedulingList` → `/admin/scheduling`, `sessions` → `/profile/sessions`, `signIn` → `/sign-in`, `splash` → `/splash`, `studentRecord` → `/my-halaqat/record`, `studentWorkspace` → `/my-halaqat`, `teacherHistory` → `/teaching/history`, `teacherWorkspace` → `/teaching`
 - **Route builders:** `academicHalaqaPeople`, `academicProgram`, `academicStudentHistory`, `academicTeacherHistory`, `adminAccount`, `certificate`, `community`, `communityAttendance`, `communityAttendanceSnapshot`, `communityAttendanceSnapshots`, `communityInvitations`, `communityLive`, `communityMembers`, `conversation`, `episode`, `lesson`, `levels`, `program`, `schedulingLesson`, `teacherHalaqaRoster`
 - **Entry points:** `app/lib/main.dart`, `app/lib/app/app.dart`, `app/lib/app/router.dart`, `app/lib/providers/app_providers.dart`
@@ -361,3 +361,7 @@ responsibility and what each module must not know live in
 - [0041 — Mass publishing: one post to several communities, authorized per community](decisions/0041-mass-publish-to-communities.md)
 - [0042 — Operations: scheduling of individual dated lessons](decisions/0042-operations-scheduled-lessons.md)
 - [0043 — Pinned messages: one server-authoritative pin per conversation, reconciled by a monotonic version](decisions/0043-pinned-messages.md)
+- [0044 — Community role policy revision: who starts broadcasts, who adds members, and how ownership is recovered](decisions/0044-community-role-policy-revision.md)
+- [0045 — Authors edit and delete their own messages; moderators delete, never edit](decisions/0045-author-message-edit-and-delete.md)
+- [0046 — Notifications say who, where and what to an authorized recipient — resolved when shown, never stored, never on the lock screen](decisions/0046-notification-content-for-authorized-recipients.md)
+- [0047 — A live session's own chat: Live's table, a server-side lock, delivered to participants only](decisions/0047-live-session-chat.md)

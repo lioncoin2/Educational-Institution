@@ -69,6 +69,11 @@ moderates without community standing.
 > default of [Q54](#q54--who-starts-ends-and-moderates-a-live-session), not
 > an answer to Q1: the role matrix and the rest of this question stay open.
 
+> **Answered in part (2026-10-25, owner — [ADR 0044](decisions/0044-community-role-policy-revision.md)):**
+> SUPERVISOR now holds `live.speak`, `live.moderate` and `communities.moderate` (migration 0032) — the
+> ceilings only; what a supervisor may do in a community is still that community's grant. The rest of
+> the role matrix stays open.
+
 ---
 
 ## Q2 — Who is the first owner, and how are accounts created after that?
@@ -692,6 +697,11 @@ the chosen SDK, plus the platform project files. A preview, if allowed, is a
 different body key and arguments in `pushMessageFor` (`domain/push.ts`). The
 provider reads the `channels.push` decision the dispatcher already records, so
 quiet hours and mute (now decided there) apply to it unchanged.
+
+> **In-app content answered (2026-10-25, owner — [ADR 0046](decisions/0046-notification-content-for-authorized-recipients.md)):**
+> inside the app a notification now shows its sender, conversation and a preview to a recipient who
+> may read it now, resolved when shown and never stored. **Still open:** the push provider and any
+> lock-screen preview — the push stays content-free.
 
 ---
 
@@ -1606,6 +1616,11 @@ conversations, not for communities.
   grants;
 - with no eligible member, there is no recovery path.
 
+> **Revised (2026-10-25, owner — [ADR 0044](decisions/0044-community-role-policy-revision.md) C):** the
+> creator is the initial owner; a `communities.manage` holder may transfer **only to recover** a
+> community whose owner can no longer act (account not ACTIVE, or the ownership ceiling lost) —
+> `403 communities.owner_can_still_act` otherwise. The other lines stand.
+
 **When answered.** What ownership implies, leaving and transfer are rows in
 Communities' act rules and checks in the transfer use case (P3). A recovery
 path is one use case under `communities.manage`. Several owners would
@@ -1640,6 +1655,8 @@ transfer ownership (not to oneself). It never adds members, creates links,
 reads chat, acts in live sessions or views attendance. Every read on the
 oversight basis is audited.
 
+> **Revised (2026-10-25, ADR 0044 C):** oversight's transfer is a recovery path only (see Q42).
+
 **When answered.** Rows for the oversight basis in Communities' act rules
 (P2; transfer in P3). Messaging, Live and Attendance ask
 `COMMUNITY_AUTHORIZATION` and do not change. Who holds the permission is the
@@ -1648,6 +1665,10 @@ role matrix (Q1).
 ---
 
 ## Q44 — Who may hold delegated capabilities?
+
+> **Answered in part (2026-10-25, owner — [ADR 0044](decisions/0044-community-role-policy-revision.md) B):**
+> a SUPERVISOR may now be a delegate (holds the `communities.moderate` ceiling). Students and assistant
+> teachers still may not; the other questions stay open.
 
 **Question.**
 
@@ -2098,6 +2119,12 @@ This would revise Q1's provisional answer through ADR 0017 (P6).
 **When answered.** Rows in Communities' act rules and in Live's `LiveAccess`
 (P6). An institution-wide override would be an oversight row for the live
 acts ([Q43](#q43--institutional-oversight-of-communities)).
+
+> **Revised (2026-10-25, owner — [ADR 0044](decisions/0044-community-role-policy-revision.md) A):** the
+> owner, teachers, administration and supervisors may start a broadcast through the community's own
+> permission (owner standing or `community.live.start` there); SUPERVISOR now passes the `live.moderate`
+> ceiling. Still no institution-wide override. A session's own chat is
+> [ADR 0047](decisions/0047-live-session-chat.md).
 
 ---
 

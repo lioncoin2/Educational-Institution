@@ -460,10 +460,16 @@ volumes; a dedicated engine later sits behind the same interface, fed from
   (`asSeen` blanks the body and attachments; `deleted_by` records the moderator,
   off the normal wire). The original is kept and reviewable for exactly 7 days
   through a separate audited operation, then retention wipes it while the
-  tombstone row remains. Deletion in DIRECT and GROUP conversations is still not
-  exposed. See [community-chat.md §21](community-chat.md#21-message-moderation-q51q23).
-- **Editing** — `edited_at` exists; the sequence never changes on edit. Not
-  built.
+  tombstone row remains. See [community-chat.md §21](community-chat.md#21-message-moderation-q51q23).
+  An **author** deletes their own message in any conversation they are in
+  (2026-10-25, [ADR 0045](decisions/0045-author-message-edit-and-delete.md)) —
+  the same tombstone, audited as the author's own act.
+- **Editing** — BUILT for authors only
+  ([ADR 0045](decisions/0045-author-message-edit-and-delete.md)):
+  `PATCH …/messages/:id` changes the text (a TEXT body, a media caption), never
+  attachments or the sequence; `edited_at` is stamped; a deleted message is not
+  editable (409); moderators never edit. Realtime `message.edited` carries the
+  message as it now reads.
 - **Moderation** — two kinds: participant REMOVAL by identity's `messaging.manage`
   (existing, audited), and community-chat message DELETION/review by the
   Community capability `community.messages.moderate` (ADR 0029). Reading a

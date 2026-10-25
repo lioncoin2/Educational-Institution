@@ -1700,7 +1700,8 @@ Application views, never domain objects (the intent of
 | Hand, speaker and presenter changes | only the media effect | `live.session.changed` `{communityId, sessionId, stateVersion}` | the view; the hands page |
 | The join credential | — | **never** | `POST …/join` response only |
 | Attendance observation | the provider read | — | attendance's own routes |
-| Data channel | **unused**; `canPublishData` false for everyone | — | — |
+| The session's own chat ([ADR 0047](decisions/0047-live-session-chat.md)) | — | `live.chat.message` (the message, with the sender's name) and `live.chat.changed` `{locked, lockVersion}` to `LIVE_AUDIENCE.participantsAmong` online | `GET/POST /live/sessions/:id/chat`, `PUT/DELETE …/chat/lock` |
+| Data channel | **unused**; `canPublishData` false for everyone — the session chat goes over the app's own WebSocket, never LiveKit | — | — |
 
 **`live.session.changed` coalescing** (in realtime's `LiveRealtimeRelay`,
 P7): the affected user (the payload's `userId`) gets the frame at once; online

@@ -9,7 +9,7 @@ NEVER identity's `messaging.manage` — asked of Communities per request; it is 
 projected participant row, and it never grants read. Scope is community CHANNEL conversations only. No new
 identity permission, role, generic moderation framework, or cross-module deletion contract is introduced.**
 
-**Status:** Accepted.
+**Status:** Accepted. Extended by [0045](0045-author-message-edit-and-delete.md) (2026-10-25): authors also delete — and edit — their own messages in every conversation; moderation here is unchanged.
 **Decided:** 2026-10-07, by the owner (Q51/Q23; the policy and architecture below were approved to proceed).
 **Date:** 2026-10-07
 **Reversible** by a new ADR.

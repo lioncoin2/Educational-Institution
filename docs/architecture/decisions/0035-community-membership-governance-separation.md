@@ -1,6 +1,6 @@
 # 0035 — Community membership governance: enrollment, membership and capabilities stay separate (owner decision)
 
-**Status:** Accepted — 2026-10-13 (owner decision, Sprint 32). **Supersedes the *open/deferred*
+**Status:** Accepted — 2026-10-13 (owner decision, Sprint 32); superseded in part by [0044](0044-community-role-policy-revision.md) (decision B, 2026-10-25). **Supersedes the *open/deferred*
 status of [ADR 0034](0034-q50-enrollment-sourced-membership-and-derived-capabilities.md):** the Q50
 question ADR 0034 left open is now answered. This ADR records the policy; it changes no production
 code, schema, migration, contract, role, or capability — the existing implementation already enforces it.
@@ -25,6 +25,9 @@ existing design already assumes**: keep the concepts separate.
   authorized management/invitation flows. No enrollment-based membership flow is introduced. Who may
   discover, invite, add, remove, or manage is **not broadened** — the existing owner/admin/supervisor
   and per-community `community.members.invite` / `communities.manage` boundaries stand.
+  > **Superseded in part by [ADR 0044](0044-community-role-policy-revision.md) B (2026-10-25):** the
+  > owner broadened who *may be granted* member addition — supervisors and teachers now pass the
+  > `communities.moderate` ceiling — while the per-community grant/standing requirement stands.
 - **C — Membership source stays explicit.** `MEMBERSHIP_SOURCES` remains exactly `['ADDED','INVITATION']`.
   No academic-enrollment / `SYSTEM` / derived source is added (automatic academic membership is not
   approved), and the two existing sources are never merged.
