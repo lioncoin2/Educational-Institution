@@ -26,6 +26,7 @@ import 'state/community_chat_opener.dart';
 import 'state/community_controller.dart';
 import 'state/community_write.dart';
 import 'widgets/community_change.dart';
+import 'widgets/add_member_sheet.dart';
 import 'widgets/community_states.dart';
 import 'widgets/edit_community_profile_sheet.dart';
 import 'widgets/halaqa_picker.dart';
@@ -96,6 +97,11 @@ class _Details extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final me = community.me;
+    // A delegate who may add members (community.members.invite) but not view
+    // the list: the members screen — and the add icon on it — is reached only
+    // through «الأعضاء», so this viewer needs its own way in.
+    final addOnly =
+        me.has(CommunityCapability.membersInvite) && !community.canViewMembers;
     final capabilities = [
       for (final c in CommunityCapability.values)
         if (me.has(c)) c,
@@ -241,6 +247,7 @@ class _Details extends ConsumerWidget {
         ],
         if (community.canOpenChat ||
             community.canViewMembers ||
+            addOnly ||
             me.takesPart(CommunityParticipation.liveJoin) ||
             me.has(CommunityCapability.liveStart) ||
             me.has(CommunityCapability.attendanceRecord) ||
@@ -250,7 +257,8 @@ class _Details extends ConsumerWidget {
           const SectionHeader(title: CommunityCopy.actionsTitle),
           const SizedBox(height: Insets.md),
           if (community.canOpenChat) _OpenChatButton(communityId: community.id),
-          if (community.canOpenChat && community.canViewMembers)
+          if (community.canOpenChat &&
+              (community.canViewMembers || addOnly))
             const SizedBox(height: Insets.md),
           if (community.canViewMembers)
             OutlinedButton.icon(
@@ -259,11 +267,23 @@ class _Details extends ConsumerWidget {
               icon: const Icon(Icons.people_alt_outlined),
               label: const Text(CommunityCopy.viewMembers),
             ),
+          // Adding members straight from here, for the delegate who may add
+          // but not view the list (see [addOnly]). The sheet's search and the
+          // add itself are re-authorised by the server on
+          // community.members.invite.
+          if (addOnly)
+            OutlinedButton.icon(
+              key: const Key('community-add-members'),
+              onPressed: () =>
+                  showAddMember(context, communityId: community.id),
+              icon: const Icon(Icons.person_add_alt_1_outlined),
+              label: const Text(CommunityCopy.addMembersButton),
+            ),
           // The live-session screen, when the server says the viewer may take
           // part in live here. Navigation only — the screen owns loading the
           // session; this never touches live transport or media.
           if (me.takesPart(CommunityParticipation.liveJoin)) ...[
-            if (community.canOpenChat || community.canViewMembers)
+            if (community.canOpenChat || community.canViewMembers || addOnly)
               const SizedBox(height: Insets.md),
             OutlinedButton.icon(
               onPressed: () => context.push(Routes.communityLive(community.id)),
@@ -279,6 +299,7 @@ class _Details extends ConsumerWidget {
           if (me.has(CommunityCapability.liveStart)) ...[
             if (community.canOpenChat ||
                 community.canViewMembers ||
+                addOnly ||
                 me.takesPart(CommunityParticipation.liveJoin))
               const SizedBox(height: Insets.md),
             _StartLiveButton(communityId: community.id),
@@ -291,6 +312,7 @@ class _Details extends ConsumerWidget {
               me.has(CommunityCapability.liveModerate)) ...[
             if (community.canOpenChat ||
                 community.canViewMembers ||
+                addOnly ||
                 me.takesPart(CommunityParticipation.liveJoin) ||
                 me.has(CommunityCapability.liveStart))
               const SizedBox(height: Insets.md),
@@ -307,6 +329,7 @@ class _Details extends ConsumerWidget {
           if (me.has(CommunityCapability.attendanceView)) ...[
             if (community.canOpenChat ||
                 community.canViewMembers ||
+                addOnly ||
                 me.takesPart(CommunityParticipation.liveJoin) ||
                 me.has(CommunityCapability.liveStart) ||
                 me.has(CommunityCapability.attendanceRecord) ||

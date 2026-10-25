@@ -95,4 +95,56 @@ void main() {
     );
     expect(find.byKey(const Key('add-member-search')), findsOneWidget); // still open
   });
+
+  // A delegate the owner granted `community.members.invite` but NOT
+  // `community.members.view`: the members screen (where the add icon lives) is
+  // reached only through «الأعضاء», which needs members.view — so that grant
+  // used to have no way in. The community screen now offers the add itself.
+  group('from the community screen (backend)', () {
+    Future<void> openCommunity(
+      WidgetTester tester,
+      List<String> capabilities,
+    ) async {
+      final server = CommunityServer({
+        'GET /auth/me': (_) => jsonResponse(200, signedInUser),
+        'GET /communities/c-1': (_) =>
+            jsonResponse(200, communityJson(id: 'c-1', capabilities: capabilities)),
+        'GET /communities/c-1/member-candidates': (_) =>
+            jsonResponse(200, {'items': const [], 'nextCursor': null}),
+      });
+      await openApp(
+        tester,
+        '/communities/c-1',
+        size: const Size(390, 1600),
+        overrides: backendOverrides(server, signedIn: true),
+      );
+    }
+
+    testWidgets('a members.invite-only delegate gets «إضافة أعضاء», which opens '
+        'the add sheet', (tester) async {
+      await openCommunity(tester, const ['community.members.invite']);
+      expect(find.text(CommunityCopy.viewMembers), findsNothing);
+      final add = find.byKey(const Key('community-add-members'));
+      expect(add, findsOneWidget);
+      await tester.ensureVisible(add);
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+      expect(find.text(CommunityCopy.addMemberPrompt), findsOneWidget);
+    });
+
+    testWidgets('a viewer who also sees the list keeps the members screen path '
+        '(no second entry)', (tester) async {
+      await openCommunity(tester, const [
+        'community.members.invite',
+        'community.members.view',
+      ]);
+      expect(find.text(CommunityCopy.viewMembers), findsOneWidget);
+      expect(find.byKey(const Key('community-add-members')), findsNothing);
+    });
+
+    testWidgets('a viewer who may not add is offered no add', (tester) async {
+      await openCommunity(tester, const []);
+      expect(find.byKey(const Key('community-add-members')), findsNothing);
+    });
+  });
 }

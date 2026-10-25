@@ -69,6 +69,10 @@ abstract final class CommunityCopy {
   // add is the server's decision on every id.
   static const addMemberTooltip = 'إضافة عضو';
   static const addMemberTitle = 'إضافة عضو';
+
+  /// The community screen's own entry to adding, for a delegate who may add
+  /// but not view the member list (and so never reaches the add icon there).
+  static const addMembersButton = 'إضافة أعضاء';
   static const addMemberSearchHint = 'ابحث عن شخص بالاسم';
   static const addMemberPrompt = 'اكتب اسمًا للبحث عن شخص لإضافته.';
   static const addMemberNoResults = 'لا نتائج مطابقة.';
@@ -333,8 +337,14 @@ abstract final class CommunityCopy {
   static String removeQuestion(CommunityMember member) =>
       'إزالة ${memberName(member)} من المجتمع؟';
 
+  /// The hand-over confirmation states what the server will do (the transfer
+  /// demotes the current owner to a plain member, and an invitation link only
+  /// admits while its creator still owns or holds a grant) — worded for the
+  /// owner and for an institution overseer alike.
   static String transferQuestion(CommunityMember member) =>
-      'نقل ملكية المجتمع إلى ${memberName(member)}؟';
+      'نقل ملكية المجتمع إلى ${memberName(member)}؟ '
+      'يصبح المالك الحالي عضوًا بلا صلاحيات إدارة، '
+      'وتتوقف روابط الدعوة التي أنشأها.';
 
   // ── A member's capabilities ──
 

@@ -606,6 +606,30 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    testWidgets('the confirmation says what the hand-over does before anything '
+        'moves', (tester) async {
+      container = await openApp(
+        tester,
+        '/communities/$communityId',
+        size: const Size(390, 1400),
+        overrides: backendOverrides(server, signedIn: true),
+      );
+      await tester.tap(find.text(CommunityCopy.viewMembers));
+      await tester.pumpAndSettle();
+      await tester.tap(options(otherName));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(CommunityCopy.makeOwner));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(CommunityCopy.transferQuestion(named(otherName))),
+        findsOneWidget,
+      );
+      expect(find.textContaining('عضوًا بلا صلاحيات إدارة'), findsOneWidget);
+      expect(find.textContaining('روابط الدعوة'), findsOneWidget);
+      expect(handedOver, isEmpty); // nothing moved before the confirmation
+    });
+
     testWidgets('to the owner already: nothing moved, and nothing said '
         'moved — who owns it now', (tester) async {
       await handOverTo(tester, ownerName);
