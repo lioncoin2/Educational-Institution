@@ -57,6 +57,14 @@ GoRouter buildRouter() {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: Routes.splash,
+    // The web root can arrive with a tracking query (…/?utm_source=…) that
+    // go_router does not treat as '/', so it would otherwise fall through to the
+    // not-found screen (it substitutes `initialLocation` only for a bare '/').
+    // Route any request whose path is the root to the splash, as a bare '/' is.
+    // No root path carries app state — an invitation's token rides on
+    // '/invite#…' and is taken out before routing — so dropping the root query
+    // is safe, and deep links (path ≠ '/') are untouched.
+    redirect: (context, state) => state.uri.path == '/' ? Routes.splash : null,
     routes: [
       GoRoute(
         path: Routes.splash,

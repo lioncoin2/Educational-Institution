@@ -334,4 +334,67 @@ void main() {
     await tester.pumpAndSettle();
     expect(location(), '/home');
   });
+
+  // The web root can arrive with a tracking query (…/?utm_source=…) or a
+  // fragment. go_router substitutes `initialLocation` only for an initial route
+  // that is exactly '/', so without a root redirect such an entry falls through
+  // to the not-found screen. These assert the observable route result.
+
+  testWidgets('the root opened with a tracking query reaches the app, not the '
+      'not-found screen', (tester) async {
+    tester.platformDispatcher.defaultRouteNameTestValue = '/?utm_source=share';
+    addTearDown(tester.platformDispatcher.clearDefaultRouteNameTestValue);
+    await boot(tester);
+
+    // A root entry — whatever query rides on it — takes the splash, as a bare
+    // '/' does; it never shows the router's not-found screen.
+    expect(find.text('صفحة غير موجودة'), findsNothing);
+    expect(location(), '/splash');
+
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(location(), '/home');
+  });
+
+  testWidgets('the root opened with several tracking parameters still reaches '
+      'the app', (tester) async {
+    tester.platformDispatcher.defaultRouteNameTestValue =
+        '/?fbclid=example&utm_campaign=test';
+    addTearDown(tester.platformDispatcher.clearDefaultRouteNameTestValue);
+    await boot(tester);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    expect(find.text('صفحة غير موجودة'), findsNothing);
+    expect(location(), '/home');
+  });
+
+  testWidgets('the root opened from a shared link with a query and a fragment '
+      'still reaches the app', (tester) async {
+    tester.platformDispatcher.defaultRouteNameTestValue =
+        '/?utm_source=share#section';
+    addTearDown(tester.platformDispatcher.clearDefaultRouteNameTestValue);
+    await boot(tester);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    expect(find.text('صفحة غير موجودة'), findsNothing);
+    expect(location(), '/home');
+  });
+
+  testWidgets('a deep link that carries its own query is left alone, not swept '
+      'to the splash', (tester) async {
+    tester.platformDispatcher.defaultRouteNameTestValue = '/home?source=share';
+    addTearDown(tester.platformDispatcher.clearDefaultRouteNameTestValue);
+    await boot(tester);
+
+    // Its path is not the root, so the root redirect does not touch it: the app
+    // opens straight on /home, not the splash.
+    expect(location(), '/home');
+
+    // Let HomeScreen's one-shot entrance timers fire before teardown.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(location(), '/home');
+  });
 }
