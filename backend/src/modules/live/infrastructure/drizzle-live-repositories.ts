@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, asc, eq, gte, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 
 import { KeyedMutex } from '../../../platform/concurrency/keyed-mutex';
 import { DATABASE, postgresErrorCode, type Database } from '../../../platform/database';
@@ -9,12 +9,16 @@ import {
   PENDING_HANDS_COUNT_CAP,
 } from '../domain/live-limits';
 import { endSession, isLive, type LiveSession, type LiveSessionKey } from '../domain/live-session';
+import type { LiveChatDraft, LiveChatMessage, LiveChatState } from '../domain/live-chat';
 import type { ModerationAction } from '../domain/moderation';
 import type {
   EndInput,
   EndOutcome,
   GrantOutcome,
   IneligibleExpiry,
+  LiveChatLockOutcome,
+  LiveChatPostOutcome,
+  LiveChatRepository,
   LiveSessionRepository,
   PresenterCloseInput,
   PresenterCloseOutcome,
@@ -38,11 +42,13 @@ import {
   moderationActionRow,
   presenterGrantRow,
   speakerRequestRow,
+  toLiveChatMessage,
   toLiveSession,
   toPresenterGrant,
   toSpeakerRequest,
 } from './row-mapping';
 import {
+  liveChatMessages,
   liveModerationActions,
   livePresenterGrants,
   liveSessions,
@@ -105,6 +111,7 @@ export class DrizzleLiveStore {
   readonly sessions: LiveSessionRepository;
   readonly requests: SpeakerRequestRepository;
   readonly presenters: PresenterGrantRepository;
+  readonly chat: LiveChatRepository;
   private readonly store: LiveTransactions;
 
   constructor(@Inject(DATABASE) db: Database) {
@@ -112,6 +119,7 @@ export class DrizzleLiveStore {
     this.sessions = new DrizzleLiveSessions(this.store);
     this.requests = new DrizzleSpeakerRequests(this.store);
     this.presenters = new DrizzlePresenterGrants(this.store);
+    this.chat = new DrizzleLiveChat(this.store);
   }
 
   /**
@@ -662,6 +670,137 @@ class DrizzlePresenterGrants implements PresenterGrantRepository {
  * UPDATE. Everything the transition decides about the session is decided on
  * this read.
  */
+/**
+ * A session's own chat (ADR 0047). A post reads the session row FOR SHARE in
+ * its own transaction: posts never wait on each other, but a lock change —
+ * an UPDATE of that row, under the session's admission like End — waits for
+ * the posts in flight, and every post after it sees it. So the lock is
+ * decided at the write, never by what a caller read earlier.
+ */
+class DrizzleLiveChat implements LiveChatRepository {
+  constructor(private readonly store: LiveTransactions) {}
+
+  async state(sessionId: string): Promise<LiveChatState | null> {
+    const [row] = await this.store.db
+      .select({ locked: liveSessions.chatLocked, lockVersion: liveSessions.chatLockVersion })
+      .from(liveSessions)
+      .where(eq(liveSessions.id, sessionId));
+    return row ?? null;
+  }
+
+  async post(
+    draft: LiveChatDraft,
+    options: { readonly moderator: boolean },
+  ): Promise<LiveChatPostOutcome> {
+    return this.store.transaction(async (tx) => {
+      const [session] = await tx
+        .select({ state: liveSessions.state, locked: liveSessions.chatLocked })
+        .from(liveSessions)
+        .where(eq(liveSessions.id, draft.sessionId))
+        .for('share');
+      if (session === undefined || session.state !== 'live') return { kind: 'session_not_live' };
+      // A retry is answered with what it already wrote — even under a lock
+      // that came after it: the message exists, and the lock refuses new ones.
+      const existing = await findByClientKey(tx, draft);
+      if (existing !== null) return repeatOf(existing, draft);
+      if (session.locked && !options.moderator) return { kind: 'locked' };
+      const [inserted] = await tx
+        .insert(liveChatMessages)
+        .values({
+          id: draft.id,
+          sessionId: draft.sessionId,
+          senderId: draft.senderId,
+          clientMessageId: draft.clientMessageId,
+          body: draft.body,
+          createdAt: draft.createdAt,
+        })
+        .onConflictDoNothing({
+          target: [
+            liveChatMessages.sessionId,
+            liveChatMessages.senderId,
+            liveChatMessages.clientMessageId,
+          ],
+        })
+        .returning();
+      if (inserted !== undefined) return { kind: 'posted', message: toLiveChatMessage(inserted) };
+      // A racing retry won the key between the two statements.
+      const winner = await findByClientKey(tx, draft);
+      if (winner === null) throw new Error('a live chat key conflict without its row');
+      return repeatOf(winner, draft);
+    });
+  }
+
+  async setLocked(sessionId: string, locked: boolean): Promise<LiveChatLockOutcome> {
+    return this.store.locked(sessionId, async (tx) => {
+      const session = await lockSession(tx, sessionId);
+      if (session === null || !isLive(session)) return { kind: 'session_not_live' };
+      const [row] = await tx
+        .update(liveSessions)
+        .set({ chatLocked: locked, chatLockVersion: sql`${liveSessions.chatLockVersion} + 1` })
+        .where(and(eq(liveSessions.id, sessionId), sql`${liveSessions.chatLocked} <> ${locked}`))
+        .returning({ locked: liveSessions.chatLocked, lockVersion: liveSessions.chatLockVersion });
+      if (row !== undefined) return { kind: 'changed', state: row };
+      const [current] = await tx
+        .select({ locked: liveSessions.chatLocked, lockVersion: liveSessions.chatLockVersion })
+        .from(liveSessions)
+        .where(eq(liveSessions.id, sessionId));
+      if (current === undefined) return { kind: 'session_not_live' };
+      return { kind: 'unchanged', state: current };
+    });
+  }
+
+  async page(
+    sessionId: string,
+    options: { readonly beforePosition: number | null; readonly limit: number },
+  ): Promise<readonly LiveChatMessage[]> {
+    const rows = await this.store.db
+      .select()
+      .from(liveChatMessages)
+      .where(
+        options.beforePosition === null
+          ? eq(liveChatMessages.sessionId, sessionId)
+          : and(
+              eq(liveChatMessages.sessionId, sessionId),
+              lt(liveChatMessages.position, options.beforePosition),
+            ),
+      )
+      .orderBy(desc(liveChatMessages.position))
+      .limit(options.limit);
+    return rows.map(toLiveChatMessage);
+  }
+
+  async find(sessionId: string, messageId: string): Promise<LiveChatMessage | null> {
+    const [row] = await this.store.db
+      .select()
+      .from(liveChatMessages)
+      .where(and(eq(liveChatMessages.sessionId, sessionId), eq(liveChatMessages.id, messageId)));
+    return row === undefined ? null : toLiveChatMessage(row);
+  }
+}
+
+async function findByClientKey(
+  tx: Transaction,
+  draft: LiveChatDraft,
+): Promise<LiveChatMessage | null> {
+  const [row] = await tx
+    .select()
+    .from(liveChatMessages)
+    .where(
+      and(
+        eq(liveChatMessages.sessionId, draft.sessionId),
+        eq(liveChatMessages.senderId, draft.senderId),
+        eq(liveChatMessages.clientMessageId, draft.clientMessageId),
+      ),
+    );
+  return row === undefined ? null : toLiveChatMessage(row);
+}
+
+function repeatOf(existing: LiveChatMessage, draft: LiveChatDraft): LiveChatPostOutcome {
+  return existing.body === draft.body
+    ? { kind: 'duplicate', message: existing }
+    : { kind: 'key_reused' };
+}
+
 async function lockSession(tx: Transaction, id: string): Promise<LiveSession | null> {
   const [row] = await tx.select().from(liveSessions).where(eq(liveSessions.id, id)).for('update');
   return row === undefined ? null : toLiveSession(row);

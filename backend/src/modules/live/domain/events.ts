@@ -1,6 +1,8 @@
 import { domainEvent } from '../../../shared/domain-event';
 import {
   LiveEvents,
+  type LiveChatLockChanged,
+  type LiveChatPosted,
   type LiveMediaReset,
   type LiveParticipantRemoved,
   type LiveSessionEnded,
@@ -15,6 +17,7 @@ import {
   type SpeakerRequestWithdrawn,
   type SpeakerRequested,
 } from '../contracts/events';
+import type { LiveChatMessage, LiveChatState } from './live-chat';
 import { durationSeconds, type LiveSession } from './live-session';
 import type { PresenterGrant } from './presenter-grant';
 import { lastOpenState, type SpeakerRequest } from './speaker-request';
@@ -289,4 +292,48 @@ function decision(request: SpeakerRequest): { readonly by: string; readonly at: 
     throw new RangeError(`a ${request.state} request carries no decision to announce`);
   }
   return { by: request.decidedBy, at: request.decidedAt };
+}
+
+/** A chat post (ADR 0047): ids and the position — never the text. */
+export function liveChatPosted(
+  session: SessionRef,
+  message: LiveChatMessage,
+  correlationId?: string,
+): LiveChatPosted {
+  return domainEvent(
+    LiveEvents.chatPosted,
+    session.id,
+    {
+      sessionId: session.id,
+      communityId: session.communityId,
+      messageId: message.id,
+      senderId: message.senderId,
+      position: message.position,
+    },
+    message.createdAt,
+    correlationId,
+  );
+}
+
+/** A moderator locked or unlocked the session's chat (ADR 0047). */
+export function liveChatLockChanged(
+  session: SessionRef,
+  state: LiveChatState,
+  changedBy: string,
+  at: Date,
+  correlationId?: string,
+): LiveChatLockChanged {
+  return domainEvent(
+    LiveEvents.chatLockChanged,
+    session.id,
+    {
+      sessionId: session.id,
+      communityId: session.communityId,
+      locked: state.locked,
+      lockVersion: state.lockVersion,
+      changedBy,
+    },
+    at,
+    correlationId,
+  );
 }

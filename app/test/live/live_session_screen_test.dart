@@ -1118,8 +1118,8 @@ void main() {
       expect(find.text(LiveCopy.liveNow), findsOneWidget);
     });
 
-    testWidgets('the chat tab goes through the access-checked opener; a refusal '
-        'is said in words, not a dead button', (tester) async {
+    testWidgets('the group chat, from the broadcast chat, goes through the '
+        'access-checked opener; a refusal is said in words', (tester) async {
       mobile(tester);
       final opener = _StubOpener(const CannotOpenChat('ليست لك هذه المحادثة'));
       await pump(
@@ -1129,7 +1129,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // The chat tab opens the broadcast's own chat (ADR 0047); the community's
+      // group conversation stays one tap away from it.
       await tester.tap(find.byKey(const Key('live-tab-chat')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('live-chat-panel')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('live-chat-open')));
       await tester.pumpAndSettle();
 
       // It asked the opener for THIS community's chat (re-checked server-side)…
@@ -1138,8 +1143,8 @@ void main() {
       expect(find.text('ليست لك هذه المحادثة'), findsOneWidget);
     });
 
-    testWidgets('the chat tab opens the community group conversation when '
-        'allowed', (tester) async {
+    testWidgets('the broadcast chat opens the community group conversation '
+        'when allowed', (tester) async {
       tester.view.physicalSize = const Size(390, 900);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
@@ -1181,6 +1186,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('live-tab-chat')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('live-chat-open')));
       await tester.pumpAndSettle();
 
       // The access-checked opener was consulted, and its route was pushed —

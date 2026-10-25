@@ -258,10 +258,7 @@ abstract final class LiveCopy {
   static String sessionDuration(Duration d) {
     final hours = d.inHours;
     final minutes = d.inMinutes.remainder(60);
-    final parts = <String>[
-      if (hours > 0) '$hours ساعة',
-      '$minutes دقيقة',
-    ];
+    final parts = <String>[if (hours > 0) '$hours ساعة', '$minutes دقيقة'];
     return 'مدة الجلسة: ${parts.join(' و')}';
   }
 
@@ -291,17 +288,35 @@ abstract final class LiveCopy {
   static const dockMore = 'المزيد';
 
   static const tabParticipants = 'المشاركون';
-  static const tabChat = 'محادثة الكروب';
+  static const tabChat = 'دردشة البث';
   static const tabPolls = 'الاستطلاعات';
   static const tabSettings = 'الإعدادات';
 
-  /// The chat button opens the community's EXISTING group conversation (not a
-  /// separate in-broadcast chat, which is not backed), via the access-checked
-  /// `CommunityChatOpener`. The wording makes that explicit to the viewer.
+  /// The broadcast's own chat (ADR 0047) — separate from the community's group
+  /// conversation, which stays one tap away ([chatGroupOpen]).
+  static const chatTitle = 'دردشة البث';
+  static const chatHint = 'دردشة خاصة بهذا البث، منفصلة عن محادثة الكروب.';
+  static const chatEmpty = 'لا رسائل بعد. اكتب أول سؤال أو تعليق.';
+  static const chatFieldHint = 'اكتب رسالة للبث…';
+  static const chatSend = 'إرسال';
+  static const chatLockedForMe =
+      'أغلق المشرف الدردشة مؤقتًا؛ يكتب المشرفون فقط الآن.';
+  static const chatLockedForModerator =
+      'الدردشة مغلقة أمام المشاركين؛ ما زال بإمكانك الكتابة.';
+  static const chatEnded = 'انتهى البث؛ الدردشة للقراءة فقط.';
+  static const chatLock = 'إغلاق الدردشة';
+  static const chatUnlock = 'فتح الدردشة';
+  static const chatLockedDone = 'أُغلقت الدردشة أمام المشاركين';
+  static const chatUnlockedDone = 'فُتحت الدردشة للجميع';
+  static const chatLoadOlder = 'رسائل أقدم';
+  static const chatLoadFailed = 'تعذّر تحميل دردشة البث.';
+
+  /// The community's EXISTING group conversation, still reachable from the
+  /// broadcast via the access-checked `CommunityChatOpener` — a different place.
   static const chatGroupTitle = 'محادثة الكروب';
   static const chatGroupOpen = 'فتح محادثة الكروب';
   static const chatGroupHint =
-      'الدردشة هنا هي محادثة الكروب نفسها، وليست دردشة مستقلة أثناء البث.';
+      'محادثة الكروب منفصلة عن دردشة البث وتبقى بعد انتهائه.';
 
   /// Shown when a locked («غير متاح الآن») control is tapped — visible,
   /// actionable text confirming it is intentionally unavailable, not broken.
@@ -356,6 +371,11 @@ abstract final class LiveCopy {
     'communities.capability_required' ||
     'identity.permission_denied' ||
     'live.not_a_moderator' => 'هذا غير متاح لك في هذا المجتمع.',
+    'live.chat_locked' => chatLockedForMe,
+    'live.session_not_live' => chatEnded,
+    'live.chat_body_required' => 'اكتب نصًّا للرسالة.',
+    'live.chat_body_too_long' => 'الرسالة أطول من المسموح به (500 حرف).',
+    'live.too_many_chat_messages' => 'أرسلت رسائل كثيرة متتابعة. انتظر قليلًا.',
     'live.unreadable' =>
       'وصلت من الخادم بيانات لا يقرؤها هذا الإصدار من التطبيق.',
     'unavailable' => 'الخدمة غير متاحة الآن. حاول بعد قليل.',

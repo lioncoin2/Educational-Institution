@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  bigserial,
+  boolean,
   check,
   index,
   integer,
@@ -16,6 +18,7 @@ import {
   type LiveSessionEndReason,
   type LiveSessionState,
 } from '../domain/live-session';
+import { LIVE_CHAT_BODY_MAX } from '../domain/live-chat';
 import { MODERATION_ACTION_TYPES, type ModerationActionType } from '../domain/moderation';
 import { PRESENTER_END_REASONS, type PresenterEndReason } from '../domain/presenter-grant';
 import { SPEAKER_REQUEST_STATES, type SpeakerRequestState } from '../domain/speaker-request';
@@ -50,6 +53,9 @@ import { SPEAKER_REQUEST_STATES, type SpeakerRequestState } from '../domain/spea
  *   live_presenter_grants_end_consistent        closed exactly when it says why
  *   live_presenter_grants_ended_by_needs_end    nobody has closed an open grant
  *   live_moderation_actions_reason_code_shape   a reason is a code, never free text
+ *   live_chat_messages_one_per_client_key       one message per (session, sender, clientMessageId):
+ *                                               the arbiter of a retried post (ADR 0047)
+ *   live_chat_messages_body_length              1 to LIVE_CHAT_BODY_MAX characters
  *   live_*_valid                                every enumerated column, its list generated
  *                                               from the domain's constant, never retyped
  *
@@ -91,6 +97,9 @@ export const liveSessions = pgTable(
     emptySince: timestamp('empty_since', { withTimezone: true }),
     enforcementViolations: integer('enforcement_violations').notNull().default(0),
     lastViolationAt: timestamp('last_violation_at', { withTimezone: true }),
+    // The session's own chat switch (ADR 0047): open by default; +1 per real change.
+    chatLocked: boolean('chat_locked').notNull().default(false),
+    chatLockVersion: integer('chat_lock_version').notNull().default(0),
   },
   (table) => [
     // One live session per community (S1, Q55): the arbiter of racing starts.
@@ -123,6 +132,7 @@ export const liveSessions = pgTable(
       'live_sessions_enforcement_violations_nonnegative',
       sql`${table.enforcementViolations} >= 0`,
     ),
+    check('live_sessions_chat_lock_version_nonnegative', sql`${table.chatLockVersion} >= 0`),
     check(
       'live_sessions_ended_at_consistent',
       sql`(${table.state} = 'live') = (${table.endedAt} is null)`,
@@ -261,7 +271,44 @@ export const liveModerationActions = pgTable(
   ],
 );
 
+/**
+ * A live session's own chat (owner decision F, ADR 0047) — Live's table, not
+ * messaging's: nothing here is a community-chat message, and nothing of it
+ * reaches a conversation. Kept with its session; nothing deletes a row (Q3).
+ * `position` is a sequence: it orders a session's messages, its gaps mean
+ * nothing, and it is the chat page's keyset.
+ */
+export const liveChatMessages = pgTable(
+  'live_chat_messages',
+  {
+    id: text('id').primaryKey(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => liveSessions.id, { onDelete: 'restrict' }),
+    position: bigserial('position', { mode: 'number' }).notNull(),
+    senderId: text('sender_id').notNull(),
+    clientMessageId: text('client_message_id').notNull(),
+    body: text('body').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    // A retried post lands once (the arbiter of racing retries).
+    uniqueIndex('live_chat_messages_one_per_client_key').on(
+      table.sessionId,
+      table.senderId,
+      table.clientMessageId,
+    ),
+    // A session's chat, newest first — the page's keyset.
+    index('live_chat_messages_session_page_idx').on(table.sessionId, table.position),
+    check(
+      'live_chat_messages_body_length',
+      sql`char_length(${table.body}) between 1 and ${sql.raw(String(LIVE_CHAT_BODY_MAX))}`,
+    ),
+  ],
+);
+
 export type LiveSessionRow = typeof liveSessions.$inferSelect;
 export type SpeakerRequestRow = typeof liveSpeakerRequests.$inferSelect;
 export type PresenterGrantRow = typeof livePresenterGrants.$inferSelect;
 export type ModerationActionRow = typeof liveModerationActions.$inferSelect;
+export type LiveChatMessageRow = typeof liveChatMessages.$inferSelect;

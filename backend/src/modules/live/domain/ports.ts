@@ -1,3 +1,4 @@
+import type { LiveChatDraft, LiveChatMessage, LiveChatState } from './live-chat';
 import type { LiveSession, LiveSessionEndReason, LiveSessionKey } from './live-session';
 import type { ModerationAction } from './moderation';
 import type { PresenterGrant, PresenterStopReason } from './presenter-grant';
@@ -6,6 +7,7 @@ import type { QueueKey, SpeakerRequest, SpeakerRequestState } from './speaker-re
 export const LIVE_SESSION_REPOSITORY = Symbol('LIVE_SESSION_REPOSITORY');
 export const SPEAKER_REQUEST_REPOSITORY = Symbol('SPEAKER_REQUEST_REPOSITORY');
 export const PRESENTER_GRANT_REPOSITORY = Symbol('PRESENTER_GRANT_REPOSITORY');
+export const LIVE_CHAT_REPOSITORY = Symbol('LIVE_CHAT_REPOSITORY');
 
 /*
  * Live's persistence, as three ports over one aggregate (live.md §10; plan
@@ -292,4 +294,53 @@ export interface PresenterGrantRepository {
   close(input: PresenterCloseInput): Promise<PresenterCloseOutcome>;
   /** Whose presenter grant closed at or after `since`, each person once, in id order — the watch. */
   closedSince(sessionId: string, since: Date): Promise<readonly string[]>;
+}
+
+export type LiveChatPostOutcome =
+  /** Written now, at the next position. */
+  | { readonly kind: 'posted'; readonly message: LiveChatMessage }
+  /** This sender already posted this clientMessageId, with this text: the stored one. */
+  | { readonly kind: 'duplicate'; readonly message: LiveChatMessage }
+  /** This sender already used this clientMessageId for different text: nothing written. */
+  | { readonly kind: 'key_reused' }
+  /** The chat is locked and the poster does not moderate: nothing written. */
+  | { readonly kind: 'locked' }
+  /** The session is unknown or no longer live: nothing written. */
+  | { readonly kind: 'session_not_live' };
+
+export type LiveChatLockOutcome =
+  | { readonly kind: 'changed' | 'unchanged'; readonly state: LiveChatState }
+  | { readonly kind: 'session_not_live' };
+
+/**
+ * A live session's own chat (owner decision F, ADR 0047): its messages and
+ * its lock, both Live's — never messaging's conversation history.
+ *
+ *   - A post is written only while the session is live, and — unless the
+ *     poster moderates (`moderator`) — only while the chat is unlocked, both
+ *     checked AT THE WRITE against the session row (in Postgres under a
+ *     FOR SHARE lock that a lock change's UPDATE waits on), so a post that
+ *     reaches the store after a lock committed is refused, whatever its
+ *     caller read before. Posts do not block each other.
+ *   - A lock change takes the session's lock, as End does, and only while it
+ *     is live; a real change raises `lockVersion` by one, a repeat changes
+ *     nothing.
+ *   - Reads are bounded keyset pages, newest first — never a whole chat.
+ *   - Nothing is ever deleted: a session's chat is kept with the session (Q3).
+ */
+export interface LiveChatRepository {
+  /** The chat's lock state; null for an unknown session. Ended sessions keep theirs. */
+  state(sessionId: string): Promise<LiveChatState | null>;
+  post(
+    draft: LiveChatDraft,
+    options: { readonly moderator: boolean },
+  ): Promise<LiveChatPostOutcome>;
+  setLocked(sessionId: string, locked: boolean): Promise<LiveChatLockOutcome>;
+  /** Up to `limit` messages before `beforePosition` (or the newest), newest first. */
+  page(
+    sessionId: string,
+    options: { readonly beforePosition: number | null; readonly limit: number },
+  ): Promise<readonly LiveChatMessage[]>;
+  /** One message of this session; null when it is another session's or unknown. */
+  find(sessionId: string, messageId: string): Promise<LiveChatMessage | null>;
 }

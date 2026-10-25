@@ -18,10 +18,14 @@ import {
 } from '../../communities/contracts/membership';
 import {
   LIVE_AUDIENCE,
+  LIVE_CHAT,
   LiveEvents,
   MAX_AUDIENCE_PROBE,
   MODERATOR_FRAME_COALESCE_MS,
   type LiveAudience,
+  type LiveChat,
+  type LiveChatLockChanged,
+  type LiveChatPosted,
   type LiveMediaReset,
   type LiveParticipantRemoved,
   type LiveSessionEnded,
@@ -29,6 +33,8 @@ import {
 } from '../../live/contracts';
 import { ConnectionManager } from './connection-manager';
 import {
+  liveChatChangedFrame,
+  liveChatMessageFrame,
   liveMediaResetFrame,
   liveParticipantRemovedFrame,
   liveSessionChangedFrame,
@@ -97,6 +103,11 @@ interface ModeratorWindow {
  *   live.session.media_reset to the session's current participants, as a start
  *                          or an end is — they re-join the new room generation
  *                          (Q64, ADR 0026)
+ *   live.chat.message      a session chat post (ADR 0047), rendered through
+ *                          LIVE_CHAT, to the session's participants connected
+ *                          here, as a start or an end is — never the community's
+ *                          other members, never another session's audience
+ *   live.chat.changed      the chat locked or re-opened, to the same audience
  *   live.participant.removed to the removed person alone, directly — the one
  *                          exception to "a removed member is told nothing",
  *                          because the frame's whole point is that they are out
@@ -137,6 +148,7 @@ export class LiveRealtimeRelay implements OnModuleInit, OnModuleDestroy {
     @Inject(COMMUNITY_MEMBERSHIP) private readonly membership: CommunityMembership,
     @Inject(LIVE_AUDIENCE) private readonly audience: LiveAudience,
     private readonly connections: ConnectionManager,
+    @Inject(LIVE_CHAT) private readonly chat: LiveChat,
   ) {}
 
   onModuleInit(): void {
@@ -207,6 +219,36 @@ export class LiveRealtimeRelay implements OnModuleInit, OnModuleDestroy {
           communityId: payload.communityId,
           sessionId: payload.sessionId,
           toEpoch: payload.toEpoch,
+        }),
+      );
+    }
+    if (event.name === LiveEvents.chatPosted) {
+      const payload = chatPostedPayload(event);
+      if (payload === null) return this.malformed(event);
+      const message = await this.chat.forDelivery(payload.sessionId, payload.messageId);
+      if (message === null) return;
+      return this.toParticipants(
+        payload.communityId,
+        payload.sessionId,
+        liveChatMessageFrame({
+          occurredAt: event.occurredAt,
+          communityId: payload.communityId,
+          message,
+        }),
+      );
+    }
+    if (event.name === LiveEvents.chatLockChanged) {
+      const payload = chatLockPayload(event);
+      if (payload === null) return this.malformed(event);
+      return this.toParticipants(
+        payload.communityId,
+        payload.sessionId,
+        liveChatChangedFrame({
+          occurredAt: event.occurredAt,
+          communityId: payload.communityId,
+          sessionId: payload.sessionId,
+          locked: payload.locked,
+          lockVersion: payload.lockVersion,
         }),
       );
     }
@@ -441,4 +483,18 @@ function mediaResetPayload(event: DomainEvent): LiveMediaReset['payload'] | null
   const p = fieldsOf(event);
   if (p === null || !isVersion(p.toEpoch)) return null;
   return p as unknown as LiveMediaReset['payload'];
+}
+
+/** A chat post names its message; the text is rendered through LIVE_CHAT, never carried. */
+function chatPostedPayload(event: DomainEvent): LiveChatPosted['payload'] | null {
+  const p = fieldsOf(event);
+  if (p === null || !isId(p.messageId) || !isId(p.senderId) || !isVersion(p.position)) return null;
+  return p as unknown as LiveChatPosted['payload'];
+}
+
+/** A lock change names the state and the version it moved to. */
+function chatLockPayload(event: DomainEvent): LiveChatLockChanged['payload'] | null {
+  const p = fieldsOf(event);
+  if (p === null || typeof p.locked !== 'boolean' || !isVersion(p.lockVersion)) return null;
+  return p as unknown as LiveChatLockChanged['payload'];
 }

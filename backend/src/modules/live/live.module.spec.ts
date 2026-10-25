@@ -25,7 +25,7 @@ import { LiveMediaReadiness } from './application/live-media-readiness';
 import { LiveSessionsReader } from './application/live-sessions.reader';
 import { LIVE_SETTINGS, type LiveSettings } from './application/live-settings';
 import { ProtectLiveSessions } from './application/protect-live-sessions';
-import { LIVE_AUDIENCE, LIVE_SESSIONS } from './contracts';
+import { LIVE_AUDIENCE, LIVE_CHAT, LIVE_SESSIONS } from './contracts';
 import { LIVE_PRESENCE } from './contracts/presence';
 import { MAX_JOIN_TOKEN_TTL_SECONDS, isJoinTokenTtl } from './domain/live-limits';
 import { newLiveSession } from './domain/live-session';
@@ -121,6 +121,7 @@ describe('the Live module', () => {
       LIVE_AUDIENCE,
       LIVE_SESSIONS,
       LIVE_PRESENCE,
+      LIVE_CHAT,
     ]);
   });
 

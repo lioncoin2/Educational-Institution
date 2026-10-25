@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -6,6 +7,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Put,
   Query,
   Res,
   UseInterceptors,
@@ -24,17 +26,25 @@ import { GetLiveSessionUseCase } from '../application/get-live-session.use-case'
 import { JoinLiveSessionUseCase } from '../application/join-live-session.use-case';
 import { KickParticipantUseCase } from '../application/kick-participant.use-case';
 import { ListHandsUseCase } from '../application/list-hands.use-case';
+import {
+  ListLiveChatUseCase,
+  PostLiveChatUseCase,
+  SetLiveChatLockUseCase,
+} from '../application/live-chat.use-cases';
 import { LowerHandUseCase } from '../application/lower-hand.use-case';
 import { ModerateSpeakerUseCase } from '../application/moderate-speaker.use-case';
 import { PresenterUseCase } from '../application/presenter.use-case';
 import { RaiseHandUseCase } from '../application/raise-hand.use-case';
 import { ResetRoomUseCase } from '../application/reset-room.use-case';
 import { StartLiveSessionUseCase } from '../application/start-live-session.use-case';
-import { HandsQuery } from './dto/live.dto';
+import { HandsQuery, LiveChatQuery, PostLiveChatDto } from './dto/live.dto';
 import {
   toCurrentSessionResponse,
   toHandsPageResponse,
   toJoinTicketResponse,
+  toLiveChatLockResponse,
+  toLiveChatPageResponse,
+  toLiveChatPostResponse,
   toLiveSessionResponse,
   toModerationResponse,
   toParticipantRemovedResponse,
@@ -54,10 +64,11 @@ import {
  * names, so a caller learns nothing about a session they may not see — one
  * 404, whether it exists or not.
  *
- * No route takes a body. Who the caller is, which hand is theirs, what they
- * may publish and what they are called are the server's to know; a name, a
- * role or a user id sent by a client would be a claim nobody checks. Nothing
- * here decides access, and nothing here talks to the media provider.
+ * One route takes a body — a session chat post (ADR 0047): the text and the
+ * client's key, nothing else. Who the caller is, which hand is theirs, what
+ * they may publish and what they are called are the server's to know; a name,
+ * a role or a user id sent by a client would be a claim nobody checks.
+ * Nothing here decides access, and nothing here talks to the media provider.
  *
  * Fail closed, and say so: a store that cannot be reached answers 503
  * `unavailable` (the interceptor, as on every Communities route), and so does
@@ -80,6 +91,9 @@ export class LiveController {
     private readonly presenter: PresenterUseCase,
     private readonly kickParticipant: KickParticipantUseCase,
     private readonly resetRoom: ResetRoomUseCase,
+    private readonly listChat: ListLiveChatUseCase,
+    private readonly postChat: PostLiveChatUseCase,
+    private readonly chatLock: SetLiveChatLockUseCase,
   ) {}
 
   /**
@@ -356,6 +370,85 @@ export class LiveController {
   ) {
     return toRoomResetResponse(
       unwrap(await this.resetRoom.execute({ principal, sessionId, meta })),
+    );
+  }
+
+  /**
+   * The session's own chat (ADR 0047) — never the community's conversation:
+   * a page, newest first, with the lock and what the caller may do now.
+   * Everyone who may see the session reads it, ended sessions included.
+   */
+  @Get('sessions/:sessionId/chat')
+  @RequirePermission(Permissions.live.join)
+  async chat(
+    @CurrentPrincipal() principal: Principal,
+    @Param('sessionId') sessionId: string,
+    @Query() query: LiveChatQuery,
+  ) {
+    return toLiveChatPageResponse(
+      unwrap(
+        await this.listChat.execute({
+          principal,
+          sessionId,
+          before: query.before,
+          limit: query.limit,
+        }),
+      ),
+    );
+  }
+
+  /**
+   * Posts to the session's chat: 201 with the message, 200 with the stored one
+   * for a retry of the same key; 403 `live.chat_locked` while a moderator has
+   * locked it (moderators still post); 412 once the session has ended.
+   */
+  @Post('sessions/:sessionId/chat')
+  @RequirePermission(Permissions.live.join)
+  async post(
+    @CurrentPrincipal() principal: Principal,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: PostLiveChatDto,
+    @RequestMetadata() meta: CallMetadata,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = unwrap(
+      await this.postChat.execute({
+        principal,
+        sessionId,
+        clientMessageId: dto.clientMessageId,
+        body: dto.body,
+        meta,
+      }),
+    );
+    response.status(result.created ? HttpStatus.CREATED : HttpStatus.OK);
+    return toLiveChatPostResponse(result);
+  }
+
+  /** A moderator closes the chat to participants (moderators still post). A repeat changes nothing. */
+  @Put('sessions/:sessionId/chat/lock')
+  @RequirePermission(Permissions.live.moderate)
+  @HttpCode(HttpStatus.OK)
+  async lockChat(
+    @CurrentPrincipal() principal: Principal,
+    @Param('sessionId') sessionId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toLiveChatLockResponse(
+      unwrap(await this.chatLock.execute({ principal, sessionId, locked: true, meta })),
+    );
+  }
+
+  /** A moderator re-opens the chat to every participant. A repeat changes nothing. */
+  @Delete('sessions/:sessionId/chat/lock')
+  @RequirePermission(Permissions.live.moderate)
+  @HttpCode(HttpStatus.OK)
+  async unlockChat(
+    @CurrentPrincipal() principal: Principal,
+    @Param('sessionId') sessionId: string,
+    @RequestMetadata() meta: CallMetadata,
+  ) {
+    return toLiveChatLockResponse(
+      unwrap(await this.chatLock.execute({ principal, sessionId, locked: false, meta })),
     );
   }
 }

@@ -13,6 +13,12 @@ import { GetLiveSessionUseCase } from './application/get-live-session.use-case';
 import { JoinLiveSessionUseCase } from './application/join-live-session.use-case';
 import { KickParticipantUseCase } from './application/kick-participant.use-case';
 import { ListHandsUseCase } from './application/list-hands.use-case';
+import {
+  ListLiveChatUseCase,
+  LiveChatReader,
+  PostLiveChatUseCase,
+  SetLiveChatLockUseCase,
+} from './application/live-chat.use-cases';
 import { LiveAccess } from './application/live-access';
 import { LiveJournal } from './application/live-journal';
 import { LiveMedia } from './application/live-media';
@@ -38,12 +44,15 @@ import { RoomOccupancy } from './application/room-occupancy';
 import { LiveSessionViews } from './application/session-views';
 import { StartLiveSessionUseCase } from './application/start-live-session.use-case';
 import { LIVE_AUDIENCE } from './contracts/live-audience';
+import { LIVE_CHAT } from './contracts/live-chat';
 import { LIVE_PRESENCE } from './contracts/presence';
 import { LIVE_SESSIONS } from './contracts/live-sessions';
 import {
+  LIVE_CHAT_REPOSITORY,
   LIVE_SESSION_REPOSITORY,
   PRESENTER_GRANT_REPOSITORY,
   SPEAKER_REQUEST_REPOSITORY,
+  type LiveChatRepository,
   type LiveSessionRepository,
   type PresenterGrantRepository,
   type SpeakerRequestRepository,
@@ -148,6 +157,8 @@ export interface LiveStore {
   readonly sessions: LiveSessionRepository;
   readonly requests: SpeakerRequestRepository;
   readonly presenters: PresenterGrantRepository;
+  /** The session's own chat (ADR 0047): its lock lives on the session row. */
+  readonly chat: LiveChatRepository;
 }
 
 /** Postgres when a database is configured; otherwise the in-memory twin (mock mode). */
@@ -194,6 +205,8 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
  *   LIVE_AUDIENCE   who a session's facts may reach, as Communities answers it
  *   LIVE_PRESENCE   one observation of who the provider holds now (P9), over
  *                   RTC_OBSERVER; importable by attendance only
+ *   LIVE_CHAT       a session's own chat messages, rendered for delivery
+ *                   (ADR 0047); realtime gates the audience
  */
 @Module({
   imports: [IdentityModule, CommunitiesModule],
@@ -233,6 +246,11 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
       inject: [LIVE_STORE],
       useFactory: (store: LiveStore) => store.presenters,
     },
+    {
+      provide: LIVE_CHAT_REPOSITORY,
+      inject: [LIVE_STORE],
+      useFactory: (store: LiveStore) => store.chat,
+    },
     LiveJournal,
     LiveAccess,
     LiveStanding,
@@ -259,6 +277,10 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
     // resets the media room (the shared epoch bump, commanded).
     KickParticipantUseCase,
     ResetRoomUseCase,
+    // The session's own chat (ADR 0047): read, post, lock — Live's table, not messaging's.
+    ListLiveChatUseCase,
+    PostLiveChatUseCase,
+    SetLiveChatLockUseCase,
     // Brings the media provider in line with the record (live.md §11): a boot
     // pass, then three unref'd timers on the periods of live-limits.ts.
     LiveReconciler,
@@ -266,7 +288,8 @@ export function liveSettingsFor(config: AppConfig): LiveSettings {
     { provide: LIVE_SESSIONS, useClass: LiveSessionsReader },
     { provide: LIVE_AUDIENCE, useClass: LiveAudienceService },
     { provide: LIVE_PRESENCE, useClass: LivePresenceService },
+    { provide: LIVE_CHAT, useClass: LiveChatReader },
   ],
-  exports: [LIVE_AUDIENCE, LIVE_SESSIONS, LIVE_PRESENCE],
+  exports: [LIVE_AUDIENCE, LIVE_SESSIONS, LIVE_PRESENCE, LIVE_CHAT],
 })
 export class LiveModule {}

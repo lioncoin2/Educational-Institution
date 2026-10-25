@@ -12,6 +12,7 @@ import '../../data/models/live.dart';
 import '../communities/state/community_chat_opener.dart';
 import 'live_copy.dart';
 import 'state/live_session_controller.dart';
+import 'widgets/live_chat_panel.dart';
 import 'widgets/live_controls.dart';
 import 'widgets/live_media_panel.dart';
 import 'widgets/live_moderation_actions.dart';
@@ -121,10 +122,58 @@ class _LiveRoom extends ConsumerWidget {
     );
   }
 
+  /// The broadcast's own chat (ADR 0047) as a sheet on phones.
+  void _openLiveChat(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Theme(
+        data: LivePalette.themeOf(context),
+        child: Builder(
+          builder: (sheetContext) => Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+            ),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: sheetContext.colors.surface,
+                borderRadius: const BorderRadius.vertical(top: Radii.xl),
+                border: Border.all(color: sheetContext.colors.outlineVariant),
+              ),
+              child: SizedBox(
+                height: MediaQuery.sizeOf(sheetContext).height * 0.7,
+                child: Column(
+                  children: [
+                    const _SheetGrip(),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          Insets.lg,
+                          0,
+                          Insets.lg,
+                          Insets.lg,
+                        ),
+                        child: LiveChatPanel(
+                          session: session,
+                          onOpenGroup: () => _openChat(context, ref),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Opens the community's group conversation — the access-checked
   /// [CommunityChatOpener] re-confirms the viewer may read it NOW; a refusal is
-  /// said in words, never a silent dead button. This is the GROUP chat, not a
-  /// (non-existent) separate in-broadcast chat.
+  /// said in words, never a silent dead button. The GROUP chat, a different
+  /// place from the broadcast's own chat ([LiveChatPanel], ADR 0047).
   Future<void> _openChat(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
     final opening = await ref
@@ -145,7 +194,12 @@ class _LiveRoom extends ConsumerWidget {
     final withChat = context.breakpoint.isDesktop; // ≥1024
 
     final stage = Padding(
-      padding: EdgeInsets.fromLTRB(context.gutter, Insets.md, context.gutter, 0),
+      padding: EdgeInsets.fromLTRB(
+        context.gutter,
+        Insets.md,
+        context.gutter,
+        0,
+      ),
       child: LiveStage(
         session: session,
         onParticipants: multiPane ? null : () => _openParticipants(context),
@@ -170,7 +224,7 @@ class _LiveRoom extends ConsumerWidget {
             border: false,
             child: LiveBottomTabs(
               onParticipants: () => _openParticipants(context),
-              onChat: () => _openChat(context, ref),
+              onChat: () => _openLiveChat(context, ref),
             ),
           ),
       ],
@@ -207,7 +261,13 @@ class _LiveRoom extends ConsumerWidget {
               VerticalDivider(width: 1, color: context.colors.outlineVariant),
               SizedBox(
                 width: 300,
-                child: _ChatColumn(onOpen: () => _openChat(context, ref)),
+                child: Padding(
+                  padding: const EdgeInsets.all(Insets.lg),
+                  child: LiveChatPanel(
+                    session: session,
+                    onOpenGroup: () => _openChat(context, ref),
+                  ),
+                ),
               ),
             ],
           ],
@@ -237,61 +297,6 @@ class _ParticipantsBody extends StatelessWidget {
           LiveRoster(session: session),
         ],
       ],
-    );
-  }
-}
-
-/// The reference desktop view's CHAT column. There is no separate in-broadcast
-/// chat contract, so instead of faking one this column opens the community's
-/// EXISTING group conversation — [onOpen] routes through the access-checked
-/// `CommunityChatOpener`, and the wording ([chatGroupHint]) tells the viewer
-/// plainly that the chat is the group's, not a standalone broadcast chat.
-class _ChatColumn extends StatelessWidget {
-  const _ChatColumn({required this.onOpen});
-
-  final VoidCallback onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Padding(
-      padding: const EdgeInsets.all(Insets.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(LiveCopy.chatGroupTitle, style: context.text.titleMedium),
-          const SizedBox(height: Insets.lg),
-          Expanded(
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.forum_outlined,
-                    size: 36,
-                    color: colors.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: Insets.md),
-                  Text(
-                    LiveCopy.chatGroupHint,
-                    textAlign: TextAlign.center,
-                    style: context.text.bodySmall,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              key: const Key('live-chat-open'),
-              onPressed: onOpen,
-              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
-              label: const Text(LiveCopy.chatGroupOpen),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -389,7 +394,11 @@ class _ScheduledCard extends StatelessWidget {
       child: AppCard(
         child: Row(
           children: [
-            Icon(Icons.event_outlined, size: 22, color: colors.onSurfaceVariant),
+            Icon(
+              Icons.event_outlined,
+              size: 22,
+              color: colors.onSurfaceVariant,
+            ),
             const SizedBox(width: Insets.md),
             Expanded(
               child: Column(
@@ -397,9 +406,16 @@ class _ScheduledCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(LiveCopy.scheduledTitle, style: context.text.titleSmall),
+                      Text(
+                        LiveCopy.scheduledTitle,
+                        style: context.text.titleSmall,
+                      ),
                       const SizedBox(width: Insets.sm),
-                      Icon(Icons.lock_outline, size: 14, color: colors.onSurfaceVariant),
+                      Icon(
+                        Icons.lock_outline,
+                        size: 14,
+                        color: colors.onSurfaceVariant,
+                      ),
                     ],
                   ),
                   const SizedBox(height: Insets.xs),
@@ -445,7 +461,10 @@ class _MiniPlayerCard extends StatelessWidget {
                 color: colors.surfaceContainer,
                 borderRadius: Radii.brSm,
               ),
-              child: Icon(Icons.graphic_eq_rounded, color: colors.onSurfaceVariant),
+              child: Icon(
+                Icons.graphic_eq_rounded,
+                color: colors.onSurfaceVariant,
+              ),
             ),
             const SizedBox(width: Insets.md),
             Expanded(
@@ -454,9 +473,16 @@ class _MiniPlayerCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(LiveCopy.miniPlayerTitle, style: context.text.titleSmall),
+                      Text(
+                        LiveCopy.miniPlayerTitle,
+                        style: context.text.titleSmall,
+                      ),
                       const SizedBox(width: Insets.sm),
-                      Icon(Icons.lock_outline, size: 14, color: colors.onSurfaceVariant),
+                      Icon(
+                        Icons.lock_outline,
+                        size: 14,
+                        color: colors.onSurfaceVariant,
+                      ),
                     ],
                   ),
                   const SizedBox(height: Insets.xs),

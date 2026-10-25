@@ -1,9 +1,11 @@
 import { asId } from '../../../shared';
+import type { LiveChatMessage } from '../domain/live-chat';
 import type { LiveSession } from '../domain/live-session';
 import type { ModerationAction } from '../domain/moderation';
 import type { PresenterGrant } from '../domain/presenter-grant';
 import type { SpeakerRequest } from '../domain/speaker-request';
 import type {
+  LiveChatMessageRow,
   LiveSessionRow,
   ModerationActionRow,
   PresenterGrantRow,
@@ -32,6 +34,7 @@ export function toLiveSession(row: LiveSessionRow): LiveSession {
   };
 }
 
+/** A new session's row — Start's insert, the only writer of a whole row: its chat starts open. */
 export function liveSessionRow(session: LiveSession): LiveSessionRow {
   return {
     id: session.id,
@@ -49,6 +52,20 @@ export function liveSessionRow(session: LiveSession): LiveSessionRow {
     emptySince: session.emptySince,
     enforcementViolations: session.enforcementViolations,
     lastViolationAt: session.lastViolationAt,
+    chatLocked: false,
+    chatLockVersion: 0,
+  };
+}
+
+export function toLiveChatMessage(row: LiveChatMessageRow): LiveChatMessage {
+  return {
+    id: asId<'LiveChatMessage'>(row.id),
+    sessionId: row.sessionId,
+    senderId: row.senderId,
+    clientMessageId: row.clientMessageId,
+    body: row.body,
+    createdAt: row.createdAt,
+    position: Number(row.position),
   };
 }
 

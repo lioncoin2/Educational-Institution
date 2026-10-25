@@ -1,4 +1,10 @@
 import type { LiveParticipantRole } from '../contracts/participant-role';
+import type { LiveChatMessageView } from '../contracts/live-chat';
+import type {
+  LiveChatLockResult,
+  LiveChatPage,
+  LiveChatPostResult,
+} from '../application/live-chat.use-cases';
 import type {
   HandView,
   HandsPage,
@@ -14,8 +20,9 @@ import type {
 /**
  * Wire shapes: explicit and flat, instants as ISO-8601. Every field is copied
  * by name, so nothing a view gains later reaches a client unannounced. No
- * response carries an email; only the moderators' hands page carries names,
- * from the account directory; and only the join ticket carries a credential.
+ * response carries an email; only the moderators' hands page and the session
+ * chat (ADR 0047) carry names, from the account directory; and only the join
+ * ticket carries a credential.
  */
 
 export interface LiveSessionResponse {
@@ -199,4 +206,46 @@ export function toParticipantRemovedResponse(result: KickParticipantResult): {
 /** A media-room reset; `reset: false` when a concurrent reset or the end already moved it. */
 export function toRoomResetResponse(result: ResetRoomResult): { readonly reset: boolean } {
   return { reset: result.reset };
+}
+
+/** One message of a session's own chat (ADR 0047). */
+export interface LiveChatMessageResponse {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly senderId: string;
+  readonly senderDisplayName: string;
+  readonly body: string;
+  readonly createdAt: string;
+  readonly position: number;
+}
+
+export function toLiveChatMessageResponse(view: LiveChatMessageView): LiveChatMessageResponse {
+  return {
+    id: view.id,
+    sessionId: view.sessionId,
+    senderId: view.senderId,
+    senderDisplayName: view.senderDisplayName,
+    body: view.body,
+    createdAt: view.createdAt.toISOString(),
+    position: view.position,
+  };
+}
+
+export function toLiveChatPageResponse(page: LiveChatPage) {
+  return {
+    items: page.items.map(toLiveChatMessageResponse),
+    nextCursor: page.nextCursor,
+    locked: page.locked,
+    lockVersion: page.lockVersion,
+    canPost: page.canPost,
+    canModerate: page.canModerate,
+  };
+}
+
+export function toLiveChatPostResponse(result: LiveChatPostResult): LiveChatMessageResponse {
+  return toLiveChatMessageResponse(result.message);
+}
+
+export function toLiveChatLockResponse(result: LiveChatLockResult) {
+  return { locked: result.locked, lockVersion: result.lockVersion, changed: result.changed };
 }

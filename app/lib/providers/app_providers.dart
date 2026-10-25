@@ -42,6 +42,7 @@ import '../data/repositories/http/http_attendance_repository.dart';
 import '../data/repositories/http/http_auth_repository.dart';
 import '../data/repositories/http/http_community_repository.dart';
 import '../data/repositories/http/http_files_repository.dart';
+import '../data/repositories/http/http_live_chat_repository.dart';
 import '../data/repositories/http/http_live_repository.dart';
 import '../data/repositories/http/http_messaging_repository.dart';
 import '../data/repositories/http/http_notifications_repository.dart';
@@ -54,6 +55,7 @@ import '../data/repositories/mock/mock_attendance_repository.dart';
 import '../data/repositories/mock/mock_auth_repository.dart';
 import '../data/repositories/mock/mock_community_repository.dart';
 import '../data/repositories/mock/mock_files_repository.dart';
+import '../data/repositories/mock/mock_live_chat_repository.dart';
 import '../data/repositories/mock/mock_live_repository.dart';
 import '../data/repositories/mock/mock_messaging_repository.dart';
 import '../data/repositories/mock/mock_notifications_repository.dart';
@@ -306,6 +308,14 @@ final liveRepositoryProvider = Provider<LiveRepository>(
   (ref) => ref.watch(backendModeProvider)
       ? HttpLiveRepository(ref.watch(apiClientProvider))
       : MockLiveRepository(),
+);
+
+/// A live session's own chat (ADR 0047) — its own seam, never the community's
+/// conversation.
+final liveChatRepositoryProvider = Provider<LiveChatRepository>(
+  (ref) => ref.watch(backendModeProvider)
+      ? HttpLiveChatRepository(ref.watch(apiClientProvider))
+      : MockLiveChatRepository(),
 );
 
 // ── Attendance ───────────────────────────────────────────────────────────────

@@ -269,7 +269,13 @@ export function liveRealtimeHarness(options: { readonly live?: LiveHarness } = {
     live.authorization,
     live.communities.holders,
   );
-  const relay = new LiveRealtimeRelay(bus, live.communities.membership, audience, connections);
+  const relay = new LiveRealtimeRelay(
+    bus,
+    live.communities.membership,
+    audience,
+    connections,
+    live.chatReader,
+  );
   relay.onModuleInit();
 
   return {

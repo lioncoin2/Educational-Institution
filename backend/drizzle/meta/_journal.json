@@ -232,6 +232,13 @@
       "when": 1792611143407,
       "tag": "0032_supervisor_live_and_community_ceilings",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792939144412,
+      "tag": "0033_live_session_chat",
+      "breakpoints": true
     }
   ]
 }

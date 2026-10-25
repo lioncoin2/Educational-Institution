@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../models/live.dart';
+import '../models/live_chat.dart';
 import '../models/messaging.dart';
 import '../models/notifications.dart';
 
@@ -89,6 +90,8 @@ sealed class ServerFrame {
         'live.session.media_reset' => LiveSessionMediaResetEvent._fromJson(
           json,
         ),
+        'live.chat.message' => LiveChatMessageEvent._fromJson(json),
+        'live.chat.changed' => LiveChatChangedEvent._fromJson(json),
         _ => null,
       };
     } on FormatException {
@@ -790,4 +793,60 @@ final class LiveSessionMediaResetEvent extends LiveEvent {
         communityId: json['communityId']! as String,
         sessionId: json['sessionId']! as String,
       );
+}
+
+/// A message in a live session's own chat (ADR 0047) — the message itself,
+/// as the chat page shows it, sent to the session's participants only.
+final class LiveChatMessageEvent extends LiveEvent {
+  const LiveChatMessageEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.communityId,
+    required super.sessionId,
+    required this.message,
+  });
+
+  /// Null when the envelope and the message it carries disagree.
+  static LiveChatMessageEvent? _fromJson(Map<String, Object?> json) {
+    final raw = json['message'];
+    if (raw is! Map) return null;
+    final message = LiveChatMessage.fromJson(raw.cast<String, Object?>());
+    final sessionId = json['sessionId']! as String;
+    if (message.sessionId != sessionId) return null;
+    return LiveChatMessageEvent(
+      eventId: json['eventId']! as String,
+      occurredAt: DateTime.parse(json['occurredAt']! as String),
+      communityId: json['communityId']! as String,
+      sessionId: sessionId,
+      message: message,
+    );
+  }
+
+  final LiveChatMessage message;
+}
+
+/// A moderator locked or re-opened a session's chat (ADR 0047), as of
+/// [lockVersion] — a hint: who may post is the server's answer on every post.
+final class LiveChatChangedEvent extends LiveEvent {
+  const LiveChatChangedEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.communityId,
+    required super.sessionId,
+    required this.locked,
+    required this.lockVersion,
+  });
+
+  factory LiveChatChangedEvent._fromJson(Map<String, Object?> json) =>
+      LiveChatChangedEvent(
+        eventId: json['eventId']! as String,
+        occurredAt: DateTime.parse(json['occurredAt']! as String),
+        communityId: json['communityId']! as String,
+        sessionId: json['sessionId']! as String,
+        locked: json['locked']! as bool,
+        lockVersion: json['lockVersion']! as int,
+      );
+
+  final bool locked;
+  final int lockVersion;
 }

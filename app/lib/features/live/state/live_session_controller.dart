@@ -124,6 +124,11 @@ class LiveSessionController extends AsyncNotifier<LiveSession?> {
         if (current != null && event.sessionId == current.id) {
           unawaited(_reconcile(current.id));
         }
+      case LiveChatMessageEvent():
+      case LiveChatChangedEvent():
+        // The session's own chat (ADR 0047): its controller's business, never
+        // the session's state.
+        break;
       case LiveParticipantRemovedEvent():
       case LiveSessionMediaResetEvent():
         // Media-room facts. This non-media phase holds no media state to

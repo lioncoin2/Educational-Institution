@@ -246,7 +246,7 @@ describe('live boundaries', () => {
     ]);
   });
 
-  it('exports exactly LIVE_AUDIENCE, LIVE_PRESENCE and LIVE_SESSIONS, each from its own contract', () => {
+  it('exports exactly LIVE_AUDIENCE, LIVE_CHAT, LIVE_PRESENCE and LIVE_SESSIONS, each from its own contract', () => {
     const text = readFileSync(join(MODULES_DIR, 'live', 'live.module.ts'), 'utf8');
     const exported = /exports:\s*\[([^\]]*)\]/.exec(text);
     expect(exported).not.toBeNull();
@@ -255,10 +255,24 @@ describe('live boundaries', () => {
       .map((entry) => entry.trim())
       .filter(Boolean)
       .sort();
-    expect(tokens).toEqual(['LIVE_AUDIENCE', 'LIVE_PRESENCE', 'LIVE_SESSIONS']);
+    expect(tokens).toEqual(['LIVE_AUDIENCE', 'LIVE_CHAT', 'LIVE_PRESENCE', 'LIVE_SESSIONS']);
     expect(text).toContain("import { LIVE_AUDIENCE } from './contracts/live-audience';");
+    expect(text).toContain("import { LIVE_CHAT } from './contracts/live-chat';");
     expect(text).toContain("import { LIVE_PRESENCE } from './contracts/presence';");
     expect(text).toContain("import { LIVE_SESSIONS } from './contracts/live-sessions';");
+  });
+
+  it('keeps live-chat.ts to Live and realtime — the principal-less chat reader (ADR 0047)', () => {
+    const CHAT = 'src/modules/live/contracts/live-chat.ts';
+    const importers = edgesFrom(output, () => true)
+      .filter((edge) => edge.resolved === CHAT)
+      .map((edge) => edge.source);
+    const outside = importers.filter(
+      (source) =>
+        !source.startsWith('src/modules/live/') && !source.startsWith('src/modules/realtime/'),
+    );
+    expect(outside).toEqual([]);
+    expect(importers).toContain('src/modules/live/application/live-chat.use-cases.ts');
   });
 
   it('keeps presence.ts to attendance and the app wiring — the principal-less presence contract', () => {

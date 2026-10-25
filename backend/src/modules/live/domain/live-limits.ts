@@ -129,6 +129,8 @@ export const LiveRateLimits = {
   joinsPerSessionUser: { name: 'live.join.session_user', limit: 10, windowSeconds: 60 },
   /** Raising a hand, per (session, user). */
   handsPerSessionUser: { name: 'live.hand.session_user', limit: 6, windowSeconds: 60 },
+  /** Posting to a session's chat, per (session, user) — ADR 0047. */
+  chatPostsPerSessionUser: { name: 'live.chat.session_user', limit: 20, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 /**
@@ -137,3 +139,7 @@ export const LiveRateLimits = {
  * re-exported here so every bound Live runs on is found in this file.
  */
 export { MODERATOR_FRAME_COALESCE_MS } from '../contracts/frame-coalescing';
+
+/** A session chat page's bounds (ADR 0047). */
+export const LIVE_CHAT_PAGE_MAX = 100;
+export const LIVE_CHAT_PAGE_DEFAULT = 50;

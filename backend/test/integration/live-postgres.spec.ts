@@ -522,8 +522,14 @@ describeWithPostgres('Live in Postgres', () => {
       expect(
         keys.filter((key) => !key.child.startsWith('live_') || !key.parent.startsWith('live_')),
       ).toEqual([]);
-      // Not vacuous: exactly the three session keys, each RESTRICT.
+      // Not vacuous: exactly the four session keys, each RESTRICT (the chat's: ADR 0047).
       expect(keys).toEqual([
+        {
+          name: 'live_chat_messages_session_id_live_sessions_id_fk',
+          child: 'live_chat_messages',
+          parent: 'live_sessions',
+          on_delete: 'r',
+        },
         {
           name: 'live_moderation_actions_session_id_live_sessions_id_fk',
           child: 'live_moderation_actions',
@@ -557,6 +563,21 @@ describeWithPostgres('Live in Postgres', () => {
       const on = (table: string, rest: string) => `ON public.${table} USING btree ${rest}`;
       expect(indexes).toEqual(
         [
+          // A session's own chat (ADR 0047; migration 0033): a retried post lands
+          // once, and the page reads newest first by position.
+          [
+            'live_chat_messages_one_per_client_key',
+            'UNIQUE',
+            'live_chat_messages',
+            '(session_id, sender_id, client_message_id)',
+          ],
+          ['live_chat_messages_pkey', 'UNIQUE', 'live_chat_messages', '(id)'],
+          [
+            'live_chat_messages_session_page_idx',
+            '',
+            'live_chat_messages',
+            '(session_id, "position")',
+          ],
           ['live_moderation_actions_pkey', 'UNIQUE', 'live_moderation_actions', '(id)'],
           [
             'live_moderation_actions_session_idx',

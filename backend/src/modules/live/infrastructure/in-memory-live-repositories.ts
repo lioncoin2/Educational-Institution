@@ -12,12 +12,16 @@ import {
   type LiveSession,
   type LiveSessionKey,
 } from '../domain/live-session';
+import type { LiveChatDraft, LiveChatMessage, LiveChatState } from '../domain/live-chat';
 import type { ModerationAction } from '../domain/moderation';
 import type {
   EndInput,
   EndOutcome,
   GrantOutcome,
   IneligibleExpiry,
+  LiveChatLockOutcome,
+  LiveChatPostOutcome,
+  LiveChatRepository,
   LiveSessionRepository,
   PresenterCloseInput,
   PresenterCloseOutcome,
@@ -60,6 +64,7 @@ export class InMemoryLiveStore {
   readonly sessions: LiveSessionRepository = new InMemoryLiveSessions(this.memory);
   readonly requests: SpeakerRequestRepository = new InMemorySpeakerRequests(this.memory);
   readonly presenters: PresenterGrantRepository = new InMemoryPresenterGrants(this.memory);
+  readonly chat: LiveChatRepository = new InMemoryLiveChat(this.memory);
 
   /** The moderation rows written for a session, oldest first — what no port reads back. */
   moderationOf(sessionId: string): readonly ModerationAction[] {
@@ -92,6 +97,14 @@ class LiveMemory {
   readonly openPresentersBySession = new Map<string, Set<string>>();
   readonly presentersBySession = new Map<string, string[]>();
   readonly moderation: ModerationAction[] = [];
+  /** A session's chat switch (ADR 0047); absent means open, version 0 — the columns' defaults. */
+  readonly chatStateBySession = new Map<string, LiveChatState>();
+  /** A session's chat, in position order. */
+  readonly chatBySession = new Map<string, LiveChatMessage[]>();
+  /** The unique index `(session_id, sender_id, client_message_id)`. */
+  readonly chatByClientKey = new Map<string, LiveChatMessage>();
+  /** The position sequence — one for every session, as Postgres' bigserial is. */
+  chatPosition = 0;
 
   session(id: string): LiveSession | null {
     return this.sessionById.get(id) ?? null;
@@ -500,5 +513,74 @@ function presenterOrder(a: PresenterGrant, b: PresenterGrant): number {
 function requireLimit(method: string, limit: number, max: number): void {
   if (!Number.isInteger(limit) || limit < 1 || limit > max) {
     throw new RangeError(`${method} takes a whole number from 1 to ${max}`);
+  }
+}
+
+const OPEN_CHAT: LiveChatState = Object.freeze({ locked: false, lockVersion: 0 });
+
+/** A session's own chat (ADR 0047): each method one critical section, as everywhere here. */
+class InMemoryLiveChat implements LiveChatRepository {
+  constructor(private readonly memory: LiveMemory) {}
+
+  async state(sessionId: string): Promise<LiveChatState | null> {
+    if (this.memory.session(sessionId) === null) return null;
+    return this.memory.chatStateBySession.get(sessionId) ?? OPEN_CHAT;
+  }
+
+  async post(
+    draft: LiveChatDraft,
+    options: { readonly moderator: boolean },
+  ): Promise<LiveChatPostOutcome> {
+    const session = this.memory.session(draft.sessionId);
+    if (session === null || !isLive(session)) return { kind: 'session_not_live' };
+    const key = [draft.sessionId, draft.senderId, draft.clientMessageId].join('\u0000');
+    const existing = this.memory.chatByClientKey.get(key);
+    if (existing !== undefined) {
+      return existing.body === draft.body
+        ? { kind: 'duplicate', message: existing }
+        : { kind: 'key_reused' };
+    }
+    const state = this.memory.chatStateBySession.get(draft.sessionId) ?? OPEN_CHAT;
+    if (state.locked && !options.moderator) return { kind: 'locked' };
+    this.memory.chatPosition += 1;
+    const message: LiveChatMessage = Object.freeze({
+      ...draft,
+      position: this.memory.chatPosition,
+    });
+    this.memory.chatByClientKey.set(key, message);
+    const chat = this.memory.chatBySession.get(draft.sessionId) ?? [];
+    chat.push(message);
+    this.memory.chatBySession.set(draft.sessionId, chat);
+    return { kind: 'posted', message };
+  }
+
+  async setLocked(sessionId: string, locked: boolean): Promise<LiveChatLockOutcome> {
+    const session = this.memory.session(sessionId);
+    if (session === null || !isLive(session)) return { kind: 'session_not_live' };
+    const state = this.memory.chatStateBySession.get(sessionId) ?? OPEN_CHAT;
+    if (state.locked === locked) return { kind: 'unchanged', state };
+    const next: LiveChatState = Object.freeze({ locked, lockVersion: state.lockVersion + 1 });
+    this.memory.chatStateBySession.set(sessionId, next);
+    return { kind: 'changed', state: next };
+  }
+
+  async page(
+    sessionId: string,
+    options: { readonly beforePosition: number | null; readonly limit: number },
+  ): Promise<readonly LiveChatMessage[]> {
+    const chat = this.memory.chatBySession.get(sessionId) ?? [];
+    const before = options.beforePosition;
+    return chat
+      .filter((message) => before === null || message.position < before)
+      .reverse()
+      .slice(0, options.limit);
+  }
+
+  async find(sessionId: string, messageId: string): Promise<LiveChatMessage | null> {
+    return (
+      (this.memory.chatBySession.get(sessionId) ?? []).find(
+        (message) => message.id === messageId,
+      ) ?? null
+    );
   }
 }

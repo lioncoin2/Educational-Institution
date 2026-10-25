@@ -110,6 +110,17 @@ export const LiveRefusals = {
     'The maximum number of people are already sharing their screen.',
   ),
   cursorInvalid: failure('validation', 'live.cursor_invalid', 'That page cursor is not valid.'),
+  /** The session's chat is locked (ADR 0047): only its moderators post now. */
+  chatLocked: failure(
+    'forbidden',
+    'live.chat_locked',
+    'The chat is closed to participants right now; only moderators can post.',
+  ),
+  chatKeyReused: failure(
+    'conflict',
+    'live.chat_client_message_id_reused',
+    'This clientMessageId was already used for a different message.',
+  ),
   /**
    * The media provider could not be reached, did not answer in time, or real
    * media is not enabled (P7.2, Q-B): nothing was stored, and retrying is

@@ -600,3 +600,63 @@ export function liveMediaResetFrame(input: {
     sessionId: input.sessionId,
   });
 }
+
+/**
+ * A message in a live session's own chat (ADR 0047): the message as every
+ * participant sees it — its text and its sender's name — to the session's
+ * participants only. A message is posted once, so its id names the fact.
+ */
+export function liveChatMessageFrame(input: {
+  readonly occurredAt: Date;
+  readonly communityId: string;
+  readonly message: {
+    readonly id: string;
+    readonly sessionId: string;
+    readonly senderId: string;
+    readonly senderDisplayName: string;
+    readonly body: string;
+    readonly createdAt: Date;
+    readonly position: number;
+  };
+}): string {
+  const message = input.message;
+  return frame({
+    type: 'live.chat.message',
+    eventId: `live.chat.message:${message.id}`,
+    occurredAt: input.occurredAt.toISOString(),
+    communityId: input.communityId,
+    sessionId: message.sessionId,
+    message: {
+      id: message.id,
+      sessionId: message.sessionId,
+      senderId: message.senderId,
+      senderDisplayName: message.senderDisplayName,
+      body: message.body,
+      createdAt: message.createdAt.toISOString(),
+      position: message.position,
+    },
+  });
+}
+
+/**
+ * "The session's chat was locked or re-opened, as of `lockVersion`" (ADR
+ * 0047) — a hint: who may post is the server's answer on every post. The
+ * version is in the id, so a redelivery is a duplicate a client drops.
+ */
+export function liveChatChangedFrame(input: {
+  readonly occurredAt: Date;
+  readonly communityId: string;
+  readonly sessionId: string;
+  readonly locked: boolean;
+  readonly lockVersion: number;
+}): string {
+  return frame({
+    type: 'live.chat.changed',
+    eventId: `live.chat.changed:${input.sessionId}:${input.lockVersion}`,
+    occurredAt: input.occurredAt.toISOString(),
+    communityId: input.communityId,
+    sessionId: input.sessionId,
+    locked: input.locked,
+    lockVersion: input.lockVersion,
+  });
+}

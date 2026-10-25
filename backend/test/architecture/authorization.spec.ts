@@ -382,6 +382,11 @@ describe('route authorization', () => {
       'POST /live/sessions/:sessionId/participants/:userId/remove (LiveController.removeParticipant)':
         moderate,
       'POST /live/sessions/:sessionId/reset (LiveController.reset)': moderate,
+      // The session's own chat (ADR 0047): participants read and post; moderators lock.
+      'GET /live/sessions/:sessionId/chat (LiveController.chat)': join,
+      'POST /live/sessions/:sessionId/chat (LiveController.post)': join,
+      'PUT /live/sessions/:sessionId/chat/lock (LiveController.lockChat)': moderate,
+      'DELETE /live/sessions/:sessionId/chat/lock (LiveController.unlockChat)': moderate,
     });
   });
 

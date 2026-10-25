@@ -10,6 +10,7 @@ import '../models/feed.dart';
 import '../models/institution.dart';
 import '../models/learning.dart';
 import '../models/live.dart';
+import '../models/live_chat.dart';
 import '../models/live_media.dart';
 import '../models/messaging.dart';
 import '../models/notifications.dart';
@@ -769,6 +770,31 @@ abstract interface class PeopleRepository {
   /// picture — the view then shows the default (initials). Only call it for a
   /// result whose [PersonSearchResult.hasAvatar] is true.
   Future<Uri> personAvatarUrl(String userId);
+}
+
+/// A live session's own chat (`/live/sessions/:id/chat`, ADR 0047) — the
+/// session's, never the community's conversation, and a separate seam from
+/// [LiveRepository] so the session's state never waits on it.
+///
+/// Every refusal throws [LiveException] with the server's code: 404
+/// `live.session_not_found` (not a participant, or no such session), 403
+/// `live.chat_locked` (a moderator closed it), 412 `live.session_not_live`
+/// (ended), 403 `live.not_a_moderator` for a lock by a non-moderator.
+abstract interface class LiveChatRepository {
+  /// The newest page, or the one older than [before] (a previous page's
+  /// `nextCursor`), with the lock and what the viewer may do now.
+  Future<LiveChatPage> page(String sessionId, {String? before});
+
+  /// Posts [body]. [clientMessageId] is generated once per message and resent
+  /// verbatim on a retry: the server stores it once.
+  Future<LiveChatMessage> post(
+    String sessionId, {
+    required String clientMessageId,
+    required String body,
+  });
+
+  /// A moderator closes ([locked] true) or re-opens the chat. Idempotent.
+  Future<LiveChatLockState> setLocked(String sessionId, {required bool locked});
 }
 
 /// Live sessions — a community's live audio room, read-only

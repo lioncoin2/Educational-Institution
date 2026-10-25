@@ -11,6 +11,12 @@ import { GetLiveSessionUseCase } from '../../src/modules/live/application/get-li
 import { JoinLiveSessionUseCase } from '../../src/modules/live/application/join-live-session.use-case';
 import { KickParticipantUseCase } from '../../src/modules/live/application/kick-participant.use-case';
 import { ListHandsUseCase } from '../../src/modules/live/application/list-hands.use-case';
+import {
+  ListLiveChatUseCase,
+  LiveChatReader,
+  PostLiveChatUseCase,
+  SetLiveChatLockUseCase,
+} from '../../src/modules/live/application/live-chat.use-cases';
 import { LiveAccess } from '../../src/modules/live/application/live-access';
 import { LiveJournal } from '../../src/modules/live/application/live-journal';
 import { LiveMedia } from '../../src/modules/live/application/live-media';
@@ -268,6 +274,29 @@ function assemble<S extends LiveStore>(store: S, options: LiveHarnessOptions) {
       liveJournal,
     ),
     reset: new ResetRoomUseCase(identity, access, store.sessions, mediaReset, clock, ids),
+    // The session's own chat (ADR 0047).
+    chat: store.chat,
+    listChat: new ListLiveChatUseCase(identity, accounts, access, store.sessions, store.chat),
+    postChat: new PostLiveChatUseCase(
+      identity,
+      accounts,
+      access,
+      store.sessions,
+      store.chat,
+      limiter,
+      clock,
+      ids,
+      liveJournal,
+    ),
+    chatLock: new SetLiveChatLockUseCase(
+      identity,
+      access,
+      store.sessions,
+      store.chat,
+      clock,
+      liveJournal,
+    ),
+    chatReader: new LiveChatReader(accounts, store.chat),
 
     /** A signed-in person with these roles, known to the directory by `name`. */
     person(userId: string, roles: readonly KnownRoleCode[], name = userId): Principal {

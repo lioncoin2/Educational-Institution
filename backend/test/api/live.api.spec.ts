@@ -1326,7 +1326,7 @@ describe('live API', () => {
     expect((await call('GET', `/sessions/${nextSessionId}`, s2)).status).toBe(200);
   });
 
-  it('reads no body on any route', () => {
+  it('reads no body on any route but the session chat post (ADR 0047)', () => {
     const prototype = LiveController.prototype as unknown as Record<string, unknown>;
     const handlers = Object.getOwnPropertyNames(prototype).filter(
       (name) => name !== 'constructor' && typeof prototype[name] === 'function',
@@ -1337,11 +1337,14 @@ describe('live API', () => {
       ).map((key) => Number(key.split(':')[0]));
     const bodies: readonly number[] = [RouteParamtypes.BODY, RouteParamtypes.RAW_BODY];
     // 13 P6 routes + 2 Q64 participant-control routes (remove, reset) + 2 Q56
-    // screen-share routes (grant, revoke).
-    expect(handlers).toHaveLength(17);
+    // screen-share routes (grant, revoke) + 4 ADR 0047 chat routes (read, post,
+    // lock, unlock).
+    expect(handlers).toHaveLength(21);
+    // The one body: a chat post's text and its idempotency key — never who,
+    // never a role, never a target.
     expect(
       handlers.filter((handler) => parameters(handler).some((type) => bodies.includes(type))),
-    ).toEqual([]);
+    ).toEqual(['post']);
     // Not vacuous: the handlers' parameters are declared there.
     expect(parameters('join')).toContain(RouteParamtypes.PARAM);
     expect(parameters('hands')).toContain(RouteParamtypes.QUERY);

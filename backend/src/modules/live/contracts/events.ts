@@ -31,6 +31,8 @@ export const LiveEvents = {
   screenShareStopped: 'live.screen_share.stopped',
   participantRemoved: 'live.participant.removed',
   mediaReset: 'live.session.media_reset',
+  chatPosted: 'live.chat.posted',
+  chatLockChanged: 'live.chat.lock_changed',
 } as const;
 
 /** A start created the community's live session — never a repeat, never a lost race. */
@@ -168,6 +170,38 @@ export type LiveMediaReset = DomainEvent<
   }
 >;
 
+/**
+ * A message was posted to a session's own chat (ADR 0047). Ids and a
+ * position only — never the text: the realtime relay renders it through
+ * LIVE_CHAT, for the session's participants. Not audited: a person's own act.
+ */
+export type LiveChatPosted = DomainEvent<
+  typeof LiveEvents.chatPosted,
+  {
+    readonly sessionId: string;
+    readonly communityId: string;
+    readonly messageId: string;
+    readonly senderId: string;
+    readonly position: number;
+  }
+>;
+
+/**
+ * A moderator locked or unlocked a session's chat (ADR 0047): while locked,
+ * only moderators post. `lockVersion` rises by one per change, so a client
+ * applies only a newer one. Audited.
+ */
+export type LiveChatLockChanged = DomainEvent<
+  typeof LiveEvents.chatLockChanged,
+  {
+    readonly sessionId: string;
+    readonly communityId: string;
+    readonly locked: boolean;
+    readonly lockVersion: number;
+    readonly changedBy: string;
+  }
+>;
+
 /** Every fact live publishes. */
 export type LiveEvent =
   | LiveSessionStarted
@@ -181,4 +215,6 @@ export type LiveEvent =
   | ScreenShareStarted
   | ScreenShareStopped
   | LiveParticipantRemoved
-  | LiveMediaReset;
+  | LiveMediaReset
+  | LiveChatPosted
+  | LiveChatLockChanged;
