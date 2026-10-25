@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -348,6 +350,7 @@ class _BubbleFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     final maxWidth = MediaQuery.sizeOf(context).width * 0.78;
     final bubble = Container(
+      key: const Key('message-bubble-frame'),
       constraints: BoxConstraints(maxWidth: maxWidth.clamp(0, 520)),
       padding: const EdgeInsets.fromLTRB(
         Insets.md,
@@ -366,16 +369,24 @@ class _BubbleFrame extends StatelessWidget {
           bottomEnd: mine ? Radii.sm : Radii.lg,
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (header != null) ...[header!, const SizedBox(height: 2)],
-          if (reply != null) ...[reply!, const SizedBox(height: Insets.xs)],
-          DefaultTextStyle.merge(style: context.text.bodyMedium, child: child),
-          const SizedBox(height: Insets.xs),
-          Align(alignment: AlignmentDirectional.centerEnd, child: footer),
-        ],
+      // As wide as its content (up to the cap): a short message gets a short
+      // bubble, a long one wraps at the cap, and the time sits at the end of
+      // the content — not at the end of a full-width bar.
+      child: IntrinsicWidth(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (header != null) ...[header!, const SizedBox(height: 2)],
+            if (reply != null) ...[reply!, const SizedBox(height: Insets.xs)],
+            DefaultTextStyle.merge(
+              style: context.text.bodyMedium,
+              child: child,
+            ),
+            const SizedBox(height: Insets.xs),
+            Align(alignment: AlignmentDirectional.centerEnd, child: footer),
+          ],
+        ),
       ),
     );
     final pressable = onLongPress == null
@@ -413,7 +424,6 @@ class _ReplyPreview extends StatelessWidget {
         : context.colors.primary;
     return Container(
       key: const Key('message-reply-preview'),
-      width: double.infinity,
       padding: const EdgeInsetsDirectional.fromSTEB(
         Insets.sm,
         Insets.xs,
@@ -509,50 +519,55 @@ class ImageAttachment extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final width = attachment.width;
     final height = attachment.height;
-    final ratio = width != null && height != null && height > 0
-        ? width / height
-        : 4 / 3;
+    final ratio =
+        (width != null && height != null && height > 0 ? width / height : 4 / 3)
+            .clamp(0.5, 2.0);
     return ClipRRect(
       borderRadius: Radii.brMd,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 260, maxHeight: 320),
-        child: AspectRatio(
-          aspectRatio: ratio.clamp(0.5, 2.0),
-          child: !attachment.available
-              ? const _MediaPlaceholder(
-                  icon: Icons.image_not_supported_outlined,
-                )
-              : ref
-                    .watch(
-                      attachmentUrlProvider((
-                        conversationId: message.conversationId,
-                        messageId: message.id,
-                        fileAssetId: attachment.fileAssetId,
-                      )),
-                    )
-                    .when(
-                      loading: () => const Center(
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      error: (_, _) =>
-                          const _MediaPlaceholder(icon: Icons.image_outlined),
-                      data: (url) => GestureDetector(
-                        key: const Key('image-attachment-open'),
-                        onTap: () => _openImageViewer(
-                          context,
-                          url,
-                          attachment.displayName ?? 'صورة',
+        // An explicit width (the picture's own, within 260 × 320), so a bubble
+        // sized to its content never collapses around a still-loading image.
+        child: SizedBox(
+          width: math.min(260, 320 * ratio),
+          child: AspectRatio(
+            aspectRatio: ratio,
+            child: !attachment.available
+                ? const _MediaPlaceholder(
+                    icon: Icons.image_not_supported_outlined,
+                  )
+                : ref
+                      .watch(
+                        attachmentUrlProvider((
+                          conversationId: message.conversationId,
+                          messageId: message.id,
+                          fileAssetId: attachment.fileAssetId,
+                        )),
+                      )
+                      .when(
+                        loading: () => const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         ),
-                        child: Image.network(
-                          url.toString(),
-                          fit: BoxFit.cover,
-                          semanticLabel: attachment.displayName ?? 'صورة',
-                          errorBuilder: (_, _, _) => const _MediaPlaceholder(
-                            icon: Icons.broken_image_outlined,
+                        error: (_, _) =>
+                            const _MediaPlaceholder(icon: Icons.image_outlined),
+                        data: (url) => GestureDetector(
+                          key: const Key('image-attachment-open'),
+                          onTap: () => _openImageViewer(
+                            context,
+                            url,
+                            attachment.displayName ?? 'صورة',
+                          ),
+                          child: Image.network(
+                            url.toString(),
+                            fit: BoxFit.cover,
+                            semanticLabel: attachment.displayName ?? 'صورة',
+                            errorBuilder: (_, _, _) => const _MediaPlaceholder(
+                              icon: Icons.broken_image_outlined,
+                            ),
                           ),
                         ),
                       ),
-                    ),
+          ),
         ),
       ),
     );
@@ -695,6 +710,11 @@ class _ImageViewerScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
+        // The app theme's AppBar icon colour (the dark on-surface) outranks
+        // `foregroundColor` for icons in Flutter's AppBar, which drew a
+        // near-black ✕ on this black viewer. Set the icon colour itself.
+        iconTheme: const IconThemeData(color: Colors.white),
+        actionsIconTheme: const IconThemeData(color: Colors.white),
         leading: IconButton(
           key: const Key('image-viewer-close'),
           icon: const Icon(Icons.close_rounded),

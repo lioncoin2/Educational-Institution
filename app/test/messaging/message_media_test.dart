@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:quran_institution_app/core/theme/app_theme.dart';
 import 'package:quran_institution_app/data/models/messaging.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_messaging_repository.dart';
 import 'package:quran_institution_app/features/messaging/widgets/message_bubble.dart';
@@ -50,6 +51,7 @@ Future<void> _pump(
   WidgetTester tester,
   Widget child, {
   _FakeMessaging? repo,
+  ThemeData? theme,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -57,6 +59,7 @@ Future<void> _pump(
         if (repo != null) messagingRepositoryProvider.overrideWithValue(repo),
       ],
       child: MaterialApp(
+        theme: theme,
         home: Directionality(
           textDirection: TextDirection.rtl,
           child: Scaffold(body: child),
@@ -93,6 +96,46 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('image-viewer')), findsNothing);
     });
+
+    // Under the APP's theme (not a bare MaterialApp): its AppBar icon theme is
+    // the dark on-surface colour, which outranks the viewer's white foreground
+    // in Flutter's AppBar — a near-black ✕ on the black viewer. The close
+    // control must read white on black in both of the app's themes.
+    for (final (label, theme) in [
+      ('light', AppTheme.light),
+      ('dark', AppTheme.dark),
+    ]) {
+      testWidgets('the close ✕ is white on black in the app $label theme', (
+        tester,
+      ) async {
+        final att = _att(name: 'board.png');
+        await _pump(
+          tester,
+          ImageAttachment(
+            message: _msg(MessageType.image, att: att),
+            attachment: att,
+          ),
+          repo: _FakeMessaging(),
+          theme: theme,
+        );
+        await tester.tap(find.byKey(const Key('image-attachment-open')));
+        await tester.pumpAndSettle();
+
+        final glyph = tester.widget<RichText>(
+          find.descendant(
+            of: find.byIcon(Icons.close_rounded),
+            matching: find.byType(RichText),
+          ),
+        );
+        expect(glyph.text.style?.color, Colors.white);
+        // A full-size touch target.
+        final button = tester.getSize(
+          find.byKey(const Key('image-viewer-close')),
+        );
+        expect(button.width, greaterThanOrEqualTo(48));
+        expect(button.height, greaterThanOrEqualTo(48));
+      });
+    }
   });
 
   group('file', () {
