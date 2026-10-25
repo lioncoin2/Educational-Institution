@@ -257,6 +257,24 @@ void main() {
       expect(seen, isEmpty);
       await sub.cancel();
     });
+
+    test('a mic the device refuses surfaces its own microphone_blocked code', () async {
+      await connected();
+      port.failMicrophone = const LiveKitMicrophoneBlocked();
+
+      await expectLater(
+        client.setMicrophoneEnabled(true),
+        throwsA(
+          isA<LiveMediaException>().having(
+            (e) => e.code,
+            'code',
+            'microphone_blocked',
+          ),
+        ),
+      );
+      expect(client.publication.microphoneOn, isFalse);
+      expect(client.state, const LiveMediaConnected()); // still in the room
+    });
   });
 
   group('screen share', () {

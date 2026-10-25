@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:quran_institution_app/data/media/live_media_platform.dart';
 import 'package:quran_institution_app/data/media/live_media_seams.dart';
 import 'package:quran_institution_app/data/media/livekit/livekit_live_media_client.dart';
 import 'package:quran_institution_app/providers/app_providers.dart';
@@ -98,6 +100,80 @@ void main() {
         onTimeout: () => false,
       );
       expect(closed, isTrue, reason: 'the client was not disposed with the provider');
+    });
+  });
+
+  // Which platforms run the real client: the web as before; iOS/Android only
+  // with the native opt-in (LIVE_MEDIA_NATIVE_ENABLED); never anything else.
+  group('liveMediaPlatformSupported', () {
+    test('the web is supported whatever the native opt-in says', () {
+      for (final nativeEnabled in [false, true]) {
+        for (final platform in TargetPlatform.values) {
+          expect(
+            liveMediaPlatformSupported(
+              isWeb: true,
+              platform: platform,
+              nativeEnabled: nativeEnabled,
+            ),
+            isTrue,
+          );
+        }
+      }
+    });
+
+    test('iOS and Android are supported only with the native opt-in', () {
+      for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+        expect(
+          liveMediaPlatformSupported(
+            isWeb: false,
+            platform: platform,
+            nativeEnabled: false,
+          ),
+          isFalse,
+        );
+        expect(
+          liveMediaPlatformSupported(
+            isWeb: false,
+            platform: platform,
+            nativeEnabled: true,
+          ),
+          isTrue,
+        );
+      }
+    });
+
+    test('desktop targets stay unsupported even with the opt-in', () {
+      for (final platform in [
+        TargetPlatform.linux,
+        TargetPlatform.macOS,
+        TargetPlatform.windows,
+        TargetPlatform.fuchsia,
+      ]) {
+        expect(
+          liveMediaPlatformSupported(
+            isWeb: false,
+            platform: platform,
+            nativeEnabled: true,
+          ),
+          isFalse,
+        );
+      }
+    });
+
+    test('this build (VM, no opt-in) is unsupported and mutes nothing', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      expect(container.read(liveMediaPlatformSupportedProvider), isFalse);
+      expect(container.read(liveMediaMuteInBackgroundProvider), isFalse);
+    });
+
+    test('a supported native platform turns the mic off in the background', () {
+      final container = ProviderContainer(
+        overrides: [liveMediaPlatformSupportedProvider.overrideWithValue(true)],
+      );
+      addTearDown(container.dispose);
+      // kIsWeb is false on the VM, so this is the native case.
+      expect(container.read(liveMediaMuteInBackgroundProvider), isTrue);
     });
   });
 }

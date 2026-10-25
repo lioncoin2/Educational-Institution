@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:livekit_client/livekit_client.dart' show TrackCreateException;
 import 'package:quran_institution_app/data/media/livekit/livekit_room_port.dart';
 import 'package:quran_institution_app/data/models/live_media.dart';
 
@@ -19,10 +20,12 @@ class _FakeLiveRoom implements LiveKitLiveRoom {
   Object? failDispose;
   final List<bool> micCommands = [];
   final List<(bool enabled, bool captureScreenAudio)> screenCommands = [];
+  Object? failMic;
 
   @override
   Future<void> setMicrophoneEnabled(bool enabled) async {
     micCommands.add(enabled);
+    if (failMic != null) throw failMic!;
   }
 
   @override
@@ -259,6 +262,63 @@ void main() {
       await port.disconnect();
       await port.setMicrophoneEnabled(true);
       expect(room.micCommands, isEmpty);
+      await port.dispose();
+    });
+  });
+
+  group('microphone access refusal', () {
+    test('is told apart from other failures, as each platform reports it', () {
+      // iOS: the SDK's own permission check before opening the mic.
+      expect(isMicrophoneAccessError(TrackCreateException('denied')), isTrue);
+      // Android: flutter_webrtc's getUserMedia rejection after a denied prompt.
+      expect(
+        isMicrophoneAccessError(
+          'Unable to getUserMedia: DOMException, NotAllowedError',
+        ),
+        isTrue,
+      );
+      // The web: the browser's NotAllowedError.
+      expect(
+        isMicrophoneAccessError(Exception('NotAllowedError: Permission denied')),
+        isTrue,
+      );
+      expect(isMicrophoneAccessError(StateError('engine bug')), isFalse);
+      expect(isMicrophoneAccessError(Exception('timeout')), isFalse);
+    });
+
+    for (final (label, error) in [
+      ('iOS', TrackCreateException('Microphone permission is not granted')),
+      ('Android', 'Unable to getUserMedia: DOMException, NotAllowedError'),
+    ]) {
+      test('a refused mic on $label becomes LiveKitMicrophoneBlocked', () async {
+        final room = _FakeLiveRoom()..failMic = error;
+        final port = SdkLiveKitRoomPort(openRoom: _openerFor([room]));
+        await port.connect('wss://x', 'tok');
+
+        await expectLater(
+          port.setMicrophoneEnabled(true),
+          throwsA(isA<LiveKitMicrophoneBlocked>()),
+        );
+        expect(room.micCommands, [true]);
+        await port.dispose();
+      });
+    }
+
+    test('other failures, and any failure turning the mic OFF, pass through '
+        'unchanged', () async {
+      final room = _FakeLiveRoom()..failMic = StateError('engine bug');
+      final port = SdkLiveKitRoomPort(openRoom: _openerFor([room]));
+      await port.connect('wss://x', 'tok');
+      await expectLater(
+        port.setMicrophoneEnabled(true),
+        throwsA(isA<StateError>()),
+      );
+
+      room.failMic = TrackCreateException('late');
+      await expectLater(
+        port.setMicrophoneEnabled(false),
+        throwsA(isA<TrackCreateException>()),
+      );
       await port.dispose();
     });
   });

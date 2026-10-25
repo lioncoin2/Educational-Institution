@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/media/live_media_seams.dart';
@@ -64,6 +65,14 @@ class LiveMediaController extends Notifier<LiveMediaState> {
       // error, lands idle, and the port's teardown is already null-safe.
       unawaited(client.disconnect());
     });
+    // Native only: leaving the foreground turns a live mic off (see
+    // liveMediaMuteInBackgroundProvider). Released with the controller.
+    if (ref.watch(liveMediaMuteInBackgroundProvider)) {
+      final lifecycle = AppLifecycleListener(
+        onHide: () => unawaited(_muteForBackground()),
+      );
+      ref.onDispose(lifecycle.dispose);
+    }
     return client.state;
   }
 
@@ -143,6 +152,21 @@ class LiveMediaController extends Notifier<LiveMediaState> {
   Future<void> setScreenShareEnabled(bool enabled) async {
     _requireConnected();
     await _client.setScreenShareEnabled(enabled);
+  }
+
+  /// The app left the foreground on a native platform: turn a live microphone
+  /// off rather than leave it "on" while the OS stops capturing it. The viewer
+  /// turns it back on explicitly. Best-effort: a failure changes nothing the
+  /// viewer can act on, and the SDK's reconciled publication drives the UI.
+  Future<void> _muteForBackground() async {
+    if (!ref.mounted || state is! LiveMediaConnected) return;
+    final client = _client;
+    if (!client.publication.microphoneOn) return;
+    try {
+      await client.setMicrophoneEnabled(false);
+    } on Object {
+      // Nothing to surface.
+    }
   }
 
   // ── The media connection's own reports ───────────────────────────────────

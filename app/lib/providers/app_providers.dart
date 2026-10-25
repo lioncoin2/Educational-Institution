@@ -10,6 +10,7 @@ import '../app/invite_link.dart';
 import '../data/api/api_client.dart';
 import '../data/api/secure_token_store.dart';
 import '../data/api/token_store.dart';
+import '../data/media/live_media_platform.dart';
 import '../data/media/live_media_seams.dart';
 import '../data/media/livekit/livekit_live_media_client.dart';
 import '../data/media/media_seams.dart';
@@ -439,11 +440,29 @@ final liveMediaConfigEnabledProvider = Provider<bool>(
   (ref) => BackendConfig.liveMediaEnabled,
 );
 
-/// Whether this target supports the real live-media client. The LiveKit adapter
-/// is web-first (ADR 0030); native iOS/Android media is a separate slice, so
-/// the real client never activates off the web. A provider, so a test can
-/// simulate a supported or unsupported platform without a device.
-final liveMediaPlatformSupportedProvider = Provider<bool>((ref) => kIsWeb);
+/// Whether this target supports the real live-media client: the web as before,
+/// and iOS/Android only when the native build opts in
+/// (`LIVE_MEDIA_NATIVE_ENABLED`) — see [liveMediaPlatformSupported]. A
+/// provider, so a test can simulate a supported or unsupported platform without
+/// a device.
+final liveMediaPlatformSupportedProvider = Provider<bool>(
+  (ref) => liveMediaPlatformSupported(
+    isWeb: kIsWeb,
+    platform: defaultTargetPlatform,
+    nativeEnabled: BackendConfig.liveMediaNativeEnabled,
+  ),
+);
+
+/// Whether the live microphone is switched off when the app leaves the
+/// foreground. Native only: iOS and Android stop (or forbid) background
+/// microphone capture without extra background modes / a foreground service,
+/// so the app turns the mic off itself rather than leave a "live" indicator
+/// over a mic that no longer records; the viewer turns it back on explicitly.
+/// The web keeps its behavior (a hidden tab keeps its audio). A provider, so a
+/// test can exercise it without a device.
+final liveMediaMuteInBackgroundProvider = Provider<bool>(
+  (ref) => !kIsWeb && ref.watch(liveMediaPlatformSupportedProvider),
+);
 
 /// Whether this browser can actually capture the screen (`getDisplayMedia`). iOS
 /// browsers cannot, so the live screen offers a presenter there an accurate
@@ -455,7 +474,8 @@ final screenCaptureSupportedProvider = Provider<bool>(
 
 /// Live-session media (audio). The real [LiveKitLiveMediaClient] is bound ONLY
 /// when a backend is configured, the build explicitly enables live media, AND
-/// the platform is the supported web target; anything else — the demo build,
+/// the platform is supported (the web, or an opted-in native build); anything
+/// else — the demo build,
 /// an absent/false flag, an unsupported platform, or a widget test — falls
 /// closed to [UnavailableLiveMediaClient], and the live screen says audio is
 /// unavailable. This is the one place the real client is constructed (one room

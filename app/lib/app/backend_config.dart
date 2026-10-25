@@ -22,9 +22,22 @@ abstract final class BackendConfig {
   ///     --dart-define=LIVE_MEDIA_ENABLED=true
   ///
   /// Even when true, the real client is bound ONLY in backend mode and only on
-  /// the supported web target (see `liveMediaClientProvider`); the demo build,
-  /// an absent/false flag, and an unsupported platform all fall closed to the
-  /// Unavailable default. The flag enables no native (iOS/Android) media — that
-  /// stays a separate slice (ADR 0030).
+  /// a supported platform (see `liveMediaClientProvider`); the demo build, an
+  /// absent/false flag, and an unsupported platform all fall closed to the
+  /// Unavailable default. On its own the flag enables the web only; native
+  /// iOS/Android media also needs [liveMediaNativeEnabled].
   static const bool liveMediaEnabled = bool.fromEnvironment('LIVE_MEDIA_ENABLED');
+
+  /// Whether a NATIVE (iOS/Android) build also activates the real live-media
+  /// client. Off by default — a second, explicit opt-in on top of
+  /// [liveMediaEnabled], so a native build carries live audio only once it is
+  /// deliberately enabled (the web is unaffected by it):
+  ///
+  ///   flutter build apk \
+  ///     --dart-define=API_BASE_URL=https://api.example.org \
+  ///     --dart-define=LIVE_MEDIA_ENABLED=true \
+  ///     --dart-define=LIVE_MEDIA_NATIVE_ENABLED=true
+  static const bool liveMediaNativeEnabled = bool.fromEnvironment(
+    'LIVE_MEDIA_NATIVE_ENABLED',
+  );
 }

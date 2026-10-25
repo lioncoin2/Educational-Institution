@@ -3,6 +3,17 @@
          profile manifests declare this for the Flutter tool; a release build
          reads this manifest alone. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Live-session audio (LiveKit over flutter_webrtc, which declares none of
+         its own): the microphone (asked for at runtime when the mic is turned
+         on), audio routing, network-change detection for reconnects, and a
+         Bluetooth headset. Audio only — no camera. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
     <application
         android:label="quran_institution_app"
         android:name="${applicationName}"

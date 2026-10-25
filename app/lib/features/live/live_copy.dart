@@ -209,6 +209,11 @@ abstract final class LiveCopy {
   static const micError =
       'تعذّر تشغيل الميكروفون. تحقّق من إذن الوصول إليه ثم أعد المحاولة.';
 
+  /// The device refused microphone access (`microphone_blocked`): a denied
+  /// permission or no usable mic — something only the viewer can change.
+  static const micBlocked =
+      'لا يملك التطبيق إذن الميكروفون. اسمح به من إعدادات الجهاز ثم أعد المحاولة.';
+
   /// The screen-share CAPTURE control — shown only to a current presenter
   /// (`me.presenting`, the server's authority). Starting it opens the browser
   /// picker; "on" means the SDK published the track (never merely that a slot

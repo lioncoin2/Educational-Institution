@@ -118,6 +118,13 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
     _requireConnected();
     try {
       await _port.setMicrophoneEnabled(enabled);
+    } on LiveKitMicrophoneBlocked {
+      // The device refused the mic (denied permission / no mic): its own code,
+      // so the screen can tell the viewer what to do about it.
+      throw const LiveMediaException(
+        'microphone_blocked',
+        'Microphone access was refused on this device.',
+      );
     } catch (error) {
       throw _mediaError(error);
     }

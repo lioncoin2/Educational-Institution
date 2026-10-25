@@ -385,6 +385,24 @@ void main() {
       expect(find.text(LiveCopy.micOffStatus), findsOneWidget); // not faked on
     });
 
+    testWidgets('a mic the device refuses says how to allow it', (tester) async {
+      final h = await pump(tester, _session(canJoin: true));
+      await tester.pumpAndSettle();
+      await connect(tester, h);
+      h.client.failNext = const LiveMediaException(
+        'microphone_blocked',
+        'refused',
+      );
+
+      await tester.tap(find.byKey(const Key('live-mic-toggle')), warnIfMissed: false);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text(LiveCopy.micBlocked), findsOneWidget);
+      expect(find.text(LiveCopy.micError), findsNothing);
+      expect(find.text(LiveCopy.micOffStatus), findsOneWidget); // not faked on
+    });
+
     testWidgets('a pending mic command blocks a second — no duplicate publish', (
       tester,
     ) async {

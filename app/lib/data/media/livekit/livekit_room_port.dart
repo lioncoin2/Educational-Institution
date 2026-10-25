@@ -20,6 +20,8 @@ abstract interface class LiveKitRoomPort {
   /// token is handed straight to the SDK and never kept, logged or echoed.
   Future<void> connect(String url, String token);
 
+  /// Turns the microphone on or off. Throws [LiveKitMicrophoneBlocked] when
+  /// the device refuses microphone access on turning it on.
   Future<void> setMicrophoneEnabled(bool enabled);
 
   /// Screen share. [captureScreenAudio] is always false in this build (Q56).
@@ -159,6 +161,24 @@ bool micPublishAllowed({
     canPublish &&
     (sourceValues.isEmpty ||
         sourceValues.contains(_protoTrackSourceMicrophone));
+
+/// Thrown by [LiveKitRoomPort.setMicrophoneEnabled] when the device refused
+/// microphone access (the user denied the permission, or no usable mic): the
+/// app can say so, instead of a generic media failure. Carries no detail.
+final class LiveKitMicrophoneBlocked implements Exception {
+  const LiveKitMicrophoneBlocked();
+}
+
+/// Whether [error], thrown while turning the microphone ON, means the device
+/// refused microphone access — as each platform reports it:
+/// - iOS: the SDK checks the permission before opening the mic and throws a
+///   [TrackCreateException] (also its report of a capture with no audio track);
+/// - Android: the WebRTC plugin rejects `getUserMedia` with a
+///   `NotAllowedError` after a denied runtime prompt;
+/// - the web: the browser's `NotAllowedError`.
+/// Only the classification leaves this boundary, never the error's text.
+bool isMicrophoneAccessError(Object error) =>
+    error is TrackCreateException || '$error'.contains('NotAllowedError');
 
 /// Reduces the SDK's [ParticipantPermissions] to the one capability the app
 /// acts on, via the shared [screenPublishAllowed] rule.
@@ -322,7 +342,15 @@ class SdkLiveKitRoomPort implements LiveKitRoomPort {
 
   @override
   Future<void> setMicrophoneEnabled(bool enabled) async {
-    await _room?.setMicrophoneEnabled(enabled);
+    try {
+      await _room?.setMicrophoneEnabled(enabled);
+    } catch (error) {
+      // Turning the mic ON is where the OS asks for (or refuses) access.
+      if (enabled && isMicrophoneAccessError(error)) {
+        throw const LiveKitMicrophoneBlocked();
+      }
+      rethrow;
+    }
   }
 
   @override

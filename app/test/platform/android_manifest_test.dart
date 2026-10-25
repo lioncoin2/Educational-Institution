@@ -19,13 +19,32 @@ void main() {
     expect(permission!.start, lessThan(manifest.indexOf('<application')));
   });
 
-  test('asks for nothing more than the network in release', () {
+  test('asks for nothing more than the network and live audio in release', () {
     final manifest = File('android/app/src/main/AndroidManifest.xml')
         .readAsStringSync();
+    final declared = RegExp(
+      r'<uses-permission\s+android:name="android\.permission\.([A-Z_]+)"',
+    ).allMatches(manifest);
     expect(
-      RegExp(r'<uses-permission\b').allMatches(manifest).length,
-      1,
+      declared.map((m) => m.group(1)).toList(),
+      [
+        'INTERNET',
+        // Live-session audio (LiveKit / flutter_webrtc declares none itself).
+        'RECORD_AUDIO',
+        'MODIFY_AUDIO_SETTINGS',
+        'ACCESS_NETWORK_STATE',
+        'CHANGE_NETWORK_STATE',
+        'BLUETOOTH',
+        'BLUETOOTH_ADMIN',
+        'BLUETOOTH_CONNECT',
+      ],
       reason: 'a new permission is a deliberate change to this test',
     );
+    // Every one is a child of <manifest>, where Android reads it.
+    for (final permission in declared) {
+      expect(permission.start, lessThan(manifest.indexOf('<application')));
+    }
+    // No camera: native live media is audio only.
+    expect(manifest, isNot(contains('android.permission.CAMERA')));
   });
 }

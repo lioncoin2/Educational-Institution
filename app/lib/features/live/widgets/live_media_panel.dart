@@ -107,6 +107,14 @@ class _LiveMediaPanelState extends ConsumerState<LiveMediaPanel> {
     setState(() => _micBusy = true);
     try {
       await _media.setMicrophoneEnabled(next);
+    } on LiveMediaException catch (error) {
+      if (mounted) {
+        messenger.toast(
+          error.code == 'microphone_blocked'
+              ? LiveCopy.micBlocked
+              : LiveCopy.micError,
+        );
+      }
     } catch (_) {
       if (mounted) messenger.toast(LiveCopy.micError);
     } finally {
