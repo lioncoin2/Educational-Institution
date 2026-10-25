@@ -16,10 +16,16 @@ import 'live_moderation_actions.dart';
 
 enum _HandsFilter { all, pending, granted }
 
-LiveHandsFilter? _stateOf(_HandsFilter filter) => switch (filter) {
-  _HandsFilter.all => null,
-  _HandsFilter.pending => LiveHandsFilter.pending,
-  _HandsFilter.granted => LiveHandsFilter.granted,
+/// The hands reads behind a filter. The server answers ONE side per read — the
+/// queue (`pending`, also its answer when no state is given) or who holds the
+/// floor (`granted`) — so «الكل» reads both: the granted speakers first (at
+/// most a handful, unpaged), then the queue. Before, «الكل» sent no state and
+/// so showed the queue only: a speaker vanished from it the moment the floor
+/// was granted, taking the revoke-floor and screen controls with them.
+List<LiveHandsFilter?> _statesOf(_HandsFilter filter) => switch (filter) {
+  _HandsFilter.all => const [LiveHandsFilter.granted, null],
+  _HandsFilter.pending => const [LiveHandsFilter.pending],
+  _HandsFilter.granted => const [LiveHandsFilter.granted],
 };
 
 /// The participants list (reference: المشاركون) — shown only when the server's
@@ -40,8 +46,21 @@ class LiveRoster extends ConsumerStatefulWidget {
 class _LiveRosterState extends ConsumerState<LiveRoster> {
   _HandsFilter _filter = _HandsFilter.all;
 
-  LiveHandsQuery get _query =>
-      (sessionId: widget.session.id, state: _stateOf(_filter));
+  List<LiveHandsQuery> get _queries => [
+    for (final state in _statesOf(_filter))
+      (sessionId: widget.session.id, state: state),
+  ];
+
+  void _rereadAll() {
+    for (final query in _queries) {
+      ref.invalidate(liveHandsProvider(query));
+    }
+  }
+
+  Future<void> _refreshAll() => Future.wait([
+    for (final query in _queries)
+      ref.read(liveHandsProvider(query).notifier).refresh(),
+  ]);
 
   @override
   Widget build(BuildContext context) {
@@ -60,11 +79,14 @@ class _LiveRosterState extends ConsumerState<LiveRoster> {
       ).select((session) => session.asData?.value?.stateVersion),
       (previous, next) {
         if (next != null && (previous == null || next > previous)) {
-          ref.invalidate(liveHandsProvider(_query));
+          _rereadAll();
         }
       },
     );
-    final hands = ref.watch(liveHandsProvider(_query));
+    final queries = _queries;
+    final reads = [for (final q in queries) ref.watch(liveHandsProvider(q))];
+    final failed = reads.any((read) => read.hasError);
+    final loading = !failed && reads.any((read) => !read.hasValue);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -78,23 +100,38 @@ class _LiveRosterState extends ConsumerState<LiveRoster> {
         const SizedBox(height: Insets.lg),
         Text(LiveCopy.rosterSection, style: context.text.labelLarge),
         const SizedBox(height: Insets.sm),
-        ...hands.when(
-          loading: () => const [SkeletonBox(height: 64)],
-          error: (error, _) => [
-            _RosterError(
-              onRetry: () => ref.invalidate(liveHandsProvider(_query)),
-            ),
-          ],
-          data: (state) => _rows(state),
-        ),
+        if (failed)
+          _RosterError(onRetry: _rereadAll)
+        else if (loading)
+          const SkeletonBox(height: 64)
+        else
+          ..._rows([for (final read in reads) read.requireValue], queries.last),
         const SizedBox(height: Insets.lg),
         const _LockedListeners(),
       ],
     );
   }
 
-  List<Widget> _rows(LiveHandsState state) {
-    if (state.items.isEmpty) {
+  /// The rows of every side read (each hand once), then — in «الكل» — anyone
+  /// presenting without a hand row, and the paging of the last side (the
+  /// queue; the granted side is unpaged).
+  List<Widget> _rows(List<LiveHandsState> sides, LiveHandsQuery paged) {
+    final seen = <String>{};
+    final hands = [
+      for (final side in sides)
+        for (final hand in side.items)
+          if (seen.add(hand.id)) hand,
+    ];
+    final withRow = {for (final hand in hands) hand.userId};
+    final presentersWithoutRow = _filter == _HandsFilter.all
+        ? [
+            for (final userId in widget.session.presenterUserIds)
+              if (!withRow.contains(userId) &&
+                  userId != widget.session.hostUserId)
+                userId,
+          ]
+        : const <String>[];
+    if (hands.isEmpty && presentersWithoutRow.isEmpty) {
       return [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: Insets.lg),
@@ -105,24 +142,102 @@ class _LiveRosterState extends ConsumerState<LiveRoster> {
         ),
       ];
     }
+    final last = sides.last;
     return [
-      for (final hand in state.items) ...[
+      for (final hand in hands) ...[
         _ParticipantRow(
           key: ValueKey(hand.id),
           session: widget.session,
           hand: hand,
-          onActed: () => ref.read(liveHandsProvider(_query).notifier).refresh(),
+          onActed: _refreshAll,
+        ),
+        const SizedBox(height: Insets.sm),
+      ],
+      for (final userId in presentersWithoutRow) ...[
+        _PresenterRow(
+          key: ValueKey('presenter-$userId'),
+          session: widget.session,
+          userId: userId,
+          onActed: _refreshAll,
         ),
         const SizedBox(height: Insets.sm),
       ],
       _RosterLoadMore(
-        hasMore: state.hasMore,
-        loadingMore: state.loadingMore,
-        loadMoreFailed: state.loadMoreFailed,
-        onLoadMore: () =>
-            ref.read(liveHandsProvider(_query).notifier).loadMore(),
+        hasMore: last.hasMore,
+        loadingMore: last.loadingMore,
+        loadMoreFailed: last.loadMoreFailed,
+        onLoadMore: () => ref.read(liveHandsProvider(paged).notifier).loadMore(),
       ),
     ];
+  }
+}
+
+/// Someone presenting (a delegated screen grant, ADR 0028) who has no hand row
+/// — e.g. their floor was revoked or they yielded it while the screen grant
+/// stays open (decision 5). Without this row a moderator had no control left
+/// to end that screen share. Their name is the media SDK's (moderators see
+/// names, Q68), else the neutral fallback.
+class _PresenterRow extends ConsumerWidget {
+  const _PresenterRow({
+    super.key,
+    required this.session,
+    required this.userId,
+    required this.onActed,
+  });
+
+  final LiveSession session;
+  final String userId;
+  final Future<void> Function() onActed;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final remote = ref.watch(liveRemoteParticipantsProvider).value?[userId];
+    final known = remote?.name;
+    final name = known != null && known.isNotEmpty
+        ? known
+        : LiveCopy.participantFallback;
+    return Container(
+      padding: const EdgeInsets.all(Insets.md),
+      decoration: BoxDecoration(
+        color: context.colors.surfaceContainer,
+        borderRadius: Radii.brMd,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              AppAvatar(name: name, radius: 18),
+              const SizedBox(width: Insets.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name, style: context.text.titleSmall),
+                    const SizedBox(height: 2),
+                    const _RoleChip(
+                      isHost: false,
+                      isPresenter: true,
+                      state: SpeakerRequestState.granted,
+                    ),
+                  ],
+                ),
+              ),
+              if (remote != null) _MicIndicator(remote: remote),
+            ],
+          ),
+          const SizedBox(height: Insets.md),
+          _RosterCommand(
+            key: Key('live-revoke-presenter-$userId'),
+            label: LiveCopy.revokePresenter,
+            icon: Icons.cancel_presentation_outlined,
+            successMessage: LiveCopy.revokePresenterDone,
+            action: (c) => c.revokePresenter(session.id, userId),
+            onDone: onActed,
+          ),
+        ],
+      ),
+    );
   }
 }
 

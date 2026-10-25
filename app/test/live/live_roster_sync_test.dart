@@ -158,23 +158,27 @@ void main() {
       reason: 'the roster read its first page on build',
     );
 
+    // The default «الكل» view reads two sides (granted speakers + the queue),
+    // so one advance re-reads each side exactly once.
+    const sides = 2;
+
     // A `changed` hint newer than what is held → the controller reconciles over
     // HTTP, the held stateVersion goes 1→2, and the roster re-reads once.
     realtime.emit(_changed(version: 2));
     await tester.pumpAndSettle();
-    expect(repo.handsCalls.length, before + 1);
+    expect(repo.handsCalls.length, before + sides);
 
     // A further advance → exactly one more re-read.
     repo.onGet = (_) async => _session(version: 3);
     realtime.emit(_changed(version: 3));
     await tester.pumpAndSettle();
-    expect(repo.handsCalls.length, before + 2);
+    expect(repo.handsCalls.length, before + 2 * sides);
 
     // A stale/equal version is old news: the controller does not reconcile, so
     // the roster issues no duplicate read.
     realtime.emit(_changed(version: 3));
     await tester.pumpAndSettle();
-    expect(repo.handsCalls.length, before + 2);
+    expect(repo.handsCalls.length, before + 2 * sides);
   });
 
   testWidgets('a `changed` for another community never re-reads this roster', (

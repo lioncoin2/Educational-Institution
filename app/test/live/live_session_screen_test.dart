@@ -911,7 +911,12 @@ void main() {
       final repo = fake(_session(canModerate: true));
       await pump(tester, repo);
       await tester.pumpAndSettle();
-      expect(repo.handsCalls, ['hands:s-1:null:null']); // default: all
+      // Default «الكل»: BOTH sides — who holds the floor, and the queue (the
+      // server answers one side per read; no state = the queue only).
+      expect(
+        repo.handsCalls,
+        unorderedEquals(['hands:s-1:granted:null', 'hands:s-1:null:null']),
+      );
 
       await tester.ensureVisible(find.byTooltip(LiveCopy.rosterFilterTooltip));
       await tester.pumpAndSettle();

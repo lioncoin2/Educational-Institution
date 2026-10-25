@@ -5,8 +5,9 @@ import '../../../providers/app_providers.dart';
 
 /// Which session's hands to read, and through which filter. A record so each
 /// (session, filter) pair is its own keyset-paged view: a `null` [state] is the
-/// whole queue (pending requests and granted speakers), a set one narrows it to
-/// that side ([LiveRepository.hands]). Records compare by value, so Riverpod
+/// server's default — the pending queue only, NOT the granted speakers — and a
+/// set one names that side ([LiveRepository.hands]); a view of both reads both.
+/// Records compare by value, so Riverpod
 /// caches one controller per pair and switching the filter reads a fresh first
 /// page rather than mutating the current one.
 typedef LiveHandsQuery = ({String sessionId, LiveHandsFilter? state});
