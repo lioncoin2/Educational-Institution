@@ -54,7 +54,11 @@ class LiveModerationActions extends StatelessWidget {
           icon: Icons.restart_alt_rounded,
           confirmQuestion: LiveCopy.resetRoomQuestion,
           confirmLabel: LiveCopy.resetRoomConfirm,
-          successMessage: LiveCopy.resetRoomDone,
+          // The server's own answer (C15): `reset: false` means a concurrent
+          // reset or the end already moved the room — never a false "done".
+          outcomeMessage: (moved) => moved == true
+              ? LiveCopy.resetRoomDone
+              : LiveCopy.resetRoomUnchanged,
           action: (c) => c.resetRoom(id),
         ),
       // Ending the broadcast lives in the control dock (`live-end-session`),
@@ -134,12 +138,14 @@ class LiveModerationActions extends StatelessWidget {
   }
 }
 
-/// One moderator command as a button that owns its own in-flight state: while
-/// its request is on its way it is disabled (so a second tap sends nothing)
-/// and its icon becomes a spinner, the label kept so a screen reader still
-/// names it. A destructive command is asked first. A refusal is said through
-/// the server's code; a success says so — neither mutates the session, which
-/// the realtime reconciliation keeps authoritative.
+/// One moderator command as a button that owns its own in-flight state: from
+/// the first tap — its confirmation included — until its request is answered,
+/// a second tap does nothing (one dialog, one request), and its icon becomes a
+/// spinner, the label kept so a screen reader still names it. A destructive
+/// command is asked first. A refusal is said through the server's code; a
+/// success says so — or says what the server's answer means
+/// ([outcomeMessage]) — and neither mutates the session, which the realtime
+/// reconciliation keeps authoritative.
 class LiveCommandButton extends ConsumerStatefulWidget {
   const LiveCommandButton({
     super.key,
@@ -147,6 +153,7 @@ class LiveCommandButton extends ConsumerStatefulWidget {
     required this.icon,
     required this.action,
     this.successMessage,
+    this.outcomeMessage,
     this.confirmQuestion,
     this.confirmLabel,
     this.destructive = false,
@@ -155,11 +162,17 @@ class LiveCommandButton extends ConsumerStatefulWidget {
   final String label;
   final IconData icon;
 
-  /// Runs the command on the controller. Its result is ignored on purpose —
-  /// the authoritative session arrives through reconciliation, never from here.
-  final Future<void> Function(LiveModerationController controller) action;
+  /// Runs the command on the controller. Its result never changes the screen —
+  /// the authoritative session arrives through reconciliation, never from here
+  /// — it only chooses the words of [outcomeMessage].
+  final Future<Object?> Function(LiveModerationController controller) action;
 
   final String? successMessage;
+
+  /// Words for the command's own answer, when it has more than one meaning
+  /// (a reset that moved the room, or one that found it already moved).
+  /// Overrides [successMessage].
+  final String Function(Object? result)? outcomeMessage;
 
   /// When set, the person is asked this before the command is sent; dismissing
   /// is a no.
@@ -174,25 +187,34 @@ class LiveCommandButton extends ConsumerStatefulWidget {
 class _LiveCommandButtonState extends ConsumerState<LiveCommandButton> {
   bool _busy = false;
 
+  /// Its confirmation is open: a second tap must not open another.
+  bool _asking = false;
+
   Future<void> _press() async {
-    if (_busy) return;
+    if (_busy || _asking) return;
     final question = widget.confirmQuestion;
     if (question != null) {
-      final yes = await confirmLiveAction(
-        context,
-        question: question,
-        confirmLabel: widget.confirmLabel ?? widget.label,
-        destructive: widget.destructive,
-      );
+      _asking = true;
+      final bool yes;
+      try {
+        yes = await confirmLiveAction(
+          context,
+          question: question,
+          confirmLabel: widget.confirmLabel ?? widget.label,
+          destructive: widget.destructive,
+        );
+      } finally {
+        _asking = false;
+      }
       if (!yes || !mounted) return;
     }
     // Held before the await: the button may be gone when the answer comes.
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
-      await widget.action(ref.read(liveModerationProvider));
+      final result = await widget.action(ref.read(liveModerationProvider));
       if (!mounted) return;
-      final done = widget.successMessage;
+      final done = widget.outcomeMessage?.call(result) ?? widget.successMessage;
       if (done != null) messenger.toast(done);
     } on LiveException catch (error) {
       messenger.toast(LiveCopy.commandError(error.code));

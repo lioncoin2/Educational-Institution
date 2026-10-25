@@ -45,6 +45,25 @@ abstract final class LiveCopy {
   static const resetRoomConfirm = 'إعادة الضبط';
   static const resetRoomDone = 'تمت إعادة ضبط الغرفة.';
 
+  /// The server answered `reset: false`: a concurrent reset or the end already
+  /// moved the room — nothing this tap did (C15).
+  static const resetRoomUnchanged =
+      'لم تتغيّر الغرفة: سبقتها إعادة ضبط أخرى أو انتهت الجلسة.';
+
+  /// The room was replaced under the viewer (a reset): the app re-joins the new
+  /// one by itself. Shown instead of the generic «انقطع الاتصال» (C15).
+  static const roomResetRejoining =
+      'أُعيد ضبط غرفة البث — جارٍ إعادة اتصالك بالغرفة الجديدة…';
+
+  /// Back in the new room after a reset. A reset keeps every floor and
+  /// presenter slot, but no microphone or shared screen survives the room
+  /// swap, and nothing turns them back on by itself — so the viewer is told.
+  static const roomResetDone = 'أُعيد ضبط الغرفة وأُعيد اتصالك.';
+  static const roomResetMicHint =
+      'ما زلت تملك الكلمة — شغّل الميكروفون من جديد.';
+  static const roomResetScreenHint =
+      'ما زلت من مُقدّمي العرض — أعد مشاركة شاشتك.';
+
   /// The presenter (screen-share) slot — an authoritative role the server
   /// tracks. The screen capture itself is media (unavailable in this build,
   /// said in [audioUnavailableMessage]); this only takes or releases the slot.

@@ -132,9 +132,10 @@ class LiveSessionController extends AsyncNotifier<LiveSession?> {
         break;
       case LiveParticipantRemovedEvent():
       case LiveSessionMediaResetEvent():
-        // Media-room facts. This non-media phase holds no media state to
-        // change, and neither names a participant to act on. Session state is
-        // left intact; a future media phase consumes the appropriate signal.
+        // Media-room facts, never session state. A reset is acted on by the
+        // media controller from the SDK's own room-deleted drop — which every
+        // connected device sees even if this frame is lost — re-joining the new
+        // room and telling the viewer so (C15). Nothing here changes.
         break;
     }
   }

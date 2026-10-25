@@ -359,6 +359,64 @@ describe('Q64 — participant control', () => {
         'live.session_not_live',
       );
     });
+
+    it('moves only the media generation — every floor, presenter slot and chat message stays (C15)', async () => {
+      // A speaker holding the floor, a delegated presenter, a hand waiting and
+      // the session's chat: everything a reset must leave exactly as it was.
+      const speaker = await h.raised(member, sessionId);
+      expect(
+        (await h.moderate.grant({ principal: owner, requestId: speaker.id, meta: META })).ok,
+      ).toBe(true);
+      const waiting = await h.raised(target, sessionId);
+      expect(
+        (
+          await h.presenter.grant({
+            principal: owner,
+            sessionId,
+            targetUserId: target.userId,
+            meta: META,
+          })
+        ).ok,
+      ).toBe(true);
+      expect(
+        (
+          await h.postChat.execute({
+            principal: member,
+            sessionId,
+            clientMessageId: 'reset-keeps-chat-0001',
+            body: 'قبل إعادة الضبط',
+            meta: META,
+          })
+        ).ok,
+      ).toBe(true);
+      const before = await h.session(sessionId);
+
+      const result = await h.reset.execute({ principal: moderator, sessionId, meta: META });
+      expect(result.ok && result.value).toEqual({ reset: true });
+
+      const after = await h.session(sessionId);
+      // The epoch is the one field a reset changes on the session.
+      expect({ ...after, mediaRoomEpoch: before.mediaRoomEpoch }).toEqual(before);
+      expect(after.mediaRoomEpoch).toBe(before.mediaRoomEpoch + 1);
+      expect(await h.requests.findOpen(sessionId, member.userId)).toMatchObject({
+        id: speaker.id,
+        state: 'granted',
+      });
+      expect(await h.requests.findOpen(sessionId, target.userId)).toMatchObject({
+        id: waiting.id,
+        state: 'pending',
+      });
+      expect((await h.presenters.activeGrants(sessionId)).map((grant) => grant.userId)).toContain(
+        target.userId,
+      );
+      const chat = await h.listChat.execute({ principal: member, sessionId });
+      expect(chat.ok && chat.value.items.map((message) => message.body)).toEqual([
+        'قبل إعادة الضبط',
+      ]);
+      // The old room is ended on the provider; nobody is removed by name.
+      expect(h.rtc.ended).toContain(h.room(sessionId, 0));
+      expect(h.rtc.calls.map((call) => call.operation)).not.toContain('removeParticipant');
+    });
   });
 
   /**

@@ -167,7 +167,10 @@ class LiveMediaController extends Notifier<LiveMediaState> {
   Future<void> disconnect() async {
     _generation++;
     _connecting = false;
-    if (ref.mounted) state = const LiveMediaIdle();
+    if (ref.mounted) {
+      state = const LiveMediaIdle();
+      ref.read(liveRoomResetProvider(sessionId).notifier).clear();
+    }
     await _client.disconnect();
   }
 
@@ -276,6 +279,9 @@ class LiveMediaController extends Notifier<LiveMediaState> {
     // Disconnected or disposed while the liveness read was in flight.
     if (!_isCurrent(gen)) return;
     if (!session.isLive) return; // ended: stay disconnected.
+    // Still live, so the room was REPLACED (a moderator's reset, or the
+    // reconciler's): say so while re-joining, and after (C15).
+    ref.read(liveRoomResetProvider(sessionId).notifier).rejoining();
     try {
       await connect();
     } on LiveException {
@@ -294,6 +300,46 @@ class LiveMediaController extends Notifier<LiveMediaState> {
 
   bool _isCurrent(int gen) => ref.mounted && gen == _generation;
 }
+
+/// The session's media room was replaced under this device (C15) — true from
+/// the moment the re-join after a room swap begins until [shown] has passed or
+/// the viewer leaves. Transport only: it says the connection moved to a new
+/// room, never who may speak; the screen uses it to explain why the
+/// microphone and a shared screen are off (no room swap keeps them, and
+/// nothing turns them back on by itself).
+class LiveRoomResetNotifier extends Notifier<bool> {
+  LiveRoomResetNotifier(this.sessionId);
+
+  final String sessionId;
+
+  /// How long the "the room was reset" note stays.
+  static const shown = Duration(seconds: 30);
+
+  Timer? _timer;
+
+  @override
+  bool build() {
+    ref.onDispose(() => _timer?.cancel());
+    return false;
+  }
+
+  void rejoining() {
+    _timer?.cancel();
+    _timer = Timer(shown, () {
+      if (ref.mounted) state = false;
+    });
+    state = true;
+  }
+
+  void clear() {
+    _timer?.cancel();
+    _timer = null;
+    state = false;
+  }
+}
+
+final liveRoomResetProvider = NotifierProvider.autoDispose
+    .family<LiveRoomResetNotifier, bool, String>(LiveRoomResetNotifier.new);
 
 /// The live room THIS device is carrying audio for, if any — set while a media
 /// connection is live, cleared when it ends. The app-wide [LiveActiveBar]

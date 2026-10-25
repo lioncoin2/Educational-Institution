@@ -198,6 +198,7 @@ class _LiveMediaPanelState extends ConsumerState<LiveMediaPanel> {
         const LiveMediaPublication();
     final screenSupported = ref.watch(screenCaptureSupportedProvider);
     final me = widget.session.me;
+    final roomReset = ref.watch(liveRoomResetProvider(_sessionId));
 
     return LiveDockBar(
       child: Column(
@@ -210,6 +211,9 @@ class _LiveMediaPanelState extends ConsumerState<LiveMediaPanel> {
             hand: me.hand,
             presenting: _presenting,
             canJoin: me.canJoin,
+            roomReset: roomReset,
+            speaksByStanding:
+                me.isHost || me.hand?.state == SpeakerRequestState.granted,
           ),
           const SizedBox(height: Insets.sm),
           _dock(state, publication, me, screenSupported),
@@ -387,6 +391,8 @@ class _StatusStrip extends StatelessWidget {
     required this.hand,
     required this.presenting,
     required this.canJoin,
+    this.roomReset = false,
+    this.speaksByStanding = false,
   });
 
   final LiveMediaState state;
@@ -396,13 +402,27 @@ class _StatusStrip extends StatelessWidget {
   final bool presenting;
   final bool canJoin;
 
+  /// The room was just replaced under this device (a reset, C15).
+  final bool roomReset;
+
+  /// The viewer holds a microphone by standing — the host, or a granted floor.
+  final bool speaksByStanding;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final connected =
         state is LiveMediaConnected || state is LiveMediaReconnecting;
 
+    final current = state;
+    final rejoining =
+        roomReset &&
+        (current is LiveMediaConnecting ||
+            (current is LiveMediaDisconnected &&
+                current.reason == LiveMediaDisconnectReason.roomDeleted));
     final title = switch (state) {
+      _ when rejoining => LiveCopy.roomResetRejoining,
+      LiveMediaConnected() when roomReset => LiveCopy.roomResetDone,
       LiveMediaUnavailable() => LiveCopy.audioUnavailable,
       LiveMediaIdle() =>
         canJoin ? LiveCopy.audioIdlePrompt : LiveCopy.audioJoinUnavailable,
@@ -428,6 +448,17 @@ class _StatusStrip extends StatelessWidget {
           LiveCopy.screenShareUnsupported
         else if (!publication.screenAuthorized)
           LiveCopy.screenShareConfirming,
+      // After a reset: what the swap turned off, and that the standing stayed.
+      if (roomReset &&
+          state is LiveMediaConnected &&
+          speaksByStanding &&
+          !publication.microphoneOn)
+        LiveCopy.roomResetMicHint,
+      if (roomReset &&
+          state is LiveMediaConnected &&
+          presenting &&
+          !publication.screenShareOn)
+        LiveCopy.roomResetScreenHint,
       if (hand != null && hand!.state == SpeakerRequestState.pending)
         LiveCopy.handStatusPending
       else if (hand != null && hand!.state == SpeakerRequestState.granted)
