@@ -1202,6 +1202,21 @@ trial-api restart are authorized **for the Trial only**.
 history; deleting a single live-chat message; recovering ownership from an owner who is merely absent; the
 rest of the Q1 role matrix. Staging and production are untouched.
 
+## 31. Live room UX & interaction fixes — C15 (2026-10-25)
+
+**Owner request (2026-10-25).** Investigate and fix four live-room issues; Trial deployment authorized
+after the gates pass.
+
+| | Request | What was found and done | Record |
+| --- | --- | --- | --- |
+| 1 | Show participants' and the teacher's real pictures in the broadcast | The room only ever drew initials and had no picture source; a session-scoped link route over identity's picture + Files, for the people the room already names to the viewer | [ADR 0048](architecture/decisions/0048-live-participant-pictures.md) |
+| 2 | Hide «طلب الكلمة» from whoever may already speak | The server offered the raise to OWNER/ADMIN hosts who speak by right; the offer now excludes by-right speakers (the command is unchanged) | [ADR 0050](architecture/decisions/0050-live-speaking-offer-and-room-reset-feedback.md) |
+| 3 | Make the four live-room reactions work | The four locked placeholders (❤️ 👍 👏 😊) are now ephemeral reactions over the app's WebSocket, naming nobody | [ADR 0049](architecture/decisions/0049-live-room-reactions.md) |
+| 4 | Fix the room-reset button | The reset worked on the server; the app reported it badly (generic disconnect, no "turn your mic/screen back on", "done" on `reset:false`, double dialogs). Fixed in the app; reset scope unchanged | ADR 0050 |
+
+**Not decided here:** restoring the microphone automatically after a reset (would change "joining never
+opens the microphone"); moderator controls over reactions; message reactions in messaging (still excluded).
+
 ---
 
 > This register is advisory and reversible. Closing a question means: record an ADR in `decisions/`,

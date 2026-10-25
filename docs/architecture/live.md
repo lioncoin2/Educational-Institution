@@ -838,6 +838,13 @@ after a terminal state creates a new request. A delegated moderator may not
 grant, decline or revoke the host's own request (403 `live.target_is_host`,
 PROVISIONAL, Q54).
 
+The session view OFFERS the raise (`me.canRaiseHand`) only to someone who
+cannot speak yet: the permit above **and** not a moderator who publishes by
+right (`LiveStanding.publishesByRight`) — so an OWNER/ADMIN host is never shown
+«طلب الكلمة» ([ADR 0050](decisions/0050-live-speaking-offer-and-room-reset-feedback.md),
+C15). The command itself is unchanged and still accepts such a raise, which
+keeps the host-hand rules above; a presenter's screen slot is not speaking.
+
 ### 5.2 Diagram
 
 ```
@@ -1701,7 +1708,9 @@ Application views, never domain objects (the intent of
 | The join credential | — | **never** | `POST …/join` response only |
 | Attendance observation | the provider read | — | attendance's own routes |
 | The session's own chat ([ADR 0047](decisions/0047-live-session-chat.md)) | — | `live.chat.message` (the message, with the sender's name) and `live.chat.changed` `{locked, lockVersion}` to `LIVE_AUDIENCE.participantsAmong` online | `GET/POST /live/sessions/:id/chat`, `PUT/DELETE …/chat/lock` |
-| Data channel | **unused**; `canPublishData` false for everyone — the session chat goes over the app's own WebSocket, never LiveKit | — | — |
+| A participant's picture ([ADR 0048](decisions/0048-live-participant-pictures.md)) | — | — | `GET …/sessions/:id/participants/:userId/avatar` → Files' link, for people the room names to the caller |
+| The room's reactions ([ADR 0049](decisions/0049-live-room-reactions.md)) | — | `live.reaction` `{communityId, sessionId, kind}` — no sender — to the other participants online | `POST …/sessions/:id/reactions` (202, nothing stored) |
+| Data channel | **unused**; `canPublishData` false for everyone — the session chat and the reactions go over the app's own WebSocket, never LiveKit | — | — |
 
 **`live.session.changed` coalescing** (in realtime's `LiveRealtimeRelay`,
 P7): the affected user (the payload's `userId`) gets the frame at once; online

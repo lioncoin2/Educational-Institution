@@ -63,7 +63,9 @@ policy.
   subsystem). This is a product shape, not owner-ratified here.
 - **Direct and non-community conversations have no pin** — an explicit, reported gap. Extending pinning to
   them would need a per-conversation capability decision (there is no `messaging`-native pin authority).
-- **Reactions remain EXCLUDED** (owner rejection); nothing here reopens that.
+- **Reactions remain EXCLUDED** (owner rejection); nothing here reopens that. (The live room's
+  ephemeral broadcast reactions, [ADR 0049](0049-live-room-reactions.md), are a separate Live
+  feature and do not reopen message reactions.)
 
 ## Mechanics (implemented, in source)
 

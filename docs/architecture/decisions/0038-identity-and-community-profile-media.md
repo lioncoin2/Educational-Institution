@@ -5,6 +5,9 @@ Files contract's reach (ADR for `files` Messaging V1) to profile media, adds one
 community capability to the vocabulary of [ADR 0017](0017-community-authorization-model.md) /
 [0034](0034-q50-enrollment-sourced-membership-and-derived-capabilities.md), and adds columns to
 `identity.users` and `communities`. Supersedes nothing; every other ADR is unchanged.
+> **Note (2026-10-25, C15):** extended to the live room by
+> [ADR 0048](0048-live-participant-pictures.md) — the same reference and Files link, asked of the
+> session for the people the room already names to the caller.
 
 **Acceptance is the owner's.** The feature was requested by the owner (user avatar, community
 picture + name + description, and the message sender's picture). The engineering placement below is

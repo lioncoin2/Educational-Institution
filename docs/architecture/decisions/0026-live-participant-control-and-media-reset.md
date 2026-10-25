@@ -6,6 +6,10 @@ room on command. Both are implemented in the Live module over the existing RTC p
 epoch mechanism; the realtime relay carries two new hints. No ban, denylist, transient block, outbox,
 or new RTC capability is introduced. The Flutter side is deferred.**
 
+> **Note (2026-10-25, C15):** the deferred Flutter side is completed by
+> [ADR 0050](0050-live-speaking-offer-and-room-reset-feedback.md) — the reset's scope is unchanged;
+> the app now re-joins with a note that says what the swap turned off, and reports `reset: false`.
+
 **Status:** Accepted.
 **Decided:** 2026-10-06, by the owner (the Q64 policy and the four architecture decisions below were
 approved to proceed).

@@ -87,9 +87,9 @@ responsibility and what each module must not know live in
 
 - **Path:** `backend/src/modules/live/`
 - **Nest module:** `live.module.ts` — exports: `LIVE_AUDIENCE`, `LIVE_CHAT`, `LIVE_PRESENCE`, `LIVE_SESSIONS`
-- **Public contract (`contracts/`):** `LIVE_AUDIENCE`, `LIVE_CHAT`, `LIVE_SESSIONS`, `LiveAudience`, `LiveChat`, `LiveChatLockChanged`, `LiveChatMessageView`, `LiveChatPosted`, `LiveEvent`, `LiveEvents`, `LiveMediaReset`, `LiveParticipantRemoved`, `LiveParticipantRole`, `LiveSessionEnded`, `LiveSessionScope`, `LiveSessionStarted`, `LiveSessions`, `LiveSpeakerFact`, `MAX_AUDIENCE_PROBE`, `MODERATOR_FRAME_COALESCE_MS`, `ScreenShareStarted`, `ScreenShareStopped`, `SpeakerPermissionGranted`, `SpeakerPermissionRevoked`, `SpeakerRequestDeclined`, `SpeakerRequestExpired`, `SpeakerRequestWithdrawn`, `SpeakerRequested`
-- **Declared domain events:** `live.chat.lock_changed`, `live.chat.posted`, `live.participant.removed`, `live.screen_share.started`, `live.screen_share.stopped`, `live.session.ended`, `live.session.media_reset`, `live.session.started`, `live.speaker.declined`, `live.speaker.expired`, `live.speaker.granted`, `live.speaker.requested`, `live.speaker.revoked`, `live.speaker.withdrawn`
-- **Static imports → modules:** `communities`, `identity`
+- **Public contract (`contracts/`):** `LIVE_AUDIENCE`, `LIVE_CHAT`, `LIVE_SESSIONS`, `LiveAudience`, `LiveChat`, `LiveChatLockChanged`, `LiveChatMessageView`, `LiveChatPosted`, `LiveEvent`, `LiveEvents`, `LiveMediaReset`, `LiveParticipantRemoved`, `LiveParticipantRole`, `LiveReactionSent`, `LiveSessionEnded`, `LiveSessionScope`, `LiveSessionStarted`, `LiveSessions`, `LiveSpeakerFact`, `MAX_AUDIENCE_PROBE`, `MODERATOR_FRAME_COALESCE_MS`, `ScreenShareStarted`, `ScreenShareStopped`, `SpeakerPermissionGranted`, `SpeakerPermissionRevoked`, `SpeakerRequestDeclined`, `SpeakerRequestExpired`, `SpeakerRequestWithdrawn`, `SpeakerRequested`
+- **Declared domain events:** `live.chat.lock_changed`, `live.chat.posted`, `live.participant.removed`, `live.reaction.sent`, `live.screen_share.started`, `live.screen_share.stopped`, `live.session.ended`, `live.session.media_reset`, `live.session.started`, `live.speaker.declined`, `live.speaker.expired`, `live.speaker.granted`, `live.speaker.requested`, `live.speaker.revoked`, `live.speaker.withdrawn`
+- **Static imports → modules:** `communities`, `files`, `identity`
 - **Docs:** [module-boundaries.md#live](module-boundaries.md#live)
 
 ### messaging
@@ -235,7 +235,7 @@ responsibility and what each module must not know live in
 ### live
 
 - **Path:** `app/lib/features/live/`
-- **Controllers:** `live_chat_controller.dart`, `live_hands_controller.dart`, `live_media_controller.dart`, `live_moderation_controller.dart`, `live_session_controller.dart`
+- **Controllers:** `live_chat_controller.dart`, `live_hands_controller.dart`, `live_media_controller.dart`, `live_moderation_controller.dart`, `live_reactions_controller.dart`, `live_session_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
 - **Static imports → features:** `communities`
 
@@ -311,7 +311,7 @@ responsibility and what each module must not know live in
 
 ## Flutter data seam (`app/lib/data/`, `app/lib/app/`)
 
-- **Repository contracts (`data/repositories/repositories.dart`):** `AcademicRepository`, `AdminRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `FilesRepository`, `InstitutionRepository`, `LearningRepository`, `LiveChatRepository`, `LiveRepository`, `MessagingRepository`, `NotificationsRepository`, `PeopleRepository`, `ProgressRepository`, `ReportingRepository`, `SchedulingRepository`
+- **Repository contracts (`data/repositories/repositories.dart`):** `AcademicRepository`, `AdminRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `FilesRepository`, `InstitutionRepository`, `LearningRepository`, `LiveChatRepository`, `LiveRepository`, `LiveRoomRepository`, `MessagingRepository`, `NotificationsRepository`, `PeopleRepository`, `ProgressRepository`, `ReportingRepository`, `SchedulingRepository`
 - **Routes (`app/routes.dart`):** `academicStructure` → `/admin/academic`, `adminAccounts` → `/admin/accounts`, `announcements` → `/announcements`, `avatar` → `/profile/avatar`, `certificates` → `/certificates`, `changePassword` → `/profile/password`, `commandCenter` → `/command-center`, `communities` → `/communities`, `home` → `/home`, `invite` → `/invite`, `messages` → `/messages`, `notificationSettings` → `/notifications/settings`, `notifications` → `/notifications`, `path` → `/path`, `profile` → `/profile`, `programs` → `/programs`, `progress` → `/progress`, `publish` → `/publish`, `schedulingList` → `/admin/scheduling`, `sessions` → `/profile/sessions`, `signIn` → `/sign-in`, `splash` → `/splash`, `studentRecord` → `/my-halaqat/record`, `studentWorkspace` → `/my-halaqat`, `teacherHistory` → `/teaching/history`, `teacherWorkspace` → `/teaching`
 - **Route builders:** `academicHalaqaPeople`, `academicProgram`, `academicStudentHistory`, `academicTeacherHistory`, `adminAccount`, `certificate`, `community`, `communityAttendance`, `communityAttendanceSnapshot`, `communityAttendanceSnapshots`, `communityInvitations`, `communityLive`, `communityMembers`, `conversation`, `episode`, `lesson`, `levels`, `program`, `schedulingLesson`, `teacherHalaqaRoster`
 - **Entry points:** `app/lib/main.dart`, `app/lib/app/app.dart`, `app/lib/app/router.dart`, `app/lib/providers/app_providers.dart`
@@ -365,3 +365,6 @@ responsibility and what each module must not know live in
 - [0045 — Authors edit and delete their own messages; moderators delete, never edit](decisions/0045-author-message-edit-and-delete.md)
 - [0046 — Notifications say who, where and what to an authorized recipient — resolved when shown, never stored, never on the lock screen](decisions/0046-notification-content-for-authorized-recipients.md)
 - [0047 — A live session's own chat: Live's table, a server-side lock, delivered to participants only](decisions/0047-live-session-chat.md)
+- [0048 — The live room shows participants' real pictures: identity's reference, Files' link, asked of the session](decisions/0048-live-participant-pictures.md)
+- [0049 — The live room's four reactions: ephemeral, over the app's WebSocket, naming nobody](decisions/0049-live-room-reactions.md)
+- [0050 — The request to speak is offered only to who cannot speak yet; a room reset tells people what it changed](decisions/0050-live-speaking-offer-and-room-reset-feedback.md)
