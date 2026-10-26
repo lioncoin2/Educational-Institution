@@ -14,6 +14,7 @@ import '../data/api/token_store.dart';
 import '../data/media/live_media_platform.dart';
 import '../data/media/live_media_seams.dart';
 import '../data/media/livekit/livekit_live_media_client.dart';
+import '../data/media/livekit/screen_capture_controllers.dart';
 import '../data/media/media_seams.dart';
 import '../data/media/pickers/file_picker_attachment_picker.dart';
 import '../data/media/screen_capture_support.dart';
@@ -491,7 +492,15 @@ final liveMediaMuteInBackgroundProvider = Provider<bool>(
 /// message instead of a share button that only fails. A provider, so a test can
 /// simulate a browser with or without screen capture without a device.
 final screenCaptureSupportedProvider = Provider<bool>(
-  (ref) => screenCaptureSupported(),
+  (ref) => screenCaptureSupported(
+    platform: defaultTargetPlatform,
+    // Native screen share needs BOTH the native-media opt-in and the separate
+    // screen-share opt-in (ADR 0051); the web ignores these and feature-detects
+    // `getDisplayMedia`.
+    nativeScreenShareEnabled:
+        BackendConfig.liveMediaNativeEnabled &&
+        BackendConfig.liveMediaNativeScreenShareEnabled,
+  ),
 );
 
 /// Live-session media (audio). The real [LiveKitLiveMediaClient] is bound ONLY
@@ -508,7 +517,19 @@ final liveMediaClientProvider = Provider<LiveMediaClient>((ref) {
       ref.watch(liveMediaConfigEnabledProvider) &&
       ref.watch(liveMediaPlatformSupportedProvider);
   if (!activate) return const UnavailableLiveMediaClient();
-  final client = LiveKitLiveMediaClient();
+  final client = LiveKitLiveMediaClient(
+    // The platform resource screen share needs around the SDK publish — an
+    // Android `mediaProjection` foreground service, an iOS ReplayKit broadcast,
+    // or a web no-op (ADR 0051). Selected for the running platform and the
+    // build's opt-in flags, here in the one place the real client is built.
+    screenCapture: screenCaptureControllerFor(
+      isWeb: kIsWeb,
+      platform: defaultTargetPlatform,
+      nativeScreenShareEnabled:
+          BackendConfig.liveMediaNativeEnabled &&
+          BackendConfig.liveMediaNativeScreenShareEnabled,
+    ),
+  );
   // The client holds the SDK room, its event subscription and the state
   // streams; dispose it with the provider so no room, listener or stream
   // outlives the binding (e.g. when backend mode is toggled off in a test).

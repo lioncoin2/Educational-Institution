@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../../models/live_media.dart';
 import '../live_media_seams.dart';
+import '../screen_capture.dart';
 import 'livekit_room_port.dart';
 
 /// The real [LiveMediaClient], backed by LiveKit through [LiveKitRoomPort].
@@ -14,15 +15,36 @@ import 'livekit_room_port.dart';
 /// LiveKit type (the port does) and never keeps, logs or echoes the token.
 ///
 /// This class is unit-tested against a fake port; the one SDK-touching unit is
-/// [SdkLiveKitRoomPort]. It is not yet bound to `liveMediaClientProvider` — the
-/// build still uses `UnavailableLiveMediaClient` until platform activation.
+/// [SdkLiveKitRoomPort]. `liveMediaClientProvider` binds it only in backend mode,
+/// with live media enabled, on a supported platform — the web, or an opted-in
+/// native build (ADR 0030); otherwise the build uses `UnavailableLiveMediaClient`.
+///
+/// Screen SHARE needs a platform resource around the SDK's publish (an Android
+/// `mediaProjection` foreground service, an iOS ReplayKit broadcast, a no-op on
+/// the web, ADR 0051). That lifecycle is a [ScreenCaptureController] injected by
+/// the provider wiring and orchestrated here: prepared before capture, released
+/// on every stop path (explicit stop, a server revoke, disconnect, a terminal
+/// drop, or the OS/user ending it). The controller is a plain seam — no LiveKit,
+/// no platform channel — so this class stays unit-testable with a fake.
 class LiveKitLiveMediaClient implements LiveMediaClient {
-  LiveKitLiveMediaClient({LiveKitRoomPort? port})
-    : _port = port ?? SdkLiveKitRoomPort() {
+  LiveKitLiveMediaClient({
+    LiveKitRoomPort? port,
+    this._screenCapture = const NoopScreenCaptureController(),
+  }) : _port = port ?? SdkLiveKitRoomPort() {
     _signals = _port.signals.listen(_onSignal);
   }
 
   final LiveKitRoomPort _port;
+
+  /// The platform resource a screen SHARE needs around the SDK's publish
+  /// (Android `mediaProjection` foreground service / iOS broadcast; a no-op on
+  /// the web). Prepared before capture starts, released on every stop path.
+  final ScreenCaptureController _screenCapture;
+
+  /// Whether a platform capture resource is currently held — set once
+  /// [_screenCapture.prepare] succeeds, cleared by [_releaseCapture]. Guards the
+  /// release so it runs exactly once per capture, whichever path stops it.
+  bool _captureActive = false;
   late final StreamSubscription<LiveKitRoomSignal> _signals;
   final StreamController<LiveMediaState> _states =
       StreamController<LiveMediaState>.broadcast();
@@ -133,18 +155,54 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
   @override
   Future<void> setScreenShareEnabled(bool enabled) async {
     _requireConnected();
-    if (enabled && !_screenAllowed) {
+    if (!enabled) {
+      // Stopping is always allowed while connected. Tell the SDK to unpublish,
+      // then release the platform capture resource (the reconciled track-off
+      // signal releases it too — this is idempotent, so an explicit stop frees
+      // the foreground service immediately without waiting for the signal).
+      try {
+        await _port.setScreenShareEnabled(false, captureScreenAudio: false);
+      } catch (error) {
+        throw _mediaError(error);
+      } finally {
+        await _releaseCapture();
+      }
+      return;
+    }
+    // Authorization is the server's; never show the OS consent dialog to a
+    // viewer the server has not granted a presenter slot.
+    if (!_screenAllowed) {
       throw const LiveMediaException(
         'screen_not_permitted',
         'Screen sharing is not permitted in this session.',
       );
     }
+    // Prepare the device BEFORE the SDK captures: on Android the OS consent
+    // dialog + the `mediaProjection` foreground service, on iOS the broadcast
+    // picker, nothing extra on the web. A decline is a normal no-op (not an
+    // error): no track is published and the UI stays at "start".
+    final proceed = await _screenCapture.prepare();
+    if (!proceed) return;
+    _captureActive = true;
     try {
       // Screen audio is never forced on (the grant keeps it off, Q56).
-      await _port.setScreenShareEnabled(enabled, captureScreenAudio: false);
+      await _port.setScreenShareEnabled(true, captureScreenAudio: false);
     } catch (error) {
+      // The publish failed after the device was prepared — free the platform
+      // resource so no foreground service / broadcast is stranded.
+      await _releaseCapture();
       throw _mediaError(error);
     }
+  }
+
+  /// Releases the platform capture resource exactly once per capture. Safe to
+  /// call on any stop path (explicit stop, a server revoke, a disconnect, a
+  /// terminal drop, or the OS/user ending the capture); a no-op when none is
+  /// held. Never throws — the controller's own release swallows failures.
+  Future<void> _releaseCapture() async {
+    if (!_captureActive) return;
+    _captureActive = false;
+    await _screenCapture.release();
   }
 
   @override
@@ -160,8 +218,9 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
       // appears here (the port holds it), so nothing sensitive is dropped.
     } finally {
       // The viewer's own leave returns to idle; the controller also owns this.
-      // Drop the cached authorization too, so a stale grant can never outlive
-      // the connection it belonged to.
+      // Release any platform capture resource first, then drop the cached
+      // authorization so a stale grant can never outlive the connection.
+      await _releaseCapture();
       _screenAllowed = false;
       _setPublication(const LiveMediaPublication());
       _setRemote(LiveRemoteParticipants.empty);
@@ -174,6 +233,7 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
   /// [LiveMediaClient] contract — the owner (a provider's onDispose, or a test)
   /// calls it; no SDK listener or room outlives it.
   Future<void> dispose() async {
+    await _releaseCapture();
     await _signals.cancel();
     await _port.dispose();
     if (!_states.isClosed) await _states.close();
@@ -199,6 +259,7 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
         // across the blip; only this terminal case clears. The next connect()
         // reseeds from the new room.
         _screenAllowed = false;
+        unawaited(_releaseCapture());
         _setPublication(const LiveMediaPublication());
         _setRemote(LiveRemoteParticipants.empty);
         _setAudioLevels(LiveAudioLevels.empty);
@@ -231,12 +292,20 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
         // The SDK's reconciled view of OUR OWN published tracks — the single
         // source of the mic/screen "on" state the UI shows, never a command's
         // optimistic result.
+        final wasScreenOn = _publication.screenShareOn;
         _setPublication(
           _publication.copyWith(
             microphoneOn: microphoneOn,
             screenShareOn: screenShareOn,
           ),
         );
+        // A published→unpublished screen transition means capture stopped by ANY
+        // path — including the user ending it from the OS privacy control, where
+        // no command of ours ran — so release the platform resource. Gated on the
+        // genuine transition (not merely screenShareOn == false) so a mic toggle
+        // during the start window, before the screen track publishes, cannot
+        // tear down a capture that is still coming up.
+        if (wasScreenOn && !screenShareOn) unawaited(_releaseCapture());
       case LiveKitRemoteParticipants(:final participants):
         if (!_hasLiveConnection) return; // see the capability case above
         // The reconciled remote set (presence + audio/screen), keyed by
@@ -268,6 +337,10 @@ class LiveKitLiveMediaClient implements LiveMediaClient {
       await _port.setScreenShareEnabled(false, captureScreenAudio: false);
     } on Object {
       // Nothing to surface.
+    } finally {
+      // The server withdrew the presenter slot — free the platform capture
+      // resource too, not just the SDK track.
+      await _releaseCapture();
     }
   }
 

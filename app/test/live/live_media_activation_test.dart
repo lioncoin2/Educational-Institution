@@ -176,4 +176,16 @@ void main() {
       expect(container.read(liveMediaMuteInBackgroundProvider), isTrue);
     });
   });
+
+  // ADR 0051 — native screen SHARE is a SEPARATE capability from native audio,
+  // behind its own opt-in (LIVE_MEDIA_NATIVE_SCREEN_SHARE_ENABLED). This build
+  // (the VM, no define) therefore does not support screen capture, so the
+  // "share screen" control stays disabled with an accurate message.
+  group('screen-capture support provider', () {
+    test('this build (VM, no screen-share opt-in) does not support capture', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      expect(container.read(screenCaptureSupportedProvider), isFalse);
+    });
+  });
 }

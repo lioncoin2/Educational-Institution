@@ -368,3 +368,4 @@ responsibility and what each module must not know live in
 - [0048 — The live room shows participants' real pictures: identity's reference, Files' link, asked of the session](decisions/0048-live-participant-pictures.md)
 - [0049 — The live room's four reactions: ephemeral, over the app's WebSocket, naming nobody](decisions/0049-live-room-reactions.md)
 - [0050 — The request to speak is offered only to who cannot speak yet; a room reset tells people what it changed](decisions/0050-live-speaking-offer-and-room-reset-feedback.md)
+- [0051 — Native cross-platform live screen share (Android + iOS)](decisions/0051-native-cross-platform-screen-share.md)

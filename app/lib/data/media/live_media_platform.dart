@@ -10,8 +10,10 @@ import 'package:flutter/foundation.dart';
 /// - Every other target (desktop, or a native build without the opt-in) falls
 ///   closed to the Unavailable client, and the live screen says so.
 ///
-/// Native media is audio only: screen sharing stays a web capability
-/// (`screenCaptureSupported` is false off the web).
+/// This decides AUDIO (whether the real client is bound). Screen SHARE is a
+/// separate capability with its own opt-in and platform plumbing — see
+/// `screen_capture_support.dart` and ADR 0051 — so native screen share is NOT
+/// implied by this flag.
 bool liveMediaPlatformSupported({
   required bool isWeb,
   required TargetPlatform platform,

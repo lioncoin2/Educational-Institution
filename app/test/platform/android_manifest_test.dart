@@ -19,7 +19,7 @@ void main() {
     expect(permission!.start, lessThan(manifest.indexOf('<application')));
   });
 
-  test('asks for nothing more than the network and live audio in release', () {
+  test('asks for nothing more than the network, live audio and screen share in release', () {
     final manifest = File('android/app/src/main/AndroidManifest.xml')
         .readAsStringSync();
     final declared = RegExp(
@@ -37,6 +37,10 @@ void main() {
         'BLUETOOTH',
         'BLUETOOTH_ADMIN',
         'BLUETOOTH_CONNECT',
+        // Live screen share (ADR 0051): the `mediaProjection` foreground service
+        // the app owns, because neither LiveKit nor flutter_webrtc provides one.
+        'FOREGROUND_SERVICE',
+        'FOREGROUND_SERVICE_MEDIA_PROJECTION',
       ],
       reason: 'a new permission is a deliberate change to this test',
     );
@@ -44,7 +48,22 @@ void main() {
     for (final permission in declared) {
       expect(permission.start, lessThan(manifest.indexOf('<application')));
     }
-    // No camera: native live media is audio only.
+    // No camera: live media is audio + screen share only, never the camera.
     expect(manifest, isNot(contains('android.permission.CAMERA')));
+  });
+
+  test('declares the mediaProjection foreground service for screen share (ADR 0051)', () {
+    final manifest = File('android/app/src/main/AndroidManifest.xml')
+        .readAsStringSync();
+    // The service that lets Android MediaProjection run; typed so it matches the
+    // FOREGROUND_SERVICE_MEDIA_PROJECTION permission, not exported (only the app
+    // starts it), and declared inside <application> where services belong.
+    final service = RegExp(
+      r'<service\s+android:name="\.ScreenCaptureService"'
+      r'\s+android:exported="false"'
+      r'\s+android:foregroundServiceType="mediaProjection"\s*/>',
+    ).firstMatch(manifest);
+    expect(service, isNotNull, reason: 'the screen-share service must be declared');
+    expect(service!.start, greaterThan(manifest.indexOf('<application')));
   });
 }

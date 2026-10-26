@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 
 import '../../models/live_media.dart';
@@ -444,7 +445,18 @@ Future<LiveKitLiveRoom> _openSdkRoom(
   String token,
   void Function(LiveKitRoomSignal signal) emit,
 ) async {
-  final room = Room();
+  // On iOS, screen share must run through a ReplayKit broadcast upload extension
+  // (ADR 0051), so the room creates its screen track in broadcast-extension mode;
+  // every other platform keeps the default (Android MediaProjection, web
+  // getDisplayMedia). Screen audio stays off everywhere (Q56). This is the only
+  // place the real room is built, so the option is set once, at the SDK boundary.
+  final room = Room(
+    roomOptions: RoomOptions(
+      defaultScreenShareCaptureOptions: ScreenShareCaptureOptions(
+        useiOSBroadcastExtension: defaultTargetPlatform == TargetPlatform.iOS,
+      ),
+    ),
+  );
   final listener = room.createListener();
   listener
     ..on<RoomConnectedEvent>((_) => emit(const LiveKitConnected()))

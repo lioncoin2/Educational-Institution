@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quran_institution_app/data/media/livekit/livekit_live_media_client.dart';
 import 'package:quran_institution_app/data/media/livekit/livekit_room_port.dart';
+import 'package:quran_institution_app/data/media/screen_capture.dart';
 import 'package:quran_institution_app/data/models/live.dart';
 import 'package:quran_institution_app/data/models/live_media.dart';
 import 'package:quran_institution_app/data/repositories/repositories.dart';
@@ -69,6 +70,32 @@ class _FakePort implements LiveKitRoomPort {
   Future<void> dispose() async {
     disposed = true;
     await _signals.close();
+  }
+}
+
+/// A capture controller the test drives in place of the Android foreground
+/// service / iOS broadcast: records prepare/release, can decline consent, can
+/// fail, and can hang a prepare mid-start. No platform channel, no SDK.
+class _FakeScreenCapture implements ScreenCaptureController {
+  int prepareCalls = 0;
+  int releaseCalls = 0;
+
+  /// What [prepare] returns — true = the user consented, false = declined.
+  bool grant = true;
+  Object? failPrepare;
+  Completer<void>? gatePrepare;
+
+  @override
+  Future<bool> prepare() async {
+    prepareCalls += 1;
+    if (gatePrepare != null) await gatePrepare!.future;
+    if (failPrepare != null) throw failPrepare!;
+    return grant;
+  }
+
+  @override
+  Future<void> release() async {
+    releaseCalls += 1;
   }
 }
 
@@ -309,6 +336,148 @@ void main() {
       await connected(screen: false);
       await client.setScreenShareEnabled(false);
       expect(port.screen.single, (enabled: false, audio: false));
+    });
+  });
+
+  // ADR 0051 — native screen share needs a platform resource around the SDK's
+  // publish (Android `mediaProjection` foreground service, iOS ReplayKit
+  // broadcast; a no-op on the web). The client prepares it before capture and
+  // releases it on EVERY stop path. Driven here by a deterministic fake
+  // controller — this proves the client's orchestration, not real platform
+  // capture (that is the real-device acceptance matrix).
+  group('screen-capture platform lifecycle (ADR 0051)', () {
+    late _FakeScreenCapture capture;
+    late _FakePort capturePort;
+    late LiveKitLiveMediaClient subject;
+
+    setUp(() {
+      capture = _FakeScreenCapture();
+      capturePort = _FakePort();
+      subject = LiveKitLiveMediaClient(port: capturePort, screenCapture: capture);
+    });
+    tearDown(() => subject.dispose());
+
+    Future<void> connectShare() async {
+      await subject.connect(_grant(screen: true));
+      capturePort.emit(const LiveKitConnected());
+    }
+
+    test('prepares the device before the SDK publishes, then captures', () async {
+      await connectShare();
+      await subject.setScreenShareEnabled(true);
+      expect(capture.prepareCalls, 1);
+      expect(capturePort.screen.single, (enabled: true, audio: false));
+    });
+
+    test('a declined consent starts nothing and is not an error', () async {
+      await connectShare();
+      capture.grant = false; // the user dismissed the OS consent dialog
+      await expectLater(subject.setScreenShareEnabled(true), completes);
+      expect(capture.prepareCalls, 1);
+      expect(capturePort.screen, isEmpty); // never published
+      expect(capture.releaseCalls, 0); // nothing to release
+    });
+
+    test('an unauthorized viewer never sees the consent dialog', () async {
+      await subject.connect(_grant(screen: false)); // not a presenter
+      capturePort.emit(const LiveKitConnected());
+      await expectLater(
+        subject.setScreenShareEnabled(true),
+        throwsA(
+          isA<LiveMediaException>().having((e) => e.code, 'code', 'screen_not_permitted'),
+        ),
+      );
+      expect(capture.prepareCalls, 0); // gated before prepare — no OS prompt
+    });
+
+    test('an explicit stop releases the platform resource', () async {
+      await connectShare();
+      await subject.setScreenShareEnabled(true);
+      await subject.setScreenShareEnabled(false);
+      expect(capturePort.screen.last, (enabled: false, audio: false));
+      expect(capture.releaseCalls, 1);
+    });
+
+    test('a server revoke releases the platform resource', () async {
+      await connectShare();
+      await subject.setScreenShareEnabled(true);
+      capturePort.emit(const LiveKitCapabilities(canPublishScreen: false));
+      await pumpEventQueue();
+      expect(capture.releaseCalls, 1);
+      expect(capturePort.screen.last, (enabled: false, audio: false));
+    });
+
+    test('a disconnect releases the platform resource', () async {
+      await connectShare();
+      await subject.setScreenShareEnabled(true);
+      await subject.disconnect();
+      expect(capture.releaseCalls, 1);
+    });
+
+    test('a terminal drop releases the platform resource', () async {
+      await connectShare();
+      await subject.setScreenShareEnabled(true);
+      capturePort.emit(
+        const LiveKitDisconnected(LiveMediaDisconnectReason.roomDeleted),
+      );
+      await pumpEventQueue();
+      expect(capture.releaseCalls, 1);
+    });
+
+    test('the OS/user ending capture (reconciled track-off) releases', () async {
+      await connectShare();
+      await subject.setScreenShareEnabled(true);
+      // The track publishes, then the user stops from the OS privacy control:
+      // the SDK reports the track gone with no command of ours.
+      capturePort.emit(
+        const LiveKitLocalTracks(microphoneOn: false, screenShareOn: true),
+      );
+      capturePort.emit(
+        const LiveKitLocalTracks(microphoneOn: false, screenShareOn: false),
+      );
+      await pumpEventQueue();
+      expect(capture.releaseCalls, 1);
+    });
+
+    test('a mic toggle during start-up does NOT tear a coming-up capture down', () async {
+      await connectShare();
+      await subject.setScreenShareEnabled(true);
+      // Before the screen track publishes, the mic turns on (screenShareOn still
+      // false). This is NOT a published→unpublished transition, so no release.
+      capturePort.emit(
+        const LiveKitLocalTracks(microphoneOn: true, screenShareOn: false),
+      );
+      await pumpEventQueue();
+      expect(capture.releaseCalls, 0);
+    });
+
+    test('overlapping stop paths release exactly once (idempotent)', () async {
+      await connectShare();
+      await subject.setScreenShareEnabled(true);
+      capturePort.emit(
+        const LiveKitLocalTracks(microphoneOn: false, screenShareOn: true),
+      );
+      await subject.setScreenShareEnabled(false); // explicit stop
+      capturePort.emit(
+        const LiveKitLocalTracks(microphoneOn: false, screenShareOn: false),
+      ); // reconciled off too
+      await pumpEventQueue();
+      expect(capture.releaseCalls, 1);
+    });
+
+    test('a publish failure after prepare releases and surfaces the error', () async {
+      await connectShare();
+      capturePort.failScreen = Exception('capture refused for token=super-secret');
+      LiveMediaException? thrown;
+      try {
+        await subject.setScreenShareEnabled(true);
+      } on LiveMediaException catch (e) {
+        thrown = e;
+      }
+      expect(thrown, isNotNull);
+      expect(thrown.toString(), isNot(contains('super-secret')));
+      expect(capture.prepareCalls, 1);
+      expect(capture.releaseCalls, 1); // the prepared resource was freed
     });
   });
 

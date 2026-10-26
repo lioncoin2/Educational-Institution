@@ -40,4 +40,22 @@ abstract final class BackendConfig {
   static const bool liveMediaNativeEnabled = bool.fromEnvironment(
     'LIVE_MEDIA_NATIVE_ENABLED',
   );
+
+  /// Whether a NATIVE build also activates screen SHARING (publishing the
+  /// device screen), on top of native audio. A THIRD, separate opt-in: native
+  /// screen capture needs platform plumbing that audio does not — on Android a
+  /// `mediaProjection` foreground service, on iOS a ReplayKit broadcast
+  /// extension (ADR 0051) — so it is enabled deliberately and independently of
+  /// [liveMediaNativeEnabled]. It is meaningful only when [liveMediaNativeEnabled]
+  /// is also true (no live client is bound otherwise); the provider wiring ANDs
+  /// the two. The web is unaffected (it feature-detects `getDisplayMedia`).
+  ///
+  ///   flutter build apk \
+  ///     --dart-define=API_BASE_URL=https://api.example.org \
+  ///     --dart-define=LIVE_MEDIA_ENABLED=true \
+  ///     --dart-define=LIVE_MEDIA_NATIVE_ENABLED=true \
+  ///     --dart-define=LIVE_MEDIA_NATIVE_SCREEN_SHARE_ENABLED=true
+  static const bool liveMediaNativeScreenShareEnabled = bool.fromEnvironment(
+    'LIVE_MEDIA_NATIVE_SCREEN_SHARE_ENABLED',
+  );
 }
