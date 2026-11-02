@@ -28,6 +28,10 @@ export type NotificationTarget =
   | { readonly kind: 'live_room'; readonly liveSessionId: string }
   /** A community — where a community-membership, grant or ownership fact leads. */
   | { readonly kind: 'community'; readonly communityId: string }
+  /** A daily task as the administration follows it (ADR 0052). */
+  | { readonly kind: 'task'; readonly taskId: string }
+  /** A daily task as its addressee answers it — the client opens their own assignment of it. */
+  | { readonly kind: 'assigned_task'; readonly taskId: string }
   /** The recipient's own profile — no identifier: it can only ever be theirs. */
   | { readonly kind: 'profile' };
 
@@ -43,6 +47,8 @@ export const NOTIFICATION_TARGET_FIELDS: Readonly<Record<NotificationTargetKind,
     halaqa: 'halaqaId',
     live_room: 'liveSessionId',
     community: 'communityId',
+    task: 'taskId',
+    assigned_task: 'taskId',
     profile: null,
   });
 

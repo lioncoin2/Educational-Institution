@@ -14,6 +14,7 @@ import type { CommandActionDescriptor } from '../contracts';
  *   communities.create   create a community                          — communities.create
  *   academic.structure   manage sections / programs / halaqat        — academic.manage
  *   accounts.admin       provision and administer accounts           — users.manage
+ *   tasks.manage         publish and follow the daily tasks (ADR 0052) — tasks.manage
  */
 export const COMMAND_ACTION_CATALOG: readonly CommandActionDescriptor[] = Object.freeze([
   {
@@ -35,5 +36,10 @@ export const COMMAND_ACTION_CATALOG: readonly CommandActionDescriptor[] = Object
     id: 'accounts.admin',
     title: 'إدارة الحسابات',
     requiredPermission: Permissions.users.manage,
+  },
+  {
+    id: 'tasks.manage',
+    title: 'المهام اليومية',
+    requiredPermission: Permissions.tasks.manage,
   },
 ]);

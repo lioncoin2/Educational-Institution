@@ -345,8 +345,7 @@ describeWithPostgres(
       await scratch?.drop();
     });
 
-    const rows = async (query: ReturnType<typeof sql>) =>
-      (await scratch.db.execute(query)).rows;
+    const rows = async (query: ReturnType<typeof sql>) => (await scratch.db.execute(query)).rows;
     const values = async (query: ReturnType<typeof sql>) =>
       (await scratch.db.execute(query)).rows.map((row) => Object.values(row)[0] as string);
 

@@ -69,7 +69,8 @@ describeWithPostgres('live session chat on Postgres (ADR 0047)', () => {
         sql`select id, state, state_version from live_sessions order by id`,
       );
 
-      await migrateTo(scratch.db);
+      // Exactly 0033: later migrations (0034+ seed permissions) are not under test here.
+      await migrateTo(scratch.db, 34);
 
       expect(await counts()).toEqual(before);
       expect(

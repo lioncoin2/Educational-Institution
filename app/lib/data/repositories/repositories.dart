@@ -22,6 +22,9 @@ import '../models/publication.dart';
 import '../models/scheduling.dart';
 import '../models/student.dart';
 
+// The daily tasks & reports engine's contracts live in their own file (ADR 0052).
+export 'contracts/tasks_repositories.dart';
+
 /// Repository contracts.
 ///
 /// Screens depend only on these interfaces. Swapping the prototype's in-memory

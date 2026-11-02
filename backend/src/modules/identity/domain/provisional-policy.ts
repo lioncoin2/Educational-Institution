@@ -41,7 +41,10 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
      */
     [Roles.admin]: ALL_PERMISSIONS.filter(
       (permission) =>
-        permission !== Permissions.settings.manage && permission !== Permissions.messaging.manage,
+        permission !== Permissions.settings.manage &&
+        permission !== Permissions.messaging.manage &&
+        // Templates and re-publishing are the owner's (owner-tasks roadmap §10).
+        permission !== Permissions.tasks.template,
     ),
 
     /**
@@ -78,6 +81,8 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
       Permissions.files.read,
       Permissions.communities.read,
       Permissions.communities.moderate,
+      // Daily tasks: supervisors are an addressable audience (ADR 0052).
+      Permissions.tasks.respond,
     ],
 
     /**
@@ -115,6 +120,8 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
       Permissions.files.upload,
       Permissions.communities.read,
       Permissions.communities.moderate,
+      // Daily tasks: teachers are an addressable audience (ADR 0052).
+      Permissions.tasks.respond,
     ],
 
     /**
@@ -132,6 +139,8 @@ export const PROVISIONAL_ROLE_PERMISSIONS: Readonly<Record<KnownRoleCode, readon
       Permissions.live.join,
       Permissions.files.read,
       Permissions.communities.read,
+      // Daily tasks: assistant teachers count among the teachers (ADR 0052).
+      Permissions.tasks.respond,
     ],
 
     /**

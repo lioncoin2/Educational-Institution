@@ -279,6 +279,47 @@ export class DrizzleUserRepository implements UserRepository {
     };
   }
 
+  async listActiveIdsWithRoles(
+    roles: readonly RoleCode[],
+    afterId: string | null,
+    limit: number,
+  ): Promise<readonly UserId[]> {
+    if (roles.length === 0) return [];
+    const rows = await this.db
+      .selectDistinct({ id: users.id })
+      .from(users)
+      .innerJoin(userRoles, eq(userRoles.userId, users.id))
+      .where(
+        and(
+          eq(users.status, AccountStatuses.active),
+          inArray(userRoles.role, [...roles]),
+          afterId === null ? undefined : gt(users.id, afterId),
+        ),
+      )
+      .orderBy(asc(users.id))
+      .limit(limit);
+    return rows.map((row) => row.id as UserId);
+  }
+
+  async filterActiveIdsWithRoles(
+    ids: readonly UserId[] | readonly string[],
+    roles: readonly RoleCode[],
+  ): Promise<readonly UserId[]> {
+    if (ids.length === 0 || roles.length === 0) return [];
+    const rows = await this.db
+      .selectDistinct({ id: users.id })
+      .from(users)
+      .innerJoin(userRoles, eq(userRoles.userId, users.id))
+      .where(
+        and(
+          inArray(users.id, [...ids]),
+          eq(users.status, AccountStatuses.active),
+          inArray(userRoles.role, [...roles]),
+        ),
+      );
+    return rows.map((row) => row.id as UserId);
+  }
+
   async anyActiveWithRole(role: RoleCode): Promise<boolean> {
     const rows = await this.db
       .select({ one: sql<number>`1` })

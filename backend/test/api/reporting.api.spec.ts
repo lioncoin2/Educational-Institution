@@ -136,6 +136,7 @@ describe('reporting API — GET /reporting/command-center', () => {
         'communities.create',
         'academic.structure',
         'accounts.admin',
+        'tasks.manage',
       ]),
     );
     for (const action of actions) {

@@ -30,6 +30,16 @@ class ApiException implements Exception {
   String toString() => 'ApiException($status, $code): $message';
 }
 
+/// A file the API generated, as received: its bytes, its declared content
+/// type, and the response headers (lower-cased names) that describe it.
+class ApiDownload {
+  const ApiDownload({required this.bytes, required this.contentType, required this.headers});
+
+  final List<int> bytes;
+  final String contentType;
+  final Map<String, String> headers;
+}
+
 /// The one door to the backend.
 ///
 /// Screens never see it; repositories do. It adds the bearer token, maps
@@ -138,6 +148,17 @@ class ApiClient {
     return response.statusCode;
   }
 
+  /// GETs a file the API generates (an export) as raw bytes, with the same
+  /// bearer token and single-flight renewal as every JSON call.
+  Future<ApiDownload> getBytes(String path, {Map<String, String>? query}) async {
+    final response = await _authorized('GET', resolve(path, query), null, true);
+    return ApiDownload(
+      bytes: response.bodyBytes,
+      contentType: response.headers['content-type'] ?? 'application/octet-stream',
+      headers: response.headers,
+    );
+  }
+
   Future<Map<String, Object?>> _json(
     String method,
     String path, {
@@ -145,7 +166,20 @@ class ApiClient {
     Map<String, String>? query,
     bool authenticated = true,
   }) async {
-    final url = resolve(path, query);
+    final response = await _authorized(method, resolve(path, query), body, authenticated);
+    if (response.body.isEmpty) return const {};
+    return (jsonDecode(response.body) as Map).cast<String, Object?>();
+  }
+
+  /// Sends one request — with the bearer token when [authenticated], renewing
+  /// it once on a 401 — and answers the successful response or throws the
+  /// [ApiException] it maps to.
+  Future<http.Response> _authorized(
+    String method,
+    Uri url,
+    Object? body,
+    bool authenticated,
+  ) async {
     var tokens = authenticated ? await _tokens.read() : null;
     if (authenticated && tokens == null) {
       throw const ApiException(
@@ -169,8 +203,7 @@ class ApiClient {
       }
     }
     if (response.statusCode >= 400) throw _failure(response);
-    if (response.body.isEmpty) return const {};
-    return (jsonDecode(response.body) as Map).cast<String, Object?>();
+    return response;
   }
 
   Future<http.Response> _send(

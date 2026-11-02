@@ -24,6 +24,7 @@ String? routeForCommandAction(String id) => switch (id) {
   'communities.create' => Routes.communities,
   'academic.structure' => Routes.academicStructure,
   'accounts.admin' => Routes.adminAccounts,
+  'tasks.manage' => Routes.tasksAdmin,
   _ => null,
 };
 

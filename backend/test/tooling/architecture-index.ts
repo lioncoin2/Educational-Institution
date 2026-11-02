@@ -251,12 +251,18 @@ function flutterFeatures(): FlutterFeature[] {
   });
 }
 
+/** The contracts file and the per-area contract files it re-exports. */
 function repositoryContracts(): string[] {
-  const file = join(APP_LIB, 'data', 'repositories', 'repositories.dart');
-  if (!existsSync(file)) return [];
+  const repositories = join(APP_LIB, 'data', 'repositories');
+  const contractsDir = join(repositories, 'contracts');
+  const files = [join(repositories, 'repositories.dart'), ...dartFiles(contractsDir)].filter(
+    (file) => existsSync(file),
+  );
   return unique(
-    [...read(file).matchAll(/abstract\s+interface\s+class\s+([A-Za-z0-9_]+)\s*\{/g)].map(
-      (match) => match[1],
+    files.flatMap((file) =>
+      [...read(file).matchAll(/abstract\s+interface\s+class\s+([A-Za-z0-9_]+)\s*\{/g)].map(
+        (match) => match[1],
+      ),
     ),
   );
 }
@@ -393,7 +399,7 @@ function render(model: IndexModel): string {
   lines.push('## Flutter data seam (`app/lib/data/`, `app/lib/app/`)');
   lines.push('');
   lines.push(
-    `- **Repository contracts (\`data/repositories/repositories.dart\`):** ${list(model.repositories)}`,
+    `- **Repository contracts (\`data/repositories/repositories.dart\` + \`contracts/\`):** ${list(model.repositories)}`,
   );
   lines.push(
     `- **Routes (\`app/routes.dart\`):** ${

@@ -276,6 +276,7 @@ describe('notifications API', () => {
           { category: 'COMMUNITY', inApp: true, realtime: true, push: true },
           { category: 'LIVE', inApp: true, realtime: true, push: true },
           { category: 'ATTENDANCE', inApp: true, realtime: true, push: true },
+          { category: 'TASKS', inApp: true, realtime: true, push: true },
         ],
       });
       const changed = await r.api.call('PATCH', '/notifications/preferences', {
@@ -289,6 +290,7 @@ describe('notifications API', () => {
           { category: 'COMMUNITY', inApp: true, realtime: true, push: true },
           { category: 'LIVE', inApp: true, realtime: true, push: true },
           { category: 'ATTENDANCE', inApp: true, realtime: true, push: true },
+          { category: 'TASKS', inApp: true, realtime: true, push: true },
         ],
       });
       const other = await r.api.call('GET', '/notifications/preferences', { token: bilal.token });

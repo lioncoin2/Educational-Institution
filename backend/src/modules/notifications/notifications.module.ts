@@ -28,6 +28,7 @@ import {
 } from './application/inbox.use-cases';
 import { LiveNotificationTranslator } from './application/live-notification.translator';
 import { MessagingNotificationTranslator } from './application/messaging-notification.translator';
+import { TasksNotificationTranslator } from './application/tasks-notification.translator';
 import { NotificationContextResolver } from './application/notification-context';
 import { NotificationDispatcher } from './application/notification-dispatcher';
 import { NotificationReaderService } from './application/notification-reader.service';
@@ -147,6 +148,7 @@ import { LoggingPushProvider } from './infrastructure/logging-push-provider';
     CommunityNotificationTranslator,
     LiveNotificationTranslator,
     AttendanceNotificationTranslator,
+    TasksNotificationTranslator,
     PushDelivery,
     ListNotificationsUseCase,
     CountUnreadNotificationsUseCase,

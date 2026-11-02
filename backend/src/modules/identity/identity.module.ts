@@ -10,6 +10,7 @@ import { AccessGuard } from './api/guards/access.guard';
 import { IdentityAccountAvatarWriter } from './application/account-avatar.service';
 import { IdentityAccountDirectory } from './application/account-directory.service';
 import { IdentityAccountDirectorySummary } from './application/account-directory-summary.service';
+import { IdentityAccountRoster } from './application/account-roster.service';
 import { IdentityAccountSearch } from './application/account-search.service';
 import { AccountAdministration } from './application/admin/account-administration';
 import { AccountViews } from './application/admin/account-views';
@@ -40,6 +41,7 @@ import { ACCESS_TOKEN_AUTHENTICATOR } from './contracts/access-tokens';
 import { ACCOUNT_AVATAR_WRITER } from './contracts/account-avatar';
 import { ACCOUNT_DIRECTORY } from './contracts/account-directory';
 import { ACCOUNT_DIRECTORY_SUMMARY } from './contracts/account-directory-summary';
+import { ACCOUNT_ROSTER } from './contracts/account-roster';
 import { ACCOUNT_SEARCH } from './contracts/account-search';
 import { AUTHORIZATION_SERVICE } from './contracts/authorization';
 import {
@@ -83,7 +85,7 @@ function persistent<T>(
 /**
  * Identity & Access — the composition root.
  *
- * It exports exactly five things: `AUTHORIZATION_SERVICE`, the only way any
+ * It exports these things: `AUTHORIZATION_SERVICE`, the only way any
  * other module asks an access question; `ACCOUNT_DIRECTORY`, the only way one
  * learns who an account is by id (id, display name, avatar reference, active);
  * `ACCOUNT_AVATAR_WRITER`, the only way one records which Files asset is an
@@ -92,7 +94,9 @@ function persistent<T>(
  * display-name prefix (the same minimal shape — the caller's right to search is
  * decided by the caller, e.g. People's `people.read` gate); and
  * `ACCESS_TOKEN_AUTHENTICATOR`, the HTTP guard's own authentication for
- * transports that are not a request (the realtime connection). Everything else
+ * transports that are not a request (the realtime connection); and
+ * `ACCOUNT_ROSTER`, the only way one enumerates the ACTIVE holders of a role, by
+ * id (the daily tasks engine's staff audiences, ADR 0052). Everything else
  * — users, sessions, tokens, the role matrix — is private to this module.
  *
  * No account is seeded and no default credential exists. The first owner is
@@ -164,6 +168,7 @@ function persistent<T>(
     { provide: ACCOUNT_DIRECTORY, useClass: IdentityAccountDirectory },
     { provide: ACCOUNT_AVATAR_WRITER, useClass: IdentityAccountAvatarWriter },
     { provide: ACCOUNT_SEARCH, useClass: IdentityAccountSearch },
+    { provide: ACCOUNT_ROSTER, useClass: IdentityAccountRoster },
     { provide: ACCOUNT_DIRECTORY_SUMMARY, useClass: IdentityAccountDirectorySummary },
 
     RolePermissions,
@@ -200,6 +205,7 @@ function persistent<T>(
     ACCOUNT_AVATAR_WRITER,
     ACCOUNT_SEARCH,
     ACCOUNT_DIRECTORY_SUMMARY,
+    ACCOUNT_ROSTER,
     ACCESS_TOKEN_AUTHENTICATOR,
   ],
 })

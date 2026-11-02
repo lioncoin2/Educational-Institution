@@ -46,6 +46,21 @@ export interface UserRepository {
     page: PageRequest,
     eligible: { readonly holds: string; readonly notHolds: string },
   ): Promise<Page<User>>;
+  /**
+   * Ids of ACTIVE accounts holding at least one of `roles`, in id order,
+   * strictly after `afterId` (null = from the start), at most `limit`. The
+   * role roster other modules consult (`ACCOUNT_ROSTER`, ADR 0052).
+   */
+  listActiveIdsWithRoles(
+    roles: readonly RoleCode[],
+    afterId: string | null,
+    limit: number,
+  ): Promise<readonly UserId[]>;
+  /** Those of `ids` that are ACTIVE and hold at least one of `roles`. */
+  filterActiveIdsWithRoles(
+    ids: readonly UserId[] | readonly string[],
+    roles: readonly RoleCode[],
+  ): Promise<readonly UserId[]>;
   /** True when at least one ACTIVE account holds `role`. */
   anyActiveWithRole(role: RoleCode): Promise<boolean>;
   /**

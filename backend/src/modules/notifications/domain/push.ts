@@ -101,6 +101,10 @@ function threadKeyOf(target: NotificationTarget): string {
       return `live_room:${target.liveSessionId}`;
     case 'community':
       return `community:${target.communityId}`;
+    // One task, one thread on the lock screen, whichever side of it this is.
+    case 'task':
+    case 'assigned_task':
+      return `task:${target.taskId}`;
     case 'profile':
       return 'profile';
   }

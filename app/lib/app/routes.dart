@@ -40,6 +40,27 @@ abstract final class Routes {
   static String schedulingLesson(String lessonId) =>
       '$schedulingList/lessons/${Uri.encodeComponent(lessonId)}';
 
+  /// The daily tasks & reports engine (ADR 0052). A recipient's own tasks
+  /// (`tasks.respond`); one of them by assignment.
+  static const String myTasks = '/my-tasks';
+  static String myTask(String assignmentId) => '$myTasks/${Uri.encodeComponent(assignmentId)}';
+
+  /// The administration's tasks (`tasks.manage`): the list, the composer, one
+  /// task's follow-up page, and editing or re-publishing it.
+  static const String tasksAdmin = '/admin/tasks';
+  static const String taskCompose = '$tasksAdmin/new';
+  static String task(String taskId) => '$tasksAdmin/${Uri.encodeComponent(taskId)}';
+  static String taskEdit(String taskId) => '${task(taskId)}/edit';
+  static String taskRepublish(String taskId) => '${task(taskId)}/republish';
+
+  /// The reports page by category, one report's review, the statistics and the
+  /// owner's templates.
+  static const String taskReports = '/admin/task-reports';
+  static String taskReport(String reportId) =>
+      '$taskReports/${Uri.encodeComponent(reportId)}';
+  static const String taskDashboard = '/admin/task-dashboard';
+  static const String taskTemplates = '/admin/task-templates';
+
   /// The teacher's own workspace: the halaqat they actively teach
   /// (`academic.teach`). The server answers by the authenticated identity.
   static const String teacherWorkspace = '/teaching';

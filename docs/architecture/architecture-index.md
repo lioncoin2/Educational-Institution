@@ -77,8 +77,8 @@ responsibility and what each module must not know live in
 ### identity
 
 - **Path:** `backend/src/modules/identity/`
-- **Nest module:** `identity.module.ts` — exports: `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_AVATAR_WRITER`, `ACCOUNT_DIRECTORY`, `ACCOUNT_DIRECTORY_SUMMARY`, `ACCOUNT_SEARCH`, `AUTHORIZATION_SERVICE`
-- **Public contract (`contracts/`):** `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_AVATAR_WRITER`, `ACCOUNT_DIRECTORY`, `ACCOUNT_DIRECTORY_MAX_IDS`, `ACCOUNT_DIRECTORY_SUMMARY`, `ACCOUNT_SEARCH`, `ALL_PERMISSIONS`, `AUTHORIZATION_SERVICE`, `AccessTokenAuthenticator`, `AccountAvatarWriter`, `AccountDirectory`, `AccountDirectorySummary`, `AccountSearch`, `AccountStatusCounts`, `AccountSummary`, `Authenticated`, `Authentication`, `AuthorizationContext`, `AuthorizationService`, `ELIGIBLE_TEACHER`, `Permission`, `Permissions`, `REQUIRE_AUTHENTICATION`, `REQUIRE_PERMISSION`, `RequirePermission`, `SYSTEM_PRINCIPAL_PREFIX`, `SessionReference`, `isPermission`, `isSystemPrincipal`, `systemPrincipal`
+- **Nest module:** `identity.module.ts` — exports: `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_AVATAR_WRITER`, `ACCOUNT_DIRECTORY`, `ACCOUNT_DIRECTORY_SUMMARY`, `ACCOUNT_ROSTER`, `ACCOUNT_SEARCH`, `AUTHORIZATION_SERVICE`
+- **Public contract (`contracts/`):** `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_AVATAR_WRITER`, `ACCOUNT_DIRECTORY`, `ACCOUNT_DIRECTORY_MAX_IDS`, `ACCOUNT_DIRECTORY_SUMMARY`, `ACCOUNT_ROSTER`, `ACCOUNT_ROSTER_MAX_PAGE`, `ACCOUNT_SEARCH`, `ALL_PERMISSIONS`, `AUTHORIZATION_SERVICE`, `AccessTokenAuthenticator`, `AccountAvatarWriter`, `AccountDirectory`, `AccountDirectorySummary`, `AccountRoster`, `AccountSearch`, `AccountStatusCounts`, `AccountSummary`, `Authenticated`, `Authentication`, `AuthorizationContext`, `AuthorizationService`, `ELIGIBLE_TEACHER`, `Permission`, `Permissions`, `REQUIRE_AUTHENTICATION`, `REQUIRE_PERMISSION`, `RequirePermission`, `SYSTEM_PRINCIPAL_PREFIX`, `SessionReference`, `isPermission`, `isSystemPrincipal`, `systemPrincipal`
 - **Declared domain events:** —
 - **Static imports → modules:** —
 - **Docs:** [module-boundaries.md#identity](module-boundaries.md#identity)
@@ -107,7 +107,7 @@ responsibility and what each module must not know live in
 - **Nest module:** `notifications.module.ts` — exports: `NOTIFICATION_READER`
 - **Public contract (`contracts/`):** `AllNotificationsRead`, `DEVICE_PLATFORMS`, `DevicePlatform`, `NOTIFICATION_CATEGORIES`, `NOTIFICATION_CHANNELS`, `NOTIFICATION_READER`, `NOTIFICATION_READER_MAX_IDS`, `NOTIFICATION_TARGET_FIELDS`, `NOTIFICATION_TYPES`, `NotificationCategory`, `NotificationChannel`, `NotificationCreated`, `NotificationEvent`, `NotificationEvents`, `NotificationParams`, `NotificationRead`, `NotificationReader`, `NotificationTarget`, `NotificationTargetKind`, `NotificationType`, `NotificationView`, `PUSH_PROVIDER_NAMES`, `PushProviderName`
 - **Declared domain events:** `notifications.notification.all_read`, `notifications.notification.created`, `notifications.notification.read`
-- **Static imports → modules:** `attendance`, `communities`, `identity`, `live`, `messaging`
+- **Static imports → modules:** `attendance`, `communities`, `identity`, `live`, `messaging`, `tasks`
 - **Docs:** [module-boundaries.md#notifications](module-boundaries.md#notifications)
 
 ### operations
@@ -145,6 +145,15 @@ responsibility and what each module must not know live in
 - **Declared domain events:** —
 - **Static imports → modules:** `academic`, `communities`, `identity`
 - **Docs:** [module-boundaries.md#reporting](module-boundaries.md#reporting)
+
+### tasks
+
+- **Path:** `backend/src/modules/tasks/`
+- **Nest module:** `tasks.module.ts` — exports: —
+- **Public contract (`contracts/`):** `ReportApproved`, `ReportChangesRequested`, `ReportDecisionFact`, `ReportSubmitted`, `ReportSubmittedFact`, `TaskAcknowledged`, `TaskAudienceFact`, `TaskCancelled`, `TaskCompleted`, `TaskPublished`, `TaskReassigned`, `TaskReassignedFact`, `TaskReminded`, `TaskResponseFact`, `TaskUpdated`, `TasksEvent`, `TasksEvents`
+- **Declared domain events:** `tasks.assignment.acknowledged`, `tasks.assignment.completed`, `tasks.assignment.reassigned`, `tasks.report.approved`, `tasks.report.changes_requested`, `tasks.report.submitted`, `tasks.task.cancelled`, `tasks.task.published`, `tasks.task.reminded`, `tasks.task.updated`
+- **Static imports → modules:** `communities`, `identity`
+- **Docs:** [module-boundaries.md#tasks](module-boundaries.md#tasks)
 
 ## Flutter features (`app/lib/features/`)
 
@@ -258,7 +267,7 @@ responsibility and what each module must not know live in
 - **Path:** `app/lib/features/profile/`
 - **Controllers:** `sessions_controller.dart`
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
-- **Static imports → features:** `academic_admin`, `admin`, `auth`, `command_center`, `notifications`, `publish`, `scheduling`, `student`, `teacher`
+- **Static imports → features:** `academic_admin`, `admin`, `auth`, `command_center`, `notifications`, `publish`, `scheduling`, `student`, `tasks`, `teacher`
 
 ### programs
 
@@ -302,6 +311,13 @@ responsibility and what each module must not know live in
 - **Static imports → areas:** `app`, `core`, `data`, `providers`
 - **Static imports → features:** `academic_admin`, `auth`, `messaging`
 
+### tasks
+
+- **Path:** `app/lib/features/tasks/`
+- **Controllers:** `paged_list_controller.dart`
+- **Static imports → areas:** `app`, `core`, `data`, `providers`
+- **Static imports → features:** `academic_admin`, `auth`
+
 ### teacher
 
 - **Path:** `app/lib/features/teacher/`
@@ -311,9 +327,9 @@ responsibility and what each module must not know live in
 
 ## Flutter data seam (`app/lib/data/`, `app/lib/app/`)
 
-- **Repository contracts (`data/repositories/repositories.dart`):** `AcademicRepository`, `AdminRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `FilesRepository`, `InstitutionRepository`, `LearningRepository`, `LiveChatRepository`, `LiveRepository`, `LiveRoomRepository`, `MessagingRepository`, `NotificationsRepository`, `PeopleRepository`, `ProgressRepository`, `ReportingRepository`, `SchedulingRepository`
-- **Routes (`app/routes.dart`):** `academicStructure` → `/admin/academic`, `adminAccounts` → `/admin/accounts`, `announcements` → `/announcements`, `avatar` → `/profile/avatar`, `certificates` → `/certificates`, `changePassword` → `/profile/password`, `commandCenter` → `/command-center`, `communities` → `/communities`, `home` → `/home`, `invite` → `/invite`, `messages` → `/messages`, `notificationSettings` → `/notifications/settings`, `notifications` → `/notifications`, `path` → `/path`, `profile` → `/profile`, `programs` → `/programs`, `progress` → `/progress`, `publish` → `/publish`, `schedulingList` → `/admin/scheduling`, `sessions` → `/profile/sessions`, `signIn` → `/sign-in`, `splash` → `/splash`, `studentRecord` → `/my-halaqat/record`, `studentWorkspace` → `/my-halaqat`, `teacherHistory` → `/teaching/history`, `teacherWorkspace` → `/teaching`
-- **Route builders:** `academicHalaqaPeople`, `academicProgram`, `academicStudentHistory`, `academicTeacherHistory`, `adminAccount`, `certificate`, `community`, `communityAttendance`, `communityAttendanceSnapshot`, `communityAttendanceSnapshots`, `communityInvitations`, `communityLive`, `communityMembers`, `conversation`, `episode`, `lesson`, `levels`, `program`, `schedulingLesson`, `teacherHalaqaRoster`
+- **Repository contracts (`data/repositories/repositories.dart` + `contracts/`):** `AcademicRepository`, `AdminRepository`, `AttendanceRepository`, `AuthRepository`, `CatalogRepository`, `CertificateRepository`, `CommunityRepository`, `FeedRepository`, `FilesRepository`, `InstitutionRepository`, `LearningRepository`, `LiveChatRepository`, `LiveRepository`, `LiveRoomRepository`, `MessagingRepository`, `MyTasksRepository`, `NotificationsRepository`, `PeopleRepository`, `ProgressRepository`, `ReportingRepository`, `SchedulingRepository`, `TaskAdministrationRepository`, `TaskInsightsRepository`, `TaskReportsRepository`
+- **Routes (`app/routes.dart`):** `academicStructure` → `/admin/academic`, `adminAccounts` → `/admin/accounts`, `announcements` → `/announcements`, `avatar` → `/profile/avatar`, `certificates` → `/certificates`, `changePassword` → `/profile/password`, `commandCenter` → `/command-center`, `communities` → `/communities`, `home` → `/home`, `invite` → `/invite`, `messages` → `/messages`, `myTasks` → `/my-tasks`, `notificationSettings` → `/notifications/settings`, `notifications` → `/notifications`, `path` → `/path`, `profile` → `/profile`, `programs` → `/programs`, `progress` → `/progress`, `publish` → `/publish`, `schedulingList` → `/admin/scheduling`, `sessions` → `/profile/sessions`, `signIn` → `/sign-in`, `splash` → `/splash`, `studentRecord` → `/my-halaqat/record`, `studentWorkspace` → `/my-halaqat`, `taskCompose` → `$tasksAdmin/new`, `taskDashboard` → `/admin/task-dashboard`, `taskReports` → `/admin/task-reports`, `taskTemplates` → `/admin/task-templates`, `tasksAdmin` → `/admin/tasks`, `teacherHistory` → `/teaching/history`, `teacherWorkspace` → `/teaching`
+- **Route builders:** `academicHalaqaPeople`, `academicProgram`, `academicStudentHistory`, `academicTeacherHistory`, `adminAccount`, `certificate`, `community`, `communityAttendance`, `communityAttendanceSnapshot`, `communityAttendanceSnapshots`, `communityInvitations`, `communityLive`, `communityMembers`, `conversation`, `episode`, `lesson`, `levels`, `myTask`, `program`, `schedulingLesson`, `task`, `taskEdit`, `taskReport`, `taskRepublish`, `teacherHalaqaRoster`
 - **Entry points:** `app/lib/main.dart`, `app/lib/app/app.dart`, `app/lib/app/router.dart`, `app/lib/providers/app_providers.dart`
 
 ## Architecture Decision Records (`docs/architecture/decisions/`)
@@ -369,3 +385,4 @@ responsibility and what each module must not know live in
 - [0049 — The live room's four reactions: ephemeral, over the app's WebSocket, naming nobody](decisions/0049-live-room-reactions.md)
 - [0050 — The request to speak is offered only to who cannot speak yet; a room reset tells people what it changed](decisions/0050-live-speaking-offer-and-room-reset-feedback.md)
 - [0051 — Native cross-platform live screen share (Android + iOS)](decisions/0051-native-cross-platform-screen-share.md)
+- [0052 — Daily tasks & reports engine](decisions/0052-daily-tasks-and-reports-engine.md)

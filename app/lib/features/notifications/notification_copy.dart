@@ -53,6 +53,17 @@ abstract final class NotificationCopy {
     'notification.announcement_created.title' => 'إعلان جديد',
     'notification.certificate_issued.title' => 'شهادة جديدة',
     'notification.halaqa_update.title' => 'تحديث في الحلقة',
+    'notification.task_published.title' => 'مهمة جديدة',
+    'notification.task_updated.title' => 'تعديل على مهمة',
+    'notification.task_cancelled.title' => 'أُلغيت مهمة',
+    'notification.task_reminder.title' => 'تذكير بمهمة',
+    'notification.task_reassigned.title' => 'أُسندت إليك مهمة',
+    'notification.task_acknowledged.title' => 'استلام مهمة',
+    'notification.task_completed.title' => 'إكمال مهمة',
+    'notification.task_report_submitted.title' => 'تقرير جديد',
+    'notification.task_report_resubmitted.title' => 'تقرير معدّل',
+    'notification.task_report_changes_requested.title' => 'مطلوب تعديل تقريرك',
+    'notification.task_report_approved.title' => 'اعتُمد تقريرك',
     _ => 'إشعار جديد',
   };
 
@@ -115,6 +126,30 @@ abstract final class NotificationCopy {
         return 'صدرت لك شهادة جديدة.';
       case 'notification.halaqa_update.body':
         return 'طرأ تحديث على إحدى حلقاتك.';
+      // The daily tasks engine (ADR 0052): no task text travels in a
+      // notification — the task's page says what it asks.
+      case 'notification.task_published.body':
+        return 'وصلتك مهمة جديدة من الإدارة.';
+      case 'notification.task_updated.body':
+        return 'عُدّلت إحدى مهامك؛ راجع التعليمات.';
+      case 'notification.task_cancelled.body':
+        return 'أُلغيت إحدى المهام التي وصلتك.';
+      case 'notification.task_reminder.body':
+        return 'لديك مهمة لم تستلمها بعد.';
+      case 'notification.task_reassigned.body':
+        return 'أُسندت إليك مهمة كانت لدى شخص آخر.';
+      case 'notification.task_acknowledged.body':
+        return 'استلم بعض المستلمين مهمة نشرتها.';
+      case 'notification.task_completed.body':
+        return 'أكمل بعض المستلمين مهمة نشرتها.';
+      case 'notification.task_report_submitted.body':
+        return 'وصلت تقارير جديدة على مهمة نشرتها.';
+      case 'notification.task_report_resubmitted.body':
+        return 'عُدّلت تقارير على مهمة نشرتها.';
+      case 'notification.task_report_changes_requested.body':
+        return 'طلبت الإدارة تعديل تقريرك؛ راجع الملاحظات.';
+      case 'notification.task_report_approved.body':
+        return 'اعتمدت الإدارة تقريرك.';
       default:
         return 'لديك إشعار جديد.';
     }
@@ -162,6 +197,7 @@ abstract final class NotificationCopy {
     'ANNOUNCEMENTS' => 'الإعلانات',
     'CERTIFICATES' => 'الشهادات',
     'HALAQAT' => 'الحلقات',
+    'TASKS' => 'المهام اليومية',
     _ => 'أخرى',
   };
 

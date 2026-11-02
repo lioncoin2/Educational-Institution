@@ -142,6 +142,40 @@ export class InMemoryUserRepository implements UserRepository {
     };
   }
 
+  async listActiveIdsWithRoles(
+    roles: readonly RoleCode[],
+    afterId: string | null,
+    limit: number,
+  ): Promise<readonly UserId[]> {
+    const wanted = new Set<string>(roles);
+    return [...this.byId.values()]
+      .filter(
+        (user) =>
+          user.status === AccountStatuses.active &&
+          user.roles.some((held) => wanted.has(held.role)) &&
+          (afterId === null || user.id > afterId),
+      )
+      .map((user) => user.id)
+      .sort()
+      .slice(0, limit);
+  }
+
+  async filterActiveIdsWithRoles(
+    ids: readonly UserId[] | readonly string[],
+    roles: readonly RoleCode[],
+  ): Promise<readonly UserId[]> {
+    const wanted = new Set<string>(roles);
+    return ids
+      .map((id) => this.byId.get(id))
+      .filter(
+        (user): user is User =>
+          user !== undefined &&
+          user.status === AccountStatuses.active &&
+          user.roles.some((held) => wanted.has(held.role)),
+      )
+      .map((user) => user.id);
+  }
+
   async anyActiveWithRole(role: RoleCode): Promise<boolean> {
     return [...this.byId.values()].some(
       (user) =>

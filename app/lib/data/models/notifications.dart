@@ -48,6 +48,12 @@ sealed class NotificationTarget {
         return ConversationTarget(id);
       }
     }
+    if (kind == 'task' || kind == 'assigned_task') {
+      final id = json['taskId'];
+      if (id is String && _identifier.hasMatch(id)) {
+        return kind == 'task' ? TaskTarget(id) : AssignedTaskTarget(id);
+      }
+    }
     return UnsupportedTarget(kind);
   }
 
@@ -65,6 +71,33 @@ final class ConversationTarget extends NotificationTarget {
 
   @override
   int get hashCode => conversationId.hashCode;
+}
+
+/// A daily task as the administration follows it (ADR 0052).
+final class TaskTarget extends NotificationTarget {
+  const TaskTarget(this.taskId);
+
+  final String taskId;
+
+  @override
+  bool operator ==(Object other) => other is TaskTarget && other.taskId == taskId;
+
+  @override
+  int get hashCode => Object.hash('task', taskId);
+}
+
+/// A daily task as its recipient answers it: the app opens the signed-in
+/// person's own assignment of it.
+final class AssignedTaskTarget extends NotificationTarget {
+  const AssignedTaskTarget(this.taskId);
+
+  final String taskId;
+
+  @override
+  bool operator ==(Object other) => other is AssignedTaskTarget && other.taskId == taskId;
+
+  @override
+  int get hashCode => Object.hash('assigned_task', taskId);
 }
 
 /// A kind this version cannot open (a newer server's), or a broken one.

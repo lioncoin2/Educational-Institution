@@ -27,6 +27,8 @@ import '../publish/publish_copy.dart';
 import '../auth/sign_in_prompt.dart';
 import '../notifications/state/unread_count_controller.dart';
 import '../student/student_copy.dart';
+import '../tasks/copy/tasks_copy.dart';
+import '../tasks/state/tasks_permissions.dart';
 import '../teacher/teacher_copy.dart';
 import 'widgets/about_institution_section.dart';
 import 'widgets/account_section.dart';
@@ -77,6 +79,11 @@ class ProfileScreen extends ConsumerWidget {
         (session) => session.value?.can('operations.schedule_manage') ?? false,
       ),
     );
+    // The daily tasks engine (ADR 0052): staff answer their own tasks
+    // (`tasks.respond`); the owner and the administration run them
+    // (`tasks.manage`). The server authorizes every call.
+    final canRespondToTasks = ref.watch(canRespondToTasksProvider);
+    final canManageTasks = ref.watch(canManageTasksProvider);
     // A teacher (or assistant teacher) may open their own teaching workspace;
     // `academic.teach` marks an eligible teacher. The server answers by the
     // authenticated identity and scopes every roster per halaqa.
@@ -258,6 +265,22 @@ class ProfileScreen extends ConsumerWidget {
                         icon: Icons.account_tree_outlined,
                         label: AcademicAdminCopy.screenTitle,
                         onTap: () => context.push(Routes.academicStructure),
+                      ),
+                    ],
+                    if (canRespondToTasks) ...[
+                      const Divider(indent: Insets.giant),
+                      _NavRow(
+                        icon: Icons.task_alt_outlined,
+                        label: TasksCopy.myTasksTitle,
+                        onTap: () => context.push(Routes.myTasks),
+                      ),
+                    ],
+                    if (canManageTasks) ...[
+                      const Divider(indent: Insets.giant),
+                      _NavRow(
+                        icon: Icons.assignment_outlined,
+                        label: TasksCopy.adminTitle,
+                        onTap: () => context.push(Routes.tasksAdmin),
                       ),
                     ],
                     if (canSchedule) ...[

@@ -10,6 +10,7 @@ import '../../data/models/auth.dart';
 import '../../data/models/notifications.dart';
 import '../../data/models/people.dart';
 import '../../data/models/scheduling.dart';
+import '../../data/models/tasks/tasks_wire.dart';
 
 /// "Sign in to see this" — for the screens whose data is someone's own record
 /// on the server, when nobody is signed in on this device.
@@ -55,7 +56,8 @@ class SignInPrompt extends StatelessWidget {
     AttendanceException(:final needsSignIn) ||
     NotificationsException(:final needsSignIn) ||
     PeopleException(:final needsSignIn) ||
-    SchedulingException(:final needsSignIn) => needsSignIn,
+    SchedulingException(:final needsSignIn) ||
+    TasksException(:final needsSignIn) => needsSignIn,
     AuthException(:final code) => code == _authenticationRequired,
     _ => false,
   };

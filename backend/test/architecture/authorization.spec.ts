@@ -114,6 +114,11 @@ describe('route authorization', () => {
       'modules/operations/api/operations.controller.ts#OperationsController',
       'modules/people/api/people.controller.ts#PeopleController',
       'modules/reporting/api/reporting.controller.ts#ReportingController',
+      'modules/tasks/api/my-tasks.controller.ts#MyTasksController',
+      'modules/tasks/api/task-dashboard.controller.ts#TaskDashboardController',
+      'modules/tasks/api/task-reports.controller.ts#TaskReportsController',
+      'modules/tasks/api/task-templates.controller.ts#TaskTemplatesController',
+      'modules/tasks/api/tasks.controller.ts#TasksController',
       'platform/health/health.controller.ts#HealthController',
     ]);
     expect(routes.length).toBeGreaterThanOrEqual(20);
@@ -216,6 +221,49 @@ describe('route authorization', () => {
   // operations.schedule_manage (owner/admin only), so a guessed lesson id
   // reveals nothing to anyone who may not manage the schedule. No new access
   // level, nothing merely authenticated or public.
+  // The daily tasks engine (ADR 0052): the administration's routes are
+  // tasks.manage, templates and re-publishing the owner's tasks.template, a
+  // recipient's own routes tasks.respond (ownership checked in the use cases).
+  it('holds every tasks route to its tasks permission', () => {
+    const tasksRoutes = Object.fromEntries(
+      routes
+        .filter((route) =>
+          /^(Tasks|MyTasks|TaskReports|TaskTemplates|TaskDashboard)Controller\./.test(route.name),
+        )
+        .map((route) => [route.name, route.permission]),
+    );
+    const manage = 'tasks.manage';
+    expect(tasksRoutes).toEqual({
+      'TasksController.publish': manage,
+      'TasksController.list': manage,
+      'TasksController.get': manage,
+      'TasksController.edit': manage,
+      'TasksController.cancel': manage,
+      'TasksController.reopen': manage,
+      'TasksController.remindNonResponders': manage,
+      'TasksController.assignments': manage,
+      'TasksController.reassignAssignment': manage,
+      'TasksController.log': manage,
+      'TasksController.republishTask': 'tasks.template',
+      'MyTasksController.list': 'tasks.respond',
+      'MyTasksController.getByTask': 'tasks.respond',
+      'MyTasksController.get': 'tasks.respond',
+      'MyTasksController.acknowledgeTask': 'tasks.respond',
+      'MyTasksController.completeTask': 'tasks.respond',
+      'MyTasksController.report': 'tasks.respond',
+      'TaskReportsController.list': manage,
+      'TaskReportsController.get': manage,
+      'TaskReportsController.review': manage,
+      'TaskReportsController.edit': manage,
+      'TaskReportsController.remove': manage,
+      'TaskTemplatesController.list': manage,
+      'TaskTemplatesController.save': 'tasks.template',
+      'TaskTemplatesController.remove': 'tasks.template',
+      'TaskDashboardController.summary': manage,
+      'TaskDashboardController.export': manage,
+    });
+  });
+
   it('holds every operations route to operations.schedule_manage', () => {
     const operations = Object.fromEntries(
       routes

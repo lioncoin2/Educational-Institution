@@ -135,6 +135,27 @@ export const Permissions = {
   operations: {
     scheduleManage: 'operations.schedule_manage',
   },
+  /**
+   * The daily tasks & reports engine (ADR 0052, docs/owner-tasks-roadmap.md).
+   *
+   *   manage    publish tasks to the staff audiences, edit, cancel, reopen,
+   *             reassign and remind; read, edit, delete, approve or send back
+   *             every report; the dashboard and its exports. OWNER and ADMIN
+   *             (the roadmap: every member of the administration is equal).
+   *   template  save a task as a reusable template, and re-publish a past
+   *             task as a new independent one — the owner's, per the roadmap
+   *             (§10). OWNER only: ADMIN's filter excludes it.
+   *   respond   receive tasks addressed to one's audience: acknowledge,
+   *             complete, write and edit one's own report. The staff roles that
+   *             can be addressed (teachers, assistant teachers, supervisors,
+   *             administration). Being an addressee of the task is checked per
+   *             request on top of it — the permission alone opens nothing.
+   */
+  tasks: {
+    manage: 'tasks.manage',
+    template: 'tasks.template',
+    respond: 'tasks.respond',
+  },
 } as const;
 
 type Leaves<T> = T extends string ? T : { [K in keyof T]: Leaves<T[K]> }[keyof T];

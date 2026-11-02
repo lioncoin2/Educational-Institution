@@ -76,8 +76,13 @@ void main() {
       (from.startsWith('lib/features/') || from.startsWith('lib/core/')) &&
       isConcreteRepoImpl(target);
 
+  bool isContractFile(String path) =>
+      path == 'lib/data/repositories/repositories.dart' ||
+      path.startsWith('lib/data/repositories/contracts/');
+
   bool contractsReachBeyondModels(String from, String target) =>
-      from == 'lib/data/repositories/repositories.dart' &&
+      isContractFile(from) &&
+      !isContractFile(target) &&
       target.startsWith('lib/data/') &&
       !target.startsWith('lib/data/models/');
 
@@ -132,6 +137,17 @@ void main() {
     expect(
       contractsReachBeyondModels('lib/data/repositories/repositories.dart', 'lib/data/api/y.dart'),
       isTrue,
+    );
+    expect(
+      contractsReachBeyondModels('lib/data/repositories/contracts/x.dart', 'lib/data/api/y.dart'),
+      isTrue,
+    );
+    expect(
+      contractsReachBeyondModels(
+        'lib/data/repositories/repositories.dart',
+        'lib/data/repositories/contracts/x.dart',
+      ),
+      isFalse,
     );
   });
 }

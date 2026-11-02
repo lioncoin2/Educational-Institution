@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/routes.dart';
 import '../../data/models/messaging.dart';
 import '../../data/models/notifications.dart';
+import '../../data/models/tasks/tasks.dart';
 import '../../data/repositories/repositories.dart';
 import '../../providers/app_providers.dart';
+import '../../providers/tasks_providers.dart';
 import 'notification_copy.dart';
 
 /// Where tapping a notification goes.
@@ -33,9 +35,11 @@ final class CannotOpen extends TargetResolution {
 /// they had typed its address, and the conversation screen would refuse
 /// them the same way.
 class NotificationTargetResolver {
-  const NotificationTargetResolver(this._messaging);
+  const NotificationTargetResolver(this._messaging, this._taskAdministration, this._myTasks);
 
   final MessagingRepository _messaging;
+  final TaskAdministrationRepository _taskAdministration;
+  final MyTasksRepository _myTasks;
 
   Future<TargetResolution> resolve(NotificationTarget target) async {
     switch (target) {
@@ -50,12 +54,38 @@ class NotificationTargetResolver {
           );
         }
         return OpenRoute(Routes.conversation(conversationId));
+      case TaskTarget(:final taskId):
+        try {
+          await _taskAdministration.task(taskId);
+        } on TasksException catch (error) {
+          return CannotOpen(_taskRefusal(error));
+        }
+        return OpenRoute(Routes.task(taskId));
+      case AssignedTaskTarget(:final taskId):
+        // The notification names the task; the page is the person's own
+        // assignment of it — which may have been reassigned since.
+        final MyTaskDetail mine;
+        try {
+          mine = await _myTasks.myTaskByTask(taskId);
+        } on TasksException catch (error) {
+          return CannotOpen(_taskRefusal(error));
+        }
+        return OpenRoute(Routes.myTask(mine.assignment.id));
       case UnsupportedTarget():
         return const CannotOpen(NotificationCopy.unsupported);
     }
   }
+
+  static String _taskRefusal(TasksException error) => switch (error.code) {
+    'tasks.task_not_found' || 'tasks.assignment_not_found' => NotificationCopy.contentGone,
+    _ => NotificationCopy.error(error.code),
+  };
 }
 
 final notificationTargetResolverProvider = Provider<NotificationTargetResolver>(
-  (ref) => NotificationTargetResolver(ref.watch(messagingRepositoryProvider)),
+  (ref) => NotificationTargetResolver(
+    ref.watch(messagingRepositoryProvider),
+    ref.watch(taskAdministrationRepositoryProvider),
+    ref.watch(myTasksRepositoryProvider),
+  ),
 );

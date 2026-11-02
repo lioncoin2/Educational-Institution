@@ -34,6 +34,16 @@
  *   ATTENDANCE_SNAPSHOT_RECORDED   an attendance snapshot was taken in a live
  *                                  session — at most one per recipient per session
  *
+ * Daily tasks facts (ADR 0052, active — the `TASKS` category):
+ *
+ *   TASK_PUBLISHED / TASK_UPDATED / TASK_CANCELLED / TASK_REMINDER /
+ *   TASK_REASSIGNED                 to the addressees concerned
+ *   TASK_ACKNOWLEDGED / TASK_COMPLETED / TASK_REPORT_SUBMITTED /
+ *   TASK_REPORT_RESUBMITTED         to the task's publisher, grouped per task,
+ *                                   type and hour
+ *   TASK_REPORT_CHANGES_REQUESTED /
+ *   TASK_REPORT_APPROVED            to the report's author
+ *
  * Reserved — named so the vocabulary is stable, but NOTHING creates them:
  * the modules whose facts they would announce publish no such events yet,
  * and the dispatcher refuses a type that is not active (see the catalog in
@@ -60,6 +70,18 @@ export const NOTIFICATION_TYPES = [
   'LIVE_SPEAKER_GRANTED',
   // Attendance facts (P10, active): a snapshot was recorded in a live session.
   'ATTENDANCE_SNAPSHOT_RECORDED',
+  // Daily tasks facts (ADR 0052, active).
+  'TASK_PUBLISHED',
+  'TASK_UPDATED',
+  'TASK_CANCELLED',
+  'TASK_REMINDER',
+  'TASK_REASSIGNED',
+  'TASK_ACKNOWLEDGED',
+  'TASK_COMPLETED',
+  'TASK_REPORT_SUBMITTED',
+  'TASK_REPORT_RESUBMITTED',
+  'TASK_REPORT_CHANGES_REQUESTED',
+  'TASK_REPORT_APPROVED',
   'ASSIGNMENT_CREATED',
   'ASSIGNMENT_UPDATED',
   'ANNOUNCEMENT_CREATED',
@@ -80,6 +102,7 @@ export const NOTIFICATION_CATEGORIES = [
   'COMMUNITY',
   'LIVE',
   'ATTENDANCE',
+  'TASKS',
   'ASSIGNMENTS',
   'ANNOUNCEMENTS',
   'CERTIFICATES',

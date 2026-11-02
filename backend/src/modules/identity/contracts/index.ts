@@ -2,6 +2,7 @@ export * from './access-tokens';
 export * from './account-avatar';
 export * from './account-directory';
 export * from './account-directory-summary';
+export * from './account-roster';
 export * from './account-search';
 export * from './authorization';
 export * from './permissions';

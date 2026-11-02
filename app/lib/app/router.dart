@@ -46,6 +46,7 @@ import '../features/student/student_record_screen.dart';
 import '../features/student/student_workspace_screen.dart';
 import '../features/teacher/teacher_history_screen.dart';
 import '../features/teacher/teacher_roster_screen.dart';
+import '../features/tasks/tasks_routes.dart';
 import '../features/teacher/teacher_workspace_screen.dart';
 import 'routes.dart';
 
@@ -121,6 +122,7 @@ GoRouter buildRouter() {
           ),
         ],
       ),
+      ...tasksRoutes(_rootNavigatorKey),
       GoRoute(
         path: Routes.adminAccounts,
         name: 'admin-accounts',
