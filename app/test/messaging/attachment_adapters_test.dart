@@ -45,12 +45,15 @@ void main() {
       expect(await picker.pickImage(), isNull);
     });
 
-    test('a read/permission failure is graceful (null, never a throw)', () async {
-      final picker = FilePickerAttachmentPicker(
-        (_) async => throw StateError('denied'),
-      );
-      expect(await picker.pickImage(), isNull);
-    });
+    test(
+      'a read/permission failure is graceful (null, never a throw)',
+      () async {
+        final picker = FilePickerAttachmentPicker(
+          (_) async => throw StateError('denied'),
+        );
+        expect(await picker.pickImage(), isNull);
+      },
+    );
 
     test('an empty selection returns null', () async {
       final picker = FilePickerAttachmentPicker(
@@ -75,7 +78,9 @@ void main() {
   group('RecordVoiceRecorder', () {
     test('start then stop yields a voice with a measured duration', () async {
       var now = DateTime.utc(2026, 1, 1, 0, 0, 0);
-      final port = _FakeRecorderPort(data: (bytes: bytes(32), contentType: 'audio/webm'));
+      final port = _FakeRecorderPort(
+        data: (bytes: bytes(32), contentType: 'audio/webm'),
+      );
       final recorder = RecordVoiceRecorder(port: port, clock: () => now);
 
       await recorder.start();
@@ -92,23 +97,40 @@ void main() {
       expect(voice.toOutgoingFile().fileName, 'voice.webm');
     });
 
-    test('a denied microphone makes start throw (composer shows a message)', () async {
-      final port = _FakeRecorderPort(permitted: false);
-      final recorder = RecordVoiceRecorder(port: port, clock: DateTime.now);
-      await expectLater(
-        recorder.start(),
-        throwsA(isA<VoiceRecordingException>()),
-      );
-      expect(port.started, 0);
-    });
+    test(
+      'forwards the port loudness stream for the recording waveform',
+      () async {
+        final port = _FakeRecorderPort()..levels = const [0.0, 0.5, 1.0];
+        final recorder = RecordVoiceRecorder(port: port, clock: DateTime.now);
+        expect(await recorder.amplitudes.toList(), const [0.0, 0.5, 1.0]);
+      },
+    );
+
+    test(
+      'a denied microphone makes start throw (composer shows a message)',
+      () async {
+        final port = _FakeRecorderPort(permitted: false);
+        final recorder = RecordVoiceRecorder(port: port, clock: DateTime.now);
+        await expectLater(
+          recorder.start(),
+          throwsA(isA<VoiceRecordingException>()),
+        );
+        expect(port.started, 0);
+      },
+    );
 
     test('stop without a start is a no-op', () async {
-      final recorder = RecordVoiceRecorder(port: _FakeRecorderPort(), clock: DateTime.now);
+      final recorder = RecordVoiceRecorder(
+        port: _FakeRecorderPort(),
+        clock: DateTime.now,
+      );
       expect(await recorder.stop(), isNull);
     });
 
     test('a second start is ignored while recording (single-flight)', () async {
-      final port = _FakeRecorderPort(data: (bytes: bytes(4), contentType: 'audio/webm'));
+      final port = _FakeRecorderPort(
+        data: (bytes: bytes(4), contentType: 'audio/webm'),
+      );
       final recorder = RecordVoiceRecorder(port: port, clock: DateTime.now);
       await recorder.start();
       await recorder.start();
@@ -116,7 +138,9 @@ void main() {
     });
 
     test('cancel releases the mic and a superseded stop never emits', () async {
-      final port = _FakeRecorderPort(data: (bytes: bytes(4), contentType: 'audio/webm'));
+      final port = _FakeRecorderPort(
+        data: (bytes: bytes(4), contentType: 'audio/webm'),
+      );
       final recorder = RecordVoiceRecorder(port: port, clock: DateTime.now);
       await recorder.start();
       port.gateStop = Completer<void>();
@@ -139,7 +163,11 @@ void main() {
       final port = _FakePlayerPort();
       final player = JustAudioVoicePlayer(port);
       await player.play(Uri.parse('https://api.test/files/local/tok?sig=x'));
-      expect(port.log, ['stop', 'setUrl:https://api.test/files/local/tok?sig=x', 'play']);
+      expect(port.log, [
+        'stop',
+        'setUrl:https://api.test/files/local/tok?sig=x',
+        'play',
+      ]);
     });
 
     test('a second play stops the first before switching source', () async {
@@ -217,8 +245,14 @@ class _FakeRecorderPort implements VoiceRecorderPort {
   int disposed = 0;
   Completer<void>? gateStop;
 
+  /// Scripted loudness the recorder should forward, if a test asks for it.
+  List<double> levels = const [];
+
   @override
   Future<bool> hasPermission() async => permitted;
+
+  @override
+  Stream<double> amplitudes(Duration interval) => Stream.fromIterable(levels);
 
   @override
   Future<void> start() async => started++;

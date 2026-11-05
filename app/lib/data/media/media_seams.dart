@@ -62,6 +62,11 @@ abstract interface class VoiceRecorder {
   Future<void> start();
   Future<RecordedVoice?> stop();
   Future<void> cancel();
+
+  /// The live input loudness while recording, as a 0..1 level (louder is
+  /// higher), for the recording waveform. A recorder that cannot report it —
+  /// or is not recording — emits nothing; the waveform then simply stays flat.
+  Stream<double> get amplitudes;
 }
 
 class UnavailableVoiceRecorder implements VoiceRecorder {
@@ -69,6 +74,9 @@ class UnavailableVoiceRecorder implements VoiceRecorder {
 
   @override
   bool get isSupported => false;
+
+  @override
+  Stream<double> get amplitudes => const Stream<double>.empty();
 
   @override
   Future<void> start() async =>

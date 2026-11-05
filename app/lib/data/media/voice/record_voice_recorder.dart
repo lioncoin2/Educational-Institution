@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:record/record.dart';
 
 import '../media_seams.dart';
+import 'voice_level.dart';
 
 /// The real [VoiceRecorder], backed by `record`.
 ///
@@ -44,6 +45,10 @@ abstract interface class VoiceRecorderPort {
 
   /// Releases the recorder entirely.
   Future<void> dispose();
+
+  /// The input loudness while capturing, sampled every [interval], as a 0..1
+  /// level. The stream runs only while recording and ends when it stops.
+  Stream<double> amplitudes(Duration interval);
 }
 
 /// Raised when recording cannot start (e.g. the microphone permission was
@@ -73,6 +78,14 @@ class RecordVoiceRecorder implements VoiceRecorder {
 
   @override
   bool get isSupported => true;
+
+  /// Forwards the port's loudness stream (sampled a few times a second — smooth
+  /// enough for the waveform without overworking the UI). Meaningful only while
+  /// recording; the recording UI is the only subscriber and the stream ends
+  /// when capture stops.
+  @override
+  Stream<double> get amplitudes =>
+      _port.amplitudes(const Duration(milliseconds: 80));
 
   @override
   Future<void> start() async {
@@ -167,4 +180,9 @@ class _RecordPort implements VoiceRecorderPort {
 
   @override
   Future<void> dispose() => _recorder.dispose();
+
+  @override
+  Stream<double> amplitudes(Duration interval) => _recorder
+      .onAmplitudeChanged(interval)
+      .map((a) => normalizeDbfs(a.current));
 }

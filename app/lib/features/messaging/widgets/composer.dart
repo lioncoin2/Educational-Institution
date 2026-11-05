@@ -7,6 +7,7 @@ import '../../../data/models/messaging.dart';
 import '../../../providers/app_providers.dart';
 import '../messaging_copy.dart';
 import '../state/conversation_controller.dart' show ReplyDraft;
+import 'voice_wave.dart';
 
 /// Where a message is written: text, an attachment, or a voice recording.
 ///
@@ -145,13 +146,8 @@ class _ComposerState extends ConsumerState<Composer> {
                           icon: const Icon(Icons.delete_outline_rounded),
                         ),
                         const SizedBox(width: Insets.sm),
-                        Icon(
-                          Icons.fiber_manual_record_rounded,
-                          color: context.colors.error,
-                          size: 14,
-                        ),
+                        Expanded(child: VoiceWave(levels: recorder.amplitudes)),
                         const SizedBox(width: Insets.xs),
-                        const Expanded(child: Text('جارٍ التسجيل…')),
                         IconButton.filled(
                           tooltip: 'إيقاف وإرسال',
                           onPressed: _toggleRecording,
