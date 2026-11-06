@@ -247,6 +247,16 @@ class HttpMessagingRepository implements MessagingRepository {
   Future<void> unpinMessage(String conversationId) =>
       _call(() async => _api.delete('${_conversation(conversationId)}/pin'));
 
+  @override
+  Future<void> react(String conversationId, String messageId, String emoji) =>
+      _call(
+        () async => _api.post(
+          '${_conversation(conversationId)}/messages/'
+          '${Uri.encodeComponent(messageId)}/reactions',
+          body: {'emoji': emoji},
+        ),
+      );
+
   Future<Message> _sendMedia(
     String conversationId,
     String route,

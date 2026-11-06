@@ -829,6 +829,11 @@ class _Timeline extends ConsumerWidget {
                   ),
                 )
               : null,
+          // React wherever the viewer may post (ADR 0053); the server
+          // re-authorizes. A double-tap and the reaction row both call this.
+          onReact: canReply && !message.isDeleted
+              ? (emoji) => notifier.react(message.id, emoji)
+              : null,
           senderAvatarUrl: avatarMessageId[message.senderId] != null
               ? ref
                     .watch(

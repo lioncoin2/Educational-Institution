@@ -10,8 +10,10 @@ import '../../../core/theme/app_tokens.dart';
 import '../../../core/widgets/foundations/app_avatar.dart';
 import '../../../data/models/messaging.dart';
 import '../../../providers/app_providers.dart';
+import '../../../data/repositories/repositories.dart' show kMessageReactions;
 import '../messaging_copy.dart';
 import '../state/conversation_controller.dart';
+import 'reaction_bar.dart';
 import 'swipe_to_reply.dart';
 
 /// A quoted message shown inside a reply's bubble: who it was from (when
@@ -44,6 +46,7 @@ class MessageBubble extends StatelessWidget {
     this.groupedWithPrevious = false,
     this.onTapAuthor,
     this.onReply,
+    this.onReact,
     this.onPin,
     this.onUnpin,
     this.onModerateDelete,
@@ -89,6 +92,11 @@ class MessageBubble extends StatelessWidget {
   /// Offered on a long-press for any message that is not deleted.
   final VoidCallback? onReply;
 
+  /// Toggle a reaction on this message (ADR 0053), or null when the viewer may
+  /// not post here. Reached by a double-tap (quick reaction), the reaction row
+  /// in the long-press menu, and tapping an existing reaction chip.
+  final void Function(String emoji)? onReact;
+
   /// Pin this message (ADR 0043), or null when the viewer may not pin or it is
   /// already the pinned one. [onUnpin] clears the pin when this IS the pinned
   /// message. Both are moderator actions, offered on the long-press.
@@ -112,6 +120,7 @@ class MessageBubble extends StatelessWidget {
     final canReply = onReply != null && !message.isDeleted;
     final hasActions =
         canReply ||
+        (onReact != null && !message.isDeleted) ||
         onPin != null ||
         onUnpin != null ||
         onModerateDelete != null ||
@@ -121,6 +130,9 @@ class MessageBubble extends StatelessWidget {
     final frame = _BubbleFrame(
       mine: mine,
       highlighted: highlighted,
+      reactionsBar: message.reactions.isEmpty
+          ? null
+          : ReactionBar(reactions: message.reactions, onReact: onReact),
       header: _header(context),
       groupedWithPrevious: groupedWithPrevious,
       reply: message.isDeleted || repliedTo == null
@@ -202,6 +214,25 @@ class MessageBubble extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (onReact != null && !message.isDeleted)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: Insets.sm),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    for (final emoji in kMessageReactions)
+                      IconButton(
+                        key: Key('message-react-$emoji'),
+                        tooltip: 'تفاعل $emoji',
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          onReact!(emoji);
+                        },
+                        icon: Text(emoji, style: const TextStyle(fontSize: 22)),
+                      ),
+                  ],
+                ),
+              ),
             if (canReply)
               ListTile(
                 key: const Key('message-reply-action'),
@@ -380,12 +411,16 @@ class _BubbleFrame extends StatelessWidget {
     this.faded = false,
     this.groupedWithPrevious = false,
     this.highlighted = false,
+    this.reactionsBar,
     this.onLongPress,
   });
 
   final bool mine;
   final Widget child;
   final Widget footer;
+
+  /// The reaction chips drawn under the content, or null when there are none.
+  final Widget? reactionsBar;
 
   /// Briefly tints the whole row — the message was just jumped to.
   final bool highlighted;
@@ -439,6 +474,7 @@ class _BubbleFrame extends StatelessWidget {
               style: context.text.bodyMedium,
               child: child,
             ),
+            ?reactionsBar,
             const SizedBox(height: Insets.xs),
             Align(alignment: AlignmentDirectional.centerEnd, child: footer),
           ],

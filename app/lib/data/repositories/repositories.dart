@@ -140,7 +140,10 @@ abstract interface class AcademicRepository {
   /// `FilesRepository.uploadImage`) as the program's cover (ADR 0038) —
   /// `academic.manage` only. Replacing simply binds a new id. The answer is the
   /// program with its `coverFileAssetId` set.
-  Future<AcademicProgram> setProgramCover(String programId, String coverFileAssetId);
+  Future<AcademicProgram> setProgramCover(
+    String programId,
+    String coverFileAssetId,
+  );
 
   /// Clears the program's cover image. Idempotent; the answer has `coverFileAssetId`
   /// null.
@@ -581,7 +584,16 @@ abstract interface class MessagingRepository {
   /// Clear the community chat's pin (ADR 0043). Never deletes the message;
   /// idempotent. Throws [MessagingException] on refusal.
   Future<void> unpinMessage(String conversationId);
+
+  /// Toggle one of the curated reactions on a message (ADR 0053): add it, swap
+  /// the viewer's current one, or remove it by reacting with the same one
+  /// again. Works wherever the viewer may post. The new counts arrive over
+  /// realtime and on re-read. Throws [MessagingException] on refusal.
+  Future<void> react(String conversationId, String messageId, String emoji);
 }
+
+/// The curated reaction emoji the chat offers (mirrors the server's set).
+const List<String> kMessageReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
 /// Communities — the groups the signed-in person belongs to
 /// (`/communities`).
@@ -610,7 +622,10 @@ abstract interface class CommunityRepository {
   /// [CommunityException] (`identity.permission_denied`,
   /// `communities.title_invalid`, a rate limit). Not idempotent — each call
   /// makes a new community.
-  Future<Community> create(String title, {CommunityKind kind = CommunityKind.group});
+  Future<Community> create(
+    String title, {
+    CommunityKind kind = CommunityKind.group,
+  });
 
   /// Restricts ordinary-member posting ([membersMayPost] false → read-only) or
   /// restores it (true) in a GROUP (ADR 0039) — for a holder of
@@ -620,7 +635,10 @@ abstract interface class CommunityRepository {
   /// [CommunityException] (`identity.permission_denied`,
   /// `communities.capability_required`, `communities.chat_mode_transition_invalid`).
   /// Returns the community as it now stands — never optimistic.
-  Future<Community> setChatMode(String communityId, {required bool membersMayPost});
+  Future<Community> setChatMode(
+    String communityId, {
+    required bool membersMayPost,
+  });
 
   /// Replaces the community's own [title], [description] and picture together —
   /// for a holder of `community.profile.edit` in THIS community (surfaced as

@@ -112,6 +112,37 @@ class Attachment {
   final int? height;
 }
 
+/// One emoji's reactions on a message (ADR 0053): how many members chose it,
+/// and whether the viewer is one of them (so their choice reads as selected).
+class MessageReaction {
+  const MessageReaction({
+    required this.emoji,
+    required this.count,
+    required this.mine,
+  });
+
+  factory MessageReaction.fromJson(Map<String, Object?> json) =>
+      MessageReaction(
+        emoji: json['emoji']! as String,
+        count: json['count']! as int,
+        mine: json['mine'] == true,
+      );
+
+  final String emoji;
+  final int count;
+  final bool mine;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MessageReaction &&
+      other.emoji == emoji &&
+      other.count == count &&
+      other.mine == mine;
+
+  @override
+  int get hashCode => Object.hash(emoji, count, mine);
+}
+
 class Message {
   const Message({
     required this.id,
@@ -126,6 +157,7 @@ class Message {
     this.editedAt,
     this.deletedAt,
     this.attachments = const [],
+    this.reactions = const [],
   });
 
   factory Message.fromJson(Map<String, Object?> json) => Message(
@@ -144,6 +176,29 @@ class Message {
       for (final item in json['attachments']! as List<Object?>)
         Attachment.fromJson((item! as Map).cast<String, Object?>()),
     ],
+    // Absent on older servers and on pending sends — an empty list, never null.
+    reactions: [
+      for (final item in (json['reactions'] as List<Object?>? ?? const []))
+        MessageReaction.fromJson((item! as Map).cast<String, Object?>()),
+    ],
+  );
+
+  /// The same message with its reactions replaced — used when a realtime
+  /// `message.reacted` frame carries the new counts.
+  Message withReactions(List<MessageReaction> next) => Message(
+    id: id,
+    conversationId: conversationId,
+    sequence: sequence,
+    senderId: senderId,
+    type: type,
+    createdAt: createdAt,
+    body: body,
+    replyToMessageId: replyToMessageId,
+    clientMessageId: clientMessageId,
+    editedAt: editedAt,
+    deletedAt: deletedAt,
+    attachments: attachments,
+    reactions: next,
   );
 
   final String id;
@@ -162,6 +217,9 @@ class Message {
   final DateTime? editedAt;
   final DateTime? deletedAt;
   final List<Attachment> attachments;
+
+  /// The message's reaction summary for the viewer (ADR 0053) — empty when none.
+  final List<MessageReaction> reactions;
 
   bool get isDeleted => deletedAt != null;
 

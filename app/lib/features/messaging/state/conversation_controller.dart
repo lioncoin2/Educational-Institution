@@ -178,7 +178,6 @@ class ConversationController extends AsyncNotifier<ConversationState> {
   Future<void>? _refreshingConversation;
   bool _refreshConversationAgain = false;
 
-
   /// Communities locked, unlocked or with changed access while the
   /// conversation was loading: its read may have been answered before, so
   /// a chat of one of them is read again once loaded.
@@ -455,6 +454,87 @@ class ConversationController extends AsyncNotifier<ConversationState> {
     await _refreshConversation();
   }
 
+  /// Toggle one of the curated reactions on a message (ADR 0053). Updates the
+  /// bubble at once (optimistic), then tells the server; on refusal it reverts
+  /// to exactly what was shown. The authoritative counts arrive over realtime.
+  Future<void> react(String messageId, String emoji) async {
+    final current = state.value;
+    final held = current?.messages.where((m) => m.id == messageId).firstOrNull;
+    if (current == null || held == null) return;
+    final before = held.reactions;
+    _setReactions(messageId, _toggleReaction(before, emoji));
+    try {
+      await _repository.react(conversationId, messageId, emoji);
+    } catch (_) {
+      _setReactions(messageId, before); // put the shown summary back
+    }
+  }
+
+  /// Replaces one held message's reaction summary. A message not held is a
+  /// no-op (a re-read shows it).
+  void _setReactions(String messageId, List<MessageReaction> reactions) {
+    final current = state.value;
+    if (current == null) return;
+    if (!current.messages.any((m) => m.id == messageId)) return;
+    state = AsyncData(
+      current.copyWith(
+        messages: [
+          for (final m in current.messages)
+            m.id == messageId ? m.withReactions(reactions) : m,
+        ],
+      ),
+    );
+  }
+
+  /// The viewer's optimistic toggle: the same emoji again removes their
+  /// reaction, a different one swaps it, none adds it — one reaction per viewer.
+  static List<MessageReaction> _toggleReaction(
+    List<MessageReaction> reactions,
+    String emoji,
+  ) {
+    final mine = reactions.where((r) => r.mine).map((r) => r.emoji).firstOrNull;
+    final counts = {for (final r in reactions) r.emoji: r.count};
+    if (mine != null) {
+      final left = (counts[mine] ?? 1) - 1;
+      if (left <= 0) {
+        counts.remove(mine);
+      } else {
+        counts[mine] = left;
+      }
+    }
+    if (mine != emoji) counts[emoji] = (counts[emoji] ?? 0) + 1;
+    final newMine = mine == emoji ? null : emoji;
+    return _summary(counts, newMine);
+  }
+
+  /// A reaction summary from authoritative counts, marking [mine] as the
+  /// viewer's — used when a realtime frame (counts only) arrives.
+  static List<MessageReaction> _fromCounts(
+    Map<String, int> counts,
+    List<MessageReaction> held,
+  ) {
+    final mine = held.where((r) => r.mine).map((r) => r.emoji).firstOrNull;
+    return _summary(counts, counts.containsKey(mine) ? mine : null);
+  }
+
+  static List<MessageReaction> _summary(
+    Map<String, int> counts,
+    String? mine,
+  ) =>
+      [
+        for (final entry in counts.entries)
+          if (entry.value > 0)
+            MessageReaction(
+              emoji: entry.key,
+              count: entry.value,
+              mine: entry.key == mine,
+            ),
+      ]..sort(
+        (a, b) => b.count.compareTo(a.count) == 0
+            ? a.emoji.compareTo(b.emoji)
+            : b.count.compareTo(a.count),
+      );
+
   /// Replaces the held message [messageId] with a tombstone if it is held and
   /// not already deleted — the local effect of a confirmed delete, whether this
   /// viewer did it ([moderateDelete]) or another moderator did and the server
@@ -543,6 +623,20 @@ class ConversationController extends AsyncNotifier<ConversationState> {
                 event.pinVersion,
               ),
             ),
+          );
+        }
+      case MessageReactedEvent():
+        // A reaction changed (this viewer on another device, or anyone else):
+        // the frame carries the authoritative counts. Rebuild the summary,
+        // keeping the viewer's own choice (the frame names nobody). Not held →
+        // no-op; a re-read shows it.
+        final held = current.messages
+            .where((m) => m.id == event.messageId)
+            .firstOrNull;
+        if (held != null) {
+          _setReactions(
+            event.messageId,
+            _fromCounts(event.counts, held.reactions),
           );
         }
       case ParticipantRemovedEvent() when event.userId == current.viewerId:
@@ -886,7 +980,10 @@ final attachmentUrlProvider = FutureProvider.autoDispose
 /// so one fetch serves all their bubbles. A sender with no picture resolves to
 /// null, and the bubble shows initials.
 final senderAvatarUrlProvider = FutureProvider.autoDispose
-    .family<Uri?, ({String conversationId, String messageId})>((ref, key) async {
+    .family<Uri?, ({String conversationId, String messageId})>((
+      ref,
+      key,
+    ) async {
       try {
         return await ref
             .watch(messagingRepositoryProvider)

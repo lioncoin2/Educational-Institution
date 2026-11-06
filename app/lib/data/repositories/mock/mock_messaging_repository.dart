@@ -73,11 +73,12 @@ class MockMessagingRepository implements MessagingRepository {
     // The Messages list is direct conversations only — the same contract the
     // server enforces (`type = 'DIRECT'`). Community group/channel chats are
     // reached through Communities (conversationForCommunity), never here.
-    final all = _conversations.values
-        .where((c) => c.type == ConversationType.direct)
-        .where(_readable)
-        .toList()
-      ..sort((a, b) => b.activityAt.compareTo(a.activityAt));
+    final all =
+        _conversations.values
+            .where((c) => c.type == ConversationType.direct)
+            .where(_readable)
+            .toList()
+          ..sort((a, b) => b.activityAt.compareTo(a.activityAt));
     return ConversationPage(items: [for (final c in all) _view(c)]);
   }
 
@@ -128,7 +129,8 @@ class MockMessagingRepository implements MessagingRepository {
     final existing = _conversations.values
         .where(
           (c) =>
-              c.type == ConversationType.direct && c.counterpartUserId == userId,
+              c.type == ConversationType.direct &&
+              c.counterpartUserId == userId,
         )
         .firstOrNull;
     if (existing != null) return _view(existing);
@@ -410,8 +412,11 @@ class MockMessagingRepository implements MessagingRepository {
         'No such message.',
       );
     }
-    if (c.pinnedMessageId == messageId) return; // idempotent no-op; no version bump
-    c.pinnedMessageId = messageId; // replaces any current pin (most-recent wins)
+    if (c.pinnedMessageId == messageId) {
+      return; // idempotent no-op; no version bump
+    }
+    c.pinnedMessageId =
+        messageId; // replaces any current pin (most-recent wins)
     c.pinVersion += 1;
   }
 
@@ -423,6 +428,39 @@ class MockMessagingRepository implements MessagingRepository {
     if (c.pinnedMessageId == null) return; // idempotent no-op; no version bump
     c.pinnedMessageId = null; // never deletes the message
     c.pinVersion += 1;
+  }
+
+  /// The demo viewer's current reaction per message — the mock has one viewer,
+  /// so it reflects only their toggle (a real server aggregates everyone).
+  final Map<String, String> _myReactions = {};
+
+  @override
+  Future<void> react(
+    String conversationId,
+    String messageId,
+    String emoji,
+  ) async {
+    await _wait();
+    final c = _find(conversationId);
+    final index = c.messages.indexWhere((m) => m.id == messageId);
+    if (index < 0 || c.messages[index].isDeleted) {
+      throw const MessagingException(
+        'messaging.message_not_found',
+        'No such message.',
+      );
+    }
+    // Toggle: the same emoji again removes it; a different one swaps it.
+    if (_myReactions[messageId] == emoji) {
+      _myReactions.remove(messageId);
+    } else {
+      _myReactions[messageId] = emoji;
+    }
+    final mine = _myReactions[messageId];
+    c.messages[index] = c.messages[index].withReactions(
+      mine == null
+          ? const []
+          : [MessageReaction(emoji: mine, count: 1, mine: true)],
+    );
   }
 
   @override

@@ -68,6 +68,7 @@ sealed class ServerFrame {
         'message.deleted' => MessageDeletedEvent._fromJson(json),
         'message.edited' => MessageEditedEvent._fromJson(json),
         'message.pinned' => MessagePinnedEvent._fromJson(json),
+        'message.reacted' => MessageReactedEvent._fromJson(json),
         'participant.added' => ParticipantAddedEvent._fromJson(json),
         'participant.removed' => ParticipantRemovedEvent._fromJson(json),
         'notification.created' => NotificationCreatedEvent._fromJson(json),
@@ -378,7 +379,9 @@ final class MessagePinnedEvent extends ConversationEvent {
   static MessagePinnedEvent? _fromJson(Map<String, Object?> json) {
     final conversationId = json['conversationId'];
     final pinVersion = json['pinVersion'];
-    if (conversationId is! String || conversationId.isEmpty || pinVersion is! int) {
+    if (conversationId is! String ||
+        conversationId.isEmpty ||
+        pinVersion is! int) {
       return null;
     }
     final pinned = json['pinnedMessageId'];
@@ -406,6 +409,53 @@ final class MessagePinnedEvent extends ConversationEvent {
   /// The conversation's pin version after this change — the total order a client
   /// uses to accept strictly newer pin state (ADR 0043 §realtime).
   final int pinVersion;
+}
+
+/// A message's reaction summary changed (ADR 0053): the authoritative emoji →
+/// count after the change. The client replaces that message's reactions with
+/// these counts; whether the viewer is among them is re-read, so the frame
+/// carries counts only, never who reacted.
+final class MessageReactedEvent extends ConversationEvent {
+  const MessageReactedEvent({
+    required super.eventId,
+    required super.occurredAt,
+    required super.conversationId,
+    required this.messageId,
+    required this.counts,
+  });
+
+  final String messageId;
+
+  /// emoji → count, for the emoji that still have at least one reaction.
+  final Map<String, int> counts;
+
+  /// Null when the frame lacks a conversation or message id, or a `counts` map
+  /// of emoji to integers — dropped rather than half-applied.
+  static MessageReactedEvent? _fromJson(Map<String, Object?> json) {
+    final conversationId = json['conversationId'];
+    final messageId = json['messageId'];
+    final raw = json['counts'];
+    if (conversationId is! String ||
+        conversationId.isEmpty ||
+        messageId is! String ||
+        messageId.isEmpty ||
+        raw is! Map) {
+      return null;
+    }
+    final counts = <String, int>{};
+    for (final entry in raw.entries) {
+      final key = entry.key;
+      final value = entry.value;
+      if (key is String && value is int) counts[key] = value;
+    }
+    return MessageReactedEvent(
+      eventId: json['eventId']! as String,
+      occurredAt: DateTime.parse(json['occurredAt']! as String),
+      conversationId: conversationId,
+      messageId: messageId,
+      counts: counts,
+    );
+  }
 }
 
 final class ParticipantAddedEvent extends ConversationEvent {
