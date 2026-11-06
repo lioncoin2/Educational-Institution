@@ -325,6 +325,51 @@ void main() {
     });
   });
 
+  group('typing, live', () {
+    const id = 'mock-group';
+    late ProviderSubscription<AsyncValue<ConversationState>> keepAlive;
+
+    Future<ConversationState> open() async {
+      keepAlive = container.listen(conversationProvider(id), (_, _) {});
+      addTearDown(keepAlive.close);
+      return container.read(conversationProvider(id).future);
+    }
+
+    ConversationState current() =>
+        container.read(conversationProvider(id)).requireValue;
+
+    Future<void> settle() => pumpEventQueue();
+
+    test('a typing hint for this conversation adds the member, not the viewer',
+        () async {
+      await open();
+      realtime.emit(TypingEvent(conversationId: id, userId: teacher));
+      await settle();
+      expect(current().typing, contains(teacher));
+
+      // The server never echoes the viewer, but a stray one is ignored.
+      realtime.emit(TypingEvent(conversationId: id, userId: viewer));
+      await settle();
+      expect(current().typing, isNot(contains(viewer)));
+    });
+
+    test('a typing hint for another conversation is ignored', () async {
+      await open();
+      realtime.emit(TypingEvent(conversationId: 'other', userId: teacher));
+      await settle();
+      expect(current().typing, isEmpty);
+    });
+
+    test('notifyTyping sends one hint, then throttles the rest', () async {
+      await open();
+      final notifier = container.read(conversationProvider(id).notifier);
+      notifier.notifyTyping();
+      notifier.notifyTyping();
+      notifier.notifyTyping();
+      expect(realtime.typingSent, [id]); // throttled to one within the window
+    });
+  });
+
   group('the conversation list, live', () {
     Future<ConversationListState> load() {
       final keepAlive = container.listen(conversationListProvider, (_, _) {});

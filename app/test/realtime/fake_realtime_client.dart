@@ -18,6 +18,9 @@ class FakeRealtimeClient implements RealtimeClient {
 
   final List<String> subscriptions = [];
 
+  /// Conversation ids the code under test sent a typing hint for, in order.
+  final List<String> typingSent = [];
+
   void emit(RealtimeEvent event) => _events.add(event);
 
   void setStatus(RealtimeStatus status) {
@@ -51,6 +54,9 @@ class FakeRealtimeClient implements RealtimeClient {
     subscriptions.add(conversationId);
     return onSubscribe(conversationId);
   }
+
+  @override
+  void sendTyping(String conversationId) => typingSent.add(conversationId);
 
   @override
   Future<void> dispose() async {

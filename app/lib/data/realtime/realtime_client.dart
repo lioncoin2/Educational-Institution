@@ -79,6 +79,12 @@ abstract interface class RealtimeClient {
   /// Asks the server to confirm one conversation and say where it stands.
   Future<SubscriptionResult> subscribe(String conversationId);
 
+  /// Tells the server the viewer is typing in a conversation — a best-effort,
+  /// fire-and-forget hint (no answer). A no-op while not connected; the server
+  /// fans it to the conversation's other connected members. The caller debounces
+  /// it, so it is sent at most every few seconds while actively typing.
+  void sendTyping(String conversationId);
+
   Future<void> dispose();
 }
 
@@ -110,6 +116,9 @@ class DisabledRealtimeClient implements RealtimeClient {
   @override
   Future<SubscriptionResult> subscribe(String conversationId) async =>
       const SubscriptionUnavailable();
+
+  @override
+  void sendTyping(String conversationId) {}
 
   @override
   Future<void> dispose() async {}

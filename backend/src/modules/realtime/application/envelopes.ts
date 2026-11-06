@@ -268,6 +268,19 @@ export function messageReactedFrame(input: {
   });
 }
 
+/// Someone is typing in a conversation (ephemeral — not stored, not ordered).
+/// The client shows it for a moment and lets it lapse; carries who, never what.
+export function typingFrame(input: {
+  readonly conversationId: string;
+  readonly userId: string;
+}): string {
+  return frame({
+    type: 'typing',
+    conversationId: input.conversationId,
+    userId: input.userId,
+  });
+}
+
 export function conversationCreatedFrame(input: {
   readonly occurredAt: Date;
   readonly conversationId: string;

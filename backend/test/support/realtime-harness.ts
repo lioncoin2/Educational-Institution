@@ -91,6 +91,7 @@ export async function realtimeHarness() {
     identity.resolvePrincipal,
     identity.authorization,
     messaging.delivery,
+    messaging.recipients,
     limiter,
     clock,
     new UuidIdGenerator(),

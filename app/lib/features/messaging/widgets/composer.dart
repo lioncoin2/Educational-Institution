@@ -20,12 +20,17 @@ class Composer extends ConsumerStatefulWidget {
     super.key,
     required this.onSendText,
     required this.onSendFile,
+    this.onTyping,
     this.replyDraft,
     this.onCancelReply,
   });
 
   final void Function(String text) onSendText;
   final void Function(OutgoingFile file) onSendFile;
+
+  /// Called as the viewer types, on each change that leaves text in the field.
+  /// The receiver throttles it; the composer only reports activity.
+  final VoidCallback? onTyping;
 
   /// The reply being composed, or null. When set, a quote banner sits above the
   /// input; [onCancelReply] dismisses it.
@@ -50,6 +55,7 @@ class _ComposerState extends ConsumerState<Composer> {
     _controller.addListener(() {
       final hasText = _controller.text.trim().isNotEmpty;
       if (hasText != _hasText) setState(() => _hasText = hasText);
+      if (hasText) widget.onTyping?.call();
     });
   }
 

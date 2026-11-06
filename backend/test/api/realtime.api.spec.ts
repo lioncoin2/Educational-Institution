@@ -121,6 +121,23 @@ describe('realtime API', () => {
       await Promise.all([b.close(), t.close()]);
     });
 
+    it('fans a typing hint to the other members, never the typist', async () => {
+      const groupId = await r.group(teacher, [studentB]);
+      const b = await r.connect(studentB);
+      const t = await r.connect(teacher);
+
+      t.send({ type: 'typing', conversationId: groupId });
+      const hint = await b.waitFor((f) => f.type === 'typing');
+      expect(hint).toMatchObject({ conversationId: groupId, userId: teacher.id });
+
+      // The typist is never told they are typing: a pong proves nothing
+      // typing-shaped is queued for them behind it.
+      t.send({ type: 'ping', id: 'drain' });
+      expect((await t.waitFor((f) => f.type === 'pong' || f.type === 'typing')).type).toBe('pong');
+
+      await Promise.all([b.close(), t.close()]);
+    });
+
     it('delivers to every device of a member, and stops at a device that disconnects', async () => {
       const groupId = await r.group(teacher, [studentB]);
       const phone = await r.connect(studentB);

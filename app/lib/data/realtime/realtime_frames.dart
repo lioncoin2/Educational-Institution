@@ -69,6 +69,7 @@ sealed class ServerFrame {
         'message.edited' => MessageEditedEvent._fromJson(json),
         'message.pinned' => MessagePinnedEvent._fromJson(json),
         'message.reacted' => MessageReactedEvent._fromJson(json),
+        'typing' => TypingEvent._fromJson(json),
         'participant.added' => ParticipantAddedEvent._fromJson(json),
         'participant.removed' => ParticipantRemovedEvent._fromJson(json),
         'notification.created' => NotificationCreatedEvent._fromJson(json),
@@ -409,6 +410,36 @@ final class MessagePinnedEvent extends ConversationEvent {
   /// The conversation's pin version after this change — the total order a client
   /// uses to accept strictly newer pin state (ADR 0043 §realtime).
   final int pinVersion;
+}
+
+/// Someone is typing in a conversation (ephemeral — not stored, not ordered):
+/// who, and where. The client shows it for a moment and lets it lapse. The
+/// frame carries no id or time, so a fresh, unique [eventId] is synthesized at
+/// parse (every typing frame must pass the client's de-dup — a user keeps
+/// typing, and each frame should refresh the indicator), and [occurredAt] is
+/// the receive time. Nothing orders or de-duplicates a typing hint.
+final class TypingEvent extends RealtimeEvent {
+  TypingEvent({required this.conversationId, required this.userId, DateTime? at})
+    : super(
+        eventId: 'typing:$conversationId:$userId:${DateTime.now().microsecondsSinceEpoch}',
+        occurredAt: at ?? DateTime.now(),
+      );
+
+  final String conversationId;
+  final String userId;
+
+  /// Null when the frame lacks a non-empty conversation or user id.
+  static TypingEvent? _fromJson(Map<String, Object?> json) {
+    final conversationId = json['conversationId'];
+    final userId = json['userId'];
+    if (conversationId is! String ||
+        conversationId.isEmpty ||
+        userId is! String ||
+        userId.isEmpty) {
+      return null;
+    }
+    return TypingEvent(conversationId: conversationId, userId: userId);
+  }
 }
 
 /// A message's reaction summary changed (ADR 0053): the authoritative emoji →

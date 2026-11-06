@@ -25,6 +25,7 @@ import 'widgets/composer.dart';
 import 'widgets/connection_banner.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/scroll_to_bottom_button.dart';
+import 'widgets/typing_indicator.dart';
 
 /// One conversation: its timeline, newest at the bottom, and the composer.
 class ConversationScreen extends ConsumerStatefulWidget {
@@ -267,6 +268,10 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   ],
                 ),
               ),
+              TypingIndicator(
+                userIds: state.typing,
+                nameOf: (id) => state.senderNames[id],
+              ),
               if (state.removed)
                 const _Notice(
                   icon: Icons.person_off_outlined,
@@ -281,6 +286,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                       ref.read(provider.notifier).sendText(text),
                   onSendFile: (file) =>
                       ref.read(provider.notifier).sendFile(file),
+                  onTyping: () => ref.read(provider.notifier).notifyTyping(),
                 )
               // Read-only, and why — as much as is known without guessing. A
               // channel reserves posting for the owner and publishers; a

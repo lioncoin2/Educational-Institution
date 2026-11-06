@@ -98,6 +98,7 @@ const MAX_TOKEN_LENGTH = 4096;
 export type ClientFrame =
   | { readonly type: 'auth'; readonly id?: string; readonly token: string }
   | { readonly type: 'subscribe'; readonly id?: string; readonly conversationId: string }
+  | { readonly type: 'typing'; readonly id?: string; readonly conversationId: string }
   | { readonly type: 'ping'; readonly id?: string };
 
 export type ParsedFrame =
@@ -113,6 +114,7 @@ export type ParsedFrame =
 const FIELDS: Readonly<Record<ClientFrame['type'], readonly string[]>> = {
   auth: ['type', 'version', 'id', 'token'],
   subscribe: ['type', 'version', 'id', 'conversationId'],
+  typing: ['type', 'version', 'id', 'conversationId'],
   ping: ['type', 'version', 'id'],
 };
 
@@ -190,6 +192,16 @@ export function parseClientFrame(text: string | null): ParsedFrame {
       return {
         ok: true,
         frame: { type: 'subscribe', conversationId, ...(id === undefined ? {} : { id }) },
+      };
+    }
+    case 'typing': {
+      const conversationId = frame.conversationId;
+      if (typeof conversationId !== 'string' || !CONVERSATION_ID.test(conversationId)) {
+        return invalidPayload('typing needs a conversationId.', id);
+      }
+      return {
+        ok: true,
+        frame: { type: 'typing', conversationId, ...(id === undefined ? {} : { id }) },
       };
     }
     case 'ping':

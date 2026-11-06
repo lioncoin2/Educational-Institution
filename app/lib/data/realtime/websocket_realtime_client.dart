@@ -148,6 +148,15 @@ class WebSocketRealtimeClient implements RealtimeClient {
   }
 
   @override
+  void sendTyping(String conversationId) {
+    final session = _session;
+    // Best-effort: dropped silently if not connected and ready. No id — it is
+    // fire-and-forget, with no answer to await.
+    if (session == null || !session.ready) return;
+    _send(session, {'type': 'typing', 'conversationId': conversationId});
+  }
+
+  @override
   Future<SubscriptionResult> subscribe(String conversationId) {
     final session = _session;
     if (session == null || !session.ready) {

@@ -25,6 +25,10 @@ import {
 } from '../../identity/contracts/authorization';
 import { Permissions } from '../../identity/contracts/permissions';
 import { MESSAGE_DELIVERY, type MessageDelivery } from '../../messaging/contracts/message-delivery';
+import {
+  MESSAGE_RECIPIENTS,
+  type MessageRecipients,
+} from '../../messaging/contracts/message-recipients';
 import type { ClientLink, Connection } from '../domain/connection';
 import { CloseCodes, parseClientFrame, type ClientFrame } from '../domain/protocol';
 import {
@@ -33,7 +37,8 @@ import {
   RealtimeLimits,
 } from '../domain/realtime-policy';
 import { ConnectionManager } from './connection-manager';
-import { errorFrame, pongFrame, readyFrame, subscribedFrame } from './envelopes';
+import { errorFrame, pongFrame, readyFrame, subscribedFrame, typingFrame } from './envelopes';
+import { onlineAudience } from './online-audience';
 
 interface Pending {
   readonly connectionId: string;
@@ -86,6 +91,7 @@ export class RealtimeSessions implements OnModuleInit, OnModuleDestroy {
     @Inject(ACCESS_TOKEN_AUTHENTICATOR) private readonly authenticator: AccessTokenAuthenticator,
     @Inject(AUTHORIZATION_SERVICE) private readonly authorization: AuthorizationService,
     @Inject(MESSAGE_DELIVERY) private readonly delivery: MessageDelivery,
+    @Inject(MESSAGE_RECIPIENTS) private readonly recipients: MessageRecipients,
     @Inject(RATE_LIMITER) private readonly limiter: RateLimiter,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(ID_GENERATOR) private readonly ids: IdGenerator,
@@ -190,7 +196,48 @@ export class RealtimeSessions implements OnModuleInit, OnModuleDestroy {
           return;
         }
         return this.subscribe(connection, frame);
+      case 'typing':
+        // No error on an unauthenticated typing frame: it is a silent, best-
+        // effort hint, not a request that needs an answer.
+        if (connection === undefined) return;
+        return this.typing(connection, frame);
     }
+  }
+
+  /**
+   * Fan a "someone is typing" hint to the conversation's connected members
+   * (ADR: typing). Ephemeral: nothing is stored or ordered. Authorized by
+   * membership — the typist must be a current reader of the conversation, and
+   * only its current readers hear it (never the typist's own devices). A
+   * non-member's frame reaches no one. The frame names who, never what; the
+   * per-connection frame limit (already applied) throttles it.
+   */
+  private async typing(
+    connection: Connection,
+    frame: Extract<ClientFrame, { type: 'typing' }>,
+  ): Promise<void> {
+    const conversationId = frame.conversationId;
+    // The typist must themselves be a current reader — else drop (no spoofing).
+    const self = await this.recipients.list(conversationId, {
+      readersOnly: true,
+      onlyUserIds: [connection.userId],
+      limit: 1,
+    });
+    if (self.userIds.length === 0) return;
+    const audience = await onlineAudience(this.connections, (page) =>
+      this.recipients.list(conversationId, {
+        readersOnly: true,
+        excludeUserId: connection.userId,
+        onlyUserIds: page.onlyUserIds,
+        cursor: page.cursor,
+        limit: page.limit,
+      }),
+    );
+    if (audience.length === 0) return;
+    this.connections.sendToUsers(
+      audience,
+      typingFrame({ conversationId, userId: connection.userId }),
+    );
   }
 
   private async authenticate(

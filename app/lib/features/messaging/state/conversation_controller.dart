@@ -84,10 +84,15 @@ class ConversationState {
     this.senderAvatarAssets = const {},
     this.removed = false,
     this.replyDraft,
+    this.typing = const {},
   });
 
   final Conversation conversation;
   final String viewerId;
+
+  /// User ids currently typing (others, never the viewer) — each lapses on a
+  /// timer. Ephemeral and realtime-only; empty when no one is typing.
+  final Set<String> typing;
 
   /// Confirmed messages, ascending by sequence, no duplicates.
   final List<Message> messages;
@@ -138,9 +143,11 @@ class ConversationState {
     bool? removed,
     ReplyDraft? replyDraft,
     bool clearReplyDraft = false,
+    Set<String>? typing,
   }) => ConversationState(
     conversation: conversation ?? this.conversation,
     viewerId: viewerId,
+    typing: typing ?? this.typing,
     messages: messages ?? this.messages,
     pending: pending ?? this.pending,
     hasOlder: hasOlder ?? this.hasOlder,
@@ -183,6 +190,14 @@ class ConversationController extends AsyncNotifier<ConversationState> {
   /// a chat of one of them is read again once loaded.
   final Set<String> _communitiesChangedWhileLoading = {};
 
+  /// One lapse timer per typing user: a fresh hint restarts it, and when it
+  /// fires the user drops out of [ConversationState.typing]. Cleared on dispose.
+  final Map<String, Timer> _typingTimers = {};
+
+  /// Throttles the viewer's own outgoing typing hint — non-null while a hint
+  /// was just sent, so text changes in between are not re-sent.
+  Timer? _typingThrottle;
+
   @override
   Future<ConversationState> build() async {
     final repository = ref.watch(messagingRepositoryProvider);
@@ -192,6 +207,12 @@ class ConversationController extends AsyncNotifier<ConversationState> {
     ref.onDispose(() {
       unawaited(events.cancel());
       unawaited(statuses.cancel());
+      for (final timer in _typingTimers.values) {
+        timer.cancel();
+      }
+      _typingTimers.clear();
+      _typingThrottle?.cancel();
+      _typingThrottle = null;
     });
     // Once the timeline is on screen, make sure nothing slipped past
     // between loading it and the live connection.
@@ -470,6 +491,37 @@ class ConversationController extends AsyncNotifier<ConversationState> {
     }
   }
 
+  /// The composer calls this while the viewer is actively typing. It sends at
+  /// most one hint every few seconds (best-effort, fire-and-forget); the server
+  /// fans it to the conversation's other connected members, never back to us.
+  void notifyTyping() {
+    if (_typingThrottle != null) return;
+    ref.read(realtimeConnectionProvider).sendTyping(conversationId);
+    _typingThrottle = Timer(
+      const Duration(seconds: 3),
+      () => _typingThrottle = null,
+    );
+  }
+
+  /// A typing hint arrived for [userId] (another member): add them to the live
+  /// set and (re)arm a lapse so the indicator clears if no further hint comes.
+  /// The viewer's own id is ignored — the server never echoes it, but guard.
+  void _someoneTyping(String userId) {
+    final current = state.value;
+    if (current == null || userId == current.viewerId) return;
+    _typingTimers[userId]?.cancel();
+    _typingTimers[userId] = Timer(const Duration(seconds: 5), () {
+      _typingTimers.remove(userId);
+      final s = state.value;
+      if (s != null && s.typing.contains(userId)) {
+        state = AsyncData(s.copyWith(typing: {...s.typing}..remove(userId)));
+      }
+    });
+    if (!current.typing.contains(userId)) {
+      state = AsyncData(current.copyWith(typing: {...current.typing, userId}));
+    }
+  }
+
   /// Replaces one held message's reaction summary. A message not held is a
   /// no-op (a re-read shows it).
   void _setReactions(String messageId, List<MessageReaction> reactions) {
@@ -572,6 +624,12 @@ class ConversationController extends AsyncNotifier<ConversationState> {
   void _onEvent(RealtimeEvent event) {
     if (event is CommunityEvent) {
       _onCommunityEvent(event);
+      return;
+    }
+    // Typing is realtime-only and not a ConversationEvent — handle it before the
+    // narrowing below. It never changes stored state, only the live typing set.
+    if (event is TypingEvent) {
+      if (event.conversationId == conversationId) _someoneTyping(event.userId);
       return;
     }
     if (event is! ConversationEvent || event.conversationId != conversationId) {

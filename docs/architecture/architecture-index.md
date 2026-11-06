@@ -387,3 +387,4 @@ responsibility and what each module must not know live in
 - [0051 — Native cross-platform live screen share (Android + iOS)](decisions/0051-native-cross-platform-screen-share.md)
 - [0052 — Daily tasks & reports engine](decisions/0052-daily-tasks-and-reports-engine.md)
 - [0053 — Chat message reactions](decisions/0053-chat-message-reactions.md)
+- [0054 — Chat typing indicator](decisions/0054-chat-typing-indicator.md)
