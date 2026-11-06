@@ -76,6 +76,7 @@ class ConversationState {
     required this.messages,
     required this.lastReadSequence,
     required this.syncedThrough,
+    this.counterpartReadSequence = 0,
     this.pending = const [],
     this.hasOlder = false,
     this.loadingOlder = false,
@@ -101,6 +102,12 @@ class ConversationState {
   final bool loadingOlder;
   final bool olderFailed;
   final int lastReadSequence;
+
+  /// DIRECT only (ADR 0056): how far the OTHER person has read. The viewer's own
+  /// sent messages up to here show as seen (✓✓). Seeded from the opened
+  /// conversation and advanced (monotonically) by the counterpart's live read
+  /// marks. Always 0 and unused in a group, channel or community chat.
+  final int counterpartReadSequence;
   final Map<String, String> senderNames;
 
   /// Sender id → the Files asset id of their picture (or absent/null for none).
@@ -129,6 +136,16 @@ class ConversationState {
 
   bool isMine(Message message) => message.senderId == viewerId;
 
+  /// DIRECT only (ADR 0056): whether the other person has read [message] (✓✓).
+  /// True only in a direct conversation, for the viewer's own confirmed message
+  /// the counterpart's read watermark has reached. Always false elsewhere — no
+  /// read receipts in a group, channel or community chat.
+  bool seenByCounterpart(Message message) =>
+      conversation.type == ConversationType.direct &&
+      conversation.communityId == null &&
+      isMine(message) &&
+      message.sequence <= counterpartReadSequence;
+
   ConversationState copyWith({
     Conversation? conversation,
     List<Message>? messages,
@@ -137,6 +154,7 @@ class ConversationState {
     bool? loadingOlder,
     bool? olderFailed,
     int? lastReadSequence,
+    int? counterpartReadSequence,
     Map<String, String>? senderNames,
     Map<String, String?>? senderAvatarAssets,
     int? syncedThrough,
@@ -154,6 +172,8 @@ class ConversationState {
     loadingOlder: loadingOlder ?? this.loadingOlder,
     olderFailed: olderFailed ?? this.olderFailed,
     lastReadSequence: lastReadSequence ?? this.lastReadSequence,
+    counterpartReadSequence:
+        counterpartReadSequence ?? this.counterpartReadSequence,
     senderNames: senderNames ?? this.senderNames,
     senderAvatarAssets: senderAvatarAssets ?? this.senderAvatarAssets,
     syncedThrough: syncedThrough ?? this.syncedThrough,
@@ -194,9 +214,10 @@ class ConversationController extends AsyncNotifier<ConversationState> {
   /// fires the user drops out of [ConversationState.typing]. Cleared on dispose.
   final Map<String, Timer> _typingTimers = {};
 
-  /// Throttles the viewer's own outgoing typing hint — non-null while a hint
-  /// was just sent, so text changes in between are not re-sent.
-  Timer? _typingThrottle;
+  /// When the viewer's own typing hint was last sent. The outgoing hint is
+  /// throttled by comparing against this (no dangling timer to leak), so it is
+  /// sent at most once every few seconds while actively typing.
+  DateTime? _typingHintSentAt;
 
   @override
   Future<ConversationState> build() async {
@@ -211,8 +232,6 @@ class ConversationController extends AsyncNotifier<ConversationState> {
         timer.cancel();
       }
       _typingTimers.clear();
-      _typingThrottle?.cancel();
-      _typingThrottle = null;
     });
     // Once the timeline is on screen, make sure nothing slipped past
     // between loading it and the live connection.
@@ -238,6 +257,9 @@ class ConversationController extends AsyncNotifier<ConversationState> {
       messages: page.items,
       hasOlder: page.hasOlder,
       lastReadSequence: page.lastReadSequence,
+      // DIRECT only (ADR 0056): seed the counterpart's read position so the
+      // viewer's sent messages show ✓✓ on open; live marks advance it.
+      counterpartReadSequence: conversation.counterpartReadSequence ?? 0,
       senderNames: page.senderNames,
       senderAvatarAssets: page.senderAvatarAssets,
       // The latest page is complete up to its newest message.
@@ -508,13 +530,15 @@ class ConversationController extends AsyncNotifier<ConversationState> {
   /// The composer calls this while the viewer is actively typing. It sends at
   /// most one hint every few seconds (best-effort, fire-and-forget); the server
   /// fans it to the conversation's other connected members, never back to us.
+  /// Throttled by a timestamp, not a timer, so nothing dangles after disposal.
   void notifyTyping() {
-    if (_typingThrottle != null) return;
+    final now = DateTime.now();
+    final last = _typingHintSentAt;
+    if (last != null && now.difference(last) < const Duration(seconds: 3)) {
+      return;
+    }
+    _typingHintSentAt = now;
     ref.read(realtimeConnectionProvider).sendTyping(conversationId);
-    _typingThrottle = Timer(
-      const Duration(seconds: 3),
-      () => _typingThrottle = null,
-    );
   }
 
   /// A typing hint arrived for [userId] (another member): add them to the live
@@ -668,6 +692,16 @@ class ConversationController extends AsyncNotifier<ConversationState> {
         if (event.lastReadSequence > current.lastReadSequence) {
           state = AsyncData(
             current.copyWith(lastReadSequence: event.lastReadSequence),
+          );
+        }
+      case MessageReadEvent():
+        // The OTHER person read (ADR 0056) — delivered only in a DIRECT chat.
+        // Advance the counterpart watermark (monotonic) so the viewer's sent
+        // messages up to here show ✓✓.
+        if (current.conversation.type == ConversationType.direct &&
+            event.lastReadSequence > current.counterpartReadSequence) {
+          state = AsyncData(
+            current.copyWith(counterpartReadSequence: event.lastReadSequence),
           );
         }
       case MessageEditedEvent():

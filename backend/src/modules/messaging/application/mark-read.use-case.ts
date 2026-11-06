@@ -65,6 +65,7 @@ export class MarkReadUseCase {
             command.conversationId,
             command.principal.userId,
             outcome.lastReadSequence,
+            membership.value.conversation.type,
             this.clock.now(),
             command.meta.correlationId,
           ),

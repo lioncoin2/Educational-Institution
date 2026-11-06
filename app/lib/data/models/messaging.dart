@@ -369,6 +369,7 @@ class Conversation implements Sourced {
     this.communityId,
     this.communityKind,
     this.pinnedMessageId,
+    this.counterpartReadSequence,
     this.pinVersion = 0,
     this.origin = DataOrigin.profile,
   });
@@ -384,6 +385,9 @@ class Conversation implements Sourced {
     canManageMembers: json['canManageMembers']! as bool,
     lastSequence: json['lastSequence']! as int,
     lastReadSequence: json['lastReadSequence']! as int,
+    // DIRECT only (ADR 0056): how far the other person has read, for ✓✓. Null
+    // on the list and in groups/channels/community chats.
+    counterpartReadSequence: json['counterpartReadSequence'] as int?,
     unreadCount: json['unreadCount']! as int,
     lastMessage: json['lastMessage'] == null
         ? null
@@ -427,6 +431,12 @@ class Conversation implements Sourced {
   final bool canManageMembers;
   final int lastSequence;
   final int lastReadSequence;
+
+  /// DIRECT only (ADR 0056): how far the OTHER person has read — the viewer's
+  /// own sent messages up to here are "seen" (✓✓). Null in a group, channel or
+  /// community chat, and on the conversation-list view (only the opened
+  /// conversation carries it). Seeds the live counterpart watermark.
+  final int? counterpartReadSequence;
 
   /// Capped by the server; from [unreadCountCap] on, show "99+".
   final int unreadCount;
@@ -509,6 +519,7 @@ class Conversation implements Sourced {
       communityId: communityId,
       communityKind: communityKind,
       pinnedMessageId: pinnedMessageId,
+      counterpartReadSequence: counterpartReadSequence,
       pinVersion: pinVersion,
       origin: origin,
     );
@@ -550,6 +561,7 @@ class Conversation implements Sourced {
       communityId: communityId,
       communityKind: communityKind,
       pinnedMessageId: pinnedMessageId,
+      counterpartReadSequence: counterpartReadSequence,
       pinVersion: pinVersion,
       origin: origin,
     );
@@ -589,6 +601,7 @@ class Conversation implements Sourced {
       communityId: communityId,
       communityKind: communityKind,
       pinnedMessageId: pinnedMessageId,
+      counterpartReadSequence: counterpartReadSequence,
       pinVersion: pinVersion,
       origin: origin,
     );
@@ -612,6 +625,7 @@ class Conversation implements Sourced {
     communityId: communityId,
     communityKind: communityKind,
     pinnedMessageId: pinnedMessageId,
+    counterpartReadSequence: counterpartReadSequence,
     pinVersion: pinVersion,
     origin: origin,
   );
@@ -638,6 +652,7 @@ class Conversation implements Sourced {
     communityId: communityId,
     communityKind: communityKind,
     pinnedMessageId: messageId,
+    counterpartReadSequence: counterpartReadSequence,
     pinVersion: version,
     origin: origin,
   );

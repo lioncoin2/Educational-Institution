@@ -104,7 +104,31 @@ export class GetConversationUseCase {
     if (row === null) return err(CONVERSATION_NOT_FOUND);
     const details = await this.communityChats.details(principal, [row]);
     const [view] = await this.views.conversations([row], details);
-    return view === undefined ? err(CONVERSATION_NOT_FOUND) : ok(view);
+    if (view === undefined) return err(CONVERSATION_NOT_FOUND);
+    // DIRECT only (ADR 0056): seed how far the OTHER person has read so the
+    // viewer's sent messages show ✓✓ the moment the chat opens; live read marks
+    // advance it after. Two participants, so this is a single cheap read. A
+    // group, channel or community chat keeps the null set by the view (no
+    // receipts there).
+    if (view.type === 'DIRECT' && view.communityId === null) {
+      return ok({
+        ...view,
+        counterpartReadSequence: await this.counterpartReadSequence(
+          conversationId,
+          principal.userId,
+        ),
+      });
+    }
+    return ok(view);
+  }
+
+  private async counterpartReadSequence(
+    conversationId: ConversationId,
+    viewerId: string,
+  ): Promise<number | null> {
+    const { items } = await this.readModel.listParticipants(conversationId, { limit: 2 });
+    const other = items.find((participant) => participant.userId !== viewerId);
+    return other?.lastReadSequence ?? null;
   }
 }
 

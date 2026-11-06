@@ -52,6 +52,14 @@ export interface ConversationView {
   readonly canManageMembers: boolean;
   readonly lastSequence: number;
   readonly lastReadSequence: number;
+  /**
+   * DIRECT only: how far the OTHER person has read — so the viewer's own sent
+   * messages up to here show as seen (✓✓). Null in a group, channel or
+   * community chat (no receipts there), and null on the conversation-list view
+   * (resolved only when a single conversation is opened, never per list row).
+   * Advanced live by the counterpart's read marks (ADR 0056).
+   */
+  readonly counterpartReadSequence: number | null;
   /** Capped: from UNREAD_COUNT_CAP on, show "99+". */
   readonly unreadCount: number;
   readonly lastMessage: MessagePreview | null;

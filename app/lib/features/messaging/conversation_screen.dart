@@ -831,6 +831,15 @@ class _Timeline extends ConsumerWidget {
                   message.id,
                 )
               : null,
+          // ✓/✓✓ on the viewer's own confirmed message in a DIRECT chat only
+          // (ADR 0056): true once the other person has read it. Null elsewhere.
+          seen:
+              state.isMine(message) &&
+                  !message.isDeleted &&
+                  state.conversation.type == ConversationType.direct &&
+                  state.conversation.communityId == null
+              ? state.seenByCounterpart(message)
+              : null,
           onPin:
               canModerate &&
                   !message.isDeleted &&

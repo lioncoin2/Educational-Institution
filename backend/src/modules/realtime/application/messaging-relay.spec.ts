@@ -343,6 +343,37 @@ describe('messaging events, delivered in real time', () => {
       expect(t.link.ofType('message.read')).toEqual([]);
       expect(c.link.ofType('message.read')).toEqual([]);
     });
+
+    it('in a DIRECT chat, also tells the OTHER person (seen ✓✓, ADR 0056)', async () => {
+      const direct = await h.messaging.direct(teacher.principal, studentB.principal);
+      const t = await h.connect(teacher.accessToken);
+      const b = await h.connect(studentB.accessToken);
+      await h.messaging.text(teacher.principal, direct.id, 'مرحبا');
+      expectOk(
+        await h.messaging.markRead.execute({
+          principal: studentB.principal,
+          conversationId: direct.id,
+          sequence: 1,
+          meta: META,
+        }),
+      );
+      await h.settle();
+
+      // The reader's own device AND the counterpart (the ✓✓ signal) both hear it.
+      for (const client of [b, t]) {
+        expect(client.link.ofType('message.read')).toEqual([
+          {
+            type: 'message.read',
+            version: 1,
+            eventId: `message.read:${direct.id}:${studentB.userId}:1`,
+            occurredAt: expect.any(String),
+            conversationId: direct.id,
+            userId: studentB.userId,
+            lastReadSequence: 1,
+          },
+        ]);
+      }
+    });
   });
 
   describe('membership', () => {

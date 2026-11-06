@@ -85,7 +85,10 @@ class MockMessagingRepository implements MessagingRepository {
   @override
   Future<Conversation> conversation(String conversationId) async {
     await _wait();
-    return _view(_find(conversationId));
+    final c = _find(conversationId);
+    // The detail view carries read receipts for a direct chat (ADR 0056); the
+    // list (_view) does not.
+    return c.view(canPost: _canPost(c), withReceipts: true);
   }
 
   @override
@@ -740,6 +743,9 @@ class MockMessagingRepository implements MessagingRepository {
       );
     }
     direct.lastRead = 4;
+    // The teacher (counterpart) has read all but the viewer's latest line, so
+    // the demo shows ✓✓ on read messages and ✓ on the most recent (ADR 0056).
+    direct.counterpartRead = 5;
 
     final group = _MockConversation(
       id: 'mock-group',
@@ -982,7 +988,11 @@ class _MockConversation {
     return message;
   }
 
-  Conversation view({required bool canPost}) {
+  /// DIRECT only: how far the other person has read (for ✓✓). Set on the
+  /// detail view, left null on the list — mirrors the server (ADR 0056).
+  int counterpartRead = 0;
+
+  Conversation view({required bool canPost, bool withReceipts = false}) {
     final unread = messages
         .where(
           (m) =>
@@ -1003,6 +1013,10 @@ class _MockConversation {
       canManageMembers: false,
       lastSequence: lastSequence,
       lastReadSequence: lastRead,
+      counterpartReadSequence:
+          withReceipts && type == ConversationType.direct && communityId == null
+          ? counterpartRead
+          : null,
       unreadCount: unread < Conversation.unreadCountCap
           ? unread
           : Conversation.unreadCountCap,

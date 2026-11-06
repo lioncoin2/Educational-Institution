@@ -159,15 +159,8 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
         return this.messagePinned(event);
       case MessagingEvents.messageReacted:
         return this.messageReacted(event);
-      case MessagingEvents.messageRead: {
-        const payload = messageReadPayload(event);
-        if (payload === null) return this.malformed(event);
-        this.connections.sendToUser(
-          payload.userId,
-          messageReadFrame({ occurredAt: event.occurredAt, ...payload }),
-        );
-        return;
-      }
+      case MessagingEvents.messageRead:
+        return this.messageRead(event);
       case MessagingEvents.participantAdded: {
         const payload = participantAddedPayload(event);
         if (payload === null) return this.malformed(event);
@@ -288,6 +281,30 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
         pinVersion: payload.pinVersion,
       }),
     );
+  }
+
+  /**
+   * A read mark. It reaches the OTHER participants only in a DIRECT conversation
+   * (two people — a bounded, meaningful "seen ✓✓"); in a GROUP, CHANNEL or
+   * community chat it stays on the reader's own devices, as it always has (a
+   * one-to-many read-receipt broadcast is deliberately not done). The frame
+   * carries the reader's id and how far they have read — no content, nothing
+   * personal — so each side can mark its own sent messages as seen.
+   */
+  private async messageRead(event: DomainEvent): Promise<void> {
+    const payload = messageReadPayload(event);
+    if (payload === null) return this.malformed(event);
+    const read = messageReadFrame({ occurredAt: event.occurredAt, ...payload });
+    if (payload.conversationType !== 'DIRECT') {
+      this.connections.sendToUser(payload.userId, read);
+      return;
+    }
+    // Both members: the reader (their other devices) and the counterpart (the
+    // ✓✓ signal). sendToUsers dedupes; onlineMembers is bounded for any size,
+    // though a DIRECT conversation is only ever two people.
+    const online = await this.onlineMembers(payload.conversationId);
+    if (online.length === 0) return;
+    this.connections.sendToUsers(online, read);
   }
 
   private async messageReacted(event: DomainEvent): Promise<void> {
@@ -433,7 +450,8 @@ function messageReadPayload(event: DomainEvent): MessageRead['payload'] | null {
     p === null ||
     typeof p.conversationId !== 'string' ||
     typeof p.userId !== 'string' ||
-    !isCount(p.lastReadSequence)
+    !isCount(p.lastReadSequence) ||
+    typeof p.conversationType !== 'string'
   ) {
     return null;
   }

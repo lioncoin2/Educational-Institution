@@ -11,6 +11,7 @@ import {
   type ParticipantAdded,
   type ParticipantRemoved,
 } from '../contracts/events';
+import type { ConversationType } from '../contracts/vocabulary';
 import type { Conversation } from './conversation';
 import type { Message } from './message';
 import type { Participant } from './participant';
@@ -94,13 +95,14 @@ export function messageRead(
   conversationId: string,
   userId: string,
   lastReadSequence: number,
+  conversationType: ConversationType,
   at: Date,
   correlationId?: string,
 ): MessageRead {
   return domainEvent(
     MessagingEvents.messageRead,
     conversationId,
-    { conversationId, userId, lastReadSequence },
+    { conversationId, userId, lastReadSequence, conversationType },
     at,
     correlationId,
   );

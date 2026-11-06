@@ -75,6 +75,14 @@ export type MessageRead = DomainEvent<
     readonly conversationId: string;
     readonly userId: string;
     readonly lastReadSequence: number;
+    /**
+     * The conversation's type, so the realtime relay can decide the audience
+     * without asking messaging: a read mark is fanned to the other participants
+     * only in a DIRECT conversation (two people — a bounded, meaningful "seen").
+     * In a GROUP, CHANNEL or community chat it reaches only the reader's own
+     * devices, as before (receipts there would be a one-to-many broadcast).
+     */
+    readonly conversationType: ConversationType;
   }
 >;
 

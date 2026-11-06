@@ -389,3 +389,4 @@ responsibility and what each module must not know live in
 - [0053 — Chat message reactions](decisions/0053-chat-message-reactions.md)
 - [0054 — Chat typing indicator](decisions/0054-chat-typing-indicator.md)
 - [0055 — Chat message forwarding](decisions/0055-chat-message-forwarding.md)
+- [0056 — Direct-chat read receipts (seen ✓✓)](decisions/0056-direct-chat-read-receipts.md)

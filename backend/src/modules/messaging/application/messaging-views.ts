@@ -86,6 +86,10 @@ export class MessagingViews {
         canManageMembers: community !== null ? false : canManageMembers(conversation.type, me.role),
         lastSequence: conversation.lastSequence,
         lastReadSequence: me.lastReadSequence,
+        // Resolved only on the single-conversation view (GetConversationUseCase),
+        // never per list row — a read of the counterpart's mark per row would be
+        // one query each. Null here; the detail path fills it for a DIRECT chat.
+        counterpartReadSequence: null,
         unreadCount: row.unreadCount,
         lastMessage: row.lastMessage === null ? null : preview(row.lastMessage, names),
         pinnedMessageId: conversation.pinnedMessageId,

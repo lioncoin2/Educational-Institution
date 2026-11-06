@@ -250,7 +250,12 @@ describe('reading conversations', () => {
       }
       const reads = h.events.published.filter((e) => e.name === MessagingEvents.messageRead);
       expect(reads.map((e) => e.payload)).toEqual([
-        { conversationId: group.id, userId: student.userId, lastReadSequence: 2 },
+        {
+          conversationId: group.id,
+          userId: student.userId,
+          lastReadSequence: 2,
+          conversationType: 'GROUP',
+        },
       ]);
     });
 

@@ -156,6 +156,8 @@ export interface ConversationResponse {
   readonly canManageMembers: boolean;
   readonly lastSequence: number;
   readonly lastReadSequence: number;
+  /** DIRECT only: how far the other person has read (✓✓); null otherwise (ADR 0056). */
+  readonly counterpartReadSequence: number | null;
   readonly unreadCount: number;
   readonly lastMessage: MessagePreviewResponse | null;
   /** The pinned message's id (ADR 0043), or null; the client resolves its preview. */

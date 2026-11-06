@@ -43,6 +43,7 @@ class MessageBubble extends StatelessWidget {
     this.senderAvatarUrl,
     this.repliedTo,
     this.forwardedFromName,
+    this.seen,
     this.showHeader = true,
     this.groupedWithPrevious = false,
     this.onTapAuthor,
@@ -104,6 +105,12 @@ class MessageBubble extends StatelessWidget {
   /// deleted; the viewer picks the target.
   final VoidCallback? onForward;
 
+  /// Read state of the viewer's own confirmed message in a DIRECT chat (ADR
+  /// 0056): true = the other person has read it (✓✓), false = sent but not yet
+  /// read (✓). Null where receipts do not apply (not the viewer's, not direct,
+  /// deleted, or pending) — then no check mark shows.
+  final bool? seen;
+
   /// Toggle a reaction on this message (ADR 0053), or null when the viewer may
   /// not post here. Reached by a double-tap (quick reaction), the reaction row
   /// in the long-press menu, and tapping an existing reaction chip.
@@ -153,13 +160,7 @@ class MessageBubble extends StatelessWidget {
           ? null
           : _ReplyPreview(replied: repliedTo!, mine: mine),
       onLongPress: hasActions ? () => _showActionSheet(context) : null,
-      footer: Text(
-        message.isEdited
-            ? '${MessagingCopy.edited} · ${MessagingCopy.clock(context, message.createdAt)}'
-            : MessagingCopy.clock(context, message.createdAt),
-        key: message.isEdited ? Key('message-edited-${message.id}') : null,
-        style: context.text.labelSmall,
-      ),
+      footer: _footer(context),
       child: message.isDeleted
           ? Text(
               'تم حذف هذه الرسالة',
@@ -181,6 +182,24 @@ class MessageBubble extends StatelessWidget {
     );
     // Swipe sideways to reply — inert when the viewer cannot reply here.
     return SwipeToReply(onReply: canReply ? onReply : null, child: frame);
+  }
+
+  /// The timestamp line (with an «معدّلة» prefix when edited). On the viewer's
+  /// own direct-chat message a ✓/✓✓ tick follows it (ADR 0056); with no tick it
+  /// stays a bare Text, so existing bubbles render exactly as before.
+  Widget _footer(BuildContext context) {
+    final time = Text(
+      message.isEdited
+          ? '${MessagingCopy.edited} · ${MessagingCopy.clock(context, message.createdAt)}'
+          : MessagingCopy.clock(context, message.createdAt),
+      key: message.isEdited ? Key('message-edited-${message.id}') : null,
+      style: context.text.labelSmall,
+    );
+    if (seen == null) return time;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [time, const SizedBox(width: Insets.xs), _SeenMark(seen: seen!)],
+    );
   }
 
   /// The sender's name above others' messages (groups and channels). When the
@@ -627,6 +646,26 @@ class _ForwardedHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A sent/read tick on the viewer's own direct-chat message (ADR 0056):
+/// one check for sent, two for read, the read pair tinted to stand out.
+class _SeenMark extends StatelessWidget {
+  const _SeenMark({required this.seen});
+
+  final bool seen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Icon(
+      seen ? Icons.done_all_rounded : Icons.done_rounded,
+      key: Key(seen ? 'message-seen' : 'message-sent'),
+      size: 14,
+      color: seen
+          ? context.colors.primary
+          : context.colors.onSurfaceVariant.withValues(alpha: 0.7),
     );
   }
 }
