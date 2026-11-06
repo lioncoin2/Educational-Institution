@@ -271,16 +271,17 @@ void main() {
         matching: find.byType(IconButton),
       ),
     );
-    final mic = tester.widget<IconButton>(
+    // The mic is a hold-to-record target (ADR 0057), not an IconButton; when
+    // the build has no recorder it is disabled and its tooltip says so.
+    final micTooltip = tester.widget<Tooltip>(
       find.ancestor(
         of: find.byIcon(Icons.mic_none_rounded),
-        matching: find.byType(IconButton),
+        matching: find.byType(Tooltip),
       ),
     );
     expect(attach.onPressed, isNull);
     expect(attach.tooltip, 'إرفاق الملفات غير متاح في هذا الإصدار');
-    expect(mic.onPressed, isNull);
-    expect(mic.tooltip, 'التسجيل الصوتي غير متاح في هذا الإصدار');
+    expect(micTooltip.message, 'التسجيل الصوتي غير متاح في هذا الإصدار');
   });
 
   testWidgets('sends a picked image through the attachment seam', (

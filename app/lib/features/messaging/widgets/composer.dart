@@ -7,6 +7,7 @@ import '../../../data/models/messaging.dart';
 import '../../../providers/app_providers.dart';
 import '../messaging_copy.dart';
 import '../state/conversation_controller.dart' show ReplyDraft;
+import 'hold_to_record.dart';
 import 'voice_wave.dart';
 
 /// Where a message is written: text, an attachment, or a voice recording.
@@ -48,6 +49,10 @@ class _ComposerState extends ConsumerState<Composer> {
   final _controller = TextEditingController();
   bool _hasText = false;
   bool _recording = false;
+
+  /// While holding to record, whether the finger has slid into the cancel zone
+  /// — the UI turns to "release to cancel" and a release then discards.
+  bool _cancelArmed = false;
 
   @override
   void initState() {
@@ -102,26 +107,39 @@ class _ComposerState extends ConsumerState<Composer> {
     if (file != null) widget.onSendFile(file);
   }
 
-  Future<void> _toggleRecording() async {
-    final recorder = ref.read(voiceRecorderProvider);
-    if (!_recording) {
-      try {
-        await recorder.start();
-        if (mounted) setState(() => _recording = true);
-      } on Object {
-        if (mounted) context.toast('تعذّر بدء التسجيل');
+  /// The hold began: start recording. Optimistically flips the UI; on a start
+  /// failure it reverts and says so. If the recorder was already rolling (a
+  /// stray double-start) it is left as-is.
+  Future<void> _beginRecording() async {
+    if (_recording) return;
+    setState(() {
+      _recording = true;
+      _cancelArmed = false;
+    });
+    try {
+      await ref.read(voiceRecorderProvider).start();
+    } on Object {
+      if (mounted) {
+        setState(() => _recording = false);
+        context.toast('تعذّر بدء التسجيل');
       }
+    }
+  }
+
+  /// The hold ended: discard when cancelled (slid into the cancel zone, or the
+  /// gesture was interrupted), otherwise stop and send.
+  Future<void> _finishRecording({required bool cancelled}) async {
+    if (!_recording) return;
+    final recorder = ref.read(voiceRecorderProvider);
+    if (cancelled) {
+      await recorder.cancel();
+      if (mounted) setState(() => _recording = false);
       return;
     }
     final voice = await recorder.stop();
     if (!mounted) return;
     setState(() => _recording = false);
     if (voice != null) widget.onSendFile(voice.toOutgoingFile());
-  }
-
-  Future<void> _cancelRecording() async {
-    await ref.read(voiceRecorderProvider).cancel();
-    if (mounted) setState(() => _recording = false);
   }
 
   @override
@@ -143,36 +161,29 @@ class _ComposerState extends ConsumerState<Composer> {
                 horizontal: Insets.sm,
                 vertical: Insets.sm,
               ),
-              child: _recording
-                  ? Row(
-                      children: [
-                        IconButton(
-                          tooltip: 'إلغاء التسجيل',
-                          onPressed: _cancelRecording,
-                          icon: const Icon(Icons.delete_outline_rounded),
-                        ),
-                        const SizedBox(width: Insets.sm),
-                        Expanded(child: VoiceWave(levels: recorder.amplitudes)),
-                        const SizedBox(width: Insets.xs),
-                        IconButton.filled(
-                          tooltip: 'إيقاف وإرسال',
-                          onPressed: _toggleRecording,
-                          icon: const Icon(Icons.send_rounded),
-                        ),
-                      ],
-                    )
-                  : Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        IconButton(
-                          tooltip: picker.isAvailable
-                              ? 'إرفاق ملف'
-                              : 'إرفاق الملفات غير متاح في هذا الإصدار',
-                          onPressed: picker.isAvailable ? _attach : null,
-                          icon: const Icon(Icons.attach_file_rounded),
-                        ),
-                        Expanded(
-                          child: TextField(
+              // One Row in both states, so the trailing control (the hold-to-
+              // record target) stays MOUNTED through the whole press — the
+              // gesture would die if its detector were rebuilt away. Only the
+              // leading + middle swap between the text field and the recording
+              // strip (ADR 0057).
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (!_recording)
+                    IconButton(
+                      tooltip: picker.isAvailable
+                          ? 'إرفاق ملف'
+                          : 'إرفاق الملفات غير متاح في هذا الإصدار',
+                      onPressed: picker.isAvailable ? _attach : null,
+                      icon: const Icon(Icons.attach_file_rounded),
+                    ),
+                  Expanded(
+                    child: _recording
+                        ? _RecordingStrip(
+                            levels: recorder.amplitudes,
+                            cancelArmed: _cancelArmed,
+                          )
+                        : TextField(
                             controller: _controller,
                             minLines: 1,
                             maxLines: 5,
@@ -188,28 +199,121 @@ class _ComposerState extends ConsumerState<Composer> {
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: Insets.xs),
-                        if (_hasText)
-                          IconButton.filled(
-                            tooltip: 'إرسال',
-                            onPressed: _send,
-                            icon: const Icon(Icons.send_rounded),
-                          )
-                        else
-                          IconButton(
-                            tooltip: recorder.isSupported
-                                ? 'تسجيل رسالة صوتية'
-                                : 'التسجيل الصوتي غير متاح في هذا الإصدار',
-                            onPressed: recorder.isSupported
-                                ? _toggleRecording
-                                : null,
-                            icon: const Icon(Icons.mic_none_rounded),
-                          ),
-                      ],
+                  ),
+                  const SizedBox(width: Insets.xs),
+                  if (_hasText && !_recording)
+                    IconButton.filled(
+                      tooltip: 'إرسال',
+                      onPressed: _send,
+                      icon: const Icon(Icons.send_rounded),
+                    )
+                  else
+                    HoldToRecord(
+                      enabled: recorder.isSupported,
+                      onStart: _beginRecording,
+                      onCancelArmedChanged: (armed) {
+                        if (mounted) setState(() => _cancelArmed = armed);
+                      },
+                      onEnd: ({required cancelled}) =>
+                          _finishRecording(cancelled: cancelled),
+                      onQuickTap: () => context.toast(
+                        recorder.isSupported
+                            ? 'اضغط مطوّلًا للتسجيل، وأفلت للإرسال'
+                            : 'التسجيل الصوتي غير متاح في هذا الإصدار',
+                      ),
+                      child: _MicTarget(
+                        recording: _recording,
+                        cancelArmed: _cancelArmed,
+                        enabled: recorder.isSupported,
+                      ),
                     ),
+                ],
+              ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The strip shown in place of the text field while recording: a live level
+/// waveform and a hint that slides to cancel. Turns red when the cancel is
+/// armed (the finger has slid far enough that releasing will discard).
+class _RecordingStrip extends StatelessWidget {
+  const _RecordingStrip({required this.levels, required this.cancelArmed});
+
+  final Stream<double> levels;
+  final bool cancelArmed;
+
+  @override
+  Widget build(BuildContext context) {
+    final danger = context.colors.error;
+    return Row(
+      key: const Key('composer-recording-strip'),
+      children: [
+        Icon(Icons.fiber_manual_record_rounded, size: 12, color: danger),
+        const SizedBox(width: Insets.xs),
+        Expanded(child: VoiceWave(levels: levels)),
+        const SizedBox(width: Insets.sm),
+        Text(
+          cancelArmed ? 'أفلت للإلغاء' : 'اسحب للإلغاء',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: context.text.labelSmall?.copyWith(
+            color: cancelArmed ? danger : context.colors.onSurfaceVariant,
+            fontWeight: cancelArmed ? FontWeight.w700 : FontWeight.w400,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The mic tap target held to record. A plain mic when idle; a filled accent
+/// mic while recording; a red trash when the cancel is armed. Sized like an
+/// IconButton so the row's height does not jump when recording starts.
+class _MicTarget extends StatelessWidget {
+  const _MicTarget({
+    required this.recording,
+    required this.cancelArmed,
+    required this.enabled,
+  });
+
+  final bool recording;
+  final bool cancelArmed;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final IconData icon;
+    final Color color;
+    if (!recording) {
+      icon = Icons.mic_none_rounded;
+      color = enabled
+          ? context.colors.onSurfaceVariant
+          : context.colors.onSurface.withValues(alpha: 0.38);
+    } else if (cancelArmed) {
+      icon = Icons.delete_rounded;
+      color = context.colors.error;
+    } else {
+      icon = Icons.mic_rounded;
+      color = context.colors.primary;
+    }
+    return Tooltip(
+      // Manual trigger: the default long-press trigger would add its OWN
+      // recognizer and steal the hold-to-record gesture from the wrapper.
+      triggerMode: TooltipTriggerMode.manual,
+      message: enabled
+          ? 'اضغط مطوّلًا للتسجيل، وأفلت للإرسال'
+          : 'التسجيل الصوتي غير متاح في هذا الإصدار',
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: AnimatedScale(
+          scale: recording && !cancelArmed ? 1.25 : 1,
+          duration: const Duration(milliseconds: 150),
+          child: Icon(icon, color: color),
         ),
       ),
     );
