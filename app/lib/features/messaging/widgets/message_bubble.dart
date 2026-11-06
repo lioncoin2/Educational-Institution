@@ -12,6 +12,7 @@ import '../../../data/models/messaging.dart';
 import '../../../providers/app_providers.dart';
 import '../messaging_copy.dart';
 import '../state/conversation_controller.dart';
+import 'swipe_to_reply.dart';
 
 /// A quoted message shown inside a reply's bubble: who it was from (when
 /// known) and a one-line preview. Resolved from the real `replyToMessageId`
@@ -35,6 +36,7 @@ class MessageBubble extends StatelessWidget {
     super.key,
     required this.message,
     required this.mine,
+    this.highlighted = false,
     this.senderName,
     this.senderAvatarUrl,
     this.repliedTo,
@@ -52,6 +54,10 @@ class MessageBubble extends StatelessWidget {
 
   final Message message;
   final bool mine;
+
+  /// Briefly highlights this bubble — it was just jumped to (from a reply quote
+  /// or the pinned banner). Cleared by the screen after a moment.
+  final bool highlighted;
 
   /// Shown above others' messages in groups and channels — but only on the
   /// first message of a run from the same sender ([showHeader]).
@@ -112,8 +118,9 @@ class MessageBubble extends StatelessWidget {
         onReview != null ||
         onEdit != null ||
         onDeleteOwn != null;
-    return _BubbleFrame(
+    final frame = _BubbleFrame(
       mine: mine,
+      highlighted: highlighted,
       header: _header(context),
       groupedWithPrevious: groupedWithPrevious,
       reply: message.isDeleted || repliedTo == null
@@ -136,6 +143,8 @@ class MessageBubble extends StatelessWidget {
             )
           : _MessageContent(message: message),
     );
+    // Swipe sideways to reply — inert when the viewer cannot reply here.
+    return SwipeToReply(onReply: canReply ? onReply : null, child: frame);
   }
 
   /// The sender's name above others' messages (groups and channels). When the
@@ -370,12 +379,16 @@ class _BubbleFrame extends StatelessWidget {
     this.reply,
     this.faded = false,
     this.groupedWithPrevious = false,
+    this.highlighted = false,
     this.onLongPress,
   });
 
   final bool mine;
   final Widget child;
   final Widget footer;
+
+  /// Briefly tints the whole row — the message was just jumped to.
+  final bool highlighted;
   final Widget? header;
 
   /// A quote of the message this one replies to, drawn above the content.
@@ -439,7 +452,11 @@ class _BubbleFrame extends StatelessWidget {
             onLongPress: onLongPress,
             child: bubble,
           );
-    return Padding(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 320),
+      color: highlighted
+          ? context.colors.primary.withValues(alpha: 0.12)
+          : Colors.transparent,
       padding: EdgeInsets.only(top: groupedWithPrevious ? 1 : 6, bottom: 1),
       child: Align(
         alignment: mine

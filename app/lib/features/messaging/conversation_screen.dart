@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -22,6 +24,7 @@ import 'state/direct_message_starter.dart';
 import 'widgets/composer.dart';
 import 'widgets/connection_banner.dart';
 import 'widgets/message_bubble.dart';
+import 'widgets/scroll_to_bottom_button.dart';
 
 /// One conversation: its timeline, newest at the bottom, and the composer.
 class ConversationScreen extends ConsumerStatefulWidget {
@@ -40,6 +43,49 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   /// Attached to the pinned message's bubble, so the banner can scroll to it.
   final GlobalKey _pinnedKey = GlobalKey();
+
+  /// The timeline's scroll controller, so a "jump to newest" button can return
+  /// to the bottom and we can tell when the viewer has scrolled up.
+  final ScrollController _scroll = ScrollController();
+
+  /// Whether the "jump to newest" button shows (the viewer scrolled up). A
+  /// notifier so only the button rebuilds as the timeline scrolls.
+  final ValueNotifier<bool> _showJump = ValueNotifier<bool>(false);
+
+  /// A message to flash briefly after jumping to it, and the timer that clears
+  /// the flash.
+  String? _flashId;
+  Timer? _flashTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    // The list is reversed, so offset 0 is the bottom (newest). Past a short
+    // distance up, offer the jump button.
+    final show = _scroll.hasClients && _scroll.offset > 240;
+    if (show != _showJump.value) _showJump.value = show;
+  }
+
+  void _flash(String messageId) {
+    _flashTimer?.cancel();
+    setState(() => _flashId = messageId);
+    _flashTimer = Timer(const Duration(milliseconds: 1400), () {
+      if (mounted) setState(() => _flashId = null);
+    });
+  }
+
+  @override
+  void dispose() {
+    _scroll.removeListener(_onScroll);
+    _scroll.dispose();
+    _showJump.dispose();
+    _flashTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -166,8 +212,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           final pinnedId = state.conversation.pinnedMessageId;
           return Column(
             children: [
-              if (communityId != null)
-                _LiveNowBanner(communityId: communityId),
+              if (communityId != null) _LiveNowBanner(communityId: communityId),
               const ConnectionBanner(),
               // The pinned-message banner (ADR 0043): a compact bar under the
               // header, its preview resolved from the loaded timeline like a
@@ -176,29 +221,50 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
               // fallback. Only moderators (canModerate) may unpin.
               if (pinnedId != null)
                 _PinnedBanner(
-                  pinned:
-                      state.messages.any((m) => m.id == pinnedId)
-                      ? _repliedById(
-                          pinnedId,
-                          {for (final m in state.messages) m.id: m},
-                          state,
-                        )
+                  pinned: state.messages.any((m) => m.id == pinnedId)
+                      ? _repliedById(pinnedId, {
+                          for (final m in state.messages) m.id: m,
+                        }, state)
                       : null,
                   canUnpin: canModerate,
                   onTap: () => _scrollToPinned(pinnedId),
                   onUnpin: () => _unpin(),
                 ),
               Expanded(
-                child: _Timeline(
-                  state: state,
-                  unreadAfter: _unreadAfter,
-                  canReply: canPostHere,
-                  canModerate: canModerate,
-                  canStartDm: canStartDm,
-                  pinnedMessageId: pinnedId,
-                  pinnedKey: _pinnedKey,
-                  onPin: _pin,
-                  onUnpin: _unpin,
+                child: Stack(
+                  children: [
+                    _Timeline(
+                      state: state,
+                      unreadAfter: _unreadAfter,
+                      canReply: canPostHere,
+                      canModerate: canModerate,
+                      canStartDm: canStartDm,
+                      pinnedMessageId: pinnedId,
+                      pinnedKey: _pinnedKey,
+                      flashId: _flashId,
+                      scrollController: _scroll,
+                      onPin: _pin,
+                      onUnpin: _unpin,
+                    ),
+                    PositionedDirectional(
+                      bottom: Insets.sm,
+                      end: Insets.sm,
+                      child: ScrollToBottomButton(
+                        show: _showJump,
+                        unread: (state.newestSequence - state.lastReadSequence)
+                            .clamp(0, 1 << 30),
+                        onTap: () {
+                          if (_scroll.hasClients) {
+                            _scroll.animateTo(
+                              0,
+                              duration: Motion.card,
+                              curve: Curves.easeOut,
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
               if (state.removed)
@@ -216,29 +282,29 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
                   onSendFile: (file) =>
                       ref.read(provider.notifier).sendFile(file),
                 )
-            // Read-only, and why — as much as is known without guessing. A
-            // channel reserves posting for the owner and publishers; a
-            // restricted group limits it to its moderators; otherwise the
-            // chat may be locked or simply not the viewer's to post in, and
-            // the server does not say which, so neither does the screen.
-            else if (communityPosting?.isChannel ?? false)
-              const _Notice(
-                key: Key('conversation-read-only'),
-                icon: Icons.campaign_outlined,
-                text: MessagingCopy.channelReadOnly,
-              )
-            else if (communityPosting?.isRestrictedGroup ?? false)
-              const _Notice(
-                key: Key('conversation-read-only'),
-                icon: Icons.edit_off_outlined,
-                text: MessagingCopy.groupRestrictedReadOnly,
-              )
-            else if (state.conversation.isCommunityChat)
-              const _Notice(
-                key: Key('conversation-read-only'),
-                icon: Icons.lock_outline_rounded,
-                text: MessagingCopy.cannotPostHere,
-              )
+              // Read-only, and why — as much as is known without guessing. A
+              // channel reserves posting for the owner and publishers; a
+              // restricted group limits it to its moderators; otherwise the
+              // chat may be locked or simply not the viewer's to post in, and
+              // the server does not say which, so neither does the screen.
+              else if (communityPosting?.isChannel ?? false)
+                const _Notice(
+                  key: Key('conversation-read-only'),
+                  icon: Icons.campaign_outlined,
+                  text: MessagingCopy.channelReadOnly,
+                )
+              else if (communityPosting?.isRestrictedGroup ?? false)
+                const _Notice(
+                  key: Key('conversation-read-only'),
+                  icon: Icons.edit_off_outlined,
+                  text: MessagingCopy.groupRestrictedReadOnly,
+                )
+              else if (state.conversation.isCommunityChat)
+                const _Notice(
+                  key: Key('conversation-read-only'),
+                  icon: Icons.lock_outline_rounded,
+                  text: MessagingCopy.cannotPostHere,
+                )
               else
                 const _Notice(
                   icon: Icons.campaign_outlined,
@@ -249,10 +315,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         },
       ),
     );
-    return Theme(
-      data: MessagingPalette.themeOf(context),
-      child: scaffold,
-    );
+    return Theme(data: MessagingPalette.themeOf(context), child: scaffold);
   }
 
   /// The app-bar title. For a community's chat it is a tappable header —
@@ -336,7 +399,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   Future<void> _pin(String messageId) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref.read(conversationProvider(widget.conversationId).notifier).pinMessage(messageId);
+      await ref
+          .read(conversationProvider(widget.conversationId).notifier)
+          .pinMessage(messageId);
       messenger.toast(MessagingCopy.pinDone);
     } on MessagingException catch (error) {
       messenger.toast(MessagingCopy.error(error.code));
@@ -346,7 +411,9 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   Future<void> _unpin() async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref.read(conversationProvider(widget.conversationId).notifier).unpinMessage();
+      await ref
+          .read(conversationProvider(widget.conversationId).notifier)
+          .unpinMessage();
       messenger.toast(MessagingCopy.unpinDone);
     } on MessagingException catch (error) {
       messenger.toast(MessagingCopy.error(error.code));
@@ -360,9 +427,12 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
     final provider = conversationProvider(widget.conversationId);
     final messenger = ScaffoldMessenger.of(context);
     bool loaded() =>
-        ref.read(provider).value?.messages.any((m) => m.id == messageId) ?? false;
+        ref.read(provider).value?.messages.any((m) => m.id == messageId) ??
+        false;
     var guard = 0;
-    while (!loaded() && (ref.read(provider).value?.hasOlder ?? false) && guard < 20) {
+    while (!loaded() &&
+        (ref.read(provider).value?.hasOlder ?? false) &&
+        guard < 20) {
       guard += 1;
       await ref.read(provider.notifier).loadOlder();
     }
@@ -380,6 +450,7 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
         alignment: 0.3,
         duration: Motion.card,
       );
+      _flash(messageId);
     } else {
       // Loaded but not built (far up a long timeline): tell the viewer it is
       // now in the history to scroll to, rather than jumping unpredictably.
@@ -515,7 +586,12 @@ class _LiveNowBanner extends ConsumerWidget {
       colors: [Color(0xFFD1356F), Color(0xFF8A3FC0)],
     );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(Insets.md, Insets.sm, Insets.md, Insets.sm),
+      padding: const EdgeInsets.fromLTRB(
+        Insets.md,
+        Insets.sm,
+        Insets.md,
+        Insets.sm,
+      ),
       child: Material(
         color: Colors.transparent,
         borderRadius: Radii.brLg,
@@ -624,12 +700,22 @@ class _Timeline extends ConsumerWidget {
     this.canStartDm = false,
     this.pinnedMessageId,
     this.pinnedKey,
+    this.flashId,
+    this.scrollController,
     this.onPin,
     this.onUnpin,
   });
 
   final ConversationState state;
   final int? unreadAfter;
+
+  /// The message to flash briefly (just jumped to from a reply quote or the
+  /// pinned banner), or null. Drawn as a short-lived highlight on its bubble.
+  final String? flashId;
+
+  /// The timeline's scroll controller (owned by the screen), so a "jump to
+  /// newest" button can bring it back to the bottom.
+  final ScrollController? scrollController;
 
   /// The pinned message's id (ADR 0043), and the key to attach to its bubble so
   /// the banner can scroll to it.
@@ -674,8 +760,7 @@ class _Timeline extends ConsumerWidget {
     final avatarMessageId = <String, String>{};
     if (showNames) {
       for (final m in state.messages) {
-        if (!state.isMine(m) &&
-            state.senderAvatarAssets[m.senderId] != null) {
+        if (!state.isMine(m) && state.senderAvatarAssets[m.senderId] != null) {
           avatarMessageId.putIfAbsent(m.senderId, () => m.id);
         }
       }
@@ -688,8 +773,7 @@ class _Timeline extends ConsumerWidget {
     for (var j = 0; j < state.messages.length; j++) {
       final previous = j > 0 ? state.messages[j - 1] : null;
       continuesRun[state.messages[j].id] =
-          previous != null &&
-          previous.senderId == state.messages[j].senderId;
+          previous != null && previous.senderId == state.messages[j].senderId;
     }
     final firstUnread = state.messages
         .where(
@@ -717,6 +801,7 @@ class _Timeline extends ConsumerWidget {
               : ValueKey(message.id),
           message: message,
           mine: state.isMine(message),
+          highlighted: message.id == flashId,
           senderName: showNames && !state.isMine(message)
               ? state.senderNames[message.senderId]
               : null,
@@ -781,14 +866,19 @@ class _Timeline extends ConsumerWidget {
               ? () => _editOwn(context, ref, state.conversation.id, message)
               : null,
           onDeleteOwn: state.isMine(message) && !message.isDeleted
-              ? () => _deleteOwn(context, ref, state.conversation.id, message.id)
+              ? () =>
+                    _deleteOwn(context, ref, state.conversation.id, message.id)
               : null,
           // A moderator may delete someone else's live message, or review a
           // tombstoned one (ADR 0029). The server re-authorizes every call.
           onModerateDelete:
               canModerate && !message.isDeleted && !state.isMine(message)
-              ? () =>
-                    _moderateDelete(context, ref, state.conversation.id, message.id)
+              ? () => _moderateDelete(
+                  context,
+                  ref,
+                  state.conversation.id,
+                  message.id,
+                )
               : null,
           onReview: canModerate && message.isDeleted
               ? () => _review(context, ref, state.conversation.id, message.id)
@@ -800,6 +890,7 @@ class _Timeline extends ConsumerWidget {
 
     return ListView.builder(
       reverse: true,
+      controller: scrollController,
       padding: const EdgeInsets.symmetric(
         horizontal: Insets.md,
         vertical: Insets.sm,
@@ -1112,7 +1203,9 @@ Future<void> _review(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(body == null || body.isEmpty ? MessagingCopy.reviewNoText : body),
+          Text(
+            body == null || body.isEmpty ? MessagingCopy.reviewNoText : body,
+          ),
           if (reviewed.attachments.isNotEmpty) ...[
             const SizedBox(height: Insets.sm),
             Text(
