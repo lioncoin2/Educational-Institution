@@ -28,6 +28,13 @@ const ID_MAX = 128;
 const TEXT_MAX = 20_000;
 const PER_REQUEST = 200;
 
+export class ReactDto {
+  /** One of the curated reaction emoji; the domain rejects anything else. */
+  @IsString()
+  @MaxLength(16)
+  emoji!: string;
+}
+
 export class StartDirectDto {
   @IsString()
   @MaxLength(ID_MAX)

@@ -35,6 +35,7 @@ import {
 } from '../application/membership.use-cases';
 import { ReviewDeletedMessageUseCase } from '../application/moderate-message.use-cases';
 import { PinMessageUseCase, UnpinMessageUseCase } from '../application/pin-message.use-cases';
+import { ReactToMessageUseCase } from '../application/react-to-message.use-cases';
 import {
   GetConversationUseCase,
   ListConversationsUseCase,
@@ -59,6 +60,7 @@ import {
   MarkReadDto,
   SendMediaDto,
   SendTextDto,
+  ReactDto,
   StartDirectDto,
 } from './dto/messaging.dto';
 import {
@@ -111,6 +113,7 @@ export class ConversationsController {
     private readonly reviewDeletedMessage: ReviewDeletedMessageUseCase,
     private readonly pinMessageUseCase: PinMessageUseCase,
     private readonly unpinMessageUseCase: UnpinMessageUseCase,
+    private readonly reactToMessageUseCase: ReactToMessageUseCase,
   ) {}
 
   @Get()
@@ -398,6 +401,33 @@ export class ConversationsController {
    * or a conversation that is not a community chat the caller may not moderate,
    * is 404; a member without the capability is 403; Communities unreachable 503.
    */
+  /**
+   * Toggle a reaction on a message (chat reactions). Works in any conversation
+   * the viewer may post in — direct, group or community chat — since the
+   * use case re-authorizes exactly as a send does. 204 either way (added,
+   * swapped or removed); the new counts arrive over realtime and on re-read.
+   */
+  @Post(':conversationId/messages/:messageId/reactions')
+  @Authenticated()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async react(
+    @CurrentPrincipal() principal: Principal,
+    @Param('conversationId') conversationId: string,
+    @Param('messageId') messageId: string,
+    @Body() dto: ReactDto,
+    @RequestMetadata() meta: CallMetadata,
+  ): Promise<void> {
+    unwrap(
+      await this.reactToMessageUseCase.execute({
+        principal,
+        conversationId,
+        messageId,
+        emoji: dto.emoji,
+        meta,
+      }),
+    );
+  }
+
   @Post(':conversationId/messages/:messageId/pin')
   @Authenticated()
   @HttpCode(HttpStatus.NO_CONTENT)

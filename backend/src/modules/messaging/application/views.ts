@@ -6,9 +6,14 @@ import type { ConversationType, MessageType, ParticipantRole } from '../contract
  * public contract — the realtime module delivers exactly these — so they are
  * defined in `contracts/` and re-exported here for the application's use.
  */
-import type { AttachmentView, MessageView, PersonView } from '../contracts/message-view';
+import type {
+  AttachmentView,
+  MessageReactionView,
+  MessageView,
+  PersonView,
+} from '../contracts/message-view';
 
-export type { AttachmentView, MessageView, PersonView };
+export type { AttachmentView, MessageReactionView, MessageView, PersonView };
 
 export interface MessagePreview {
   readonly sequence: number;

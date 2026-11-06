@@ -67,6 +67,12 @@ export interface AttachmentResponse {
   readonly height: number | null;
 }
 
+export interface ReactionResponse {
+  readonly emoji: string;
+  readonly count: number;
+  readonly mine: boolean;
+}
+
 export interface MessageResponse {
   readonly id: string;
   readonly conversationId: string;
@@ -80,6 +86,7 @@ export interface MessageResponse {
   readonly editedAt: string | null;
   readonly deletedAt: string | null;
   readonly attachments: readonly AttachmentResponse[];
+  readonly reactions: readonly ReactionResponse[];
 }
 
 export interface MessagePageResponse {
@@ -195,6 +202,11 @@ export function toMessageResponse(message: MessageView): MessageResponse {
     editedAt: iso(message.editedAt),
     deletedAt: iso(message.deletedAt),
     attachments: message.attachments.map(toAttachmentResponse),
+    reactions: message.reactions.map((reaction) => ({
+      emoji: reaction.emoji,
+      count: reaction.count,
+      mine: reaction.mine,
+    })),
   };
 }
 

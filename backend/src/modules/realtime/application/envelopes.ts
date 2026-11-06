@@ -42,6 +42,11 @@ interface WireMessage {
     readonly width: number | null;
     readonly height: number | null;
   }[];
+  readonly reactions: readonly {
+    readonly emoji: string;
+    readonly count: number;
+    readonly mine: boolean;
+  }[];
 }
 
 const iso = (at: Date | null): string | null => (at === null ? null : at.toISOString());
@@ -73,6 +78,11 @@ function wireMessage(message: MessageView): WireMessage {
         height: file?.height ?? null,
       };
     }),
+    reactions: message.reactions.map((reaction) => ({
+      emoji: reaction.emoji,
+      count: reaction.count,
+      mine: reaction.mine,
+    })),
   };
 }
 
@@ -237,6 +247,24 @@ export function messagePinnedFrame(input: {
     conversationId: input.conversationId,
     pinnedMessageId: input.pinnedMessageId,
     pinVersion: input.pinVersion,
+  });
+}
+
+export function messageReactedFrame(input: {
+  readonly occurredAt: Date;
+  readonly conversationId: string;
+  readonly messageId: string;
+  readonly counts: Readonly<Record<string, number>>;
+}): string {
+  return frame({
+    type: 'message.reacted',
+    // Unique per change: the message and the change instant (reactions carry no
+    // monotonic version, so the timestamp orders a client's own re-reads).
+    eventId: `message.reacted:${input.messageId}:${input.occurredAt.getTime()}`,
+    occurredAt: input.occurredAt.toISOString(),
+    conversationId: input.conversationId,
+    messageId: input.messageId,
+    counts: input.counts,
   });
 }
 

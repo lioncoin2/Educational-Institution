@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 
 import { DATABASE, type Database } from '../../../platform/database';
+import type { MessageReactionView } from '../contracts/reaction-view';
 import type { ConversationType, MessageType, ParticipantRole } from '../contracts/vocabulary';
 import type { ConversationId } from '../domain/conversation';
 import type { MessageAttachment, MessageId } from '../domain/message';
@@ -25,7 +26,13 @@ import {
   toMessage,
   toParticipant,
 } from './row-mapping';
-import { conversationParticipants, conversations, messageAttachments, messages } from './schema';
+import {
+  conversationParticipants,
+  conversations,
+  messageAttachments,
+  messageReactions,
+  messages,
+} from './schema';
 
 /**
  * Messaging's queries. Each is a bounded number of index scans, whatever the
@@ -136,6 +143,36 @@ export class DrizzleMessagingReadModel implements MessagingReadModel {
       hasOlder,
       hasNewer,
     };
+  }
+
+  async reactionsOf(
+    messageIds: readonly MessageId[],
+    viewerId: string,
+  ): Promise<Map<string, readonly MessageReactionView[]>> {
+    const result = new Map<string, readonly MessageReactionView[]>();
+    if (messageIds.length === 0) return result;
+    const rows = await this.db
+      .select({
+        messageId: messageReactions.messageId,
+        emoji: messageReactions.emoji,
+        count: sql<number>`count(*)::int`,
+        mine: sql<boolean>`bool_or(${messageReactions.userId} = ${viewerId})`,
+      })
+      .from(messageReactions)
+      .where(inArray(messageReactions.messageId, [...messageIds]))
+      .groupBy(messageReactions.messageId, messageReactions.emoji);
+
+    const byMessage = new Map<string, { emoji: string; count: number; mine: boolean }[]>();
+    for (const row of rows) {
+      const list = byMessage.get(row.messageId) ?? [];
+      list.push({ emoji: row.emoji, count: row.count, mine: row.mine });
+      byMessage.set(row.messageId, list);
+    }
+    for (const [messageId, list] of byMessage) {
+      list.sort((a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji));
+      result.set(messageId, list);
+    }
+    return result;
   }
 
   async listParticipants(

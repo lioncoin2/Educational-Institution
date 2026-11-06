@@ -43,6 +43,7 @@ import {
   ReviewDeletedMessageUseCase,
 } from './application/moderate-message.use-cases';
 import { PinMessageUseCase, UnpinMessageUseCase } from './application/pin-message.use-cases';
+import { ReactToMessageUseCase } from './application/react-to-message.use-cases';
 import { MessagingViews } from './application/messaging-views';
 import {
   GetConversationUseCase,
@@ -157,6 +158,7 @@ import { InMemoryMessagingStore } from './infrastructure/in-memory-messaging-sto
     EditMessageUseCase,
     DeleteMessageUseCase,
     PinMessageUseCase,
+    ReactToMessageUseCase,
     UnpinMessageUseCase,
     { provide: MESSAGE_RECIPIENTS, useClass: MessageRecipientsService },
     { provide: MESSAGE_DELIVERY, useClass: MessageDeliveryService },

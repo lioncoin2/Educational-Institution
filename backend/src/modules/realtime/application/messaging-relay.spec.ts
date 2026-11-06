@@ -84,6 +84,7 @@ describe('messaging events, delivered in real time', () => {
           editedAt: null,
           deletedAt: null,
           attachments: [],
+          reactions: [],
         },
         sender: { userId: teacher.userId, displayName: 'الأستاذ عبدالله', avatarFileAssetId: null },
       });

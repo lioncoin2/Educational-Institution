@@ -49,6 +49,7 @@ import {
   PinMessageUseCase,
   UnpinMessageUseCase,
 } from '../../src/modules/messaging/application/pin-message.use-cases';
+import { ReactToMessageUseCase } from '../../src/modules/messaging/application/react-to-message.use-cases';
 import { MessagingViews } from '../../src/modules/messaging/application/messaging-views';
 import {
   GetConversationUseCase,
@@ -225,7 +226,7 @@ export async function messagingHarness(
     access,
     sync,
   );
-  const views = new MessagingViews(directory, files.fileAssets);
+  const views = new MessagingViews(directory, files.fileAssets, readModel);
   const factory = new ConversationFactory(
     access,
     directory,
@@ -324,6 +325,7 @@ export async function messagingHarness(
       clock,
     ),
     pinMessage: new PinMessageUseCase(repository, communityChats, audit, events, clock),
+    reactToMessage: new ReactToMessageUseCase(repository, access, communityChats, events, clock),
     unpinMessage: new UnpinMessageUseCase(repository, communityChats, audit, events, clock),
     retentionSweeper: new MessageRetentionSweeper(repository, clock),
 

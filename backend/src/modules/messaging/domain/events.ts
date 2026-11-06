@@ -5,6 +5,7 @@ import {
   type MessageDeleted,
   type MessageEdited,
   type MessagePinned,
+  type MessageReacted,
   type MessageRead,
   type MessageSent,
   type ParticipantAdded,
@@ -153,6 +154,28 @@ export function messagePinned(
     MessagingEvents.messagePinned,
     conversationId,
     { conversationId, pinnedMessageId, pinVersion },
+    at,
+    correlationId,
+  );
+}
+
+/**
+ * A message's reaction summary changed (ADR: chat reactions). `counts` is the
+ * authoritative emoji → count AFTER the change, read from the committed rows;
+ * `at` is the change time, carried as the event's `occurredAt` so a subscriber
+ * can drop a stale one. Published only after the change is persisted.
+ */
+export function messageReacted(
+  conversationId: string,
+  messageId: string,
+  counts: Readonly<Record<string, number>>,
+  at: Date,
+  correlationId?: string,
+): MessageReacted {
+  return domainEvent(
+    MessagingEvents.messageReacted,
+    conversationId,
+    { conversationId, messageId, counts },
     at,
     correlationId,
   );

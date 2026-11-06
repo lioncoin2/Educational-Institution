@@ -96,8 +96,8 @@ responsibility and what each module must not know live in
 
 - **Path:** `backend/src/modules/messaging/`
 - **Nest module:** `messaging.module.ts` — exports: `MESSAGE_DELIVERY`, `MESSAGE_NOTIFICATION_CONTEXT`, `MESSAGE_RECIPIENTS`
-- **Public contract (`contracts/`):** `AttachmentView`, `CONVERSATION_TYPES`, `ConversationCreated`, `ConversationPosition`, `ConversationType`, `MAX_NOTIFICATION_CONTEXT_REFS`, `MAX_RECIPIENT_PAGE`, `MESSAGE_DELIVERY`, `MESSAGE_NOTIFICATION_CONTEXT`, `MESSAGE_RECIPIENTS`, `MESSAGE_TYPES`, `MessageDeleted`, `MessageDelivery`, `MessageEdited`, `MessageForDelivery`, `MessageNotificationContext`, `MessagePinned`, `MessageRead`, `MessageRecipients`, `MessageSearch`, `MessageSearchHit`, `MessageSearchQuery`, `MessageSent`, `MessageType`, `MessageView`, `MessagingEvent`, `MessagingEvents`, `NotificationContext`, `NotificationContextRef`, `PARTICIPANT_ROLES`, `ParticipantAdded`, `ParticipantRemoved`, `ParticipantRole`, `PersonView`, `RecipientPage`
-- **Declared domain events:** `messaging.conversation.created`, `messaging.message.deleted`, `messaging.message.edited`, `messaging.message.pinned`, `messaging.message.read`, `messaging.message.sent`, `messaging.participant.added`, `messaging.participant.removed`
+- **Public contract (`contracts/`):** `AttachmentView`, `CONVERSATION_TYPES`, `ConversationCreated`, `ConversationPosition`, `ConversationType`, `MAX_NOTIFICATION_CONTEXT_REFS`, `MAX_RECIPIENT_PAGE`, `MESSAGE_DELIVERY`, `MESSAGE_NOTIFICATION_CONTEXT`, `MESSAGE_RECIPIENTS`, `MESSAGE_TYPES`, `MessageDeleted`, `MessageDelivery`, `MessageEdited`, `MessageForDelivery`, `MessageNotificationContext`, `MessagePinned`, `MessageReacted`, `MessageRead`, `MessageRecipients`, `MessageSearch`, `MessageSearchHit`, `MessageSearchQuery`, `MessageSent`, `MessageType`, `MessageView`, `MessagingEvent`, `MessagingEvents`, `NotificationContext`, `NotificationContextRef`, `PARTICIPANT_ROLES`, `ParticipantAdded`, `ParticipantRemoved`, `ParticipantRole`, `PersonView`, `RecipientPage`
+- **Declared domain events:** `messaging.conversation.created`, `messaging.message.deleted`, `messaging.message.edited`, `messaging.message.pinned`, `messaging.message.reacted`, `messaging.message.read`, `messaging.message.sent`, `messaging.participant.added`, `messaging.participant.removed`
 - **Static imports → modules:** `communities`, `files`, `identity`
 - **Docs:** [module-boundaries.md#messaging](module-boundaries.md#messaging)
 
@@ -386,3 +386,4 @@ responsibility and what each module must not know live in
 - [0050 — The request to speak is offered only to who cannot speak yet; a room reset tells people what it changed](decisions/0050-live-speaking-offer-and-room-reset-feedback.md)
 - [0051 — Native cross-platform live screen share (Android + iOS)](decisions/0051-native-cross-platform-screen-share.md)
 - [0052 — Daily tasks & reports engine](decisions/0052-daily-tasks-and-reports-engine.md)
+- [0053 — Chat message reactions](decisions/0053-chat-message-reactions.md)

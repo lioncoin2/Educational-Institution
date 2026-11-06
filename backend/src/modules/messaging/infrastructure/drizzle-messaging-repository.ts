@@ -20,6 +20,7 @@ import type {
   MarkReadOutcome,
   MessagingRepository,
   PinOutcome,
+  ReactionOutcome,
   SoftDeleteOutcome,
   EditOutcome,
   UnpinOutcome,
@@ -31,7 +32,13 @@ import {
   toMessage,
   toParticipant,
 } from './row-mapping';
-import { conversationParticipants, conversations, messageAttachments, messages } from './schema';
+import {
+  conversationParticipants,
+  conversations,
+  messageAttachments,
+  messageReactions,
+  messages,
+} from './schema';
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 type Executor = Database | Transaction;
@@ -478,6 +485,76 @@ export class DrizzleMessagingRepository implements MessagingRepository {
         .where(eq(conversations.id, conversationId))
         .returning();
       return { kind: 'unpinned', conversation: toConversation(row), alreadyUnpinned: false };
+    });
+  }
+
+  async react(input: {
+    readonly conversationId: ConversationId;
+    readonly messageId: MessageId;
+    readonly userId: string;
+    readonly emoji: string;
+    readonly at: Date;
+  }): Promise<ReactionOutcome> {
+    return this.db.transaction(async (tx) => {
+      // The target must be a LIVE message of this conversation; lock it so two
+      // taps at once serialize (the primary key also guarantees one row).
+      const live = await tx
+        .select({ id: messages.id })
+        .from(messages)
+        .where(
+          and(
+            eq(messages.conversationId, input.conversationId),
+            eq(messages.id, input.messageId),
+            isNull(messages.deletedAt),
+          ),
+        )
+        .for('update')
+        .limit(1);
+      if (live.length === 0) return { kind: 'message_not_found' };
+
+      const [current] = await tx
+        .select({ emoji: messageReactions.emoji })
+        .from(messageReactions)
+        .where(
+          and(
+            eq(messageReactions.messageId, input.messageId),
+            eq(messageReactions.userId, input.userId),
+          ),
+        )
+        .limit(1);
+      // Toggle: the same emoji again removes it; a different one swaps it.
+      if (current?.emoji === input.emoji) {
+        await tx
+          .delete(messageReactions)
+          .where(
+            and(
+              eq(messageReactions.messageId, input.messageId),
+              eq(messageReactions.userId, input.userId),
+            ),
+          );
+      } else {
+        await tx
+          .insert(messageReactions)
+          .values({
+            messageId: input.messageId,
+            userId: input.userId,
+            emoji: input.emoji,
+            reactedAt: input.at,
+          })
+          .onConflictDoUpdate({
+            target: [messageReactions.messageId, messageReactions.userId],
+            set: { emoji: input.emoji, reactedAt: input.at },
+          });
+      }
+
+      const rows = await tx
+        .select({ emoji: messageReactions.emoji, count: sql<number>`count(*)::int` })
+        .from(messageReactions)
+        .where(eq(messageReactions.messageId, input.messageId))
+        .groupBy(messageReactions.emoji);
+      const counts: Record<string, number> = {};
+      for (const row of rows) counts[row.emoji] = row.count;
+      return { kind: 'changed', counts };
     });
   }
 

@@ -22,6 +22,7 @@ export const MessagingEvents = {
   messageDeleted: 'messaging.message.deleted',
   messageEdited: 'messaging.message.edited',
   messagePinned: 'messaging.message.pinned',
+  messageReacted: 'messaging.message.reacted',
 } as const;
 
 export type ConversationCreated = DomainEvent<
@@ -130,6 +131,24 @@ export type MessageEdited = DomainEvent<
   }
 >;
 
+/**
+ * A member's reaction on a message changed (added, swapped or removed). An id
+ * and the authoritative emoji counts AFTER the change, never who reacted with
+ * what in the payload — a subscriber shows the message's reaction summary, and
+ * the authoritative state is the message's own, re-read on reconnect. The
+ * counts are small and public to the chat (who can read it sees the bubble), so
+ * carrying them lets a client update without a re-fetch.
+ */
+export type MessageReacted = DomainEvent<
+  typeof MessagingEvents.messageReacted,
+  {
+    readonly conversationId: string;
+    readonly messageId: string;
+    /** emoji → count, for the emoji that still have at least one reaction. */
+    readonly counts: Readonly<Record<string, number>>;
+  }
+>;
+
 export type MessagingEvent =
   | ConversationCreated
   | ParticipantAdded
@@ -138,4 +157,5 @@ export type MessagingEvent =
   | MessageRead
   | MessageDeleted
   | MessageEdited
-  | MessagePinned;
+  | MessagePinned
+  | MessageReacted;

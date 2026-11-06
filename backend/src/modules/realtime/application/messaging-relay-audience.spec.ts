@@ -104,6 +104,7 @@ const view = (clientMessageId: string | null): MessageView => ({
   editedAt: null,
   deletedAt: null,
   attachments: [],
+  reactions: [],
 });
 
 const delivery: MessageDelivery = {

@@ -1,5 +1,8 @@
 import type { FileAssetSummary } from '../../files/contracts/file-assets';
+import type { MessageReactionView } from './reaction-view';
 import type { MessageType } from './vocabulary';
+
+export type { MessageReactionView };
 
 /** A file on a message. `file` is null once the file is no longer available. */
 export interface AttachmentView {
@@ -29,6 +32,8 @@ export interface MessageView {
   readonly editedAt: Date | null;
   readonly deletedAt: Date | null;
   readonly attachments: readonly AttachmentView[];
+  /** The message's reaction summary for this viewer — empty when none. */
+  readonly reactions: readonly MessageReactionView[];
 }
 
 /**

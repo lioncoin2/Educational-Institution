@@ -5,6 +5,7 @@ import {
   projectMember,
   type CommunityMemberState,
 } from '../domain/community-chat';
+import type { MessageReactionView } from '../contracts/reaction-view';
 import type { ConversationType } from '../contracts/vocabulary';
 import type { ConversationId, Conversation, NewConversation } from '../domain/conversation';
 import { sameContent, type Message, type MessageDraft, type MessageId } from '../domain/message';
@@ -26,6 +27,7 @@ import type {
   MessagingRepository,
   ProjectionRow,
   PinOutcome,
+  ReactionOutcome,
   SoftDeleteOutcome,
   EditOutcome,
   UnpinOutcome,
@@ -43,11 +45,20 @@ const key = (conversationId: string, userId: string) => `${conversationId}\u0000
  * that only moves forward. Each mutating method runs to completion without an
  * `await`, which in one JavaScript thread is what the row lock is in Postgres.
  */
+/** emoji → how many of the given per-member reactions chose it. */
+function countsOf(byUser: Map<string, string>): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const emoji of byUser.values()) counts[emoji] = (counts[emoji] ?? 0) + 1;
+  return counts;
+}
+
 export class InMemoryMessagingStore implements MessagingRepository, MessagingReadModel {
   private readonly conversations = new Map<string, Conversation>();
   private readonly participants = new Map<string, Participant>();
   /** Per conversation, ascending by sequence. */
   private readonly timelines = new Map<string, Message[]>();
+  /** messageId → (userId → emoji): at most one reaction per member per message. */
+  private readonly reactions = new Map<string, Map<string, string>>();
 
   // ── MessagingRepository ────────────────────────────────────────────────
 
@@ -281,6 +292,43 @@ export class InMemoryMessagingStore implements MessagingRepository, MessagingRea
     };
     this.conversations.set(conversationId, updated);
     return { kind: 'unpinned', conversation: updated, alreadyUnpinned: false };
+  }
+
+  async react(input: {
+    readonly conversationId: ConversationId;
+    readonly messageId: MessageId;
+    readonly userId: string;
+    readonly emoji: string;
+    readonly at: Date;
+  }): Promise<ReactionOutcome> {
+    const message = await this.findMessage(input.conversationId, input.messageId);
+    if (message === null || message.deletedAt !== null) return { kind: 'message_not_found' };
+    let byUser = this.reactions.get(input.messageId);
+    if (byUser === undefined) {
+      byUser = new Map<string, string>();
+      this.reactions.set(input.messageId, byUser);
+    }
+    // Toggle: the same emoji again removes it; a different one swaps it.
+    if (byUser.get(input.userId) === input.emoji) byUser.delete(input.userId);
+    else byUser.set(input.userId, input.emoji);
+    return { kind: 'changed', counts: countsOf(byUser) };
+  }
+
+  async reactionsOf(
+    messageIds: readonly MessageId[],
+    viewerId: string,
+  ): Promise<Map<string, readonly MessageReactionView[]>> {
+    const result = new Map<string, readonly MessageReactionView[]>();
+    for (const messageId of messageIds) {
+      const byUser = this.reactions.get(messageId);
+      if (byUser === undefined || byUser.size === 0) continue;
+      const mine = byUser.get(viewerId) ?? null;
+      const views = Object.entries(countsOf(byUser))
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([emoji, count]) => ({ emoji, count, mine: emoji === mine }));
+      result.set(messageId, views);
+    }
+    return result;
   }
 
   async purgeDeletedBefore(deletedBefore: Date, limit: number): Promise<number> {

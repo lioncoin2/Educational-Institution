@@ -21,6 +21,7 @@ import {
   type MessageDeleted,
   type MessageEdited,
   type MessagePinned,
+  type MessageReacted,
   type MessageRead,
   type MessageRecipients,
   type MessageSent,
@@ -33,6 +34,7 @@ import {
   messageDeletedFrame,
   messageEditedFrame,
   messagePinnedFrame,
+  messageReactedFrame,
   messageReadFrame,
   messageSentFrame,
   participantAddedFrame,
@@ -96,6 +98,7 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
       MessagingEvents.messageDeleted,
       MessagingEvents.messageEdited,
       MessagingEvents.messagePinned,
+      MessagingEvents.messageReacted,
       MessagingEvents.messageRead,
       MessagingEvents.participantAdded,
       MessagingEvents.participantRemoved,
@@ -154,6 +157,8 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
         return this.messageEdited(event);
       case MessagingEvents.messagePinned:
         return this.messagePinned(event);
+      case MessagingEvents.messageReacted:
+        return this.messageReacted(event);
       case MessagingEvents.messageRead: {
         const payload = messageReadPayload(event);
         if (payload === null) return this.malformed(event);
@@ -285,6 +290,25 @@ export class MessagingRealtimeRelay implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  private async messageReacted(event: DomainEvent): Promise<void> {
+    const payload = messageReactedPayload(event);
+    if (payload === null) return this.malformed(event);
+    // Every current member connected here: the reaction counts are public to
+    // whoever can read the chat, so all readers update their bubble. The frame
+    // carries the authoritative counts only — never who reacted with what.
+    const online = await this.onlineMembers(payload.conversationId);
+    if (online.length === 0) return;
+    this.connections.sendToUsers(
+      online,
+      messageReactedFrame({
+        occurredAt: event.occurredAt,
+        conversationId: payload.conversationId,
+        messageId: payload.messageId,
+        counts: payload.counts,
+      }),
+    );
+  }
+
   /**
    * The conversation's current members — who can see `visibleSequence`,
    * when given — that are connected to this instance (gate G1). Messaging
@@ -386,6 +410,21 @@ function messagePinnedPayload(event: DomainEvent): MessagePinned['payload'] | nu
     return null;
   }
   return p as MessagePinned['payload'];
+}
+
+function messageReactedPayload(event: DomainEvent): MessageReacted['payload'] | null {
+  const p = fieldsOf<MessageReacted['payload']>(event, MessagingEvents.messageReacted);
+  if (
+    p === null ||
+    typeof p.conversationId !== 'string' ||
+    typeof p.messageId !== 'string' ||
+    typeof p.counts !== 'object' ||
+    p.counts === null ||
+    !Object.values(p.counts).every((count) => isCount(count))
+  ) {
+    return null;
+  }
+  return p as MessageReacted['payload'];
 }
 
 function messageReadPayload(event: DomainEvent): MessageRead['payload'] | null {

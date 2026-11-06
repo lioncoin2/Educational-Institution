@@ -1,3 +1,4 @@
+import type { MessageReactionView } from '../contracts/reaction-view';
 import type { ConversationType, ParticipantRole } from '../contracts/vocabulary';
 import type { ApplyCounts, CommunityMemberState } from './community-chat';
 import type { Conversation, ConversationId, NewConversation } from './conversation';
@@ -58,6 +59,16 @@ export type UnpinOutcome =
       readonly alreadyUnpinned: boolean;
     }
   | { readonly kind: 'conversation_not_found' };
+
+export type ReactionOutcome =
+  /**
+   * The message's reactions changed; `counts` is the authoritative emoji →
+   * count AFTER the change (only emoji that still have at least one). A toggle
+   * that removed the viewer's only reaction leaves an empty map.
+   */
+  | { readonly kind: 'changed'; readonly counts: Readonly<Record<string, number>> }
+  /** The target is not a live message of that conversation (absent or deleted). */
+  | { readonly kind: 'message_not_found' };
 
 export type AddParticipantsOutcome =
   | {
@@ -210,6 +221,21 @@ export interface MessagingRepository {
   unpinMessage(conversationId: ConversationId): Promise<UnpinOutcome>;
 
   /**
+   * Toggle a member's reaction on a message (chat reactions): add [emoji] when
+   * they have none, swap it when they chose a different one, or remove it when
+   * they tap the same one again — atomically, so two taps never double-count.
+   * Fails `message_not_found` unless the target is a LIVE message of THIS
+   * conversation. Returns the authoritative counts after the change.
+   */
+  react(input: {
+    readonly conversationId: ConversationId;
+    readonly messageId: MessageId;
+    readonly userId: string;
+    readonly emoji: string;
+    readonly at: Date;
+  }): Promise<ReactionOutcome>;
+
+  /**
    * Retention: hard-delete the CONTENT of messages soft-deleted on or before
    * `deletedBefore` — the body set to null and the attachment rows removed —
    * at most `limit` of them, oldest deletion first, and returns how many were
@@ -326,6 +352,16 @@ export interface MessagingReadModel {
   ): Promise<ConversationSummaryRow | null>;
 
   listMessages(conversationId: ConversationId, window: MessageWindow): Promise<MessageSlice>;
+
+  /**
+   * The reaction summary for each of [messageIds], seen by [viewerId] (so
+   * `mine` is theirs). Batched — one call per message page, never one per
+   * message. Messages with no reactions are simply absent from the map.
+   */
+  reactionsOf(
+    messageIds: readonly MessageId[],
+    viewerId: string,
+  ): Promise<Map<string, readonly MessageReactionView[]>>;
 
   /** Current members, by user id — a stable keyset. */
   listParticipants(

@@ -9,11 +9,17 @@ import {
 } from '../../identity/contracts/account-directory';
 import { asSeen, type Message } from '../domain/message';
 import { canManageMembers, canPost, type Participant } from '../domain/participant';
-import type { ConversationSummaryRow, MessageHead } from '../domain/ports';
+import {
+  MESSAGING_READ_MODEL,
+  type ConversationSummaryRow,
+  type MessageHead,
+  type MessagingReadModel,
+} from '../domain/ports';
 import type { CommunityChatDetails } from './community-chats';
 import type {
   ConversationView,
   MessagePreview,
+  MessageReactionView,
   MessageView,
   ParticipantView,
   PersonView,
@@ -34,6 +40,7 @@ export class MessagingViews {
   constructor(
     @Inject(ACCOUNT_DIRECTORY) private readonly directory: AccountDirectory,
     @Inject(FILE_ASSETS) private readonly files: FileAssets,
+    @Inject(MESSAGING_READ_MODEL) private readonly readModel: MessagingReadModel,
   ) {}
 
   /**
@@ -95,9 +102,15 @@ export class MessagingViews {
   ): Promise<{ items: MessageView[]; senders: PersonView[] }> {
     const seen = messages.map(asSeen);
     const assetIds = seen.flatMap((message) => message.attachments.map((a) => a.fileAssetId));
-    const [files, senders] = await Promise.all([
+    const [files, senders, reactions] = await Promise.all([
       assetIds.length === 0 ? Promise.resolve([]) : this.files.describe([...new Set(assetIds)]),
       this.summaries(seen.map((message) => message.senderId)),
+      seen.length === 0
+        ? Promise.resolve(new Map<string, readonly MessageReactionView[]>())
+        : this.readModel.reactionsOf(
+            seen.map((message) => message.id),
+            viewerId,
+          ),
     ]);
     const fileById = new Map(files.map((file) => [file.id, file]));
 
@@ -118,6 +131,7 @@ export class MessagingViews {
           fileAssetId: attachment.fileAssetId,
           file: fileById.get(attachment.fileAssetId) ?? null,
         })),
+        reactions: reactions.get(message.id) ?? [],
       })),
       senders: [...senders.values()].map((account) => ({
         userId: account.userId,

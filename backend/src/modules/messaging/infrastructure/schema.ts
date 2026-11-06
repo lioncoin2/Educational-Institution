@@ -253,3 +253,26 @@ export const messageAttachments = pgTable(
     check('message_attachments_position_valid', sql`${table.position} between 0 and 9`),
   ],
 );
+
+/**
+ * Message reactions (chat reactions): at most one emoji per member per message
+ * — the primary key enforces it, so a swap replaces the row and a repeat is a
+ * no-op. Cascades with the message (a purged message keeps no reactions). The
+ * emoji is one of the curated set, validated in the domain and length-bounded
+ * here.
+ */
+export const messageReactions = pgTable(
+  'message_reactions',
+  {
+    messageId: text('message_id')
+      .notNull()
+      .references(() => messages.id, { onDelete: 'cascade' }),
+    userId: text('user_id').notNull(),
+    emoji: text('emoji').notNull(),
+    reactedAt: timestamp('reacted_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.messageId, table.userId] }),
+    check('message_reactions_emoji_length', sql`char_length(${table.emoji}) between 1 and 16`),
+  ],
+);
