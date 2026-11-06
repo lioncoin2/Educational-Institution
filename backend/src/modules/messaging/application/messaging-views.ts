@@ -104,7 +104,15 @@ export class MessagingViews {
     const assetIds = seen.flatMap((message) => message.attachments.map((a) => a.fileAssetId));
     const [files, senders, reactions] = await Promise.all([
       assetIds.length === 0 ? Promise.resolve([]) : this.files.describe([...new Set(assetIds)]),
-      this.summaries(seen.map((message) => message.senderId)),
+      // Senders AND the original authors of any forwarded messages, so the page
+      // can name and picture "forwarded from X" the same way it does a sender.
+      this.summaries(
+        seen.flatMap((message) =>
+          message.forwardedFromSenderId === null
+            ? [message.senderId]
+            : [message.senderId, message.forwardedFromSenderId],
+        ),
+      ),
       seen.length === 0
         ? Promise.resolve(new Map<string, readonly MessageReactionView[]>())
         : this.readModel.reactionsOf(
@@ -123,6 +131,7 @@ export class MessagingViews {
         type: message.type,
         body: message.body,
         replyToMessageId: message.replyToMessageId,
+        forwardedFromSenderId: message.forwardedFromSenderId,
         clientMessageId: message.senderId === viewerId ? message.clientMessageId : null,
         createdAt: message.createdAt,
         editedAt: message.editedAt,

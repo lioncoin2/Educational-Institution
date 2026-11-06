@@ -1,0 +1,1 @@
+ALTER TABLE "messages" ADD COLUMN "forwarded_from_sender_id" text;

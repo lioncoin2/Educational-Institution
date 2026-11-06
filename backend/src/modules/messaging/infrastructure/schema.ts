@@ -199,6 +199,12 @@ export const messages = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     /** The moderator who deleted it (Q51/Q23); set exactly when `deleted_at` is. */
     deletedBy: text('deleted_by'),
+    /**
+     * A forwarded message's ORIGINAL author (a snapshot id, resolved to a name
+     * live like any sender). Null for an ordinary message. Not a foreign key:
+     * messaging holds no constraint on identity's accounts.
+     */
+    forwardedFromSenderId: text('forwarded_from_sender_id'),
   },
   (table) => [
     // The timeline index: every page, unread count and "last message" is a

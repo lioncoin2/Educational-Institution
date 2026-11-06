@@ -98,6 +98,7 @@ export function toMessage(row: MessageRow, attachments: readonly MessageAttachme
     deletedAt: row.deletedAt,
     deletedBy: row.deletedBy,
     attachments,
+    forwardedFromSenderId: row.forwardedFromSenderId,
   };
 }
 

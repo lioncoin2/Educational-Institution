@@ -99,6 +99,7 @@ const view = (clientMessageId: string | null): MessageView => ({
   type: 'TEXT',
   body: 'السلام عليكم',
   replyToMessageId: null,
+  forwardedFromSenderId: null,
   clientMessageId,
   createdAt: AT,
   editedAt: null,

@@ -258,6 +258,55 @@ class MockMessagingRepository implements MessagingRepository {
   );
 
   @override
+  Future<Message> forward(
+    String targetConversationId, {
+    required String clientMessageId,
+    required String sourceConversationId,
+    required String sourceMessageId,
+  }) async {
+    await _wait();
+    if (!_clientMessageIdShape.hasMatch(clientMessageId)) {
+      throw const MessagingException(
+        'messaging.client_message_id_invalid',
+        'clientMessageId must be 8–64 characters of letters, digits, "-" or "_".',
+      );
+    }
+    // Read the source (a conversation the viewer can reach, holding a live,
+    // visible message) exactly as the server authorizes it.
+    final source = _find(sourceConversationId);
+    final original = source.messages
+        .where((m) => m.id == sourceMessageId && !m.isDeleted)
+        .firstOrNull;
+    if (original == null) {
+      throw const MessagingException(
+        'messaging.forward_source_not_found',
+        'The message being forwarded does not exist.',
+      );
+    }
+    final target = _find(targetConversationId);
+    if (!_canPost(target)) {
+      throw const MessagingException(
+        'messaging.posting_not_allowed',
+        'Only the owner and publishers may post in this channel.',
+      );
+    }
+    final existing = target.byClientId[clientMessageId];
+    if (existing != null) return existing;
+    final message = target.add(
+      senderId: viewer,
+      type: original.type,
+      body: original.body,
+      at: DateTime.now().toUtc(),
+      clientMessageId: clientMessageId,
+      // Forwarding a forward keeps the first origin.
+      forwardedFromSenderId: original.forwardedFromSenderId ?? original.senderId,
+      attachments: original.attachments,
+    );
+    target.lastRead = message.sequence;
+    return message;
+  }
+
+  @override
   Future<int> markRead(String conversationId, int sequence) async {
     await _wait();
     final c = _find(conversationId);
@@ -912,6 +961,7 @@ class _MockConversation {
     String? body,
     String? clientMessageId,
     String? replyToMessageId,
+    String? forwardedFromSenderId,
     List<Attachment> attachments = const [],
   }) {
     final message = Message(
@@ -923,6 +973,7 @@ class _MockConversation {
       body: body,
       clientMessageId: clientMessageId,
       replyToMessageId: replyToMessageId,
+      forwardedFromSenderId: forwardedFromSenderId,
       createdAt: at,
       attachments: attachments,
     );

@@ -37,6 +37,8 @@ abstract final class MessagingCopy {
       'انتهت مهلة مراجعة الرسالة المحذوفة.',
     'messaging.message_deleted' => 'حُذفت هذه الرسالة فلم يعد تعديلها ممكنًا.',
     'messaging.body_required' => 'اكتب نصًّا للرسالة.',
+    'messaging.forward_source_not_found' =>
+      'الرسالة المراد توجيهها لم تعد متاحة.',
     _ => 'تعذّر إتمام العملية. حاول مرة أخرى.',
   };
 
@@ -177,6 +179,13 @@ abstract final class MessagingCopy {
   /// The reply action on a message, and the composer banner while replying.
   static const String reply = 'رد';
   static const String replyingTitle = 'الرد على رسالة';
+  static const String forward = 'إعادة توجيه';
+  static const String forwardTitle = 'إعادة توجيه إلى';
+  static const String forwardDone = 'تمت إعادة التوجيه';
+  static const String forwardFailed = 'تعذّرت إعادة التوجيه';
+  static String forwardedFrom(String name) => 'محوّلة من $name';
+  static const String forwardedLabel = 'رسالة محوّلة';
+  static const String forwardNoTargets = 'لا توجد محادثات لإعادة التوجيه إليها.';
   static String replyingTo(String name) => 'الرد على $name';
   static const String cancelReply = 'إلغاء الرد';
 

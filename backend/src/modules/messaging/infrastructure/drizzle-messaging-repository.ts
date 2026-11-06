@@ -166,6 +166,7 @@ export class DrizzleMessagingRepository implements MessagingRepository {
           replyToMessageId: draft.replyToMessageId,
           clientMessageId: draft.clientMessageId,
           createdAt: draft.createdAt,
+          forwardedFromSenderId: draft.forwardedFromSenderId,
         });
         if (draft.attachments.length > 0) {
           await tx.insert(messageAttachments).values(

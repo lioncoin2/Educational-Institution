@@ -42,10 +42,12 @@ class MessageBubble extends StatelessWidget {
     this.senderName,
     this.senderAvatarUrl,
     this.repliedTo,
+    this.forwardedFromName,
     this.showHeader = true,
     this.groupedWithPrevious = false,
     this.onTapAuthor,
     this.onReply,
+    this.onForward,
     this.onReact,
     this.onPin,
     this.onUnpin,
@@ -88,9 +90,19 @@ class MessageBubble extends StatelessWidget {
   /// start one). The server still decides who the viewer may actually reach.
   final VoidCallback? onTapAuthor;
 
+  /// A forwarded message's original author name, resolved by the screen from
+  /// [Message.forwardedFromSenderId]. Null for an ordinary message, or when the
+  /// author is forwarded but their name is not known (then a bare label shows).
+  final String? forwardedFromName;
+
   /// Starts a reply to this message, or null when the viewer cannot post here.
   /// Offered on a long-press for any message that is not deleted.
   final VoidCallback? onReply;
+
+  /// Forward this message to another conversation (Phase 2), or null when the
+  /// viewer cannot. Offered on the long-press for any message that is not
+  /// deleted; the viewer picks the target.
+  final VoidCallback? onForward;
 
   /// Toggle a reaction on this message (ADR 0053), or null when the viewer may
   /// not post here. Reached by a double-tap (quick reaction), the reaction row
@@ -118,8 +130,10 @@ class MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final canReply = onReply != null && !message.isDeleted;
+    final canForward = onForward != null && !message.isDeleted;
     final hasActions =
         canReply ||
+        canForward ||
         (onReact != null && !message.isDeleted) ||
         onPin != null ||
         onUnpin != null ||
@@ -153,7 +167,17 @@ class MessageBubble extends StatelessWidget {
                 fontStyle: FontStyle.italic,
               ),
             )
-          : _MessageContent(message: message),
+          : message.forwardedFromSenderId == null
+          ? _MessageContent(message: message)
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _ForwardedHeader(name: forwardedFromName, mine: mine),
+                const SizedBox(height: Insets.xs),
+                _MessageContent(message: message),
+              ],
+            ),
     );
     // Swipe sideways to reply — inert when the viewer cannot reply here.
     return SwipeToReply(onReply: canReply ? onReply : null, child: frame);
@@ -208,6 +232,7 @@ class MessageBubble extends StatelessWidget {
   /// here), and the moderator's delete/review (ADR 0029) where held.
   void _showActionSheet(BuildContext context) {
     final canReply = onReply != null && !message.isDeleted;
+    final canForward = onForward != null && !message.isDeleted;
     showModalBottomSheet<void>(
       context: context,
       builder: (sheetContext) => SafeArea(
@@ -241,6 +266,16 @@ class MessageBubble extends StatelessWidget {
                 onTap: () {
                   Navigator.pop(sheetContext);
                   onReply!();
+                },
+              ),
+            if (canForward)
+              ListTile(
+                key: const Key('message-forward-action'),
+                leading: const Icon(Icons.forward_rounded),
+                title: const Text(MessagingCopy.forward),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  onForward!();
                 },
               ),
             if (onPin != null)
@@ -555,6 +590,43 @@ class _ReplyPreview extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A small "forwarded from X" line above a forwarded message's content — an
+/// arrow and the original author's name (or a bare label when it is not known).
+/// Styled from tokens to read on both the reader's and others' bubble colours.
+class _ForwardedHeader extends StatelessWidget {
+  const _ForwardedHeader({required this.name, required this.mine});
+
+  final String? name;
+  final bool mine;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = mine ? context.colors.onPrimaryContainer : context.colors.primary;
+    return Row(
+      key: const Key('message-forwarded-header'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.forward_rounded, size: 14, color: accent),
+        const SizedBox(width: Insets.xs),
+        Flexible(
+          child: Text(
+            name == null
+                ? MessagingCopy.forwardedLabel
+                : MessagingCopy.forwardedFrom(name!),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.text.labelSmall?.copyWith(
+              color: accent,
+              fontStyle: FontStyle.italic,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

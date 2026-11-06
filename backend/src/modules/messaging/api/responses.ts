@@ -81,6 +81,8 @@ export interface MessageResponse {
   readonly type: MessageType;
   readonly body: string | null;
   readonly replyToMessageId: string | null;
+  /** A forwarded message's original author (id); null otherwise. Name in `senders`. */
+  readonly forwardedFromSenderId: string | null;
   readonly clientMessageId: string | null;
   readonly createdAt: string;
   readonly editedAt: string | null;
@@ -197,6 +199,7 @@ export function toMessageResponse(message: MessageView): MessageResponse {
     type: message.type,
     body: message.body,
     replyToMessageId: message.replyToMessageId,
+    forwardedFromSenderId: message.forwardedFromSenderId,
     clientMessageId: message.clientMessageId,
     createdAt: message.createdAt.toISOString(),
     editedAt: iso(message.editedAt),

@@ -153,6 +153,7 @@ class Message {
     required this.createdAt,
     this.body,
     this.replyToMessageId,
+    this.forwardedFromSenderId,
     this.clientMessageId,
     this.editedAt,
     this.deletedAt,
@@ -168,6 +169,7 @@ class Message {
     type: MessageType.fromWire(json['type']! as String),
     body: json['body'] as String?,
     replyToMessageId: json['replyToMessageId'] as String?,
+    forwardedFromSenderId: json['forwardedFromSenderId'] as String?,
     clientMessageId: json['clientMessageId'] as String?,
     createdAt: DateTime.parse(json['createdAt']! as String),
     editedAt: _date(json['editedAt']),
@@ -194,6 +196,7 @@ class Message {
     createdAt: createdAt,
     body: body,
     replyToMessageId: replyToMessageId,
+    forwardedFromSenderId: forwardedFromSenderId,
     clientMessageId: clientMessageId,
     editedAt: editedAt,
     deletedAt: deletedAt,
@@ -210,6 +213,10 @@ class Message {
   final MessageType type;
   final String? body;
   final String? replyToMessageId;
+
+  /// A forwarded message's original author (account id), or null. Their name is
+  /// resolved from the conversation's known senders, like any sender's.
+  final String? forwardedFromSenderId;
 
   /// Present only on the viewer's own messages.
   final String? clientMessageId;

@@ -26,6 +26,11 @@ export interface MessageView {
   /** Null for a deleted message (a tombstone) and for media without a caption. */
   readonly body: string | null;
   readonly replyToMessageId: string | null;
+  /**
+   * A forwarded message's original author (account id), or null. Its name and
+   * picture are in this page's `senders`, resolved like any other sender's.
+   */
+  readonly forwardedFromSenderId: string | null;
   /** Only on the viewer's own messages: how their other devices reconcile a send. */
   readonly clientMessageId: string | null;
   readonly createdAt: Date;

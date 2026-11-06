@@ -79,6 +79,7 @@ describe('messaging events, delivered in real time', () => {
           type: 'TEXT',
           body: 'درس اليوم: سورة الملك',
           replyToMessageId: null,
+          forwardedFromSenderId: null,
           clientMessageId: null,
           createdAt: message.createdAt.toISOString(),
           editedAt: null,

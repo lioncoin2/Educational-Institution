@@ -505,6 +505,18 @@ abstract interface class MessagingRepository {
     String? replyToMessageId,
   });
 
+  /// Forward an existing message into [targetConversationId]. The server
+  /// authorizes the viewer's READ of the source (a member who can see it) and
+  /// their POST in the target; the copy keeps the original author and content
+  /// (attachments included) — the client never forges either. Returns the new
+  /// message as stored in the target.
+  Future<Message> forward(
+    String targetConversationId, {
+    required String clientMessageId,
+    required String sourceConversationId,
+    required String sourceMessageId,
+  });
+
   /// Publish one notice / image / voice recording / document to several
   /// communities at once ("النشر الجماعي", `POST /messaging/communities/publish`).
   /// The server authorizes each community on its own `community.chat.post`, so

@@ -149,6 +149,25 @@ class HttpMessagingRepository implements MessagingRepository {
   );
 
   @override
+  Future<Message> forward(
+    String targetConversationId, {
+    required String clientMessageId,
+    required String sourceConversationId,
+    required String sourceMessageId,
+  }) => _call(
+    () async => Message.fromJson(
+      await _api.post(
+        '${_conversation(targetConversationId)}/messages/forward',
+        body: {
+          'clientMessageId': clientMessageId,
+          'sourceConversationId': sourceConversationId,
+          'sourceMessageId': sourceMessageId,
+        },
+      ),
+    ),
+  );
+
+  @override
   Future<int> markRead(String conversationId, int sequence) => _call(() async {
     final json = await _api.post(
       '${_conversation(conversationId)}/read',

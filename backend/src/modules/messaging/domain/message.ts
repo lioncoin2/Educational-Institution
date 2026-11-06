@@ -48,6 +48,14 @@ export interface Message {
   /** The moderator who deleted it; null exactly when `deletedAt` is. */
   readonly deletedBy: string | null;
   readonly attachments: readonly MessageAttachment[];
+  /**
+   * Where a forwarded message came from: the ORIGINAL author's account id, a
+   * snapshot taken when it was forwarded. Null for an ordinary message. The
+   * name is resolved live from the directory like any other sender's, never
+   * stored here. Forwarding a forward keeps the first origin, so the chain
+   * never grows and the label always names the true author.
+   */
+  readonly forwardedFromSenderId: string | null;
 }
 
 /** Everything about a message except its sequence, which only the store assigns. */
@@ -156,11 +164,44 @@ export function mediaDraft(
   );
 }
 
+/**
+ * A forward: a new message in the target conversation carrying the source's
+ * type, body and attachment references verbatim, stamped with the original
+ * author. A forward is never a reply, so `replyToMessageId` is dropped. The
+ * body and attachments were already normalized, bounded and (at the source's
+ * original send) verified, so they are copied as-is — the caller authorizes the
+ * forwarder's READ of the source, which is what entitles the copy.
+ */
+export function forwardDraft(
+  input: DraftBase & {
+    readonly type: MessageType;
+    readonly body: string | null;
+    readonly attachments: readonly MessageAttachment[];
+    readonly forwardedFromSenderId: string;
+  },
+): Result<MessageDraft> {
+  const key = validateClientMessageId(input.clientMessageId);
+  if (!key.ok) return key;
+  return ok(
+    draft(
+      { ...input, replyToMessageId: null },
+      input.type,
+      input.body,
+      input.attachments.map((attachment, index) => ({
+        fileAssetId: attachment.fileAssetId,
+        position: index,
+      })),
+      input.forwardedFromSenderId,
+    ),
+  );
+}
+
 function draft(
   input: DraftBase,
   type: MessageType,
   body: string | null,
   attachments: readonly MessageAttachment[],
+  forwardedFromSenderId: string | null = null,
 ): MessageDraft {
   return {
     id: input.id,
@@ -172,6 +213,7 @@ function draft(
     clientMessageId: input.clientMessageId,
     createdAt: input.at,
     attachments,
+    forwardedFromSenderId,
   };
 }
 
@@ -185,6 +227,7 @@ export function sameContent(stored: Message, draft: MessageDraft): boolean {
     stored.type === draft.type &&
     stored.body === draft.body &&
     stored.replyToMessageId === draft.replyToMessageId &&
+    stored.forwardedFromSenderId === draft.forwardedFromSenderId &&
     stored.attachments.length === draft.attachments.length &&
     stored.attachments.every(
       (attachment, index) => attachment.fileAssetId === draft.attachments[index]?.fileAssetId,
@@ -201,5 +244,7 @@ export function sameContent(stored: Message, draft: MessageDraft): boolean {
  * `deletedBy` is the audited moderation review, which does NOT go through here.
  */
 export function asSeen(message: Message): Message {
-  return message.deletedAt === null ? message : { ...message, body: null, attachments: [] };
+  return message.deletedAt === null
+    ? message
+    : { ...message, body: null, attachments: [], forwardedFromSenderId: null };
 }

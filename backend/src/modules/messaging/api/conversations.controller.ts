@@ -36,6 +36,7 @@ import {
 import { ReviewDeletedMessageUseCase } from '../application/moderate-message.use-cases';
 import { PinMessageUseCase, UnpinMessageUseCase } from '../application/pin-message.use-cases';
 import { ReactToMessageUseCase } from '../application/react-to-message.use-cases';
+import { ForwardMessageUseCase } from '../application/forward-message.use-case';
 import {
   GetConversationUseCase,
   ListConversationsUseCase,
@@ -61,6 +62,7 @@ import {
   SendMediaDto,
   SendTextDto,
   ReactDto,
+  ForwardMessageDto,
   StartDirectDto,
 } from './dto/messaging.dto';
 import {
@@ -114,6 +116,7 @@ export class ConversationsController {
     private readonly pinMessageUseCase: PinMessageUseCase,
     private readonly unpinMessageUseCase: UnpinMessageUseCase,
     private readonly reactToMessageUseCase: ReactToMessageUseCase,
+    private readonly forwardMessageUseCase: ForwardMessageUseCase,
   ) {}
 
   @Get()
@@ -244,6 +247,30 @@ export class ConversationsController {
         clientMessageId: dto.clientMessageId,
         body: dto.body,
         replyToMessageId: dto.replyToMessageId ?? null,
+        meta,
+      }),
+    );
+  }
+
+  @Post(':conversationId/messages/forward')
+  @RequirePermission(Permissions.messaging.send)
+  async forward(
+    @CurrentPrincipal() principal: Principal,
+    @Param('conversationId') conversationId: string,
+    @Body() dto: ForwardMessageDto,
+    @RequestMetadata() meta: CallMetadata,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<MessageResponse> {
+    // `conversationId` is the TARGET; the source is in the body. The use case
+    // authorizes the read of the source separately from posting in the target.
+    return sent(
+      response,
+      await this.forwardMessageUseCase.execute({
+        principal,
+        targetConversationId: conversationId,
+        clientMessageId: dto.clientMessageId,
+        sourceConversationId: dto.sourceConversationId,
+        sourceMessageId: dto.sourceMessageId,
         meta,
       }),
     );

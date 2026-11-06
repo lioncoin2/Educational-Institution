@@ -349,6 +349,20 @@ class ConversationController extends AsyncNotifier<ConversationState> {
     );
   }
 
+  /// Forward one of this conversation's messages into another conversation
+  /// (Phase 2). The copy lands in the TARGET, not here — so there is no
+  /// optimistic insertion; if the target is open it arrives over realtime, and
+  /// it is there on next open otherwise. Throws on refusal so the screen can
+  /// tell the viewer; the server does the real read/post authorization.
+  Future<void> forwardMessage(String messageId, String targetConversationId) async {
+    await _repository.forward(
+      targetConversationId,
+      clientMessageId: newClientId(),
+      sourceConversationId: conversationId,
+      sourceMessageId: messageId,
+    );
+  }
+
   /// Resends a failed message with its ORIGINAL clientMessageId.
   Future<void> retry(String clientMessageId) async {
     final current = state.value;

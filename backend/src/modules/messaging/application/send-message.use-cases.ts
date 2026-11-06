@@ -103,6 +103,16 @@ export class MessageSender {
       readonly replyToMessageId: MessageId | null;
       readonly at: Date;
     }) => Result<MessageDraft>,
+    options: {
+      /**
+       * Skip the attachment-ownership check. Set ONLY by the forward path: a
+       * forward's attachments are the SOURCE message's, which the forwarder was
+       * authorized to read — they are not, and cannot be, the forwarder's own
+       * uploads, so `verifyAttachable(..., senderId, ...)` would wrongly reject
+       * them. Every fresh send leaves this false and is verified as before.
+       */
+      readonly attachmentsAlreadyAuthorized?: boolean;
+    } = {},
   ): Promise<Result<SentMessage>> {
     const { principal } = command;
     const allowed = this.access.authorize(
@@ -154,8 +164,10 @@ export class MessageSender {
 
     const reply = await this.checkReply(membership.value, draft.value.replyToMessageId);
     if (!reply.ok) return reply;
-    const attachments = await this.checkAttachments(principal.userId, draft.value);
-    if (!attachments.ok) return attachments;
+    if (!options.attachmentsAlreadyAuthorized) {
+      const attachments = await this.checkAttachments(principal.userId, draft.value);
+      if (!attachments.ok) return attachments;
+    }
 
     const outcome = await this.repository.appendMessage(draft.value);
     switch (outcome.kind) {

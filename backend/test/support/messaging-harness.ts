@@ -50,6 +50,7 @@ import {
   UnpinMessageUseCase,
 } from '../../src/modules/messaging/application/pin-message.use-cases';
 import { ReactToMessageUseCase } from '../../src/modules/messaging/application/react-to-message.use-cases';
+import { ForwardMessageUseCase } from '../../src/modules/messaging/application/forward-message.use-case';
 import { MessagingViews } from '../../src/modules/messaging/application/messaging-views';
 import {
   GetConversationUseCase,
@@ -326,6 +327,7 @@ export async function messagingHarness(
     ),
     pinMessage: new PinMessageUseCase(repository, communityChats, audit, events, clock),
     reactToMessage: new ReactToMessageUseCase(repository, access, communityChats, events, clock),
+    forwardMessage: new ForwardMessageUseCase(access, repository, sender),
     unpinMessage: new UnpinMessageUseCase(repository, communityChats, audit, events, clock),
     retentionSweeper: new MessageRetentionSweeper(repository, clock),
 

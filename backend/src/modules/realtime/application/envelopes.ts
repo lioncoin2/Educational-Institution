@@ -27,6 +27,7 @@ interface WireMessage {
   readonly type: string;
   readonly body: string | null;
   readonly replyToMessageId: string | null;
+  readonly forwardedFromSenderId: string | null;
   readonly clientMessageId: string | null;
   readonly createdAt: string;
   readonly editedAt: string | null;
@@ -60,6 +61,7 @@ function wireMessage(message: MessageView): WireMessage {
     type: message.type,
     body: message.body,
     replyToMessageId: message.replyToMessageId,
+    forwardedFromSenderId: message.forwardedFromSenderId,
     clientMessageId: message.clientMessageId,
     createdAt: message.createdAt.toISOString(),
     editedAt: iso(message.editedAt),

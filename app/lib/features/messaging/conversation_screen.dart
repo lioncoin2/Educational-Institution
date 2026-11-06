@@ -23,6 +23,7 @@ import 'state/conversation_mutes_controller.dart';
 import 'state/direct_message_starter.dart';
 import 'widgets/composer.dart';
 import 'widgets/connection_banner.dart';
+import 'widgets/forward_sheet.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/scroll_to_bottom_button.dart';
 import 'widgets/typing_indicator.dart';
@@ -814,6 +815,22 @@ class _Timeline extends ConsumerWidget {
           showHeader: !(continuesRun[message.id] ?? false),
           groupedWithPrevious: continuesRun[message.id] ?? false,
           repliedTo: _repliedFor(message, byId, state),
+          // A forwarded message names its original author, resolved from the
+          // page's senders (which include forwarded-from authors) like any name.
+          forwardedFromName: message.forwardedFromSenderId == null
+              ? null
+              : state.senderNames[message.forwardedFromSenderId],
+          // Forwarding only needs read of THIS message (the viewer has it) and
+          // post in the target they pick — so it is offered for any live
+          // message, and the server authorizes the target on the call.
+          onForward: !message.isDeleted
+              ? () => _forwardMessage(
+                  context,
+                  ref,
+                  state.conversation.id,
+                  message.id,
+                )
+              : null,
           onPin:
               canModerate &&
                   !message.isDeleted &&
@@ -1061,6 +1078,33 @@ class _Notice extends StatelessWidget {
 /// said through its code, nothing local changes then.
 /// The author's edit (ADR 0045): the current text or caption in a field; the
 /// server's answer replaces the bubble. A refusal is said through its code.
+/// Forward one message out of [sourceConversationId]: pick a target from the
+/// viewer's conversations, then let the controller post the copy there. The
+/// copy lands in the target (not this timeline); the server authorizes the
+/// read of the source and the post into the target.
+Future<void> _forwardMessage(
+  BuildContext context,
+  WidgetRef ref,
+  String sourceConversationId,
+  String messageId,
+) async {
+  final conversations =
+      ref.read(conversationListProvider).value?.items ?? const <Conversation>[];
+  final messenger = ScaffoldMessenger.of(context);
+  final target = await showForwardSheet(context, conversations: conversations);
+  if (target == null) return;
+  try {
+    await ref
+        .read(conversationProvider(sourceConversationId).notifier)
+        .forwardMessage(messageId, target);
+    messenger.toast(MessagingCopy.forwardDone);
+  } on MessagingException catch (error) {
+    messenger.toast(MessagingCopy.error(error.code));
+  } catch (_) {
+    messenger.toast(MessagingCopy.forwardFailed);
+  }
+}
+
 Future<void> _editOwn(
   BuildContext context,
   WidgetRef ref,
