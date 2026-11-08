@@ -4,6 +4,13 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Push (ADR 0058): the Google services plugin turns the Firebase project's
+// google-services.json (git-ignored, supplied per build) into resources. Without
+// the file nothing is applied, and the build is exactly a build without push.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.quraninstitution.quran_institution_app"
     compileSdk = flutter.compileSdkVersion

@@ -89,6 +89,7 @@ describe('messaging notifications', () => {
 
       it('stores no content: the row, the events and the push stay content-free', async () => {
         const direct = await h.messaging.direct(teacher, ali);
+        await h.settle(); // the conversation's own notification, before a device exists
         await h.device(ali, fcmToken(1));
         await h.messaging.text(teacher, direct.id, 'رقم الغرفة السرّي 4417');
         await h.settle();

@@ -76,16 +76,31 @@ export interface PreferenceRepository {
 
 export interface DeviceRepository {
   /**
-   * Registers a token for `userId`, or refreshes it: one row per
-   * `(provider, token)`. A token another account registered moves to this
-   * one — `previousUserId` says whose it was. A disabled token is enabled.
+   * Registers a token for `userId` under `sessionId`, or refreshes it: one row
+   * per `(provider, token)`. A token another account registered moves to this
+   * one — `previousUserId` says whose it was — and takes this session. A
+   * disabled token is enabled. One push row per session: any OTHER row bound
+   * to the same session (an older token of the same installation) is removed
+   * and returned as `superseded`.
    */
   register(input: {
     readonly id: DeviceId;
     readonly userId: string;
+    readonly sessionId: string;
     readonly registration: DeviceRegistration;
     readonly at: Date;
-  }): Promise<{ readonly device: Device; readonly previousUserId: string | null }>;
+  }): Promise<{
+    readonly device: Device;
+    readonly previousUserId: string | null;
+    readonly superseded: readonly Device[];
+  }>;
+
+  /**
+   * Forgets the device only if it is still bound to `sessionId` (null: still
+   * unbound) — a compare-and-set, so a registration that rebound it meanwhile
+   * survives. Returns whether a row was removed. Used when its session ended.
+   */
+  removeIfSession(id: DeviceId, sessionId: string | null): Promise<boolean>;
 
   find(userId: string, id: string): Promise<Device | null>;
 

@@ -30,6 +30,7 @@ import '../data/models/learning.dart';
 import '../data/models/progress.dart';
 import '../data/models/program.dart';
 import '../data/models/student.dart';
+import '../data/push/firebase_push.dart';
 import '../data/push/push_seams.dart';
 import '../data/realtime/realtime_client.dart';
 import '../data/realtime/websocket_realtime_client.dart';
@@ -409,10 +410,17 @@ final notificationsRepositoryProvider = Provider<NotificationsRepository>(
       : MockNotificationsRepository(),
 );
 
-/// Where this device's push token comes from — nowhere yet (see
-/// push_seams.dart): no push plugin is installed.
+/// Where this device's push token comes from (ADR 0058): Firebase, on an
+/// Android backend build made with `PUSH_ENABLED`; nowhere otherwise — the
+/// demo, the web, iOS and every test.
 final pushTokenSourceProvider = Provider<PushTokenSource>(
-  (ref) => const UnavailablePushTokenSource(),
+  (ref) =>
+      ref.watch(backendModeProvider) &&
+          BackendConfig.pushEnabled &&
+          !kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.android
+      ? FirebasePushTokenSource()
+      : const UnavailablePushTokenSource(),
 );
 
 /// "Now", for relative times ("قبل 5 دقائق") — a provider so tests can fix it.

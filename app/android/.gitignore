@@ -12,3 +12,7 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# The Firebase project's Android configuration (ADR 0058): supplied per build,
+# never committed (docs/push-notifications-runbook.md §7).
+/app/google-services.json

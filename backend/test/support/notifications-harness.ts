@@ -2,6 +2,11 @@ import { InProcessEventBus } from '../../src/platform/events/event-bus';
 import { UuidIdGenerator } from '../../src/platform/primitives/uuid-id-generator';
 import { InMemoryRateLimiter } from '../../src/platform/rate-limit/in-memory-rate-limiter';
 import type { DomainEvent, EventPublisher, Principal } from '../../src/shared';
+import type { SessionReference } from '../../src/modules/identity/contracts/access-tokens';
+import {
+  ACTIVE_SESSIONS_MAX_BATCH,
+  type ActiveSessions,
+} from '../../src/modules/identity/contracts/active-sessions';
 import {
   ListMutedConversationsUseCase,
   MuteConversationUseCase,
@@ -107,13 +112,44 @@ export class FakePushProvider implements PushProvider {
   }
 }
 
+/**
+ * Identity's live-session answer, scripted: every session is live until
+ * `end(sessionId)`; `failing` makes every lookup throw. Records each lookup,
+ * and refuses an oversized one as identity does.
+ */
+export class FakeActiveSessions implements ActiveSessions {
+  readonly lookups: (readonly SessionReference[])[] = [];
+  failing: Error | null = null;
+  private readonly ended = new Set<string>();
+
+  end(sessionId: string): void {
+    this.ended.add(sessionId);
+  }
+
+  async activeAmong(refs: readonly SessionReference[]): Promise<readonly SessionReference[]> {
+    this.lookups.push(refs);
+    if (refs.length > ACTIVE_SESSIONS_MAX_BATCH) throw new RangeError('too many references');
+    if (this.failing !== null) throw this.failing;
+    return refs.filter((ref) => !this.ended.has(ref.sessionId));
+  }
+}
+
 /** Fast retries, so a test of three attempts takes milliseconds. */
 export const FAST_PUSH: PushDeliverySettings = {
   maxAttempts: 3,
   baseDelayMs: 1,
   maxDelayMs: 5,
   concurrency: 4,
+  threadWindowMs: 15_000,
 };
+
+/**
+ * The session `principal` is signed in through on the installation holding
+ * `token` — one per installation, as each phone signs in on its own.
+ */
+export function sessionOn(principal: Principal, token: string): string {
+  return `${principal.userId}:${token}`.slice(0, 200);
+}
 
 /** A plausible FCM registration token, distinct per `n`. */
 export function fcmToken(n: number | string): string {
@@ -140,6 +176,7 @@ export async function notificationsHarness(
     readonly settings?: NotificationSettingsRepository;
     readonly mutes?: ConversationMuteRepository;
     readonly push?: FakePushProvider;
+    readonly sessions?: ActiveSessions;
   } = {},
 ) {
   const messaging = await messagingHarness();
@@ -169,6 +206,8 @@ export async function notificationsHarness(
   const settings = options.settings ?? new InMemoryNotificationSettingsRepository();
   const mutes = options.mutes ?? new InMemoryConversationMuteRepository();
   const push = options.push ?? new FakePushProvider();
+  const fakeSessions = new FakeActiveSessions();
+  const sessions = options.sessions ?? fakeSessions;
   const audit = new RecordingAuditLog();
   const limiter = new InMemoryRateLimiter(clock);
   const ids = new UuidIdGenerator();
@@ -190,7 +229,16 @@ export async function notificationsHarness(
     dispatcher,
   );
   translator.onModuleInit();
-  const pushDelivery = new PushDelivery(bus, notifications, devices, push, audit, clock, FAST_PUSH);
+  const pushDelivery = new PushDelivery(
+    bus,
+    notifications,
+    devices,
+    sessions,
+    push,
+    audit,
+    clock,
+    FAST_PUSH,
+  );
   pushDelivery.onModuleInit();
   // Read-time context (ADR 0046): messaging's own answer, over the same stores.
   const context = new NotificationContextResolver(
@@ -214,6 +262,8 @@ export async function notificationsHarness(
     settings,
     mutes,
     push,
+    /** The scripted sessions — unless the suite passed identity's own. */
+    sessions: fakeSessions,
     audit,
     limiter,
     dispatcher,
@@ -260,11 +310,19 @@ export async function notificationsHarness(
       return expectOk(await h.countUnread.execute({ principal }));
     },
 
-    /** Registers a device for `principal` and returns its id. */
-    async device(principal: Principal, token: string, platform = 'ANDROID'): Promise<string> {
+    /**
+     * Registers a device for `principal`, signed in on it through its own
+     * session (`sessionOn(principal, token)` unless given), and returns its id.
+     */
+    async device(
+      principal: Principal,
+      token: string,
+      platform = 'ANDROID',
+      sessionId = sessionOn(principal, token),
+    ): Promise<string> {
       return expectOk(
         await h.registerDevice.execute({
-          principal,
+          principal: { ...principal, sessionId },
           platform,
           provider: 'FCM',
           token,

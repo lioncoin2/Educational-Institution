@@ -126,6 +126,15 @@ export const notificationDevices = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull(),
     disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    /**
+     * The signed-in session the device was registered under (ADR 0058). Push
+     * goes only to devices whose session is still live, so signing out,
+     * revoking a session or changing a password stops a device's push however
+     * it ended. Identity's id, not a foreign key: no module holds a constraint
+     * on another's tables. Null only on rows from before ADR 0058 — such a row
+     * receives nothing until the app registers it again.
+     */
+    sessionId: text('session_id'),
   },
   (table) => [
     unique('notification_devices_token_unique').on(table.provider, table.token),
@@ -133,6 +142,8 @@ export const notificationDevices = pgTable(
     index('notification_devices_user_enabled_idx')
       .on(table.userId, table.lastSeenAt)
       .where(sql`${table.disabledAt} is null`),
+    // One push row per session: a registration clears the session's others.
+    index('notification_devices_session_idx').on(table.sessionId),
     check(
       'notification_devices_platform_valid',
       sql`${table.platform} in ('IOS', 'ANDROID', 'WEB')`,

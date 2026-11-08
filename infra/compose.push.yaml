@@ -1,0 +1,22 @@
+# Real push through Firebase Cloud Messaging (ADR 0058) — an overlay, layered last
+# and only once the institution's service-account file is on the host
+# (docs/push-notifications-runbook.md):
+#
+#   docker compose -f infra/compose.yaml [-f infra/compose.turn.yaml] \
+#     -f infra/compose.push.yaml --env-file infra/env/<environment>.env up -d --no-deps api
+#
+# FCM_SERVICE_ACCOUNT_FILE (in the environment file) is the HOST path of the JSON
+# key. It is mounted read-only at a fixed path inside the container; the API reads
+# it once at startup and refuses to boot if it cannot use it. The image runs as
+# its `node` user (uid 1000), so the file is owned by uid 1000, mode 0400. On a
+# host where uid 1000 is also a login user, the file sits in a root-only (0700)
+# directory, which that user cannot enter — Docker mounts the file itself, so the
+# container still reads it. The key never enters git, an image, an environment
+# variable or a log.
+services:
+  api:
+    environment:
+      PUSH_PROVIDER: fcm
+      FCM_CREDENTIALS_FILE: /run/secrets/fcm-service-account.json
+    volumes:
+      - ${FCM_SERVICE_ACCOUNT_FILE:?the host path of the FCM service-account JSON}:/run/secrets/fcm-service-account.json:ro

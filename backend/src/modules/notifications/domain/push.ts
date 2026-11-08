@@ -85,7 +85,8 @@ export function pushMessageFor(notification: Notification): PushMessage {
   };
 }
 
-function threadKeyOf(target: NotificationTarget): string {
+/** The tray thread a target's pushes share: one per conversation, task, room… */
+export function threadKeyOf(target: NotificationTarget): string {
   switch (target.kind) {
     case 'conversation':
       return `conversation:${target.conversationId}`;

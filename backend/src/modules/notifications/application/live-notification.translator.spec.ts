@@ -1,4 +1,5 @@
 import {
+  fcmToken,
   notificationsHarness,
   type NotificationsHarness,
 } from '../../../../test/support/notifications-harness';
@@ -183,6 +184,28 @@ describe('live speaker notifications', () => {
     expect(
       (await h.inbox(requester)).filter((n) => n.type === 'LIVE_SPEAKER_GRANTED'),
     ).toHaveLength(1);
+  });
+
+  // ADR 0024: a raised hand is for the moderators in the room — in-app and
+  // live, never a lock screen; the granted floor reaches the requester's phone.
+  it('never pushes a raised hand, and pushes the granted floor', async () => {
+    audience.setModerators(S, [mod1.userId]);
+    await h.device(mod1, fcmToken(1));
+    await h.device(requester, fcmToken(2));
+    await publish(speakerRequested());
+    await publish(speakerGranted());
+    await h.settle();
+
+    const created = h
+      .eventsNamed('notifications.notification.created')
+      .map((event) => event.payload as { type: string; channels: unknown });
+    expect(created.map((payload) => [payload.type, payload.channels]).sort()).toEqual([
+      ['LIVE_SPEAKER_GRANTED', { realtime: true, push: true }],
+      ['LIVE_SPEAKER_REQUESTED', { realtime: true, push: false }],
+    ]);
+    expect(h.push.sendsTo(fcmToken(1))).toBe(0);
+    expect(h.push.sendsTo(fcmToken(2))).toBe(1);
+    expect((await h.inbox(mod1)).map((n) => n.type)).toEqual(['LIVE_SPEAKER_REQUESTED']);
   });
 
   it('ignores a malformed fact instead of guessing', async () => {

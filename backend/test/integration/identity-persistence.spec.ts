@@ -331,6 +331,21 @@ describeWithPostgres('identity persistence (PostgreSQL, committed migrations)', 
       expect(live.map((s) => s.id)).toEqual([keep.id]);
     });
 
+    it('finds the live sessions among ids — unrevoked and unexpired, with their owner (ADR 0058)', async () => {
+      const live = session(owner.id);
+      const revoked = session(owner.id);
+      const expired = session(owner.id, { expiresAt: new Date(AT.getTime() + 1000) });
+      for (const s of [live, revoked, expired]) await sessionsRepo.create(s);
+      await sessionsRepo.revoke(revoked.id, 'logout', AT);
+
+      const found = await sessionsRepo.findActiveByIds(
+        [live.id, revoked.id, expired.id, asId<'AuthSession'>('no-such-session')],
+        new Date(AT.getTime() + 60_000),
+      );
+      expect(found).toEqual([{ id: live.id, userId: owner.id }]);
+      expect(await sessionsRepo.findActiveByIds([], AT)).toEqual([]);
+    });
+
     it('enforces its CHECK constraints', async () => {
       const bad = [
         session(owner.id, { revokedAt: AT, revokedReason: null }), // revoked without a reason

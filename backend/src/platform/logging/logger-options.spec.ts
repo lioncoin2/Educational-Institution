@@ -44,6 +44,13 @@ const SECRETS = {
   jwtSecret: 'jwt-signing-key',
   apiSecret: 'livekit-api-secret',
   signingSecret: 'storage-signing-key',
+  private_key: '-----BEGIN PRIVATE KEY-----service-account-key',
+  privateKey: 'parsed-service-account-key',
+  private_key_id: '0123456789abcdef0123456789abcdef01234567',
+  credentials: 'service-account-json',
+  assertion: 'eyJ.signed.jwt-bearer-assertion',
+  access_token: 'ya29.google-oauth-access-token',
+  authorization: 'Bearer ya29.another-access-token',
 };
 
 describe('log redaction — secrets are never logged', () => {

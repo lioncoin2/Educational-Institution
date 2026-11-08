@@ -690,6 +690,12 @@ with `settings.manage` (owner-only); a person's own settings and mutes are
 self-scoped. Migration 0022; no new permission. **Still open here:** the push
 *provider* and the lock-screen *preview* policy.
 
+**Provider — chosen and built for Android, pending the owner's switch-on
+([ADR 0058](decisions/0058-real-push-fcm-and-session-bound-devices.md)).** FCM's HTTP
+v1 API with no SDK; the app's Firebase binding only in a `PUSH_ENABLED` Android build;
+devices bound to live sessions. iOS (APNs) and the web stay open. **Still open here:**
+the lock-screen *preview* policy (the provisional one above is what ships).
+
 **When answered (provider/preview).** One adapter implementing `PushProvider` in
 `notifications/infrastructure/` and one line in `notifications.module.ts`, with
 credentials in configuration; in the app, `PushTokenSource` implemented with

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What a push notification says on this phone (ADR 0058). The server sends
+     only these resource NAMES (FCM title_loc_key / body_loc_key: the domain key
+     notification.<type>.title / .body_private with dots as underscores); Android
+     renders the text from here. Lock-screen safe by design: the kind of thing
+     that happened, never a name, a title or a message.
+
+     Every type the server can create needs both strings BEFORE the server
+     activates it (test/notifications/push_android_resources_test.dart reads the
+     server's catalog), and res/raw/keep.xml keeps them through resource
+     shrinking — nothing in the app's code references them. -->
+<resources>
+    <!-- Notification channels: one per category, as the server names them. -->
+    <string name="notification_channel_messages">الرسائل</string>
+    <string name="notification_channel_community">المجتمعات</string>
+    <string name="notification_channel_live">البث المباشر</string>
+    <string name="notification_channel_attendance">الحضور</string>
+    <string name="notification_channel_tasks">المهام اليومية</string>
+
+    <!-- MESSAGES -->
+    <string name="notification_message_received_title">رسالة جديدة</string>
+    <string name="notification_message_received_body_private">لديك رسالة جديدة.</string>
+    <string name="notification_conversation_created_title">محادثة جديدة</string>
+    <string name="notification_conversation_created_body_private">أُضفت إلى محادثة جديدة.</string>
+    <string name="notification_added_to_conversation_title">أُضفت إلى محادثة</string>
+    <string name="notification_added_to_conversation_body_private">أضافك أحدهم إلى محادثة.</string>
+
+    <!-- COMMUNITY -->
+    <string name="notification_community_member_added_title">انضمام إلى مجتمع</string>
+    <string name="notification_community_member_added_body_private">أصبحت عضوًا في أحد المجتمعات.</string>
+    <string name="notification_community_member_removed_title">إزالة من مجتمع</string>
+    <string name="notification_community_member_removed_body_private">أُزلت من أحد المجتمعات.</string>
+    <string name="notification_community_capability_granted_title">صلاحية جديدة</string>
+    <string name="notification_community_capability_granted_body_private">مُنحت صلاحية جديدة في أحد المجتمعات.</string>
+    <string name="notification_community_capability_revoked_title">سحب صلاحية</string>
+    <string name="notification_community_capability_revoked_body_private">سُحبت منك صلاحية في أحد المجتمعات.</string>
+    <string name="notification_community_ownership_transferred_title">ملكية مجتمع</string>
+    <string name="notification_community_ownership_transferred_body_private">أصبحت مالك أحد المجتمعات.</string>
+
+    <!-- LIVE (a raised hand is never pushed, ADR 0024; its words are kept for completeness) -->
+    <string name="notification_live_speaker_requested_title">طلب كلمة</string>
+    <string name="notification_live_speaker_requested_body_private">رفع أحد المشاركين يده في البث.</string>
+    <string name="notification_live_speaker_granted_title">أُذن لك بالكلام</string>
+    <string name="notification_live_speaker_granted_body_private">أُذن لك بالتحدث في البث المباشر.</string>
+
+    <!-- ATTENDANCE -->
+    <string name="notification_attendance_snapshot_recorded_title">تسجيل حضور</string>
+    <string name="notification_attendance_snapshot_recorded_body_private">سُجّل الحضور في جلسة مباشرة.</string>
+
+    <!-- TASKS (ADR 0052) -->
+    <string name="notification_task_published_title">مهمة جديدة</string>
+    <string name="notification_task_published_body_private">وصلتك مهمة جديدة من الإدارة.</string>
+    <string name="notification_task_updated_title">تعديل على مهمة</string>
+    <string name="notification_task_updated_body_private">عُدّلت إحدى مهامك؛ راجع التعليمات.</string>
+    <string name="notification_task_cancelled_title">أُلغيت مهمة</string>
+    <string name="notification_task_cancelled_body_private">أُلغيت إحدى المهام التي وصلتك.</string>
+    <string name="notification_task_reminder_title">تذكير بمهمة</string>
+    <string name="notification_task_reminder_body_private">لديك مهمة لم تستلمها بعد.</string>
+    <string name="notification_task_reassigned_title">أُسندت إليك مهمة</string>
+    <string name="notification_task_reassigned_body_private">أُسندت إليك مهمة كانت لدى شخص آخر.</string>
+    <string name="notification_task_acknowledged_title">استلام مهمة</string>
+    <string name="notification_task_acknowledged_body_private">استلم بعض المستلمين مهمة نشرتها.</string>
+    <string name="notification_task_completed_title">إكمال مهمة</string>
+    <string name="notification_task_completed_body_private">أكمل بعض المستلمين مهمة نشرتها.</string>
+    <string name="notification_task_report_submitted_title">تقرير جديد</string>
+    <string name="notification_task_report_submitted_body_private">وصلت تقارير جديدة على مهمة نشرتها.</string>
+    <string name="notification_task_report_resubmitted_title">تقرير معدّل</string>
+    <string name="notification_task_report_resubmitted_body_private">عُدّلت تقارير على مهمة نشرتها.</string>
+    <string name="notification_task_report_changes_requested_title">مطلوب تعديل تقريرك</string>
+    <string name="notification_task_report_changes_requested_body_private">طلبت الإدارة تعديل تقريرك؛ راجع الملاحظات.</string>
+    <string name="notification_task_report_approved_title">اعتُمد تقريرك</string>
+    <string name="notification_task_report_approved_body_private">اعتمدت الإدارة تقريرك.</string>
+</resources>

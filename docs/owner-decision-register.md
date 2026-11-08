@@ -1217,6 +1217,24 @@ after the gates pass.
 **Not decided here:** restoring the microphone automatically after a reset (would change "joining never
 opens the microphone"); moderator controls over reactions; message reactions in messaging (still excluded).
 
+## 32. Real push notifications on Android — built and agreed, awaiting Firebase (2026-11-08, ADR 0058)
+
+**Owner request (2026-11-07).** «الاشعارات اصلحها» — inspected, planned, the plan reviewed independently,
+then built. The owner has a Firebase account.
+
+| | Decision | Status |
+| --- | --- | --- |
+| P1 | Push provider: **FCM, Android only** (iOS and web stay off), zero-dependency server adapter | built |
+| P2 | Lock screen says only the kind of thing ("رسالة جديدة") — Q24's provisional policy, unchanged | built |
+| P3 | **A device receives push only while its sign-in session is live** — supersedes ADR 0013 decision 11 in part | **agreed by the owner (2026-11-08)** |
+| P4 | No push for a raised hand (ADR 0024); a burst in one conversation buzzes once (15 s, reopened as soon as the person reads) | built |
+| P5 | The app's Arabic name, shown on every notification (`android:label`) | **«المؤسسة التعليمية»** (owner, 2026-11-08) |
+| P6 | Firebase project + `google-services.json` + a dedicated service account (FCM role only); Play Data-safety answers | **owner to supply** |
+
+Nothing is enabled anywhere until P6 is supplied: the server binds FCM only with
+`PUSH_PROVIDER=fcm` and the mounted key, the app only with `PUSH_ENABLED` and `google-services.json`
+([runbook](push-notifications-runbook.md)).
+
 ---
 
 > This register is advisory and reversible. Closing a question means: record an ADR in `decisions/`,

@@ -4,6 +4,7 @@ export * from './account-directory';
 export * from './account-directory-summary';
 export * from './account-roster';
 export * from './account-search';
+export * from './active-sessions';
 export * from './authorization';
 export * from './permissions';
 export * from './principal';

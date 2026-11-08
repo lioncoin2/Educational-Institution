@@ -64,6 +64,10 @@ services:
       LIVE_JOIN_TOKEN_TTL_SECONDS:
       MESSAGING_COMMUNITY_CHAT_MAX_SERVED_MEMBERS:
       INSTITUTION_TIMEZONE:
+      # Push (ADR 0058): unset, push is only logged. The FCM overlay
+      # (compose.push.yaml) sets both and mounts the service-account file.
+      PUSH_PROVIDER:
+      FCM_CREDENTIALS_FILE:
     volumes:
       - api-storage:/app/.storage
     # Loopback only: the TLS terminator on this host is the public way in.

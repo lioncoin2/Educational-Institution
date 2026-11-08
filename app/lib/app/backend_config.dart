@@ -58,4 +58,16 @@ abstract final class BackendConfig {
   static const bool liveMediaNativeScreenShareEnabled = bool.fromEnvironment(
     'LIVE_MEDIA_NATIVE_SCREEN_SHARE_ENABLED',
   );
+
+  /// Whether this build receives push notifications (ADR 0058). Off by
+  /// default; Android only, and only with the Firebase project's
+  /// `android/app/google-services.json` in place at build time:
+  ///
+  ///   flutter build appbundle \
+  ///     --dart-define=API_BASE_URL=https://api.example.org \
+  ///     --dart-define=PUSH_ENABLED=true
+  ///
+  /// Bound only in backend mode (see `pushTokenSourceProvider`); every other
+  /// build, the web and iOS included, has no push at all.
+  static const bool pushEnabled = bool.fromEnvironment('PUSH_ENABLED');
 }

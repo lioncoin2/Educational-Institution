@@ -395,14 +395,16 @@ disconnected, reconnected).
 ## 12. Push
 
 **The seam.** `PushProvider` (notifications' domain port) —
-`registerDevice`, `unregisterDevice`, `send(device, message) → outcome`. The
-only implementation is `LoggingPushProvider` (infrastructure): it records at
-debug level that a push *would* have gone out — device id, platform,
-provider, notification id and type, never the token — and sends nothing.
-**No Firebase, APNs or web-push SDK is installed** anywhere, and a
-dependency-cruiser rule (`push-sdks-only-in-the-notifications-adapter`)
-fails the build if one is imported outside `notifications/infrastructure/`.
-Choosing a provider replaces one line in `notifications.module.ts`.
+`registerDevice`, `unregisterDevice`, `send(device, message) → outcome`. Two
+adapters (infrastructure), chosen in `notifications.module.ts` by configuration
+([ADR 0058](decisions/0058-real-push-fcm-and-session-bound-devices.md)):
+**`FcmPushProvider`** when `PUSH_PROVIDER=fcm` — Firebase Cloud Messaging's
+HTTP v1 API, Android only — and otherwise `LoggingPushProvider`, which records
+at debug level that a push *would* have gone out and sends nothing. **No push
+SDK is installed:** the FCM adapter is an OAuth JWT-bearer exchange signed with
+`node:crypto` and one `fetch` per send, and a dependency-cruiser rule
+(`push-sdks-only-in-the-notifications-adapter`) fails the build if any SDK is
+imported outside `notifications/infrastructure/`.
 
 **What a push says — the lock-screen policy (PROVISIONAL, Q24).** Only what
 KIND of thing happened: `titleKey` = `notification.<type>.title`, `bodyKey` =
@@ -411,9 +413,18 @@ sender name, no content**. A lock screen is read by whoever holds the phone,
 and many of these phones belong to children or are shared. The notification
 itself, with the sender's name, is in the app, behind sign-in. Keys rather
 than sentences because APNs (`title-loc-key`, `loc-key`) and FCM
-(`title_loc_key`, `body_loc_key`) both render keys the app ships. Each push
-carries the target (for the tap) and a thread key (`conversation:<id>`) so a
-burst groups on the device.
+(`title_loc_key`, `body_loc_key`) both render keys the app ships. The FCM
+request carries **only** keys — `notification.message_received.title` becomes
+the Android string `notification_message_received_title` — with no literal title
+or body and no top-level `notification` object, which FCM would show instead;
+the app ships the strings (and keeps them through release resource shrinking).
+Each push carries the target and notification id as data (for the tap), the
+category as its Android channel (`messages`, `community`, `live`, `attendance`,
+`tasks`), and the thread key (`conversation:<id>`) as its `tag`, so a newer push
+replaces the older one in the tray. Priority is high; a live-room push expires
+after 15 minutes, the others after a day. A raised hand (`LIVE_SPEAKER_REQUESTED`)
+is never pushed ([ADR 0024](decisions/0024-notification-policy-p10.md)): the
+catalog marks it `push: false`.
 
 **Outcomes, as the adapter classifies the provider's answer:**
 
@@ -421,8 +432,11 @@ burst groups on the device.
 | --- | --- |
 | `delivered` | done |
 | `retryable` (throttled, 5xx, timeout — or an adapter that throws) | retried after 2 s, 4 s … (capped at 60 s, never sooner than the provider's `retry-after`), at most 3 attempts, then given up and logged. A provider that asks to wait longer than 60 s is not retried at all: sending early would push into its throttle, and the notification is in the inbox anyway |
-| `invalid_token` (FCM `UNREGISTERED`, APNs `410`) | the device is disabled — push skips it until the app registers it again — and it is audited |
-| `rejected` (a permanent failure for this message) | logged, never retried |
+| `invalid_token` (FCM `UNREGISTERED`, or `INVALID_ARGUMENT` about `message.token`; APNs `410`) | the device is disabled — push skips it until the app registers it again — and it is audited |
+| `rejected` (a permanent failure: another `INVALID_ARGUMENT`, `SENDER_ID_MISMATCH`, `THIRD_PARTY_AUTH_ERROR`, 403, 404) | logged, never retried — and never a reason to disable a device: one wrong project id would otherwise switch every device off. The FCM adapter logs each such reason at error level once per five minutes |
+
+A 401 makes the FCM adapter replace its access token and try once more. Reasons
+are canonical codes, never FCM's message text.
 
 **A push failure never touches the notification** (tested with a provider
 that rejects, throws and is down). Retries are in memory — a restart forgets
@@ -430,24 +444,24 @@ them — which is acceptable for a best-effort channel; there is no job queue in
 this codebase and none was added. A durable one belongs with the outbox.
 
 Push is sent only for notifications that are stored and still unread when
-push gets to them, only when the recipient's PUSH preference is on, and once
-per stored notification. Devices for a page of recipients are one query;
-sends run 16 at a time.
+push gets to them, only when the recipient's PUSH preference is on, once per
+stored notification, **only to devices whose session is still live** (§13), and
+**at most once per person and thread in 15 seconds** — a burst in a busy
+conversation buzzes once, and reading the conversation ends the window for that
+reader, so the next message after a read always buzzes; every notification still
+reaches the inbox (in memory, per process, like the retries). A retry is sent
+only if the notification is still unread and the session still live. Devices for a page of recipients are one query, their sessions one
+identity lookup per thousand; sends run 64 at a time.
 
-**What a real provider needs** (evaluated 2026-09-23; see ADR 0013):
-
-| | Server side (this repository) | App side |
-| --- | --- | --- |
-| FCM (Android; also iOS and web) | `firebase-admin` 14.4.0 (Apache-2.0, Node ≥ 22) with a service-account credential — a secret, via configuration only | `firebase_messaging` 16.7.0 + `firebase_core` 4.15.0 (BSD-3-Clause, publisher firebase.google.com, 160/160 pub points; Android, iOS, macOS, web), `google-services.json` / `GoogleService-Info.plist` |
-| APNs directly (iOS) | `@parse/node-apn` 8.1.0 (MIT, Node 20/22/24) with a `.p8` token key, key id, team id, topic | the Push Notifications capability, an APNs key, a device (the simulator's push support is limited) |
-| Web push | `web-push` 3.6.7 (MPL-2.0) with VAPID keys | a service worker |
-
-None of this can be built or verified in this environment (no Firebase
-project, no Apple team, no device, no native build), so **no dependency was
-added to claim completion**. The contracts, the provider seam on both sides,
-device registration and the delivery logic are implemented and tested; what
-remains for the CI/App Store builds is the adapter, the credentials in
-configuration, the platform project files, and a device test.
+**The FCM adapter** (`notifications/infrastructure/fcm/`, ADR 0058): the
+service account's credentials file is read and checked once at startup
+(`FCM_CREDENTIALS_FILE`; a path, never the key — an unusable file stops the
+boot, naming the field, never a value); one access token is shared and replaced
+five minutes before it expires; registration accepts only `FCM` + `ANDROID`
+(iOS needs APNs credentials in Firebase, the web a service worker — neither
+exists). A `validate_only` smoke check (`dist/cli/push-smoke.js`) proves the
+credentials, project, permission and payload without a phone. Operations:
+[push-notifications-runbook.md](../push-notifications-runbook.md).
 
 ---
 
@@ -482,13 +496,21 @@ caller's device; `DELETE /notifications/devices/:id` unregisters it.
 - Several devices per person; at most 10 enabled — registering an eleventh
   forgets the one seen least recently (audited). 30 registrations per hour
   per account.
-- **Sign-out:** the registration is not deleted by the server when a session
-  ends — the app unregisters its device *before* signing out, while the
-  session can still authenticate the request (`PushRegistration.release`).
-  If that fails (offline), the next account to sign in on the device takes
-  the token over; until then, what reaches that device is the lock-screen
-  text above — no names, no content. (The app has no sign-out control yet;
-  the call is in place for when it does.)
+- **Bound to a session** ([ADR 0058](decisions/0058-real-push-fcm-and-session-bound-devices.md),
+  superseding 0013's "the server does not tie devices to sessions"): a device
+  is registered through the caller's session (`session_id`, migration 0038; a
+  caller with no session — a system principal — cannot register one) and moves
+  to the session it is registered through next. One push row per session: a
+  newer token of the same installation replaces the older (audited
+  `notifications.device.superseded`). Before each page of sends, identity's
+  `ACTIVE_SESSIONS` says which of the devices' sessions are live for their
+  account; a device whose session ended — sign-out, revocation from another
+  device, a password change, an administrator, a refused refresh, or expiry —
+  receives nothing and is forgotten by compare-and-set (audited
+  `notifications.device.session_ended`); one from before 0038 (no session)
+  receives nothing until re-registered. **If identity cannot answer, that page
+  is not pushed at all.** The app still unregisters before an explicit sign-out
+  (`PushRegistration.release`) and deletes its token after any.
 - **Push is never authentication.** A registered device proves nothing, a
   push carries no credential, and no request is granted anything because a
   device is registered.
@@ -529,7 +551,9 @@ audit row per message per recipient would bury the log) and preference
 changes (they grant nothing). Audited, with the platform `AUDIT_LOG`:
 `notifications.device.registered` (with `movedFromUserId` when a token moved),
 `notifications.device.unregistered`, `notifications.device.evicted`,
-`notifications.device.disabled` (actor: the system, reason
+`notifications.device.superseded` (a newer token of the same session, with
+`replacedBy`), `notifications.device.session_ended` and
+`notifications.device.disabled` (actor: the system; reason `session_ended`,
 `invalid_token`). Never a token, never message content.
 
 ---
@@ -599,9 +623,19 @@ Error codes: `notifications.notification_not_found`,
   error with retry; **إعدادات الإشعارات** (`/notifications/settings`).
 - `UnreadBadge` on the existing notification icons of Home and Programs and on
   the Profile row — the only change to those screens.
-- Push: `PushTokenSource` (an interface; `UnavailablePushTokenSource` in this
-  build) and `PushRegistration` (registers while signed in, when a token
-  exists). A test fails if any push SDK is a dependency or imported.
+- Push (ADR 0058): `PushTokenSource` (the seam) is bound to
+  `FirebasePushTokenSource` — `lib/data/push/firebase_push.dart`, the one file
+  importing Firebase — only in an Android backend build with
+  `PUSH_ENABLED=true` and the project's `google-services.json`; everywhere
+  else to `UnavailablePushTokenSource`. `PushRegistration` registers while
+  someone is signed in and allows notifications, re-registers a rotated token,
+  is released before an explicit sign-out (`signOutProvider`) and deletes the
+  token after any; `PushOfferController` makes the app's once-per-installation
+  offer before the system's question (and the center keeps a way to turn push on
+  later); `PushHost` (the app builder) opens a tapped notification's target
+  through the same resolver as the center — community and live-room targets
+  included. Android ships the 44 strings, the channels, the status-bar icon and
+  `keep.xml`; tests check them against the server's catalog.
 
 ---
 
@@ -660,20 +694,23 @@ empty, error and retry, mark all, live insertion, settings), boundaries.
   is all-on by default.
 - **Outbox.** In-process delivery is at most once (§6). The dedupe keys make
   the outbox a drop-in.
-- **A push provider** (Q24): the adapter, credentials and platform setup
-  (§12).
+- **Push beyond Android** (ADR 0058): iOS (APNs credentials, a device to
+  verify on) and the web (a service worker); richer lock-screen text stays
+  provisional (Q24).
 - **Retention** (Q27): notifications are kept indefinitely.
 - **Quiet hours and per-conversation mute** are **built** (Sprint 35,
   [ADR 0036](decisions/0036-quiet-hours-and-conversation-mute.md)): an
   institution window + timezone with a full per-user override, and mute keyed on
   a notification's conversation target, both suppressing **push only** (the
   record is still stored, realtime untouched; no urgent bypass). The suppression
-  is decided in the dispatcher and recorded in the `channels.push` flag a real
-  provider will read — the push adapter above is still the only missing piece.
-- **Collapsing** a busy conversation's notifications, email, priority levels,
-  announcement-style notifications from staff (Q28).
+  is decided in the dispatcher and recorded in the `channels.push` flag push
+  delivery reads.
+- **Collapsing** a busy conversation's notifications in the inbox (push already
+  folds a burst into one buzz, §12), email, priority levels, announcement-style
+  notifications from staff (Q28).
 - **Several instances:** like realtime, delivery reaches the connections of
   the instance that handled the event; a broker-backed bus is the path
   (ADR 0012).
-- **A sign-out control** in the app, which would call
-  `PushRegistration.release` before signing out.
+- **Firebase Installation IDs.** `firebase_messaging` 17 deprecates the
+  registration token the v1 send takes; moving to FIDs is a server-first change
+  (ADR 0058).

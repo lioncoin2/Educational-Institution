@@ -1,13 +1,16 @@
 import { sql } from 'drizzle-orm';
 
 import { asId, type Principal } from '../../src/shared';
+import { IdentityActiveSessions } from '../../src/modules/identity/application/active-sessions.service';
+import { DrizzleAuthSessionRepository } from '../../src/modules/identity/infrastructure/drizzle-auth-session-repository';
+import { DrizzleUserRepository } from '../../src/modules/identity/infrastructure/drizzle-user-repository';
 import type { NotificationRequest } from '../../src/modules/notifications/domain/notification';
 import { DrizzleConversationMuteRepository } from '../../src/modules/notifications/infrastructure/drizzle-conversation-mute-repository';
 import { DrizzleDeviceRepository } from '../../src/modules/notifications/infrastructure/drizzle-device-repository';
 import { DrizzleNotificationRepository } from '../../src/modules/notifications/infrastructure/drizzle-notification-repository';
 import { DrizzleNotificationSettingsRepository } from '../../src/modules/notifications/infrastructure/drizzle-notification-settings-repository';
 import { DrizzlePreferenceRepository } from '../../src/modules/notifications/infrastructure/drizzle-preference-repository';
-import { expectOk } from '../support/identity-harness';
+import { expectOk, identityHarness } from '../support/identity-harness';
 import {
   apnsToken,
   fcmToken,
@@ -88,6 +91,7 @@ describeWithPostgres('notifications on Postgres', () => {
         expect.arrayContaining([
           'notifications_recipient_created_idx',
           'notification_devices_user_enabled_idx',
+          'notification_devices_session_idx',
         ]),
       );
     });
@@ -490,6 +494,134 @@ describeWithPostgres('notifications on Postgres', () => {
         sql`select count(*)::int as n from notification_devices where token = ${fcmToken(9)}`,
       );
       expect(count?.n).toBe(1);
+    });
+  });
+
+  describe('devices bound to sessions (ADR 0058)', () => {
+    const deviceRow = async (id: string) =>
+      (
+        await rows<{ user_id: string; session_id: string | null }>(
+          sql`select user_id, session_id from notification_devices where id = ${id}`,
+        )
+      )[0];
+
+    it('writes the session on insert AND on conflict — a token signed in again follows the new session', async () => {
+      const phone = await h.device(ali, fcmToken(1), 'ANDROID', 'session-a');
+      expect(await deviceRow(phone)).toEqual({ user_id: ali.userId, session_id: 'session-a' });
+      expect(await h.device(sara, fcmToken(1), 'ANDROID', 'session-b')).toBe(phone);
+      expect(await deviceRow(phone)).toEqual({ user_id: sara.userId, session_id: 'session-b' });
+    });
+
+    it('keeps one row per session: a newer token of the session replaces the older', async () => {
+      const old = await h.device(ali, fcmToken(1), 'ANDROID', 'session-a');
+      const fresh = await h.device(ali, fcmToken(2), 'ANDROID', 'session-a');
+      expect(fresh).not.toBe(old);
+      const bound = await rows<{ id: string }>(
+        sql`select id from notification_devices where session_id = 'session-a'`,
+      );
+      expect(bound.map((row) => row.id)).toEqual([fresh]);
+    });
+
+    it('registers two tokens of one session concurrently into one row — no duplicate, no deadlock', async () => {
+      // Twice over, so the second round races two rows that both already exist.
+      for (const round of [1, 2]) {
+        await Promise.all([
+          h.device(ali, fcmToken(`a${round}`), 'ANDROID', 'session-a'),
+          h.device(ali, fcmToken(`b${round}`), 'ANDROID', 'session-a'),
+        ]);
+        const bound = await rows<{ n: number }>(
+          sql`select count(*)::int as n from notification_devices where session_id = 'session-a'`,
+        );
+        expect(bound[0]?.n).toBe(1);
+      }
+    });
+
+    it('forgets a device only while it is still bound to the session that ended (compare-and-set)', async () => {
+      const phone = asId<'NotificationDevice'>(
+        await h.device(ali, fcmToken(1), 'ANDROID', 'session-a'),
+      );
+      expect(await h.devices.removeIfSession(phone, 'session-old')).toBe(false);
+      expect(await h.devices.removeIfSession(phone, null)).toBe(false);
+      expect((await h.devices.enabledForUsers([ali.userId])).map((d) => d.id)).toEqual([phone]);
+      expect(await h.devices.removeIfSession(phone, 'session-a')).toBe(true);
+      expect(await h.devices.enabledForUsers([ali.userId])).toEqual([]);
+    });
+
+    it('pushes only to a live session’s device; a row from before sessions gets nothing, and is kept', async () => {
+      await h.device(ali, fcmToken(1), 'ANDROID', 'session-a');
+      await h.device(ali, fcmToken(2), 'ANDROID', 'session-ended');
+      await scratch.db.execute(sql`insert into notification_devices
+        (id, user_id, platform, provider, token, created_at, last_seen_at, session_id)
+        values ('pre-0058', ${ali.userId}, 'ANDROID', 'FCM', ${fcmToken(3)}, now(), now(), null)`);
+      h.sessions.end('session-ended');
+
+      await h.dispatcher.dispatch([messageRequest(ali.userId, 'm-1')]);
+      await h.settle();
+
+      expect(h.push.sent.map((send) => send.device.token)).toEqual([fcmToken(1)]);
+      const left = await rows<{ token: string }>(
+        sql`select token from notification_devices order by token`,
+      );
+      expect(left.map((row) => row.token)).toEqual([fcmToken(1), fcmToken(3)]);
+    });
+
+    it('end to end with identity’s own sessions: signing out stops that phone’s push', async () => {
+      const identity = identityHarness(
+        {},
+        {
+          users: new DrizzleUserRepository(scratch.db),
+          sessions: new DrizzleAuthSessionRepository(scratch.db),
+        },
+      );
+      const sessions = new IdentityActiveSessions(
+        new DrizzleAuthSessionRepository(scratch.db),
+        identity.clock,
+      );
+      const live = await notificationsHarness({
+        notifications: new DrizzleNotificationRepository(scratch.db),
+        preferences: new DrizzlePreferenceRepository(scratch.db),
+        devices: new DrizzleDeviceRepository(scratch.db),
+        settings: new DrizzleNotificationSettingsRepository(scratch.db),
+        mutes: new DrizzleConversationMuteRepository(scratch.db),
+        sessions,
+      });
+      try {
+        const user = await identity.seedUser({ email: 'phone-owner@example.com' });
+        live.messaging.directory.add(user.id, ['STUDENT'], { displayName: 'صاحب الهاتف' });
+        const phone = await identity.principalOf('phone-owner@example.com');
+        const tablet = await identity.principalOf('phone-owner@example.com');
+        const register = (principal: Principal, token: string) =>
+          live.registerDevice.execute({
+            principal,
+            platform: 'ANDROID',
+            provider: 'FCM',
+            token,
+            meta: {},
+          });
+        const phoneDevice = expectOk(await register(phone, fcmToken(1)));
+        expectOk(await register(tablet, fcmToken(2)));
+
+        await live.dispatcher.dispatch([messageRequest(user.id, 'm-1')]);
+        await live.settle();
+        expect(live.push.sent.map((send) => send.device.token).sort()).toEqual([
+          fcmToken(1),
+          fcmToken(2),
+        ]);
+
+        expectOk(await identity.logout.execute({ principal: phone, meta: {} }));
+        live.push.sent.length = 0;
+        await live.dispatcher.dispatch([messageRequest(user.id, 'm-2', 'c-2')]);
+        await live.settle();
+
+        expect(live.push.sent.map((send) => send.device.token)).toEqual([fcmToken(2)]);
+        expect(await deviceRow(phoneDevice.id)).toBeUndefined();
+        expect(live.audit.last('notifications.device.session_ended')?.resourceId).toBe(
+          phoneDevice.id,
+        );
+      } finally {
+        await live.cleanup();
+        await scratch.db.execute(sql`truncate users cascade`);
+      }
     });
   });
 });

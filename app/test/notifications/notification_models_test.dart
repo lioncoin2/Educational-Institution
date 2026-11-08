@@ -65,18 +65,43 @@ void main() {
       expect(NotificationCopy.body(n), 'لديك إشعار جديد.');
     });
 
+    test(
+      'reads a community and a live room — where a push about them leads',
+      () {
+        expect(
+          parse(
+            notificationJson(
+              target: {'kind': 'community', 'communityId': 'k-1'},
+            ),
+          ).target,
+          const CommunityTarget('k-1'),
+        );
+        expect(
+          parse(
+            notificationJson(
+              target: {'kind': 'live_room', 'liveSessionId': 's-1'},
+            ),
+          ).target,
+          const LiveRoomTarget('s-1'),
+        );
+      },
+    );
+
     test('keeps a target it cannot open as unsupported — never throws', () {
       expect(
         parse(
-          notificationJson(target: {'kind': 'live_room', 'liveSessionId': 'l'}),
+          notificationJson(
+            target: {'kind': 'certificate', 'certificateId': 'c'},
+          ),
         ).target,
-        isA<UnsupportedTarget>().having((t) => t.kind, 'kind', 'live_room'),
+        isA<UnsupportedTarget>().having((t) => t.kind, 'kind', 'certificate'),
       );
       for (final broken in [
         null,
         'conversation:c-1',
         {'kind': 'conversation'},
         {'kind': 'conversation', 'conversationId': '../../admin'},
+        {'kind': 'live_room', 'liveSessionId': ''},
         {'kind': 42},
       ]) {
         expect(

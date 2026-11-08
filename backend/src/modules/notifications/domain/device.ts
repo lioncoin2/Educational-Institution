@@ -30,6 +30,12 @@ export interface Device {
   readonly lastSeenAt: Date;
   /** Set when the provider said the token is no longer valid. Push skips it. */
   readonly disabledAt: Date | null;
+  /**
+   * The signed-in session it was registered under (ADR 0058). Push reaches the
+   * device only while that session is live. Null only on rows registered
+   * before sessions were recorded; those receive nothing until registered again.
+   */
+  readonly sessionId: string | null;
 }
 
 export interface DeviceRegistration {

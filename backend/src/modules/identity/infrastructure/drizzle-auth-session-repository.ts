@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, gt, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, ne } from 'drizzle-orm';
 
 import { DATABASE, type Database } from '../../../platform/database';
 import type { AuthSession, AuthSessionId, RevocationReason } from '../domain/auth-session';
@@ -106,6 +106,24 @@ export class DrizzleAuthSessionRepository implements AuthSessionRepository {
       )
       .orderBy(desc(authSessions.lastUsedAt));
     return rows.map(toSession);
+  }
+
+  async findActiveByIds(
+    ids: readonly AuthSessionId[],
+    now: Date,
+  ): Promise<readonly { readonly id: AuthSessionId; readonly userId: UserId }[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db
+      .select({ id: authSessions.id, userId: authSessions.userId })
+      .from(authSessions)
+      .where(
+        and(
+          inArray(authSessions.id, [...new Set(ids)]),
+          isNull(authSessions.revokedAt),
+          gt(authSessions.expiresAt, now),
+        ),
+      );
+    return rows.map((row) => ({ id: row.id as AuthSessionId, userId: row.userId as UserId }));
   }
 }
 

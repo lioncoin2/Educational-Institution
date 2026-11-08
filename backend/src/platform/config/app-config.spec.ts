@@ -41,6 +41,39 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ INSTITUTION_TIMEZONE: 'Not/AZone' })).toThrow(ConfigurationError);
   });
 
+  describe('push (ADR 0058)', () => {
+    it('logs push and sends nothing unless FCM is named', () => {
+      expect(loadConfig({}).push).toEqual({ provider: 'logging', fcmCredentialsFile: null });
+      expect(loadConfig({ ...PRODUCTION, PUSH_PROVIDER: 'logging' }).push).toEqual({
+        provider: 'logging',
+        fcmCredentialsFile: null,
+      });
+    });
+
+    it('takes FCM with the absolute path of its mounted credentials — the path, never the key', () => {
+      expect(
+        loadConfig({
+          ...PRODUCTION,
+          PUSH_PROVIDER: 'fcm',
+          FCM_CREDENTIALS_FILE: '/run/secrets/fcm-service-account.json',
+        }).push,
+      ).toEqual({ provider: 'fcm', fcmCredentialsFile: '/run/secrets/fcm-service-account.json' });
+    });
+
+    it('refuses FCM without its credentials file, or with a relative path', () => {
+      expect(() => loadConfig({ PUSH_PROVIDER: 'fcm' })).toThrow(
+        /FCM_CREDENTIALS_FILE is required when PUSH_PROVIDER=fcm/,
+      );
+      expect(() => loadConfig({ PUSH_PROVIDER: 'fcm', FCM_CREDENTIALS_FILE: 'fcm.json' })).toThrow(
+        /FCM_CREDENTIALS_FILE must be an absolute path/,
+      );
+    });
+
+    it('refuses a provider it does not know rather than quietly logging', () => {
+      expect(() => loadConfig({ PUSH_PROVIDER: 'apns' })).toThrow(/PUSH_PROVIDER must be/);
+    });
+  });
+
   // HS256 is only as strong as its key (RFC 7518 §3.2: at least 256 bits).
   it('refuses a JWT secret shorter than 32 bytes in production', () => {
     expect(() =>

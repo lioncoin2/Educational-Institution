@@ -9,14 +9,15 @@ import '../../../core/widgets/foundations/app_card.dart';
 import '../../../core/widgets/layout/responsive_body.dart';
 import '../../../data/models/auth.dart';
 import '../../../providers/app_providers.dart';
+import '../state/sign_out.dart';
 
 /// The account & session surface on the profile: who is signed in on this
 /// device, and the one place to sign out — or, when nobody is, to sign in.
 ///
 /// Shown only in backend mode; the demo build has no server session to manage.
 /// The sign-in/out behaviour itself is the auth repository's (the one owner of
-/// [AuthRepository.signOut]); this widget only presents it and refreshes the
-/// shared [sessionUserProvider], exactly as the sign-in screen does.
+/// [AuthRepository.signOut]), reached through [signOutProvider], which releases
+/// this device's push registration first; this widget only presents it.
 class AccountSection extends ConsumerStatefulWidget {
   const AccountSection({super.key});
 
@@ -49,8 +50,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     if (confirmed != true || !mounted) return;
     setState(() => _busy = true);
     try {
-      await ref.read(authRepositoryProvider).signOut();
-      ref.invalidate(sessionUserProvider);
+      await ref.read(signOutProvider)();
     } on AuthException catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context)

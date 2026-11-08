@@ -19,7 +19,7 @@ void main() {
     expect(permission!.start, lessThan(manifest.indexOf('<application')));
   });
 
-  test('asks for nothing more than the network, live audio and screen share in release', () {
+  test('asks for nothing more than the network, live audio, screen share and push in release', () {
     final manifest = File('android/app/src/main/AndroidManifest.xml')
         .readAsStringSync();
     final declared = RegExp(
@@ -41,6 +41,8 @@ void main() {
         // the app owns, because neither LiveKit nor flutter_webrtc provides one.
         'FOREGROUND_SERVICE',
         'FOREGROUND_SERVICE_MEDIA_PROJECTION',
+        // Push (ADR 0058): Android 13+ asks at run time, after the app explains.
+        'POST_NOTIFICATIONS',
       ],
       reason: 'a new permission is a deliberate change to this test',
     );

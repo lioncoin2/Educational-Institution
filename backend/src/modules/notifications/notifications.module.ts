@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { APP_CONFIG, type AppConfig } from '../../platform/config/app-config';
 import { DATABASE, type Database } from '../../platform/database';
+import { CLOCK, type Clock } from '../../shared';
 import { CommunitiesModule } from '../communities/communities.module';
 import { IdentityModule } from '../identity/identity.module';
 import { LiveModule } from '../live/live.module';
@@ -59,7 +60,7 @@ import {
   type NotificationSettingsRepository,
   type PreferenceRepository,
 } from './domain/ports';
-import { PUSH_PROVIDER } from './domain/push';
+import { PUSH_PROVIDER, type PushProvider } from './domain/push';
 import { DrizzleConversationMuteRepository } from './infrastructure/drizzle-conversation-mute-repository';
 import { DrizzleDeviceRepository } from './infrastructure/drizzle-device-repository';
 import { DrizzleNotificationRepository } from './infrastructure/drizzle-notification-repository';
@@ -72,6 +73,7 @@ import {
   InMemoryNotificationSettingsRepository,
   InMemoryPreferenceRepository,
 } from './infrastructure/in-memory-notification-stores';
+import { FcmPushProvider } from './infrastructure/fcm/fcm-push-provider';
 import { LoggingPushProvider } from './infrastructure/logging-push-provider';
 
 /**
@@ -90,8 +92,10 @@ import { LoggingPushProvider } from './infrastructure/logging-push-provider';
  * `COMMUNITY_CAPABILITY_HOLDERS`), live's (its events; who moderates a session,
  * through `LIVE_AUDIENCE`) and attendance's (its one event). Nothing depends on
  * it but realtime, through `NOTIFICATION_READER`. The push provider is chosen
- * here: in V1, a logging adapter — no push SDK is installed
- * (docs/architecture/notifications.md, "Push").
+ * here: Firebase Cloud Messaging over its HTTP API when the deployment names
+ * it (ADR 0058; no push SDK is installed), the logging adapter otherwise
+ * (docs/architecture/notifications.md, "Push"). Push reaches a device only
+ * while its session is live — identity's `ACTIVE_SESSIONS`.
  */
 @Module({
   imports: [IdentityModule, MessagingModule, LiveModule, CommunitiesModule],
@@ -137,8 +141,17 @@ import { LoggingPushProvider } from './infrastructure/logging-push-provider';
           ? new DrizzleConversationMuteRepository(db)
           : new InMemoryConversationMuteRepository()) satisfies ConversationMuteRepository,
     },
-    // The one line a real push provider changes.
-    { provide: PUSH_PROVIDER, useClass: LoggingPushProvider },
+    // FCM only when the deployment names it (ADR 0058) — its credentials file
+    // is read and checked here, at startup, so an unusable one stops the boot.
+    // Otherwise the logging adapter: nothing is sent.
+    {
+      provide: PUSH_PROVIDER,
+      inject: [APP_CONFIG, CLOCK],
+      useFactory: (config: AppConfig, clock: Clock): PushProvider =>
+        config.push.provider === 'fcm' && config.push.fcmCredentialsFile !== null
+          ? FcmPushProvider.fromCredentialsFile(config.push.fcmCredentialsFile, clock)
+          : new LoggingPushProvider(),
+    },
     { provide: PUSH_DELIVERY_SETTINGS, useValue: DEFAULT_PUSH_DELIVERY_SETTINGS },
 
     PushSuppressionGate,

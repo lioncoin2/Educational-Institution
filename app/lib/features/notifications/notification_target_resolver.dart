@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/routes.dart';
+import '../../data/models/communities.dart';
+import '../../data/models/live.dart';
 import '../../data/models/messaging.dart';
 import '../../data/models/notifications.dart';
 import '../../data/models/tasks/tasks.dart';
@@ -35,11 +37,19 @@ final class CannotOpen extends TargetResolution {
 /// they had typed its address, and the conversation screen would refuse
 /// them the same way.
 class NotificationTargetResolver {
-  const NotificationTargetResolver(this._messaging, this._taskAdministration, this._myTasks);
+  const NotificationTargetResolver(
+    this._messaging,
+    this._taskAdministration,
+    this._myTasks,
+    this._communities,
+    this._live,
+  );
 
   final MessagingRepository _messaging;
   final TaskAdministrationRepository _taskAdministration;
   final MyTasksRepository _myTasks;
+  final CommunityRepository _communities;
+  final LiveRepository _live;
 
   Future<TargetResolution> resolve(NotificationTarget target) async {
     switch (target) {
@@ -71,6 +81,28 @@ class NotificationTargetResolver {
           return CannotOpen(_taskRefusal(error));
         }
         return OpenRoute(Routes.myTask(mine.assignment.id));
+      case CommunityTarget(:final communityId):
+        try {
+          await _communities.community(communityId);
+        } on CommunityException catch (error) {
+          return CannotOpen(
+            error.isGone ? NotificationCopy.contentGone : NotificationCopy.error(error.code),
+          );
+        }
+        return OpenRoute(Routes.community(communityId));
+      case LiveRoomTarget(:final liveSessionId):
+        // The notification names the session; the room is its community's.
+        final LiveSession session;
+        try {
+          session = await _live.getSession(liveSessionId);
+        } on LiveException catch (error) {
+          return CannotOpen(
+            error.isGone ? NotificationCopy.contentGone : NotificationCopy.error(error.code),
+          );
+        }
+        return session.state == LiveSessionState.live
+            ? OpenRoute(Routes.communityLive(session.communityId))
+            : const CannotOpen(NotificationCopy.liveEnded);
       case UnsupportedTarget():
         return const CannotOpen(NotificationCopy.unsupported);
     }
@@ -87,5 +119,7 @@ final notificationTargetResolverProvider = Provider<NotificationTargetResolver>(
     ref.watch(messagingRepositoryProvider),
     ref.watch(taskAdministrationRepositoryProvider),
     ref.watch(myTasksRepositoryProvider),
+    ref.watch(communityRepositoryProvider),
+    ref.watch(liveRepositoryProvider),
   ),
 );

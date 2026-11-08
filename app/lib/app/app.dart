@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/theme/app_theme.dart';
 import '../features/live/widgets/live_active_bar.dart';
+import '../features/notifications/push_host.dart';
 import '../providers/app_providers.dart';
 import 'router.dart';
 
@@ -50,10 +51,14 @@ class QuranInstitutionApp extends ConsumerWidget {
             ),
           ),
           // A live room the viewer navigated away from stays visible and
-          // leavable on every other screen.
+          // leavable on every other screen; a tapped push notification opens
+          // what it points at (ADR 0058).
           child: LiveActiveBarHost(
             router: router,
-            child: child ?? const SizedBox.shrink(),
+            child: PushHost(
+              router: router,
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         );
       },

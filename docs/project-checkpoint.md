@@ -498,7 +498,13 @@ decision** — that must not be invented. *(The former "IMPLEMENTABLE_NOW featur
 Sprints 42–50, which shipped the in-app administration + teacher layer without inventing policy.)*
 
 ## External-resource gates (not owner policy)
-- Real push delivery — Firebase/Apple credentials + a device (Q65).
+- Real push delivery — **built for Android** ([ADR 0058](architecture/decisions/0058-real-push-fcm-and-session-bound-devices.md),
+  Accepted 2026-11-08): FCM HTTP v1 adapter (no SDK), devices bound to live sessions (migration 0038,
+  identity `ACTIVE_SESSIONS`), the app's Firebase binding behind `PUSH_ENABLED` + `google-services.json`.
+  Off everywhere until the owner supplies the
+  Firebase project, its `google-services.json` and a dedicated service account
+  ([runbook](push-notifications-runbook.md)); then a phone test. iOS/web push still need Apple
+  credentials / a service worker (Q65).
 - P7b **native** (iOS/Android) media/attachments/recording — physical devices + a mobile CI/signing
   pipeline (none exists); bound Unavailable off-web.
 - P8 off-box load/capacity testing.

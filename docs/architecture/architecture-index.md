@@ -77,8 +77,8 @@ responsibility and what each module must not know live in
 ### identity
 
 - **Path:** `backend/src/modules/identity/`
-- **Nest module:** `identity.module.ts` — exports: `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_AVATAR_WRITER`, `ACCOUNT_DIRECTORY`, `ACCOUNT_DIRECTORY_SUMMARY`, `ACCOUNT_ROSTER`, `ACCOUNT_SEARCH`, `AUTHORIZATION_SERVICE`
-- **Public contract (`contracts/`):** `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_AVATAR_WRITER`, `ACCOUNT_DIRECTORY`, `ACCOUNT_DIRECTORY_MAX_IDS`, `ACCOUNT_DIRECTORY_SUMMARY`, `ACCOUNT_ROSTER`, `ACCOUNT_ROSTER_MAX_PAGE`, `ACCOUNT_SEARCH`, `ALL_PERMISSIONS`, `AUTHORIZATION_SERVICE`, `AccessTokenAuthenticator`, `AccountAvatarWriter`, `AccountDirectory`, `AccountDirectorySummary`, `AccountRoster`, `AccountSearch`, `AccountStatusCounts`, `AccountSummary`, `Authenticated`, `Authentication`, `AuthorizationContext`, `AuthorizationService`, `ELIGIBLE_TEACHER`, `Permission`, `Permissions`, `REQUIRE_AUTHENTICATION`, `REQUIRE_PERMISSION`, `RequirePermission`, `SYSTEM_PRINCIPAL_PREFIX`, `SessionReference`, `isPermission`, `isSystemPrincipal`, `systemPrincipal`
+- **Nest module:** `identity.module.ts` — exports: `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_AVATAR_WRITER`, `ACCOUNT_DIRECTORY`, `ACCOUNT_DIRECTORY_SUMMARY`, `ACCOUNT_ROSTER`, `ACCOUNT_SEARCH`, `ACTIVE_SESSIONS`, `AUTHORIZATION_SERVICE`
+- **Public contract (`contracts/`):** `ACCESS_TOKEN_AUTHENTICATOR`, `ACCOUNT_AVATAR_WRITER`, `ACCOUNT_DIRECTORY`, `ACCOUNT_DIRECTORY_MAX_IDS`, `ACCOUNT_DIRECTORY_SUMMARY`, `ACCOUNT_ROSTER`, `ACCOUNT_ROSTER_MAX_PAGE`, `ACCOUNT_SEARCH`, `ACTIVE_SESSIONS`, `ACTIVE_SESSIONS_MAX_BATCH`, `ALL_PERMISSIONS`, `AUTHORIZATION_SERVICE`, `AccessTokenAuthenticator`, `AccountAvatarWriter`, `AccountDirectory`, `AccountDirectorySummary`, `AccountRoster`, `AccountSearch`, `AccountStatusCounts`, `AccountSummary`, `ActiveSessions`, `Authenticated`, `Authentication`, `AuthorizationContext`, `AuthorizationService`, `ELIGIBLE_TEACHER`, `Permission`, `Permissions`, `REQUIRE_AUTHENTICATION`, `REQUIRE_PERMISSION`, `RequirePermission`, `SYSTEM_PRINCIPAL_PREFIX`, `SessionReference`, `isPermission`, `isSystemPrincipal`, `systemPrincipal`
 - **Declared domain events:** —
 - **Static imports → modules:** —
 - **Docs:** [module-boundaries.md#identity](module-boundaries.md#identity)
@@ -391,3 +391,4 @@ responsibility and what each module must not know live in
 - [0055 — Chat message forwarding](decisions/0055-chat-message-forwarding.md)
 - [0056 — Direct-chat read receipts (seen ✓✓)](decisions/0056-direct-chat-read-receipts.md)
 - [0057 — Hold-to-record voice messages](decisions/0057-hold-to-record-voice.md)
+- [0058 — Real push on Android through FCM, to devices bound to a live session](decisions/0058-real-push-fcm-and-session-bound-devices.md)

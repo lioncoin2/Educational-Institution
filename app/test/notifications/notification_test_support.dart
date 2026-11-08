@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:quran_institution_app/data/models/notifications.dart';
 import 'package:quran_institution_app/data/push/push_seams.dart';
 import 'package:quran_institution_app/data/realtime/realtime_frames.dart';
@@ -118,15 +120,85 @@ class ScriptedNotifications extends MockNotificationsRepository {
   }
 }
 
-/// A platform that has a push token to give.
+/// A platform with push, scripted: what the permission is and what asking
+/// answers, the token it gives, and a record of what was asked of it.
 class FakePushTokenSource implements PushTokenSource {
+  /// [log] may be shared with the test's other fakes, to see one order.
+  FakePushTokenSource([List<String>? log]) : log = log ?? [];
+
+  PushPermission permissionNow = PushPermission.granted;
+
+  /// What the system dialog answers; it becomes [permissionNow].
+  PushPermission answer = PushPermission.granted;
+  String tokenValue = 'fcm-test-token';
+  bool offered = false;
+  PushTap? startedBy;
+  int requests = 0;
+  int disabled = 0;
+
+  /// Every call that changes something, in order.
+  final List<String> log;
+
+  final _refreshes = StreamController<PushToken>.broadcast();
+  final _taps = StreamController<PushTap>.broadcast();
+
+  /// The provider rotates the token.
+  void rotate(String value) {
+    tokenValue = value;
+    _refreshes.add(
+      PushToken(platform: 'ANDROID', provider: 'FCM', value: value),
+    );
+  }
+
+  /// A notification is tapped while the app runs.
+  void tap(PushTap tap) => _taps.add(tap);
+
   @override
   bool get isAvailable => true;
 
   @override
-  Future<PushToken?> token() async => const PushToken(
-    platform: 'ANDROID',
-    provider: 'FCM',
-    value: 'fcm-test-token',
-  );
+  Future<PushPermission> permission() async => permissionNow;
+
+  @override
+  Future<PushPermission> requestPermission() async {
+    requests += 1;
+    log.add('request');
+    return permissionNow = answer;
+  }
+
+  @override
+  Future<PushToken?> token() async =>
+      PushToken(platform: 'ANDROID', provider: 'FCM', value: tokenValue);
+
+  @override
+  Stream<PushToken> get tokenRefreshes => _refreshes.stream;
+
+  @override
+  Future<PushTap?> initialTap() async {
+    final tap = startedBy;
+    startedBy = null;
+    return tap;
+  }
+
+  @override
+  Stream<PushTap> get taps => _taps.stream;
+
+  /// When set, [disable] waits for it — to see what waits for a deletion.
+  Completer<void>? disableGate;
+
+  @override
+  Future<void> disable() async {
+    await disableGate?.future;
+    disabled += 1;
+    log.add('disable');
+  }
+
+  @override
+  Future<bool> wasOffered() async => offered;
+
+  @override
+  Future<void> markOffered() async {
+    offered = true;
+    log.add('offered');
+  }
 }

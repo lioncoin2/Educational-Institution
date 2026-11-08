@@ -11,6 +11,7 @@ import { IdentityAccountAvatarWriter } from './application/account-avatar.servic
 import { IdentityAccountDirectory } from './application/account-directory.service';
 import { IdentityAccountDirectorySummary } from './application/account-directory-summary.service';
 import { IdentityAccountRoster } from './application/account-roster.service';
+import { IdentityActiveSessions } from './application/active-sessions.service';
 import { IdentityAccountSearch } from './application/account-search.service';
 import { AccountAdministration } from './application/admin/account-administration';
 import { AccountViews } from './application/admin/account-views';
@@ -42,6 +43,7 @@ import { ACCOUNT_AVATAR_WRITER } from './contracts/account-avatar';
 import { ACCOUNT_DIRECTORY } from './contracts/account-directory';
 import { ACCOUNT_DIRECTORY_SUMMARY } from './contracts/account-directory-summary';
 import { ACCOUNT_ROSTER } from './contracts/account-roster';
+import { ACTIVE_SESSIONS } from './contracts/active-sessions';
 import { ACCOUNT_SEARCH } from './contracts/account-search';
 import { AUTHORIZATION_SERVICE } from './contracts/authorization';
 import {
@@ -96,7 +98,9 @@ function persistent<T>(
  * `ACCESS_TOKEN_AUTHENTICATOR`, the HTTP guard's own authentication for
  * transports that are not a request (the realtime connection); and
  * `ACCOUNT_ROSTER`, the only way one enumerates the ACTIVE holders of a role, by
- * id (the daily tasks engine's staff audiences, ADR 0052). Everything else
+ * id (the daily tasks engine's staff audiences, ADR 0052); and
+ * `ACTIVE_SESSIONS`, the only way one asks which signed-in sessions are still
+ * live (push to a device stops when its session ends, ADR 0058). Everything else
  * — users, sessions, tokens, the role matrix — is private to this module.
  *
  * No account is seeded and no default credential exists. The first owner is
@@ -170,6 +174,7 @@ function persistent<T>(
     { provide: ACCOUNT_SEARCH, useClass: IdentityAccountSearch },
     { provide: ACCOUNT_ROSTER, useClass: IdentityAccountRoster },
     { provide: ACCOUNT_DIRECTORY_SUMMARY, useClass: IdentityAccountDirectorySummary },
+    { provide: ACTIVE_SESSIONS, useClass: IdentityActiveSessions },
 
     RolePermissions,
     AccountAdministration,
@@ -207,6 +212,7 @@ function persistent<T>(
     ACCOUNT_DIRECTORY_SUMMARY,
     ACCOUNT_ROSTER,
     ACCESS_TOKEN_AUTHENTICATOR,
+    ACTIVE_SESSIONS,
   ],
 })
 export class IdentityModule {}

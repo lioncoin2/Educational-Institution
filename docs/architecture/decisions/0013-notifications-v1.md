@@ -1,6 +1,6 @@
 # 0013 — Notifications V1: a stored inbox, idempotent by the database, delivered by subscribers
 
-**Status:** Accepted — superseded in part by [0046](0046-notification-content-for-authorized-recipients.md) (2026-10-25: in-app notifications show sender, conversation and a preview to an authorized recipient; decision 9 — the push — stands)
+**Status:** Accepted — superseded in part by [0046](0046-notification-content-for-authorized-recipients.md) (2026-10-25: in-app notifications show sender, conversation and a preview to an authorized recipient; decision 9 — the push — stands); decision 11 superseded in part by [0058](0058-real-push-fcm-and-session-bound-devices.md) (2026-11-08: a device receives push only while the session it was registered through is live)
 **Date:** 2026-09-23
 
 Turns Messaging V1's logging-only notification pipeline into a real

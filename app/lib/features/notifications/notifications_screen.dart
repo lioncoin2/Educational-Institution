@@ -17,6 +17,7 @@ import '../../providers/app_providers.dart';
 import 'notification_copy.dart';
 import 'notification_target_resolver.dart';
 import 'state/notification_list_controller.dart';
+import 'state/push_offer.dart';
 import 'state/unread_count_controller.dart';
 
 /// مركز الإشعارات — the signed-in person's notifications, newest first,
@@ -67,7 +68,12 @@ class NotificationsScreen extends ConsumerWidget {
                         actionLabel: NotificationCopy.signIn,
                         onAction: () => context.push(Routes.signIn),
                       )
-                    : const _NotificationList(),
+                    : const Column(
+                        children: [
+                          _PushStatus(),
+                          Expanded(child: _NotificationList()),
+                        ],
+                      ),
               )
             : const _NotificationList(),
       ),
@@ -80,6 +86,44 @@ class NotificationsScreen extends ConsumerWidget {
     } on NotificationsException catch (error) {
       if (context.mounted) _say(context, NotificationCopy.error(error.code));
     }
+  }
+}
+
+/// Push on this device, when it is off (ADR 0058): a way to turn it on while
+/// the system would still ask, or where to turn it on once it would not. Not
+/// while the app's own offer is up — that says it already.
+class _PushStatus extends ConsumerWidget {
+  const _PushStatus();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final offer = ref.watch(pushOfferProvider).value ?? PushOffer.none;
+    if (offer == PushOffer.none || offer == PushOffer.offer) {
+      return const SizedBox.shrink();
+    }
+    final blocked = offer == PushOffer.blocked;
+    return ResponsiveBody(
+      child: Padding(
+        padding: const EdgeInsets.only(top: Insets.md),
+        child: Card(
+          margin: EdgeInsets.zero,
+          child: ListTile(
+            leading: const Icon(Icons.notifications_off_outlined),
+            title: Text(
+              blocked ? NotificationCopy.pushBlocked : NotificationCopy.pushOff,
+            ),
+            trailing: blocked
+                ? null
+                : TextButton(
+                    onPressed: () => unawaited(
+                      ref.read(pushOfferProvider.notifier).enable(),
+                    ),
+                    child: const Text(NotificationCopy.pushEnable),
+                  ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

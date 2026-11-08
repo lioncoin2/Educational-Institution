@@ -9,6 +9,8 @@
 /// newer server never breaks an older app.
 library;
 
+import 'dart:convert';
+
 /// What a notification is about. [unknown] is anything this version of the
 /// app has not heard of.
 enum NotificationType {
@@ -54,10 +56,56 @@ sealed class NotificationTarget {
         return kind == 'task' ? TaskTarget(id) : AssignedTaskTarget(id);
       }
     }
+    if (kind == 'community') {
+      final id = json['communityId'];
+      if (id is String && _identifier.hasMatch(id)) return CommunityTarget(id);
+    }
+    if (kind == 'live_room') {
+      final id = json['liveSessionId'];
+      if (id is String && _identifier.hasMatch(id)) return LiveRoomTarget(id);
+    }
     return UnsupportedTarget(kind);
   }
 
+  /// The same, from JSON text — how a push's data carries it.
+  static NotificationTarget fromJsonText(Object? text) {
+    if (text is! String) return const UnsupportedTarget('');
+    try {
+      return fromJson(jsonDecode(text));
+    } on FormatException {
+      return const UnsupportedTarget('');
+    }
+  }
+
   static final _identifier = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
+}
+
+/// A community — where a membership, grant or ownership fact leads.
+final class CommunityTarget extends NotificationTarget {
+  const CommunityTarget(this.communityId);
+
+  final String communityId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is CommunityTarget && other.communityId == communityId;
+
+  @override
+  int get hashCode => Object.hash('community', communityId);
+}
+
+/// A live session — opened in its community's live room.
+final class LiveRoomTarget extends NotificationTarget {
+  const LiveRoomTarget(this.liveSessionId);
+
+  final String liveSessionId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LiveRoomTarget && other.liveSessionId == liveSessionId;
+
+  @override
+  int get hashCode => Object.hash('live_room', liveSessionId);
 }
 
 final class ConversationTarget extends NotificationTarget {

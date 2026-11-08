@@ -161,6 +161,14 @@ Changing your own password spares the device you are holding and ends the
 rest. If the password is being changed because someone else knows it, their
 devices must stop working now, while yours stays signed in.
 
+**Every one of them also stops that device's push**
+([ADR 0058](decisions/0058-real-push-fcm-and-session-bound-devices.md)): a push
+device is registered through a session, and before each page of sends
+notifications asks identity's `ACTIVE_SESSIONS` contract which of the devices'
+sessions are still live — expiry included, which no use case announces. The
+contract answers ids for ids (at most 1,000 references a call), judged by
+identity's own clock; a session named with another account is not live.
+
 ---
 
 ## 6. Listing and revoking devices

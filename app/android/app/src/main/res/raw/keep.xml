@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Release builds shrink resources, removing every one no code references.
+     The notification strings are referenced only by NAME, from the server's
+     push (ADR 0058), so they are kept explicitly — or a push would show no text. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/notification_*" />

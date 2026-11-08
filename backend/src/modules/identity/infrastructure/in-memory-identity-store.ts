@@ -235,6 +235,16 @@ export class InMemoryAuthSessionRepository implements AuthSessionRepository {
       .sort((a, b) => b.lastUsedAt.getTime() - a.lastUsedAt.getTime());
   }
 
+  async findActiveByIds(
+    ids: readonly AuthSessionId[],
+    now: Date,
+  ): Promise<readonly { readonly id: AuthSessionId; readonly userId: UserId }[]> {
+    const wanted = new Set(ids);
+    return [...this.byId.values()]
+      .filter((session) => wanted.has(session.id) && isSessionActive(session, now))
+      .map((session) => ({ id: session.id, userId: session.userId }));
+  }
+
   /** Test helper: every session, including revoked ones. */
   all(): readonly AuthSession[] {
     return [...this.byId.values()];

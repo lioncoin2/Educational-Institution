@@ -91,6 +91,14 @@ export interface AuthSessionRepository {
   ): Promise<number>;
   /** Unrevoked, unexpired sessions — what a user sees as "signed-in devices". */
   listActiveForUser(userId: UserId, now: Date): Promise<readonly AuthSession[]>;
+  /**
+   * Which of `ids` are unrevoked and unexpired at `now`, with the account each
+   * belongs to. Ids that name no session, or an ended one, are simply absent.
+   */
+  findActiveByIds(
+    ids: readonly AuthSessionId[],
+    now: Date,
+  ): Promise<readonly { readonly id: AuthSessionId; readonly userId: UserId }[]>;
 }
 
 export interface RoleDefinition {

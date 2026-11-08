@@ -30,6 +30,21 @@ abstract final class NotificationCopy {
   static const unsupported =
       'لا يمكن فتح هذا الإشعار في هذا الإصدار من التطبيق.';
 
+  /// The live session it was about has ended.
+  static const liveEnded = 'انتهى هذا البث.';
+
+  // ── Push on this device (ADR 0058) ─────────────────────────────────────
+
+  static const pushOfferTitle = 'تفعيل الإشعارات';
+  static const pushOfferBody =
+      'لتصلك الرسائل والمهام فور وصولها ولو كان التطبيق مغلقًا. '
+      'لا يظهر في الإشعار اسم ولا نص.';
+  static const pushEnable = 'تفعيل';
+  static const pushLater = 'ليس الآن';
+  static const pushOff = 'الإشعارات متوقفة على هذا الجهاز.';
+  static const pushBlocked =
+      'الإشعارات متوقفة على هذا الجهاز. فعّلها للتطبيق من إعدادات الجهاز.';
+
   static String error(String? code) => switch (code) {
     'network.unreachable' => 'تعذّر الاتصال بالخادم. تحقّق من الاتصال.',
     'identity.authentication_required' => 'انتهت الجلسة. سجّل الدخول من جديد.',

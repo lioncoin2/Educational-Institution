@@ -36,6 +36,9 @@ export function isDeployed(nodeEnv: NodeEnv): boolean {
  */
 export type MediaProviderChoice = 'livekit' | 'fake';
 
+/** Which push provider a deployment binds (ADR 0058): `fcm` sends; `logging` only records. */
+export type PushProviderChoice = 'logging' | 'fcm';
+
 export interface AppConfig {
   readonly nodeEnv: NodeEnv;
   readonly port: number;
@@ -153,6 +156,21 @@ export interface AppConfig {
    */
   readonly institution: {
     readonly timezone: string | null;
+  };
+  /** Push delivery (ADR 0058). */
+  readonly push: {
+    /**
+     * `fcm` sends through Firebase Cloud Messaging (PUSH_PROVIDER=fcm);
+     * `logging`, the default, records what WOULD be sent and sends nothing.
+     */
+    readonly provider: PushProviderChoice;
+    /**
+     * Where the FCM service-account JSON is mounted (FCM_CREDENTIALS_FILE): an
+     * absolute path, never the key itself — the adapter reads the file once,
+     * at startup, and refuses to boot on one it cannot use. Required with
+     * `fcm`; null otherwise.
+     */
+    readonly fcmCredentialsFile: string | null;
   };
 }
 
@@ -320,6 +338,31 @@ function readMediaProvider(
     `LIVE_MEDIA_PROVIDER must be "livekit", "fake" or unset, not ${JSON.stringify(raw)}`,
   );
   return null;
+}
+
+/**
+ * The push provider and, for FCM, where its credentials are mounted. Unset is
+ * `logging`; anything but the two names is a mistake rather than a default.
+ */
+function readPush(
+  env: NodeJS.ProcessEnv,
+  problems: string[],
+): { readonly provider: PushProviderChoice; readonly fcmCredentialsFile: string | null } {
+  const raw = (env.PUSH_PROVIDER ?? '').trim();
+  const file = (env.FCM_CREDENTIALS_FILE ?? '').trim();
+  if (raw === '' || raw === 'logging') return { provider: 'logging', fcmCredentialsFile: null };
+  if (raw !== 'fcm') {
+    problems.push(`PUSH_PROVIDER must be "fcm", "logging" or unset, not ${JSON.stringify(raw)}`);
+    return { provider: 'logging', fcmCredentialsFile: null };
+  }
+  if (file === '') {
+    problems.push('FCM_CREDENTIALS_FILE is required when PUSH_PROVIDER=fcm');
+    return { provider: 'fcm', fcmCredentialsFile: null };
+  }
+  if (!file.startsWith('/')) {
+    problems.push('FCM_CREDENTIALS_FILE must be an absolute path to the mounted file');
+  }
+  return { provider: 'fcm', fcmCredentialsFile: file };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -520,6 +563,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     institution: Object.freeze({
       timezone: readInstitutionTimezone(env.INSTITUTION_TIMEZONE, problems),
     }),
+    push: Object.freeze(readPush(env, problems)),
   });
 
   if (problems.length > 0) throw new ConfigurationError(problems);

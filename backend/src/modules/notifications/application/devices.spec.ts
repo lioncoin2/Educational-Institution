@@ -119,6 +119,51 @@ describe('push devices', () => {
     expect(h.push.sent).toEqual([]); // …but Ali no longer receives push on Sara's device.
   });
 
+  describe('bound to the session it is registered through (ADR 0058)', () => {
+    it('refuses a caller acting through no session — nothing stored, nothing asked', async () => {
+      const job: Principal = { userId: ali.userId, roles: ali.roles, permissions: ali.permissions };
+      const refused = await register(job, fcmToken(1));
+      expect(refused.ok ? null : refused.error).toMatchObject({
+        kind: 'precondition_failed',
+        code: 'notifications.no_session',
+      });
+      expect(await h.devices.enabledForUsers([ali.userId])).toEqual([]);
+      expect(h.push.registered).toEqual([]);
+    });
+
+    it('records the session, and follows the person to the session they sign in through next', async () => {
+      const first = expectOk(await register(ali, fcmToken(1)));
+      expect((await h.devices.enabledForUsers([ali.userId])).map((d) => d.sessionId)).toEqual([
+        ali.sessionId,
+      ]);
+      const again = expectOk(await register({ ...ali, sessionId: 'signed-in-again' }, fcmToken(1)));
+      expect(again.id).toBe(first.id);
+      expect((await h.devices.enabledForUsers([ali.userId])).map((d) => d.sessionId)).toEqual([
+        'signed-in-again',
+      ]);
+    });
+
+    it('replaces an older token of the same session, so a refreshed token never doubles push', async () => {
+      const old = expectOk(await register(ali, fcmToken(1)));
+      const fresh = expectOk(await register(ali, fcmToken(2))); // the app's token was refreshed
+      expect((await h.devices.enabledForUsers([ali.userId])).map((d) => d.id)).toEqual([fresh.id]);
+      expect(h.push.unregistered.map((device) => device.id)).toEqual([old.id]);
+      expect(h.audit.last(NotificationAuditActions.deviceSuperseded)).toEqual({
+        actorUserId: ali.userId,
+        action: 'notifications.device.superseded',
+        resourceType: 'notifications.device',
+        resourceId: old.id,
+        at: h.clock.now(),
+        correlationId: META.correlationId,
+        metadata: { platform: 'ANDROID', provider: 'FCM', replacedBy: fresh.id },
+      });
+
+      await h.messaging.direct(teacher, ali);
+      await h.settle();
+      expect(h.push.sent.map((send) => send.device.token)).toEqual([fcmToken(2)]);
+    });
+  });
+
   it('lets nobody unregister another person’s device — it does not exist to them', async () => {
     const id = await h.device(ali, fcmToken(1));
     const attempt = await h.unregisterDevice.execute({ principal: sara, deviceId: id, meta: META });

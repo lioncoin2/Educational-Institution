@@ -22,8 +22,11 @@
          from API 34; both are harmless on lower APIs. No camera. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+    <!-- Push notifications (ADR 0058): Android 13+ asks the person at run time,
+         after the app's own explanation, and only once someone is signed in. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
-        android:label="quran_institution_app"
+        android:label="المؤسسة التعليمية"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -55,6 +58,22 @@
             android:name=".ScreenCaptureService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+        <!-- Push (ADR 0058). Firebase never fetches a token on its own: the app
+             asks for one only while someone is signed in and allows notifications,
+             and deletes it on sign-out. A push without a channel lands in
+             "messages"; its status-bar icon is the white book, tinted green. -->
+        <meta-data
+            android:name="firebase_messaging_auto_init_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_accent" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="messages" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

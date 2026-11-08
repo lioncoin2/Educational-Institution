@@ -77,6 +77,9 @@ describe('notifications boundaries', () => {
     const unexpected = importers.filter(
       (edge) =>
         edge.source !== 'src/app.module.ts' &&
+        // The push smoke check (ADR 0058) is a composition root of its own, as
+        // main.ts is: it wires the FCM adapter to check a deployment's setup.
+        edge.source !== 'src/cli/push-smoke.ts' &&
         !(
           edge.source === 'src/modules/realtime/realtime.module.ts' &&
           edge.resolved === 'src/modules/notifications/notifications.module.ts'

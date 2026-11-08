@@ -17,6 +17,12 @@ export interface NotificationTypeDefinition {
   readonly active: boolean;
   /** Where it leads; a request with any other kind of target is refused. */
   readonly targetKind: NotificationTargetKind;
+  /**
+   * `false` for a type that never reaches a lock screen, whatever the person's
+   * push preference: it is for people already in the app (ADR 0024). Absent,
+   * push follows the category's preference.
+   */
+  readonly push?: false;
 }
 
 /**
@@ -37,7 +43,13 @@ export const NOTIFICATION_CATALOG: Readonly<Record<NotificationType, Notificatio
       active: true,
       targetKind: 'community',
     },
-    LIVE_SPEAKER_REQUESTED: { category: 'LIVE', active: true, targetKind: 'live_room' },
+    // A raised hand is for the moderators in the room: in-app and live only.
+    LIVE_SPEAKER_REQUESTED: {
+      category: 'LIVE',
+      active: true,
+      targetKind: 'live_room',
+      push: false,
+    },
     LIVE_SPEAKER_GRANTED: { category: 'LIVE', active: true, targetKind: 'live_room' },
     ATTENDANCE_SNAPSHOT_RECORDED: { category: 'ATTENDANCE', active: true, targetKind: 'live_room' },
     TASK_PUBLISHED: { category: 'TASKS', active: true, targetKind: 'assigned_task' },
@@ -72,6 +84,11 @@ export const ACTIVE_CATEGORIES: readonly NotificationCategory[] = Object.freeze(
 
 export function isActiveCategory(value: string): value is NotificationCategory {
   return (ACTIVE_CATEGORIES as readonly string[]).includes(value);
+}
+
+/** Whether a type may be pushed at all (then the person's preference decides). */
+export function mayPush(type: NotificationType): boolean {
+  return NOTIFICATION_CATALOG[type].push !== false;
 }
 
 /**

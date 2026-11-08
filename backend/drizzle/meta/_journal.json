@@ -267,6 +267,13 @@
       "when": 1793957041395,
       "tag": "0037_message_forwarding",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794096630740,
+      "tag": "0038_device_sessions",
+      "breakpoints": true
     }
   ]
 }

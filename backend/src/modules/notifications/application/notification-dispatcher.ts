@@ -14,6 +14,7 @@ import {
   type AccountDirectory,
 } from '../../identity/contracts/account-directory';
 import { NotificationEvents, type NotificationCreated } from '../contracts/events';
+import { mayPush } from '../domain/catalog';
 import {
   createNotification,
   type Notification,
@@ -141,9 +142,12 @@ export class NotificationDispatcher {
       }
       wanted.push(notification);
       // `store` is unconditional above; realtime is the category decision; push
-      // is that decision AND not held by quiet hours or a mute for this target.
+      // is that decision, for a type that may be pushed at all, AND not held by
+      // quiet hours or a mute for this target.
       const push =
-        decided.push && !pushGate.suppressesPush(notification.recipientUserId, notification.target);
+        decided.push &&
+        mayPush(notification.type) &&
+        !pushGate.suppressesPush(notification.recipientUserId, notification.target);
       channels.set(notification.id, { realtime: decided.realtime, push });
     }
 

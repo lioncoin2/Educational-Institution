@@ -255,39 +255,58 @@ export class InMemoryDeviceRepository implements DeviceRepository {
   async register(input: {
     readonly id: DeviceId;
     readonly userId: string;
+    readonly sessionId: string;
     readonly registration: DeviceRegistration;
     readonly at: Date;
-  }): Promise<{ readonly device: Device; readonly previousUserId: string | null }> {
+  }): Promise<{
+    readonly device: Device;
+    readonly previousUserId: string | null;
+    readonly superseded: readonly Device[];
+  }> {
     const { provider, platform, token } = input.registration;
     const existing = [...this.rows.values()].find(
       (device) => device.provider === provider && device.token === token,
     );
-    if (existing === undefined) {
-      const device: Device = {
-        id: input.id,
-        userId: input.userId,
-        platform,
-        provider,
-        token,
-        createdAt: input.at,
-        lastSeenAt: input.at,
-        disabledAt: null,
-      };
-      this.rows.set(device.id, device);
-      return { device, previousUserId: null };
-    }
-    const device: Device = {
-      ...existing,
-      userId: input.userId,
-      platform,
-      lastSeenAt: laterOf(existing.lastSeenAt, input.at),
-      disabledAt: null,
-    };
+    const device: Device =
+      existing === undefined
+        ? {
+            id: input.id,
+            userId: input.userId,
+            platform,
+            provider,
+            token,
+            createdAt: input.at,
+            lastSeenAt: input.at,
+            disabledAt: null,
+            sessionId: input.sessionId,
+          }
+        : {
+            ...existing,
+            userId: input.userId,
+            platform,
+            lastSeenAt: laterOf(existing.lastSeenAt, input.at),
+            disabledAt: null,
+            sessionId: input.sessionId,
+          };
     this.rows.set(device.id, device);
+    // One push row per session, as the Drizzle repository keeps it.
+    const superseded = [...this.rows.values()].filter(
+      (other) => other.sessionId === input.sessionId && other.id !== device.id,
+    );
+    for (const other of superseded) this.rows.delete(other.id);
     return {
       device,
-      previousUserId: existing.userId === input.userId ? null : existing.userId,
+      previousUserId:
+        existing === undefined || existing.userId === input.userId ? null : existing.userId,
+      superseded,
     };
+  }
+
+  async removeIfSession(id: DeviceId, sessionId: string | null): Promise<boolean> {
+    const found = this.rows.get(id);
+    if (found === undefined || found.sessionId !== sessionId) return false;
+    this.rows.delete(id);
+    return true;
   }
 
   async find(userId: string, id: string): Promise<Device | null> {

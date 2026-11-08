@@ -6,8 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 ///   screens → notification state → NotificationsRepository → ApiClient
 ///
-///   - no push SDK (Firebase, APNs, OneSignal, local notifications) is a
-///     dependency or imported anywhere: push is a seam (push_seams.dart);
+///   - push is a seam (push_seams.dart); its one binding, Firebase on
+///     Android (ADR 0058), is the only file that imports a push SDK, pinned
+///     exactly — and no other push SDK is a dependency at all;
 ///   - the notification screens and widgets know neither HTTP nor the
 ///     socket, only state and repositories' contracts;
 ///   - what notifications say lives in one place (notification_copy.dart),
@@ -48,22 +49,48 @@ void main() {
     expect(sources.keys, contains('lib/data/push/push_seams.dart'));
   });
 
-  test('depends on no push SDK — push is a seam until one can be verified', () {
-    final pubspec = File('pubspec.yaml').readAsStringSync();
-    for (final package in pushPackages) {
+  test(
+    'knows Firebase in one file only, pinned exactly — and no other push SDK',
+    () {
+      const firebase = {
+        'firebase_core': '5.1.0',
+        'firebase_messaging': '17.0.1',
+      };
+      final pubspec = File('pubspec.yaml').readAsStringSync();
+      for (final package in pushPackages) {
+        final declared = RegExp(
+          '^\\s+$package:\\s*(.*)\$',
+          multiLine: true,
+        ).firstMatch(pubspec);
+        if (firebase.containsKey(package)) {
+          // An exact version: a bump is a deliberate change, never a resolve.
+          expect(
+            declared?.group(1)?.trim(),
+            firebase[package],
+            reason: package,
+          );
+        } else {
+          expect(declared, isNull, reason: package);
+        }
+      }
+      final offenders = [
+        for (final MapEntry(key: path, value: uris) in imports.entries)
+          if (path != 'lib/data/push/firebase_push.dart')
+            for (final uri in uris)
+              if (pushPackages.any((p) => uri.startsWith('package:$p/')))
+                '$path → $uri',
+      ];
+      expect(offenders, isEmpty);
+      // …and the binding really is where Firebase is.
       expect(
-        pubspec,
-        isNot(matches(RegExp('^\\s+$package:', multiLine: true))),
+        imports['lib/data/push/firebase_push.dart'],
+        containsAll([
+          'package:firebase_core/firebase_core.dart',
+          'package:firebase_messaging/firebase_messaging.dart',
+        ]),
       );
-    }
-    final offenders = [
-      for (final MapEntry(key: path, value: uris) in imports.entries)
-        for (final uri in uris)
-          if (pushPackages.any((p) => uri.startsWith('package:$p/')))
-            '$path → $uri',
-    ];
-    expect(offenders, isEmpty);
-  });
+    },
+  );
 
   test(
     'keeps notification screens and widgets away from HTTP and the socket',
@@ -101,7 +128,12 @@ void main() {
       'lib/features/notifications/state/notification_list_controller.dart',
       'lib/features/notifications/state/notification_preferences_controller.dart',
       'lib/features/notifications/state/push_registration.dart',
+      'lib/features/notifications/state/push_offer.dart',
+      'lib/features/notifications/state/push_taps.dart',
       'lib/features/notifications/state/unread_count_controller.dart',
+      'lib/features/notifications/push_host.dart',
+      'lib/data/push/push_seams.dart',
+      'lib/data/push/firebase_push.dart',
     ];
     for (final path in plain) {
       expect(sources[path], isNotNull, reason: path);

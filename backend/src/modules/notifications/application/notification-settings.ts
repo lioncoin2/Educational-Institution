@@ -15,13 +15,16 @@ export const DEVICE_REGISTRATIONS_PER_USER: RateLimitPolicy = {
  * inbox itself, and an audit row per message per recipient would bury the
  * log. What is audited is who can receive push on which device: a device
  * registered, moved from another account, unregistered, evicted by the
- * per-account limit, or switched off because its provider rejected it.
- * Tokens are never part of an entry.
+ * per-account limit, replaced by a newer token of the same session, forgotten
+ * because its session ended (ADR 0058), or switched off because its provider
+ * rejected it. Tokens are never part of an entry.
  */
 export const NotificationAuditActions = {
   deviceRegistered: 'notifications.device.registered',
   deviceUnregistered: 'notifications.device.unregistered',
   deviceEvicted: 'notifications.device.evicted',
+  deviceSuperseded: 'notifications.device.superseded',
+  deviceSessionEnded: 'notifications.device.session_ended',
   deviceDisabled: 'notifications.device.disabled',
 } as const;
 

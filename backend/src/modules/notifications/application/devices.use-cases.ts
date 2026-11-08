@@ -34,6 +34,12 @@ const pushDevice = (device: Device): PushDevice => ({
   token: device.token,
 });
 
+const NO_SESSION = failure(
+  'precondition_failed',
+  'notifications.no_session',
+  'Push is registered through a signed-in session.',
+);
+
 /**
  * Registers the signed-in person's own device for push — never anyone
  * else's: the account is the principal's, and a request cannot name another.
@@ -44,6 +50,12 @@ const pushDevice = (device: Device): PushDevice => ({
  * showing the previous student's notifications. The move is audited, naming
  * the previous account; the token itself is never in the audit entry, a log
  * line or the response.
+ *
+ * The device is bound to the session it is registered through (ADR 0058):
+ * push reaches it only while that session is live, so however the session
+ * ends, the device stops receiving. A caller acting without a session (a
+ * system principal) cannot register one. A newer token registered through the
+ * same session replaces the older one, so a refreshed token never doubles push.
  *
  * Push is not authentication: a registered device proves nothing, and
  * nothing is ever granted to a request because a device is registered.
@@ -67,6 +79,8 @@ export class RegisterDeviceUseCase {
     readonly meta: CallMetadata;
   }): Promise<Result<DeviceView>> {
     const userId = input.principal.userId;
+    const sessionId = input.principal.sessionId;
+    if (sessionId === undefined) return err(NO_SESSION);
     const allowed = await this.limiter.consume(userId, DEVICE_REGISTRATIONS_PER_USER);
     if (!allowed.allowed) {
       return err(
@@ -93,9 +107,10 @@ export class RegisterDeviceUseCase {
     }
 
     const now = this.clock.now();
-    const { device, previousUserId } = await this.devices.register({
+    const { device, previousUserId, superseded } = await this.devices.register({
       id: this.ids.next<'NotificationDevice'>(),
       userId,
+      sessionId,
       registration: registration.value,
       at: now,
     });
@@ -112,6 +127,22 @@ export class RegisterDeviceUseCase {
         ...(previousUserId === null ? {} : { movedFromUserId: previousUserId }),
       },
     });
+    for (const replaced of superseded) {
+      await this.provider.unregisterDevice(pushDevice(replaced));
+      await this.audit.record({
+        actorUserId: userId,
+        action: NotificationAuditActions.deviceSuperseded,
+        resourceType: DEVICE_RESOURCE,
+        resourceId: replaced.id,
+        at: now,
+        correlationId: input.meta.correlationId,
+        metadata: {
+          platform: replaced.platform,
+          provider: replaced.provider,
+          replacedBy: device.id,
+        },
+      });
+    }
 
     for (const evicted of await this.devices.trim(
       userId,

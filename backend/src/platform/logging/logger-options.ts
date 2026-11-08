@@ -26,6 +26,15 @@ const SENSITIVE_KEYS = [
   'jwtSecret',
   'apiSecret',
   'signingSecret',
+  // The FCM service account and what it is exchanged for (ADR 0058): its key,
+  // the signed assertion, and the bearer token that assertion buys.
+  'private_key',
+  'privateKey',
+  'private_key_id',
+  'credentials',
+  'assertion',
+  'access_token',
+  'authorization',
 ] as const;
 
 /**

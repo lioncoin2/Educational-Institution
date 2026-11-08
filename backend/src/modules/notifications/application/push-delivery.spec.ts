@@ -1,8 +1,12 @@
+import { Logger } from '@nestjs/common';
+
 import { expectOk } from '../../../../test/support/identity-harness';
+import { META } from '../../../../test/support/messaging-harness';
 import {
   fcmToken,
   messageRequest,
   notificationsHarness,
+  sessionOn,
   type NotificationsHarness,
 } from '../../../../test/support/notifications-harness';
 import type { Principal } from '../../../shared';
@@ -12,14 +16,17 @@ describe('push delivery', () => {
   let h: NotificationsHarness;
   let teacher: Principal;
   let ali: Principal;
+  let sara: Principal;
 
   beforeEach(async () => {
     h = await notificationsHarness();
     teacher = h.messaging.person('TEACHER', 'الأستاذ أحمد');
     ali = h.messaging.person('STUDENT', 'علي');
+    sara = h.messaging.person('STUDENT', 'سارة');
   });
 
   afterEach(async () => {
+    jest.restoreAllMocks();
     await h.cleanup();
   });
 
@@ -28,6 +35,7 @@ describe('push delivery', () => {
     const direct = await h.messaging.direct(teacher, ali);
     await h.settle();
     h.push.sent.length = 0;
+    h.clock.advance(60); // past the "new conversation" push's minute
     await h.messaging.text(teacher, direct.id, 'موعد التسميع السابعة');
     await h.settle();
 
@@ -156,7 +164,8 @@ describe('push delivery', () => {
       },
     });
 
-    await h.dispatcher.dispatch([messageRequest(ali.userId, 'm-2')]);
+    // Another conversation, so the per-thread minute is not what holds it back.
+    await h.dispatcher.dispatch([messageRequest(ali.userId, 'm-2', 'c-2')]);
     await h.settle();
     expect(h.push.sendsTo(fcmToken(1))).toBe(1); // never again
 
@@ -174,6 +183,162 @@ describe('push delivery', () => {
     if (event !== undefined) h.pushDelivery.schedule(event);
     await h.pushDelivery.idle();
     expect(h.push.sent).toEqual([]);
+  });
+
+  it('buzzes again for the next message once the conversation was read — however soon', async () => {
+    await h.device(ali, fcmToken(1));
+    const direct = await h.messaging.direct(teacher, ali);
+    await h.settle();
+    h.clock.advance(60);
+    h.push.sent.length = 0;
+
+    const first = await h.messaging.text(teacher, direct.id, 'السلام عليكم');
+    await h.settle();
+    // Ali reads it, answers, and puts the phone down…
+    expectOk(
+      await h.messaging.markRead.execute({
+        principal: ali,
+        conversationId: direct.id,
+        sequence: first.message.sequence,
+        meta: META,
+      }),
+    );
+    await h.messaging.text(teacher, direct.id, 'وعليكم السلام'); // …seconds later
+    await h.settle();
+    expect(h.push.sendsTo(fcmToken(1))).toBe(2);
+  });
+
+  it('pushes a burst in one thread to a person once — the inbox still has every notification', async () => {
+    await h.device(ali, fcmToken(1));
+    await h.device(sara, fcmToken(2));
+    await h.dispatcher.dispatch([messageRequest(ali.userId, 'm-1')]);
+    await h.dispatcher.dispatch([messageRequest(ali.userId, 'm-2')]); // the same conversation
+    await h.dispatcher.dispatch([messageRequest(ali.userId, 'm-3', 'c-2')]); // another one
+    await h.dispatcher.dispatch([messageRequest(sara.userId, 'm-1')]); // another person
+    await h.settle();
+    expect(
+      h.push.sent
+        .map(
+          (send) =>
+            `${send.device.token === fcmToken(1) ? 'ali' : 'sara'} ${send.message.threadKey}`,
+        )
+        .sort(),
+    ).toEqual(['ali conversation:c-1', 'ali conversation:c-2', 'sara conversation:c-1']);
+
+    h.clock.advance(15); // past the window, the conversation may buzz again
+    await h.dispatcher.dispatch([messageRequest(ali.userId, 'm-4')]);
+    await h.settle();
+    expect(h.push.sendsTo(fcmToken(1))).toBe(3);
+    expect(await h.inbox(ali)).toHaveLength(4);
+  });
+
+  describe('only while the device’s session is live (ADR 0058)', () => {
+    it('sends nothing to a device whose session ended — and forgets it, audited', async () => {
+      const ended = await h.device(ali, fcmToken(1));
+      await h.device(ali, fcmToken(2)); // another phone, still signed in
+      h.sessions.end(sessionOn(ali, fcmToken(1)));
+
+      await h.dispatcher.dispatch([messageRequest(ali.userId, 'm-1')]);
+      await h.settle();
+
+      expect(h.push.sent.map((send) => send.device.token)).toEqual([fcmToken(2)]);
+      expect((await h.devices.enabledForUsers([ali.userId])).map((d) => d.token)).toEqual([
+        fcmToken(2),
+      ]);
+      expect(h.push.unregistered.map((device) => device.id)).toEqual([ended]);
+      expect(h.audit.last(NotificationAuditActions.deviceSessionEnded)).toEqual({
+        actorUserId: null,
+        action: 'notifications.device.session_ended',
+        resourceType: 'notifications.device',
+        resourceId: ended,
+        at: h.clock.now(),
+        metadata: {
+          userId: ali.userId,
+          platform: 'ANDROID',
+          provider: 'FCM',
+          reason: 'session_ended',
+        },
+      });
+      expect(JSON.stringify(h.audit.entries)).not.toContain(fcmToken(1));
+      expect(await h.inbox(ali)).toHaveLength(1);
+    });
+
+    it('keeps a device signed in again while its old session was being checked', async () => {
+      const id = await h.device(ali, fcmToken(1), 'ANDROID', 'old-session');
+      h.sessions.end('old-session');
+      const ask = h.sessions.activeAmong.bind(h.sessions);
+      jest.spyOn(h.sessions, 'activeAmong').mockImplementationOnce(async (refs) => {
+        await h.device(ali, fcmToken(1), 'ANDROID', 'new-session'); // meanwhile
+        return ask(refs);
+      });
+
+      await h.dispatcher.dispatch([messageRequest(ali.userId, 'm-1')]);
+      await h.settle();
+
+      expect(h.push.sent).toEqual([]); // this page saw only the ended session
+      expect(
+        (await h.devices.enabledForUsers([ali.userId])).map((d) => [d.id, d.sessionId]),
+      ).toEqual([[id, 'new-session']]);
+      expect(h.audit.last(NotificationAuditActions.deviceSessionEnded)).toBeUndefined();
+    });
+
+    it('sends nothing — and forgets nothing — when identity cannot say which sessions are live', async () => {
+      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      await h.device(ali, fcmToken(1));
+      h.sessions.failing = new Error('identity unavailable');
+
+      await h.dispatcher.dispatch([messageRequest(ali.userId, 'm-1')]);
+      await h.settle();
+
+      expect(h.push.sent).toEqual([]);
+      expect(await h.devices.enabledForUsers([ali.userId])).toHaveLength(1);
+      expect(await h.inbox(ali)).toHaveLength(1);
+    });
+
+    it('retries only while the session is live and the notification unread', async () => {
+      await h.device(ali, fcmToken(1));
+      await h.device(ali, fcmToken(2));
+      // Both fail once; before the retries, one session ends and…
+      h.push.answer(fcmToken(1), { kind: 'retryable', reason: '503' }, { kind: 'delivered' });
+      h.push.answer(fcmToken(2), { kind: 'retryable', reason: '503' }, { kind: 'delivered' });
+      const ask = h.sessions.activeAmong.bind(h.sessions);
+      let first = true;
+      jest.spyOn(h.sessions, 'activeAmong').mockImplementation(async (refs) => {
+        if (!first) h.sessions.end(sessionOn(ali, fcmToken(1)));
+        first = false;
+        return ask(refs);
+      });
+      await h.dispatcher.dispatch([messageRequest(ali.userId, 'm-1')]);
+      await h.settle();
+      expect(h.push.sendsTo(fcmToken(1))).toBe(1); // its retry withheld: signed out
+      expect(h.push.sendsTo(fcmToken(2))).toBe(2);
+      expect(h.audit.last(NotificationAuditActions.deviceSessionEnded)?.metadata).toMatchObject({
+        reason: 'session_ended',
+      });
+
+      // …and a notification read before its retry is not announced again.
+      h.push.answer(fcmToken(2), { kind: 'retryable', reason: '503' }, { kind: 'delivered' });
+      h.pushDelivery.onModuleDestroy(); // hold push back
+      const [stored] = (await h.dispatcher.dispatch([messageRequest(ali.userId, 'm-2', 'c-2')]))
+        .created;
+      const [event] = h.eventsNamed('notifications.notification.created').slice(-1);
+      if (event !== undefined) h.pushDelivery.schedule(event);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expectOk(await h.markRead.execute({ principal: ali, notificationId: stored?.id ?? '' }));
+      await h.pushDelivery.idle();
+      expect(h.push.sendsTo(fcmToken(2))).toBe(3); // the first try only
+    });
+
+    it('asks identity a thousand sessions at a time', async () => {
+      const people = Array.from({ length: 101 }, (_, i) => h.messaging.person('STUDENT', `s${i}`));
+      for (const [i, person] of people.entries()) {
+        for (let d = 0; d < 10; d++) await h.device(person, fcmToken(`p${i}d${d}`));
+      }
+      await h.dispatcher.dispatch(people.map((person) => messageRequest(person.userId, 'm-1')));
+      await h.settle();
+      expect(h.sessions.lookups.map((refs) => refs.length)).toEqual([1000, 10]);
+      expect(h.push.sent).toHaveLength(1010);
+    });
   });
 
   it('looks up a whole page of recipients’ devices at once', async () => {
