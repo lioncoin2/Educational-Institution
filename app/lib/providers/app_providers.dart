@@ -11,6 +11,7 @@ import '../data/api/api_client.dart';
 import '../data/api/refresh_lock.dart';
 import '../data/api/secure_token_store.dart';
 import '../data/api/token_store.dart';
+import '../data/media/device_media_support.dart';
 import '../data/media/live_media_platform.dart';
 import '../data/media/live_media_seams.dart';
 import '../data/media/livekit/livekit_live_media_client.dart';
@@ -427,16 +428,18 @@ final pushTokenSourceProvider = Provider<PushTokenSource>(
 final clockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
 
 /// Whether this target supports the device-media capabilities — picking a
-/// file, recording a voice note, playing one back. Web-first (Sprint 21): the
-/// `file_picker` / `record` / `just_audio` plugins ship a web implementation
-/// and web is the shipped, CI-verified target; native iOS/Android stays a
-/// separate slice (as live media does, ADR 0030). A provider, so a test
-/// exercises both the supported and the unsupported policy without a device.
-final deviceMediaSupportedProvider = Provider<bool>((ref) => kIsWeb);
+/// file, recording a voice note, playing one back: the web (Sprint 21) and
+/// Android (ADR 0059); iOS stays a separate slice — see [deviceMediaSupported],
+/// which decides on the REAL operating system, so a VM test reads false. A
+/// provider, so a test exercises both the supported and the unsupported policy
+/// without a device.
+final deviceMediaSupportedProvider = Provider<bool>(
+  (ref) => deviceMediaSupported(),
+);
 
 /// Device capabilities (Sprint 21). The real, plugin-backed implementations are
-/// bound only where [deviceMediaSupportedProvider] holds; everywhere else — a
-/// non-web target, and every VM widget test — they fall closed to the
+/// bound only where [deviceMediaSupportedProvider] holds; everywhere else — iOS,
+/// the desktops, and every VM widget test — they fall closed to the
 /// Unavailable defaults, so the composer shows a disabled, explained affordance.
 /// Each real implementation confines its plugin import to one adapter file; the
 /// upload, send and authorization all stay the HTTP repository's and the

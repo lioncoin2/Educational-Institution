@@ -12,6 +12,7 @@ abstract final class PublishCopy {
   static const recordVoice = 'تسجيل صوتي';
   static const stopRecording = 'إيقاف التسجيل';
   static const recording = 'جارٍ التسجيل…';
+  static const recordingFailed = 'تعذّر بدء التسجيل';
   static const removeAttachment = 'إزالة المرفق';
   static const mediaUnavailable = 'المرفقات غير متاحة في هذه النسخة.';
 

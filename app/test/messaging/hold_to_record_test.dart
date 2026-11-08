@@ -143,6 +143,31 @@ void main() {
       expect(sent, isNotNull);
       expect(sent!.kind, AttachmentKind.voice);
     });
+
+    testWidgets('leaving the chat mid-hold releases the microphone', (
+      tester,
+    ) async {
+      final recorder = _FakeRecorder();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [voiceRecorderProvider.overrideWithValue(recorder)],
+          child: host(Composer(onSendText: (_) {}, onSendFile: (_) {})),
+        ),
+      );
+      final g = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none_rounded)),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+      expect(recorder.started, isTrue);
+      // A navigation takes the composer away while the finger is still down:
+      // the gesture never reports its end.
+      await tester.pumpWidget(const SizedBox());
+      expect(recorder.cancelled, isTrue);
+      expect(recorder.stopped, isFalse); // discarded, never sent
+      await g.up();
+    });
   });
 }
 

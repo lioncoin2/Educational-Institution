@@ -29,6 +29,8 @@ void main() {
     'file_picker': 'lib/data/media/pickers/file_picker_attachment_picker.dart',
     'record': 'lib/data/media/voice/record_voice_recorder.dart',
     'just_audio': 'lib/data/media/voice/just_audio_voice_player.dart',
+    // The native recording's temporary file (ADR 0059).
+    'path_provider': 'lib/data/media/voice/recording_store_stub.dart',
   };
 
   test('reads the source tree (so the checks below are not vacuous)', () {

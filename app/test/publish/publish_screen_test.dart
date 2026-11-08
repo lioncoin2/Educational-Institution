@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:quran_institution_app/data/media/media_seams.dart';
 import 'package:quran_institution_app/data/models/communities.dart';
 import 'package:quran_institution_app/data/models/publication.dart';
 import 'package:quran_institution_app/data/repositories/repositories.dart';
+import 'package:quran_institution_app/features/publish/publish_copy.dart';
 import 'package:quran_institution_app/features/publish/publish_screen.dart';
 import 'package:quran_institution_app/providers/app_providers.dart';
 
@@ -70,12 +72,17 @@ PublicationReport _report(Map<String, PublicationStatus> byId) =>
       ],
     );
 
-Future<void> pump(WidgetTester tester, MessagingRepository messaging) async {
+Future<void> pump(
+  WidgetTester tester,
+  MessagingRepository messaging, {
+  VoiceRecorder? recorder,
+}) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         communityRepositoryProvider.overrideWithValue(_FakeCommunities()),
         messagingRepositoryProvider.overrideWithValue(messaging),
+        if (recorder != null) voiceRecorderProvider.overrideWithValue(recorder),
       ],
       child: MaterialApp(
         home: const PublishScreen(),
@@ -149,4 +156,65 @@ void main() {
     expect(messaging.calls, 2);
     expect(find.text('نُشر في 1 من 1.'), findsOneWidget);
   });
+
+  group('recording a voice note', () {
+    final record = find.byKey(const Key('publish-record-voice'));
+
+    testWidgets('leaving mid-recording releases the microphone', (
+      tester,
+    ) async {
+      final recorder = _FakeRecorder();
+      await pump(
+        tester,
+        _FakeMessaging((_, _) => _report({})),
+        recorder: recorder,
+      );
+      await tester.tap(record);
+      await tester.pumpAndSettle();
+      expect(find.text(PublishCopy.stopRecording), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox()); // the screen is left
+      expect(recorder.cancelled, isTrue);
+    });
+
+    testWidgets('a refused microphone says so and stays ready', (tester) async {
+      final recorder = _FakeRecorder(refuse: true);
+      await pump(
+        tester,
+        _FakeMessaging((_, _) => _report({})),
+        recorder: recorder,
+      );
+      await tester.tap(record);
+      await tester.pump();
+      expect(find.text(PublishCopy.recordingFailed), findsOneWidget);
+      expect(find.text(PublishCopy.recordVoice), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      expect(recorder.cancelled, isFalse); // nothing was recording
+    });
+  });
+}
+
+class _FakeRecorder implements VoiceRecorder {
+  _FakeRecorder({this.refuse = false});
+
+  final bool refuse;
+  bool cancelled = false;
+
+  @override
+  bool get isSupported => true;
+
+  @override
+  Stream<double> get amplitudes => const Stream<double>.empty();
+
+  @override
+  Future<void> start() async {
+    if (refuse) throw StateError('microphone_denied');
+  }
+
+  @override
+  Future<RecordedVoice?> stop() async => null;
+
+  @override
+  Future<void> cancel() async => cancelled = true;
 }

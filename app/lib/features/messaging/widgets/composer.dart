@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/extensions/context_ext.dart';
 import '../../../core/theme/app_tokens.dart';
+import '../../../data/media/media_seams.dart';
 import '../../../data/models/messaging.dart';
 import '../../../providers/app_providers.dart';
 import '../messaging_copy.dart';
@@ -54,6 +57,11 @@ class _ComposerState extends ConsumerState<Composer> {
   /// — the UI turns to "release to cancel" and a release then discards.
   bool _cancelArmed = false;
 
+  /// The recorder a hold started, until the hold ends. If the composer goes
+  /// away mid-hold (a navigation), the gesture never reports its end, so
+  /// [dispose] discards the recording rather than leave the microphone open.
+  VoiceRecorder? _holdRecorder;
+
   @override
   void initState() {
     super.initState();
@@ -66,6 +74,8 @@ class _ComposerState extends ConsumerState<Composer> {
 
   @override
   void dispose() {
+    final recorder = _holdRecorder;
+    if (recorder != null) unawaited(recorder.cancel());
     _controller.dispose();
     super.dispose();
   }
@@ -116,9 +126,12 @@ class _ComposerState extends ConsumerState<Composer> {
       _recording = true;
       _cancelArmed = false;
     });
+    final recorder = ref.read(voiceRecorderProvider);
+    _holdRecorder = recorder;
     try {
-      await ref.read(voiceRecorderProvider).start();
+      await recorder.start();
     } on Object {
+      _holdRecorder = null;
       if (mounted) {
         setState(() => _recording = false);
         context.toast('تعذّر بدء التسجيل');
@@ -131,6 +144,7 @@ class _ComposerState extends ConsumerState<Composer> {
   Future<void> _finishRecording({required bool cancelled}) async {
     if (!_recording) return;
     final recorder = ref.read(voiceRecorderProvider);
+    _holdRecorder = null;
     if (cancelled) {
       await recorder.cancel();
       if (mounted) setState(() => _recording = false);

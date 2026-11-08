@@ -392,3 +392,4 @@ responsibility and what each module must not know live in
 - [0056 — Direct-chat read receipts (seen ✓✓)](decisions/0056-direct-chat-read-receipts.md)
 - [0057 — Hold-to-record voice messages](decisions/0057-hold-to-record-voice.md)
 - [0058 — Real push on Android through FCM, to devices bound to a live session](decisions/0058-real-push-fcm-and-session-bound-devices.md)
+- [0059 — Device media on Android: voice notes, playback and attachments](decisions/0059-device-media-on-android.md)

@@ -505,14 +505,16 @@ Sprints 42–50, which shipped the in-app administration + teacher layer without
   Firebase project, its `google-services.json` and a dedicated service account
   ([runbook](push-notifications-runbook.md)); then a phone test. iOS/web push still need Apple
   credentials / a service worker (Q65).
-- P7b **native** (iOS/Android) media/attachments/recording — physical devices + a mobile CI/signing
-  pipeline (none exists); bound Unavailable off-web.
+- P7b **native** media/attachments/recording — **Android built** ([ADR 0059](architecture/decisions/0059-device-media-on-android.md),
+  2026-11-08): picker, voice recording (AAC/MP4) and playback bound on Android as on the web; awaiting the
+  owner's phone check (no emulator on this host). iOS still needs a Mac + device; bound Unavailable there.
 - P8 off-box load/capacity testing.
 - EXPLAIN-at-scale read benchmark — a large seeded dataset.
 
 ## Known technical limitations & unverified behavior
 - LiveKit **full transient reconnect/media/ICE recovery** NOT verified E2E (reconnecting-entry verified).
-- **Native** live media / attachments / recording unimplemented on-device; bound Unavailable off-web.
+- **Native** live media unverified on a device; attachments / voice recording / playback built for
+  Android (ADR 0059) but not yet checked on a phone; iOS bound Unavailable.
 - **Real browser** file picking, microphone capture + WebM encoding, and audio playback are not exercised
   by CI (no device) — manual checks.
 - Web browser secure storage ≠ a native keychain; iOS Keychain / Android Keystore runtime unverified here.

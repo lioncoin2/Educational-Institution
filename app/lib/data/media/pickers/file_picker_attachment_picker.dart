@@ -51,8 +51,23 @@ Future<PickedFile?> _pickWithPlugin(List<String> extensions) async {
     allowedExtensions: extensions,
   );
   if (picked == null) return null;
-  final bytes = await picked.readAsBytes();
-  return PickedFile(picked.name, bytes);
+  try {
+    final bytes = await picked.readAsBytes();
+    return PickedFile(picked.name, bytes);
+  } finally {
+    await _clearPickerCopies();
+  }
+}
+
+/// Android copies every pick into the app's cache before handing it over; the
+/// bytes are in memory now, so the copy goes (a no-op on the web). Best effort:
+/// a failed clean-up never costs the pick.
+Future<void> _clearPickerCopies() async {
+  try {
+    await FilePicker.clearTemporaryFiles();
+  } on Object {
+    // Left for the system, which clears the cache on its own.
+  }
 }
 
 class FilePickerAttachmentPicker implements AttachmentPicker {

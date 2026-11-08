@@ -816,6 +816,12 @@ class VoiceAttachment extends ConsumerWidget {
                     if (context.mounted) {
                       context.toast(MessagingCopy.error(error.code));
                     }
+                  } on Object {
+                    // The device's player refused the note (an expired link,
+                    // an unplayable file): say so instead of staying silent.
+                    if (context.mounted) {
+                      context.toast(MessagingCopy.voicePlaybackFailed);
+                    }
                   }
                 }
               : null,

@@ -35,6 +35,12 @@ dependencies:
   file_picker: ^13.1.0
   record: ^7.1.2
   just_audio: ^0.10.6
+  # The app's cache directory, where an Android voice note is recorded before
+  # it is read and deleted (ADR 0059). Consumed ONLY by
+  # lib/data/media/voice/recording_store_stub.dart
+  # (test/messaging/attachment_boundaries_test.dart enforces). Already in the
+  # graph (transitive, through the plugins above).
+  path_provider: ^2.1.6
   # Push notifications on Android (ADR 0058). Pinned EXACTLY — a bump is a
   # deliberate ADR change (firebase_messaging 17 deprecates the registration
   # token the server sends to). Consumed ONLY by lib/data/push/firebase_push.dart

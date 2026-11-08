@@ -159,6 +159,9 @@ abstract final class MessagingCopy {
   /// Tapping a community chat's header opens the community's info & management.
   static const String communityInfo = 'معلومات الكروب وإدارته';
 
+  /// A voice note's link was resolved but the device could not play it.
+  static const String voicePlaybackFailed = 'تعذّر تشغيل الرسالة الصوتية';
+
   // ── Live session indicator (Phase 3) ───────────────────────────────────
   // Shown under the app bar only while the server says a session is live for
   // THIS community. It states that a session is running — never that audio or

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +10,7 @@ import '../../core/widgets/foundations/app_card.dart';
 import '../../core/widgets/foundations/async_view.dart';
 import '../../core/widgets/foundations/section_header.dart';
 import '../../core/widgets/layout/app_screen.dart';
+import '../../data/media/media_seams.dart';
 import '../../data/models/communities.dart';
 import '../../data/models/messaging.dart';
 import '../../data/models/publication.dart';
@@ -40,8 +43,15 @@ class _PublishScreenState extends ConsumerState<PublishScreen> {
   final _textController = TextEditingController();
   bool _recording = false;
 
+  /// The recorder a recording was started with, until it is stopped. Leaving
+  /// the screen mid-recording discards it, so the microphone does not stay
+  /// open — and the next recording elsewhere does not pick it up.
+  VoiceRecorder? _activeRecorder;
+
   @override
   void dispose() {
+    final recorder = _activeRecorder;
+    if (recorder != null) unawaited(recorder.cancel());
     _textController.dispose();
     super.dispose();
   }
@@ -64,11 +74,21 @@ class _PublishScreenState extends ConsumerState<PublishScreen> {
   Future<void> _toggleRecording() async {
     final recorder = ref.read(voiceRecorderProvider);
     if (_recording) {
+      _activeRecorder = null;
       final voice = await recorder.stop();
       if (mounted) setState(() => _recording = false);
       if (voice != null) _controller.attach(voice.toOutgoingFile());
     } else {
-      await recorder.start();
+      _activeRecorder = recorder;
+      try {
+        await recorder.start();
+      } on Object {
+        // A refused microphone (or a device that could not start): say so,
+        // and stay ready to try again.
+        _activeRecorder = null;
+        if (mounted) context.toast(PublishCopy.recordingFailed);
+        return;
+      }
       if (mounted) setState(() => _recording = true);
     }
   }

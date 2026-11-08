@@ -1,16 +1,17 @@
 import 'dart:typed_data';
 
 import '../models/messaging.dart';
+import 'voice/voice_format.dart';
 
-/// Device capabilities messaging needs but this milestone does not bind to a
-/// plugin: choosing files, recording voice, playing it back.
+/// Device capabilities messaging needs: choosing files, recording voice,
+/// playing it back.
 ///
 /// Each is an interface with an "unavailable" default, so every screen is
 /// built and tested against the seam, and the UI states plainly what the
-/// build cannot do yet. The production plugins were evaluated (see
-/// docs/architecture/messaging.md, "Client dependencies") — `file_picker`,
-/// `record`, `just_audio` — but not added: their native builds cannot be
-/// verified in this environment, and a dependency is not added blind.
+/// build cannot do. The real implementations — over `file_picker`, `record`
+/// and `just_audio`, one adapter each (docs/architecture/messaging.md, "Client
+/// dependencies") — are bound on the web and Android only
+/// (`deviceMediaSupportedProvider`, ADR 0059).
 
 /// Picks a file for sending. Returns null when the person cancels.
 abstract interface class AttachmentPicker {
@@ -49,7 +50,7 @@ class RecordedVoice {
 
   OutgoingFile toOutgoingFile() => OutgoingFile(
     bytes: bytes,
-    fileName: contentType == 'audio/webm' ? 'voice.webm' : 'voice.m4a',
+    fileName: 'voice.${VoiceFormat.ofContentType(contentType).fileExtension}',
     contentType: contentType,
     kind: AttachmentKind.voice,
     durationMs: durationMs,

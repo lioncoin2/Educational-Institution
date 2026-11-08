@@ -1,21 +1,24 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:http/http.dart' as http;
 import 'package:record/record.dart';
 
 import '../media_seams.dart';
+import 'recording_store.dart';
+import 'voice_format.dart';
 import 'voice_level.dart';
 
 /// The real [VoiceRecorder], backed by `record`.
 ///
 /// This is the ONLY file that imports `package:record`
 /// (test/messaging/attachment_boundaries_test.dart enforces the confinement).
-/// It is web-first: `record` on the web records Opus into a WebM container
-/// (`audio/webm`), which the backend's VOICE policy accepts and whose EBML
-/// magic its upload completion verifies (`backend/.../file-policy.ts`,
-/// `content-signature.ts`). Native iOS/Android recording stays a separate slice
-/// (the provider binds this only on web).
+/// It records on the web — Opus in WebM (`audio/webm`) — and on Android — AAC
+/// in MP4 (`audio/mp4`, ADR 0059); the backend's VOICE policy accepts both and
+/// its upload completion verifies their magic bytes (`backend/.../file-policy.ts`,
+/// `content-signature.ts`). Which one, and where the recording is kept until it
+/// is read, is the platform's [RecordingStore]; the encoder settings follow the
+/// format ([recordConfigFor]). iOS stays a separate slice (the provider binds
+/// this only where `deviceMediaSupported` holds).
 ///
 /// The raw capture is behind [VoiceRecorderPort] so the adapter's state machine
 /// — single-flight start, a wall-clock duration, and a generation guard so a
@@ -24,7 +27,8 @@ import 'voice_level.dart';
 /// exercised by those tests (no device in CI); they are a manual/device check.
 
 /// What a finished recording yielded: the encoded bytes and the container's
-/// content type (as produced — `audio/webm` on the web).
+/// content type (as produced — `audio/webm` on the web, `audio/mp4` on
+/// Android).
 typedef RecordingData = ({Uint8List bytes, String contentType});
 
 /// The raw recording operations the adapter needs — a seam so the state machine
@@ -63,7 +67,7 @@ class VoiceRecordingException implements Exception {
 
 class RecordVoiceRecorder implements VoiceRecorder {
   RecordVoiceRecorder({VoiceRecorderPort? port, DateTime Function()? clock})
-    : _port = port ?? _RecordPort(),
+    : _port = port ?? RecordPluginPort(platformRecordingStore()),
       _now = clock ?? DateTime.now;
 
   final VoiceRecorderPort _port;
@@ -72,8 +76,15 @@ class RecordVoiceRecorder implements VoiceRecorder {
   bool _recording = false;
   DateTime? _startedAt;
 
-  /// Bumped by every [start] and [cancel]; an in-flight [stop] tagged with an
-  /// old generation does not emit a recording (the stale-operation guard).
+  /// Set while a [start] is still on its way — the microphone prompt is up, or
+  /// the device is opening the microphone. A [stop] that arrives then (the
+  /// finger lifted first) gives that start up, rather than leave it recording
+  /// with nobody holding the button.
+  bool _starting = false;
+
+  /// Bumped by every [start] and [cancel], and by a [stop] that gives a pending
+  /// start up; an in-flight operation tagged with an old generation does not
+  /// record or emit (the stale-operation guard).
   int _generation = 0;
 
   @override
@@ -89,26 +100,38 @@ class RecordVoiceRecorder implements VoiceRecorder {
 
   @override
   Future<void> start() async {
-    if (_recording) return; // single-flight: a second start is ignored.
+    // Single-flight: a second start, while recording or still starting, is
+    // ignored.
+    if (_recording || _starting) return;
     final generation = ++_generation;
-    final permitted = await _port.hasPermission();
-    if (generation != _generation) return; // cancelled while asking.
-    if (!permitted) {
-      throw const VoiceRecordingException('microphone_denied');
+    _starting = true;
+    try {
+      final permitted = await _port.hasPermission();
+      if (generation != _generation) return; // given up while asking.
+      if (!permitted) {
+        throw const VoiceRecordingException('microphone_denied');
+      }
+      await _port.start();
+      if (generation != _generation) {
+        // Given up while the recorder was starting: do not leave it running.
+        await _port.cancel();
+        return;
+      }
+      _recording = true;
+      _startedAt = _now();
+    } finally {
+      _starting = false;
     }
-    await _port.start();
-    if (generation != _generation) {
-      // Cancelled while the recorder was starting: do not leave it running.
-      await _port.cancel();
-      return;
-    }
-    _recording = true;
-    _startedAt = _now();
   }
 
   @override
   Future<RecordedVoice?> stop() async {
-    if (!_recording) return null;
+    if (!_recording) {
+      // Released before recording began: give the pending start up (it then
+      // never opens the microphone, or closes it at once). Nothing to send.
+      if (_starting) _generation++;
+      return null;
+    }
     final generation = _generation;
     final startedAt = _startedAt;
     _recording = false;
@@ -149,37 +172,79 @@ class RecordVoiceRecorder implements VoiceRecorder {
   }
 }
 
-/// The production port: `record`'s [AudioRecorder], Opus → WebM on the web.
-class _RecordPort implements VoiceRecorderPort {
-  final AudioRecorder _recorder = AudioRecorder();
+/// The capture settings for [format]: its encoder, at the shared voice budget
+/// ([voiceBitRate], [voiceChannels]). Pure, so it is unit-tested directly.
+RecordConfig recordConfigFor(VoiceFormat format) => RecordConfig(
+  encoder: switch (format) {
+    VoiceFormat.webm => AudioEncoder.opus,
+    VoiceFormat.m4a => AudioEncoder.aacLc,
+  },
+  bitRate: voiceBitRate,
+  numChannels: voiceChannels,
+);
+
+/// The production port: `record`'s [AudioRecorder], recording into the
+/// platform's [RecordingStore] — which also releases the recording, whatever
+/// the way out (sent, cancelled, a failed start or stop, disposed). The
+/// recorder is injectable so that lifecycle is unit-tested without a device.
+class RecordPluginPort implements VoiceRecorderPort {
+  RecordPluginPort(this._store, [AudioRecorder? recorder])
+    : _recorder = recorder ?? AudioRecorder();
+
+  final RecordingStore _store;
+  final AudioRecorder _recorder;
 
   @override
   Future<bool> hasPermission() => _recorder.hasPermission();
 
   @override
-  Future<void> start() => _recorder.start(
-    const RecordConfig(encoder: AudioEncoder.opus),
-    // The web recorder captures to memory; the path is unused there. This
-    // adapter is web-only (the provider gates it), so no file path is needed.
-    path: '',
-  );
-
-  @override
-  Future<RecordingData?> stop() async {
-    final url = await _recorder.stop();
-    if (url == null) return null;
-    // On the web `stop()` hands back a blob: URL for the recorded object; read
-    // its bytes so the upload carries the audio itself, never a URL.
-    final bytes = await http.readBytes(Uri.parse(url));
-    if (bytes.isEmpty) return null;
-    return (bytes: bytes, contentType: 'audio/webm');
+  Future<void> start() async {
+    final path = await _store.prepare();
+    try {
+      await _recorder.start(recordConfigFor(_store.format), path: path);
+    } on Object {
+      await _store.discard();
+      rethrow;
+    }
   }
 
   @override
-  Future<void> cancel() => _recorder.cancel();
+  Future<RecordingData?> stop() async {
+    final String? output;
+    try {
+      output = await _recorder.stop();
+    } on Object {
+      // The device could not finish the take: treated as nothing captured, so
+      // the screen returns to rest instead of waiting on a recording.
+      await _store.discard();
+      return null;
+    }
+    if (output == null) {
+      await _store.discard();
+      return null;
+    }
+    final bytes = await _store.collect(output);
+    if (bytes == null) return null;
+    return (bytes: bytes, contentType: _store.format.contentType);
+  }
 
   @override
-  Future<void> dispose() => _recorder.dispose();
+  Future<void> cancel() async {
+    try {
+      await _recorder.cancel();
+    } finally {
+      await _store.discard();
+    }
+  }
+
+  @override
+  Future<void> dispose() async {
+    try {
+      await _recorder.dispose();
+    } finally {
+      await _store.discard();
+    }
+  }
 
   @override
   Stream<double> amplitudes(Duration interval) => _recorder

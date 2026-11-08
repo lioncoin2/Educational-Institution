@@ -566,9 +566,9 @@ shows their buttons disabled with an explanatory tooltip:
 
 | Seam | Evaluated package | Status |
 | --- | --- | --- |
-| `AttachmentPicker` | `file_picker` 13.1 (MIT, all platforms) | **added (Sprint 21)** — picks images (jpg/png/webp) and PDFs on web; Unavailable off-web |
-| `VoiceRecorder` | `record` 7.1 (BSD-3, all platforms; web records Opus/WebM) | **added (Sprint 21)** — records a voice note on web (Opus→WebM); Unavailable off-web |
-| `VoicePlayer` | `just_audio` 0.10 (Apache-2.0/MIT; Android, iOS, macOS, web) | **added (Sprint 21)** — plays a voice note from the signed link on web; Unavailable off-web |
+| `AttachmentPicker` | `file_picker` 13.1 (MIT, all platforms) | **added (Sprint 21)** — picks images (jpg/png/webp) and PDFs on web and (ADR 0059) Android; Unavailable elsewhere |
+| `VoiceRecorder` | `record` 7.1 (BSD-3, all platforms; web records Opus/WebM) | **added (Sprint 21)** — records a voice note on web (Opus→WebM) and (ADR 0059) Android (AAC-LC→MP4); Unavailable elsewhere |
+| `VoicePlayer` | `just_audio` 0.10 (Apache-2.0/MIT; Android, iOS, macOS, web) | **added (Sprint 21)** — plays a voice note from the signed link on web and (ADR 0059) Android; Unavailable elsewhere |
 | `TokenStore` | `flutter_secure_storage` 11.2 (BSD-3, all platforms) | **added (Sprint 19)** — backend-mode sessions persist in the platform keystore; the demo build stays in memory |
 
 The first three were bound in Sprint 21, web-first. Each is one class behind its
@@ -581,21 +581,31 @@ and secure-storage adapters are confined):
   bytes web-safely (`PlatformFile.readAsBytes`, never `dart:io` or a fabricated
   path), and returns an `OutgoingFile`.
 - `RecordVoiceRecorder` (`lib/data/media/voice/`) records Opus into WebM
-  (`audio/webm`), which the VOICE policy accepts and whose EBML magic the upload
-  completion verifies; a generation guard keeps a cancel from being overtaken by
-  an in-flight stop, and the microphone is released on dispose.
+  (`audio/webm`) on the web and AAC-LC into MP4 (`audio/mp4`) on Android, both
+  accepted by the VOICE policy, whose upload completion verifies their magic; a
+  generation guard keeps a cancel from being overtaken by an in-flight stop, and
+  the microphone is released on dispose. Where a recording lives until it is
+  read is the platform's `RecordingStore` (ADR 0059): the browser's in-memory
+  `blob:`, or a cache file on Android (`path_provider`, confined to the native
+  store) that is read and then deleted. Every format records at one voice
+  budget, 48 kbit/s mono, so the 10-minute maximum fits the 5 MiB VOICE cap.
+  A stop that arrives while a start is still waiting (Android's first-use
+  microphone prompt) gives that start up, and the composer and bulk publish
+  discard a recording still in progress when they go away.
 - `JustAudioVoicePlayer` (`lib/data/media/voice/`) plays a voice note from the
   short-lived signed download link; starting a new playback stops the previous.
 
-`deviceMediaSupportedProvider` binds all three only on web (`kIsWeb`), the
-shipped and CI-verified target; off web — and in every VM widget test — they
-fall closed to the Unavailable defaults, so the composer shows a disabled,
-explained affordance. The whole upload → send → render → signed-download path
+`deviceMediaSupportedProvider` binds all three on the web and, since ADR 0059,
+on Android — `deviceMediaSupported()`, decided on the host's REAL operating
+system (never `defaultTargetPlatform`, which `flutter test` reports as Android).
+On iOS and the desktops — and in every VM widget test — they fall closed to the
+Unavailable defaults, so the composer shows a disabled, explained affordance.
+The whole upload → send → render → signed-download path
 was already implemented and tested (`HttpMessagingRepository`); Sprint 21 only
 supplied the device implementations. Their Dart logic is unit-tested at the seam
 against fakes and the web build proves they compile; ACTUAL file selection,
 microphone capture and audio playback need a browser/device and are a manual
-check, not CI-verified.
+check, not CI-verified (on Android, the owner's phone check).
 
 `TokenStore` is the exception, bound in Sprint 19: `SecureTokenStore`
 (`lib/data/api/secure_token_store.dart`) keeps the two session tokens in the

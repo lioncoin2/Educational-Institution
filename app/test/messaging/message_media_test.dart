@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quran_institution_app/core/theme/app_theme.dart';
+import 'package:quran_institution_app/data/media/media_seams.dart';
 import 'package:quran_institution_app/data/models/messaging.dart';
 import 'package:quran_institution_app/data/repositories/mock/mock_messaging_repository.dart';
 import 'package:quran_institution_app/features/messaging/widgets/message_bubble.dart';
@@ -51,12 +52,14 @@ Future<void> _pump(
   WidgetTester tester,
   Widget child, {
   _FakeMessaging? repo,
+  VoicePlayer? player,
   ThemeData? theme,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         if (repo != null) messagingRepositoryProvider.overrideWithValue(repo),
+        if (player != null) voicePlayerProvider.overrideWithValue(player),
       ],
       child: MaterialApp(
         theme: theme,
@@ -136,6 +139,26 @@ void main() {
         expect(button.height, greaterThanOrEqualTo(48));
       });
     }
+  });
+
+  group('voice', () {
+    testWidgets('a note the device cannot play says so', (tester) async {
+      final repo = _FakeMessaging();
+      final att = _att();
+      await _pump(
+        tester,
+        VoiceAttachment(
+          message: _msg(MessageType.voice, att: att),
+          attachment: att,
+        ),
+        repo: repo,
+        player: const _RefusingPlayer(),
+      );
+      await tester.tap(find.byTooltip('تشغيل'));
+      await tester.pumpAndSettle();
+      expect(repo.urlCalls, 1); // the link was resolved; the player refused it
+      expect(find.text('تعذّر تشغيل الرسالة الصوتية'), findsOneWidget);
+    });
   });
 
   group('file', () {
@@ -227,4 +250,19 @@ void main() {
       expect(find.text('مرحبًا بالجميع'), findsOneWidget);
     });
   });
+}
+
+/// A device player that cannot play the note (an expired link, an unplayable
+/// file).
+class _RefusingPlayer implements VoicePlayer {
+  const _RefusingPlayer();
+
+  @override
+  bool get isSupported => true;
+
+  @override
+  Future<void> play(Uri url) async => throw StateError('unplayable');
+
+  @override
+  Future<void> stop() async {}
 }
