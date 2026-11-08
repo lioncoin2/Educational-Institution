@@ -28,11 +28,17 @@ class MockMessagingRepository implements MessagingRepository {
     this.latency = AppConfig.fakeLatency,
     this.mayReadIn,
     this.mayPostIn,
-  }) {
+    DateTime? seededAt,
+  }) : _start = seededAt ?? DateTime.utc(2026, 9, 1, 5, 30) {
     _seed();
   }
 
   final Duration latency;
+
+  /// When the seeded history begins. The demo's is a fixed UTC instant; a
+  /// rendering test passes a local one, so the bubbles' clock (shown in local
+  /// time) reads the same in every time zone.
+  final DateTime _start;
 
   /// Whether the viewer reads community [communityId]'s chat now: its `me`
   /// takes part in `community.chat.read`. A chat not theirs to read is, to
@@ -61,8 +67,6 @@ class MockMessagingRepository implements MessagingRepository {
   };
 
   final Map<String, _MockConversation> _conversations = {};
-
-  static final DateTime _start = DateTime.utc(2026, 9, 1, 5, 30);
 
   @override
   Future<String> viewerId() async => viewer;

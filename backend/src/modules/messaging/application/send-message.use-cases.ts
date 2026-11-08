@@ -184,12 +184,16 @@ export class MessageSender {
           ),
         );
       case 'duplicate':
+        // A retry of an earlier send: it may have been reacted to since.
         return ok({ message: await this.view(outcome.message, principal.userId), created: false });
       case 'appended':
         await this.events.publish([
           messageSent(conversation, outcome.message, command.meta.correlationId),
         ]);
-        return ok({ message: await this.view(outcome.message, principal.userId), created: true });
+        return ok({
+          message: await this.view(outcome.message, principal.userId, { fresh: true }),
+          created: true,
+        });
     }
   }
 
@@ -227,8 +231,12 @@ export class MessageSender {
     return ok(undefined);
   }
 
-  private async view(message: Message, viewerId: string): Promise<MessageView> {
-    const rendered = await this.views.messages([message], viewerId);
+  private async view(
+    message: Message,
+    viewerId: string,
+    options: { readonly fresh?: boolean } = {},
+  ): Promise<MessageView> {
+    const rendered = await this.views.messages([message], viewerId, options);
     const view = rendered.items[0];
     if (view === undefined) throw new Error('A rendered message went missing.');
     return view;

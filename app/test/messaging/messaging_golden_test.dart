@@ -19,15 +19,22 @@ import 'package:quran_institution_app/providers/app_providers.dart';
 /// is the day the committed images were generated.
 final _goldenNow = DateTime.utc(2026, 10, 23, 12);
 
+/// The bubbles print each message's clock in LOCAL time, so a UTC history
+/// shows 07:30 on a machine in Central Europe and 05:30 on a UTC one (the CI
+/// runner). Seed the demo chats from a local time instead: the same clock in
+/// every time zone — the one the committed images show.
+final _goldenSeed = DateTime(2026, 9, 1, 7, 30);
+
 /// Renders the REAL messaging screens (full app, demo data) to golden PNGs, with
 /// the app's Arabic fonts loaded so the shaping is genuine. This is visual
 /// evidence of the applied green/cream palette ([MessagingPalette]) — not a
 /// hand-drawn mock. Regenerate with:
 ///   flutter test --update-goldens --tags golden test/messaging/messaging_golden_test.dart
 ///
-/// Goldens are font/platform sensitive, so they are tagged and kept out of the
-/// default run (see dart_test.yaml); they exist to produce and review the image,
-/// not as a brittle CI gate.
+/// Goldens are font/platform sensitive, so they are tagged (see dart_test.yaml)
+/// and can be run or regenerated on their own. The default run — CI's too —
+/// includes them, so nothing they draw may depend on the machine: "now" is
+/// pinned, and the seeded chats are in local time (above).
 Future<void> _loadFonts() async {
   const families = {
     'Almarai': [
@@ -70,8 +77,9 @@ Future<void> _bootAt(WidgetTester tester, String route) async {
   final container = ProviderContainer(
     overrides: [
       // Zero-latency mock so loading settles without a lingering spinner.
-      messagingRepositoryProvider
-          .overrideWithValue(MockMessagingRepository(latency: Duration.zero)),
+      messagingRepositoryProvider.overrideWithValue(
+        MockMessagingRepository(latency: Duration.zero, seededAt: _goldenSeed),
+      ),
       communityRepositoryProvider.overrideWithValue(
         MockCommunityRepository(clock: () => _goldenNow),
       ),

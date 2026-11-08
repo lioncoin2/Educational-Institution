@@ -100,9 +100,15 @@ export class MessagingViews {
     });
   }
 
+  /**
+   * `fresh` is for messages appended a moment ago: nobody has reacted to them
+   * yet, so their reactions are not read (one statement fewer on every send);
+   * a reaction that lands later is announced by `message.reacted`.
+   */
   async messages(
     messages: readonly Message[],
     viewerId: string,
+    options: { readonly fresh?: boolean } = {},
   ): Promise<{ items: MessageView[]; senders: PersonView[] }> {
     const seen = messages.map(asSeen);
     const assetIds = seen.flatMap((message) => message.attachments.map((a) => a.fileAssetId));
@@ -117,7 +123,7 @@ export class MessagingViews {
             : [message.senderId, message.forwardedFromSenderId],
         ),
       ),
-      seen.length === 0
+      seen.length === 0 || options.fresh === true
         ? Promise.resolve(new Map<string, readonly MessageReactionView[]>())
         : this.readModel.reactionsOf(
             seen.map((message) => message.id),

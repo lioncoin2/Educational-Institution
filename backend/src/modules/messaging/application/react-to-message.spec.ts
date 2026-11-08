@@ -95,6 +95,30 @@ describe('reacting to a message (chat reactions)', () => {
     expect(expectErr(result).code).toBe('messaging.message_not_found');
   });
 
+  it('sends a new message without reading reactions — it has none yet', async () => {
+    const read = jest.spyOn(h.readModel, 'reactionsOf');
+    const sent = await h.text(owner, chatId, 'a fresh one');
+    expect(sent.created).toBe(true);
+    expect(sent.message.reactions).toEqual([]);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('shows a retried send the reactions its message received since', async () => {
+    const first = await h.text(owner, chatId, 'sent twice', 'retried-send');
+    expectOk(
+      await h.reactToMessage.execute({
+        principal: member,
+        conversationId: chatId,
+        messageId: first.message.id,
+        emoji: '👍',
+        meta: META,
+      }),
+    );
+    const again = await h.text(owner, chatId, 'sent twice', 'retried-send');
+    expect(again.created).toBe(false);
+    expect(again.message.reactions).toEqual([{ emoji: '👍', count: 1, mine: false }]);
+  });
+
   it('keeps reactions scoped to their conversation', async () => {
     expectOk(await react(member, '👍'));
     // A different conversation id for the same message id finds nothing live.
